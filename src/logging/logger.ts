@@ -8,6 +8,7 @@ import type { LogLevel } from '../config/bootstrap-config.js';
 export const REDACTED_KEYS = [
   'token',
   'botToken',
+  'telegramBotToken',
   'accessToken',
   'refreshToken',
   'apiKey',

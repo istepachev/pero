@@ -18,6 +18,16 @@ import {
 } from './daemon-metadata.js';
 import type { StatusResult } from './protocol.js';
 
+/** Handlers these tests never call. */
+const unused = () => {
+  throw new Error('not used in this test');
+};
+const UNUSED_HANDLERS = {
+  'settings.get': unused,
+  'settings.update': unused,
+  'providers.check': unused,
+};
+
 describe('daemon metadata', () => {
   let tmp: string;
   let path: string;
@@ -55,7 +65,11 @@ describe('daemon metadata', () => {
     server = new ControlServer({
       socketPath: metadata.socket,
       logger: { log: vi.fn(), error: vi.fn(), warn: vi.fn() },
-      handlers: { status: () => status, shutdown: () => ({}) },
+      handlers: {
+        ...UNUSED_HANDLERS,
+        status: () => status,
+        shutdown: () => ({}),
+      },
     });
     await server.listen();
     return status;

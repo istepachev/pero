@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+// Stands in for `claude auth status --json` in e2e tests: signed in only
+// while $PERO_FAKE_AUTH_DIR/claude exists.
+const { existsSync } = process.getBuiltinModule('node:fs');
+const { join } = process.getBuiltinModule('node:path');
+
+const dir = process.env.PERO_FAKE_AUTH_DIR;
+const loggedIn = Boolean(dir && existsSync(join(dir, 'claude')));
+const status = loggedIn
+  ? { loggedIn, authMethod: 'claude.ai', email: 'owner@example.com', subscriptionType: 'pro' }
+  : { loggedIn, authMethod: 'none' };
+console.log(JSON.stringify(status, null, 2));
+process.exitCode = loggedIn ? 0 : 1;
