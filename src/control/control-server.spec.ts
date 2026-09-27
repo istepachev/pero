@@ -24,6 +24,7 @@ const UNUSED_HANDLERS = {
   'settings.get': unused,
   'settings.update': unused,
   'providers.check': unused,
+  'backup.create': unused,
 };
 
 const status: StatusResult = {

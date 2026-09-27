@@ -4,6 +4,7 @@ import {
   Logger,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import { BackupService } from '../backup/backup.service.js';
 import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { withoutUndefined } from '../common/without-undefined.js';
@@ -40,6 +41,7 @@ export class ControlService implements OnModuleDestroy {
     private readonly settings: SettingsService,
     private readonly telegram: TelegramCredentials,
     private readonly providers: ProviderAuthService,
+    private readonly backup: BackupService,
   ) {}
 
   /**
@@ -62,6 +64,7 @@ export class ControlService implements OnModuleDestroy {
           await this.providers.check();
           return this.status();
         },
+        'backup.create': ({ file }) => this.backup.create(file),
       },
     });
     await server.listen();

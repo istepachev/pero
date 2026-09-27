@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { BackupCommand } from './commands/backup.command.js';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
+import { RestoreCommand } from './commands/restore.command.js';
 import { RunCommand } from './commands/run.command.js';
 import {
   SettingsCommand,
@@ -27,6 +29,8 @@ import { GlobalOptionsSetup } from './global-options.js';
     SettingsShowCommand,
     SettingsSetCommand,
     SettingsUnsetCommand,
+    BackupCommand,
+    RestoreCommand,
     PingCommand,
   ],
 })

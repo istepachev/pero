@@ -12,8 +12,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataDirLayout, type DataDirLayout } from '../src/config/data-dir.js';
+import { PACKAGE_VERSION } from '../src/common/package-version.js';
 import { createControlClient } from '../src/control/client.js';
 import {
   findRunningDaemon,
@@ -45,6 +47,8 @@ interface Result {
 describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   let tmp: string;
   let layout: DataDirLayout;
+  /** Where backups of `layout` are restored. */
+  let restored: DataDirLayout;
   /** Where the fake provider CLIs look for their sign-in. */
   let authDir: string;
   const children: ChildProcess[] = [];
@@ -53,6 +57,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     // Short: macOS limits socket paths to 104 bytes.
     tmp = mkdtempSync(join(tmpdir(), 'pero-'));
     layout = dataDirLayout(join(tmp, 'pero'));
+    restored = dataDirLayout(join(tmp, 'restored'));
     authDir = join(tmp, 'auth');
     mkdirSync(authDir);
   });
@@ -63,10 +68,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         child.kill('SIGKILL');
       }
     }
-    const metadata = readDaemonMetadata(layout.metadataFile);
-    if (metadata) {
-      kill(metadata.pid, 'SIGKILL');
-      await vi.waitFor(() => expect(isAlive(metadata.pid)).toBe(false));
+    for (const { metadataFile } of [layout, restored]) {
+      const metadata = readDaemonMetadata(metadataFile);
+      if (metadata) {
+        kill(metadata.pid, 'SIGKILL');
+        await vi.waitFor(() => expect(isAlive(metadata.pid)).toBe(false));
+      }
     }
     rmSync(tmp, { recursive: true, force: true });
   });
@@ -559,6 +566,124 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     }
   });
 
+  it('restores a backup into a fresh data directory that starts with the same records', async () => {
+    const cwd = realpathSync(tmp);
+    const vault = join(cwd, 'vault');
+    const own = join(cwd, 'own');
+    mkdirSync(vault);
+    mkdirSync(own);
+    const file = join(cwd, 'backup.tgz');
+    const nodeArgs = ['--import', DENY_DAEMON_DEPS];
+
+    // Agents have no commands yet: add one while Pero is stopped.
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    const db = new Database(layout.database);
+    db.prepare(
+      `INSERT INTO "agents" ("name", "provider", "provider_options", "working_directory", "tool_policy_json") ` +
+        `VALUES ('coder', 'claude', '{"model":null,"effort":null}', ?, '{}')`,
+    ).run(own);
+    db.close();
+
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const settings = [
+      ['default-working-directory', vault],
+      ['timezone', 'Europe/Lisbon'],
+      ['claude.model', 'claude-opus-5-5'],
+    ];
+    for (const [key, value] of settings) {
+      expect(
+        (await pero(withDataDir('settings', 'set', key!, value!))).code,
+      ).toBe(0);
+    }
+    for (const [key, input] of [
+      ['shared-instructions', 'Be brief.\n'],
+      ['telegram-bot-token', `${TOKEN}\n`],
+    ]) {
+      const set = await pero(withDataDir('settings', 'set', key!), { input });
+      expect(set.code).toBe(0);
+    }
+    const before = await pero(withDataDir('settings'));
+
+    // Taken while the daemon runs, so recent writes are still in the WAL.
+    const backup = await pero(withDataDir('backup', 'backup.tgz'), {
+      cwd,
+      nodeArgs,
+    });
+    expect(backup).toMatchObject({
+      code: 0,
+      stdout: expect.stringMatching(
+        new RegExp(
+          `^Backed up ${escape(layout.root)} to ${escape(file)} \\(\\d+\\.\\d KB\\)\\n` +
+            'It contains the Telegram bot token; keep it private, like the data directory\\.\\n$',
+        ),
+      ),
+      stderr: '',
+    });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+
+    rmSync(own, { recursive: true });
+    const restore = await pero(['--data-dir', restored.root, 'restore', file], {
+      nodeArgs,
+    });
+    expect(restore).toMatchObject({
+      code: 0,
+      stdout: expect.stringMatching(
+        new RegExp(
+          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(restored.root)}\\. ` +
+            `Start it with pero run --data-dir ${escape(restored.root)}\\n$`,
+        ),
+      ),
+      stderr: `Warning: ${own}, the working directory of Agent coder, is missing; restore it from your own backup of the working folders\n`,
+    });
+    mkdirSync(own);
+
+    const run = await pero(['--data-dir', restored.root, 'run']);
+    expect(run.code).toBe(0);
+    const after = await pero(['--data-dir', restored.root, 'settings']);
+    expect(after).toEqual(before);
+    const status = await pero(['--data-dir', restored.root, 'status']);
+    expect(status.stdout).toMatch(/telegram +ok +Bot token is set\n/);
+    expect((await pero(['--data-dir', restored.root, 'stop'])).code).toBe(0);
+
+    expect(dumpTables(restored.database)).toEqual(dumpTables(layout.database));
+  });
+
+  it('refuses to restore over a running Pero or a data directory in use', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const file = join(tmp, 'backup.tgz');
+    expect((await pero(withDataDir('backup', file))).code).toBe(0);
+
+    expect(await pero(withDataDir('restore', file))).toMatchObject({
+      code: 1,
+      stdout: '',
+      stderr: `Pero is running for ${layout.root} — stop it with pero stop before restoring\n`,
+    });
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect(await pero(withDataDir('restore', file))).toMatchObject({
+      code: 1,
+      stderr: `${layout.root} is not empty. Restore into a new data directory, or stop Pero and move ${layout.root} aside first.\n`,
+    });
+    expect(
+      await pero(['--data-dir', restored.root, 'restore', join(tmp, 'nope')]),
+    ).toMatchObject({
+      code: 1,
+      stderr: `${join(tmp, 'nope')} does not exist\n`,
+    });
+    expect(existsSync(restored.root)).toBe(false);
+  });
+
+  it('needs the daemon for a backup', async () => {
+    expect(await pero(withDataDir('backup', join(tmp, 'b.tgz')))).toMatchObject(
+      {
+        code: 1,
+        stderr: `${NOT_RUNNING}\n`,
+      },
+    );
+    expect(existsSync(layout.root)).toBe(false);
+  });
+
   it('never loads the database stack for status, ping, logs, settings, and stop', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
@@ -585,6 +710,30 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(foreground.stderr).toContain('The CLI must not load');
   });
 });
+
+function escape(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Every row of every table, to compare two databases. */
+function dumpTables(path: string): Record<string, unknown[]> {
+  const db = new Database(path, { readonly: true });
+  try {
+    const tables = db
+      .prepare<[], { name: string }>(
+        `SELECT "name" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name"`,
+      )
+      .all();
+    return Object.fromEntries(
+      tables.map(({ name }) => [
+        name,
+        db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all(),
+      ]),
+    );
+  } finally {
+    db.close();
+  }
+}
 
 function isAlive(pid: number): boolean {
   try {

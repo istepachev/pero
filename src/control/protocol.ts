@@ -75,6 +75,17 @@ export const settingsViewSchema = z.object({
 
 export type SettingsView = z.infer<typeof settingsViewSchema>;
 
+export const backupResultSchema = z.object({
+  /** Absolute path of the written archive. */
+  file: z.string(),
+  createdAt: z.iso.datetime(),
+  bytes: z.int().nonnegative(),
+  /** Whether the archive holds stored secrets such as the bot token. */
+  includesSecrets: z.boolean(),
+});
+
+export type BackupResult = z.infer<typeof backupResultSchema>;
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -90,6 +101,11 @@ export const CONTROL_OPERATIONS = {
   },
   /** Checks each provider's sign-in again, then reports status. */
   'providers.check': { params: noParams, result: statusResultSchema },
+  /** Writes a backup of the data directory to an absolute path. */
+  'backup.create': {
+    params: z.strictObject({ file: z.string().min(1) }),
+    result: backupResultSchema,
+  },
 } as const satisfies Record<string, { params: z.ZodType; result: z.ZodType }>;
 
 export type ControlOperation = keyof typeof CONTROL_OPERATIONS;
