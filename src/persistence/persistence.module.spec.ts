@@ -74,14 +74,12 @@ describe('PersistenceModule', () => {
       { foreign_keys: 1 },
     ]);
 
-    // Throwaway tables: 1.4 adds the real ones and their foreign-key tests.
-    await ds.query(`CREATE TABLE "parent" ("id" integer PRIMARY KEY)`);
-    await ds.query(
-      `CREATE TABLE "child" ("id" integer PRIMARY KEY, ` +
-        `"parent_id" integer NOT NULL REFERENCES "parent" ("id"))`,
-    );
     await expect(
-      ds.query(`INSERT INTO "child" ("id", "parent_id") VALUES (1, 42)`),
+      ds.query(
+        `INSERT INTO "channels" ` +
+          `("integration_kind", "external_key", "address_json", "agent_id") ` +
+          `VALUES ('telegram', '1', '{}', 42)`,
+      ),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },
     });
@@ -185,17 +183,26 @@ describe('PersistenceModule', () => {
     expect(rows[0]!.timezone).toBe('Europe/Berlin');
   });
 
-  it('reverts cleanly and migrates again', async () => {
+  it('reverts every migration cleanly and migrates again', async () => {
     const ds = await start();
+    const tables = () =>
+      ds.query(
+        `SELECT "name" FROM "sqlite_master" WHERE "type" = 'table' ` +
+          `ORDER BY "name"`,
+      );
+    const migrated = await tables();
 
-    await ds.undoLastMigration({ transaction: 'each' });
-    expect(
-      await ds.query(
-        `SELECT "name" FROM "sqlite_master" WHERE "name" = 'settings'`,
-      ),
-    ).toEqual([]);
+    for (const _ of MIGRATIONS) {
+      await ds.undoLastMigration({ transaction: 'each' });
+    }
+    // AUTOINCREMENT's sqlite_sequence cannot be dropped once created.
+    expect(await tables()).toEqual([
+      { name: 'migrations' },
+      { name: 'sqlite_sequence' },
+    ]);
 
     await ds.runMigrations({ transaction: 'each' });
+    expect(await tables()).toEqual(migrated);
     expect(await ds.getRepository(Settings).count()).toBe(1);
   });
 });
