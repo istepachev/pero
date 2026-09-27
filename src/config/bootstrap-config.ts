@@ -16,15 +16,12 @@ export const LOG_LEVELS = [
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export const DEFAULT_DATA_DIR_NAME = '.pero';
-export const DEFAULT_PORT = 7717;
 
 /** Settings the process needs before it can open the data directory. */
 export interface BootstrapConfig {
   /** Absolute path of the data directory. */
   dataDir: string;
   logLevel: LogLevel;
-  /** Loopback HTTP port; 0 picks a free port. */
-  port: number;
 }
 
 export interface BootstrapConfigInput {
@@ -53,12 +50,6 @@ const sources = z.object({
   PERO_LOG_LEVEL: z
     .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
     .optional(),
-  PERO_PORT: z
-    .string()
-    .regex(/^\d+$/, 'must be an integer from 0 to 65535')
-    .transform(Number)
-    .pipe(z.number().max(65535, 'must be an integer from 0 to 65535'))
-    .optional(),
 });
 
 /**
@@ -77,7 +68,6 @@ export function resolveBootstrapConfig(
     '--data-dir': input.dataDir,
     PERO_HOME: env.PERO_HOME,
     PERO_LOG_LEVEL: env.PERO_LOG_LEVEL,
-    PERO_PORT: env.PERO_PORT,
   });
   if (!parsed.success) {
     const lines = parsed.error.issues.map(
@@ -95,7 +85,6 @@ export function resolveBootstrapConfig(
   return {
     dataDir: toAbsolute(dataDir, cwd, home),
     logLevel: values.PERO_LOG_LEVEL ?? 'info',
-    port: values.PERO_PORT ?? DEFAULT_PORT,
   };
 }
 

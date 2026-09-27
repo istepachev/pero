@@ -21,6 +21,7 @@ describe('dataDirLayout', () => {
       logs: '/srv/pero/logs',
       logFile: '/srv/pero/logs/pero.log',
       run: '/srv/pero/run',
+      controlSocket: '/srv/pero/run/pero.sock',
       secrets: '/srv/pero/secrets',
     });
   });
