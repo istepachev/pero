@@ -33,6 +33,7 @@
     "start:prod": "node dist/daemon/main.js",
     "cli": "node bin/pero.js",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "oxlint --type-aware src/ test/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
