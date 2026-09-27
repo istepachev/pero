@@ -11,16 +11,22 @@ describe('slugSchema', () => {
     );
   });
 
+  it('lowercases input before checking it', () => {
+    expect(slugSchema.parse('Daily-Brief')).toBe('daily-brief');
+    expect(slugSchema.parse('Q3-REVIEW')).toBe('q3-review');
+  });
+
   it('rejects anything else', () => {
     for (const value of [
       '',
-      'Daily-Brief',
+      'Daily Brief',
       'daily brief',
       'daily_brief',
       '-daily',
       'daily-',
       'daily--brief',
       'дневник',
+      'ДНЕВНИК',
       'a'.repeat(SLUG_MAX_LENGTH + 1),
     ]) {
       expect(slugSchema.safeParse(value).success).toBe(false);
@@ -29,9 +35,9 @@ describe('slugSchema', () => {
 });
 
 describe('titleSchema', () => {
-  it('trims a title and rejects a blank one', () => {
-    expect(titleSchema.parse('  Daily brief ')).toBe('Daily brief');
-    expect(titleSchema.parse(null)).toBeNull();
-    expect(titleSchema.safeParse('  ').success).toBe(false);
+  it('keeps any text as given', () => {
+    for (const value of ['Daily brief', '  Spaced  ', '', 'Дневник 📓', null]) {
+      expect(titleSchema.parse(value)).toBe(value);
+    }
   });
 });
