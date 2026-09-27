@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -14,6 +15,7 @@ import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InvalidInputError } from '../src/common/errors.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import {
   type ControlClient,
@@ -88,13 +90,60 @@ describe('Control endpoint (e2e)', () => {
     const status = await client.status();
 
     expect(status.health).toBe('degraded');
+    // Only the default provider counts until an Agent uses another.
     expect(
-      status.components.map(({ name, state }) => ({ name, state })),
+      status.components.map(({ name, state, required }) => ({
+        name,
+        state,
+        required,
+      })),
     ).toEqual([
-      { name: 'claude', state: 'unconfigured' },
-      { name: 'codex', state: 'unconfigured' },
-      { name: 'telegram', state: 'unconfigured' },
+      { name: 'claude', state: 'unconfigured', required: true },
+      { name: 'codex', state: 'unconfigured', required: false },
+      { name: 'telegram', state: 'unconfigured', required: true },
     ]);
+  });
+
+  it('checks provider sign-in on request', async () => {
+    app = await start();
+
+    const status = await client.call('providers.check');
+
+    expect(status.components.find((c) => c.name === 'claude')).toMatchObject({
+      state: 'unconfigured',
+      detail: 'Not signed in — run claude auth login',
+    });
+  });
+
+  it('changes settings and the bot token, validating both first', async () => {
+    const token = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
+    app = await start();
+    const before = await client.call('settings.get');
+
+    await expect(
+      client.call('settings.update', {
+        maxConcurrentRuns: 3,
+        telegramBotToken: 'not a token',
+      }),
+    ).rejects.toThrow(InvalidInputError);
+    expect(await client.call('settings.get')).toEqual(before);
+    expect(readdirSync(join(dataDir, 'secrets'))).toEqual([]);
+
+    const view = await client.call('settings.update', {
+      maxConcurrentRuns: 3,
+      telegramBotToken: token,
+    });
+
+    expect(view).toMatchObject({
+      maxConcurrentRuns: 3,
+      telegramBotToken: { set: true, source: 'secrets' },
+    });
+    expect(JSON.stringify(view)).not.toContain(token);
+    const status = await client.status();
+    expect(status.components.find((c) => c.name === 'telegram')).toMatchObject({
+      state: 'ok',
+    });
+    expect(JSON.stringify(status)).not.toContain(token);
   });
 
   it('keeps the socket from other users', async () => {

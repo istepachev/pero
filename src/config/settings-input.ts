@@ -45,3 +45,26 @@ export const settingsUpdateSchema = z.strictObject({
 });
 
 export type SettingsUpdate = z.input<typeof settingsUpdateSchema>;
+
+/** Environment variable with a Telegram bot token; wins over a stored one. */
+export const TELEGRAM_TOKEN_ENV = 'PERO_TELEGRAM_BOT_TOKEN';
+
+/** A Telegram bot token as @BotFather issues it. Issues never echo it. */
+export const telegramBotTokenSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\d+:[\w-]{30,}$/,
+    'must be a bot token from @BotFather, such as 123456789:AAE…',
+  );
+
+/**
+ * Changes through the control endpoint: settings plus the Telegram bot
+ * token, which is stored as a secret rather than in SQLite. A null token
+ * removes the stored one.
+ */
+export const settingsChangeSchema = settingsUpdateSchema.extend({
+  telegramBotToken: telegramBotTokenSchema.nullable().optional(),
+});
+
+export type SettingsChange = z.input<typeof settingsChangeSchema>;

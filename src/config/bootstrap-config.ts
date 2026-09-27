@@ -83,13 +83,17 @@ export function resolveBootstrapConfig(
     join(home, DEFAULT_DATA_DIR_NAME);
 
   return {
-    dataDir: toAbsolute(dataDir, cwd, home),
+    dataDir: resolvePath(dataDir, cwd, home),
     logLevel: values.PERO_LOG_LEVEL ?? 'info',
   };
 }
 
-function toAbsolute(path: string, cwd: string, home: string): string {
+/**
+ * `path` as an absolute path: a leading `~` is the home directory, and a
+ * relative path is taken from `cwd`.
+ */
+export function resolvePath(path: string, cwd: string, home: string): string {
   if (path === '~') return home;
-  if (path.startsWith('~/')) return join(home, path.slice(2));
+  if (path.startsWith('~/')) return resolve(home, path.slice(2));
   return isAbsolute(path) ? resolve(path) : resolve(cwd, path);
 }

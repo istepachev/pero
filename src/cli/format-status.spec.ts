@@ -12,12 +12,13 @@ const status: StatusResult = {
   uptimeMs: 192_500,
   health: 'degraded',
   components: [
-    { name: 'claude', state: 'ok', detail: null, since },
+    { name: 'claude', state: 'ok', detail: null, since, required: true },
     {
       name: 'telegram',
       state: 'unconfigured',
       detail: 'Bot token is not set',
       since,
+      required: true,
     },
   ],
 };
@@ -38,6 +39,36 @@ describe('formatStatus', () => {
         '  telegram  unconfigured  Bot token is not set',
       ].join('\n'),
     );
+  });
+
+  it('marks a component health does not depend on', () => {
+    const text = formatStatus(
+      {
+        ...status,
+        components: [
+          {
+            name: 'claude',
+            state: 'ok',
+            detail: 'Signed in',
+            since,
+            required: true,
+          },
+          {
+            name: 'codex',
+            state: 'unconfigured',
+            detail: 'Not signed in — run codex login',
+            since,
+            required: false,
+          },
+        ],
+      },
+      '1.2.0',
+    );
+
+    expect(text).toContain(
+      '  codex   unconfigured  Not signed in — run codex login (not in use)',
+    );
+    expect(text).toContain('  claude  ok            Signed in\n');
   });
 
   it('suggests a restart when the installed version differs', () => {

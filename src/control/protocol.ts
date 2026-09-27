@@ -1,5 +1,10 @@
 import type { Socket } from 'node:net';
 import { z } from 'zod';
+import {
+  PROVIDERS,
+  providerDefaultsSchema,
+} from '../config/provider-options.js';
+import { settingsChangeSchema } from '../config/settings-input.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -23,6 +28,11 @@ export const componentStatusSchema = z.object({
   detail: z.string().nullable(),
   /** When the component entered its current state. */
   since: z.iso.datetime(),
+  /**
+   * Whether health depends on it; a provider no Agent uses is listed but
+   * not required. Older daemons send no flag and require everything.
+   */
+  required: z.boolean().default(true),
 });
 
 export type ComponentStatus = z.infer<typeof componentStatusSchema>;
@@ -41,6 +51,30 @@ export const statusResultSchema = z.object({
 
 export type StatusResult = z.infer<typeof statusResultSchema>;
 
+export const TOKEN_SOURCES = ['environment', 'secrets'] as const;
+
+export type TokenSource = (typeof TOKEN_SOURCES)[number];
+
+/** Installation settings as the CLI sees them; secrets only as set or not. */
+export const settingsViewSchema = z.object({
+  defaultProvider: z.enum(PROVIDERS),
+  providerDefaults: providerDefaultsSchema,
+  defaultWorkingDirectory: z.string().nullable(),
+  sharedInstructions: z.string().nullable(),
+  timezone: z.string(),
+  maxConcurrentRuns: z.int(),
+  telegramBotToken: z.object({
+    set: z.boolean(),
+    /**
+     * Where the token comes from: the environment variable whenever it is
+     * set, otherwise the stored secret; null when neither has one.
+     */
+    source: z.enum(TOKEN_SOURCES).nullable(),
+  }),
+});
+
+export type SettingsView = z.infer<typeof settingsViewSchema>;
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -49,6 +83,13 @@ const noParams = z.strictObject({});
 export const CONTROL_OPERATIONS = {
   status: { params: noParams, result: statusResultSchema },
   shutdown: { params: noParams, result: z.object({}) },
+  'settings.get': { params: noParams, result: settingsViewSchema },
+  'settings.update': {
+    params: settingsChangeSchema,
+    result: settingsViewSchema,
+  },
+  /** Checks each provider's sign-in again, then reports status. */
+  'providers.check': { params: noParams, result: statusResultSchema },
 } as const satisfies Record<string, { params: z.ZodType; result: z.ZodType }>;
 
 export type ControlOperation = keyof typeof CONTROL_OPERATIONS;

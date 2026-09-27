@@ -12,14 +12,17 @@ export class ComponentHealth {
   private readonly components = new Map<string, ComponentStatus>();
 
   constructor() {
-    // Nothing sets these up yet; their modules report once they exist.
+    // Their modules report the real state once they have looked.
     this.register('telegram', 'Bot token is not set');
     for (const provider of PROVIDERS) {
-      this.register(provider, 'Runtime is not set up');
+      this.register(provider, 'Sign-in not checked yet');
     }
   }
 
-  /** Records `name`'s state; `since` moves only when the state changes. */
+  /**
+   * Records `name`'s state; `since` moves only when the state changes. A
+   * new component is required; an existing one keeps its flag.
+   */
   report(name: string, state: ComponentState, detail: string | null = null) {
     const current = this.components.get(name);
     const changed = current?.state !== state;
@@ -28,6 +31,7 @@ export class ComponentHealth {
       state,
       detail,
       since: changed ? new Date().toISOString() : current.since,
+      required: current?.required ?? true,
     });
     if (changed) {
       const message = `${name} is ${state}${detail ? `: ${detail}` : ''}`;
@@ -43,9 +47,17 @@ export class ComponentHealth {
     );
   }
 
-  /** `ok` only when every component is. */
+  /** Whether overall health depends on `name`, which must be registered. */
+  setRequired(name: string, required: boolean): void {
+    const current = this.components.get(name);
+    if (current) this.components.set(name, { ...current, required });
+  }
+
+  /** `ok` only when every required component is. */
   overall(): 'ok' | 'degraded' {
-    return this.list().every((component) => component.state === 'ok')
+    return this.list().every(
+      (component) => !component.required || component.state === 'ok',
+    )
       ? 'ok'
       : 'degraded';
   }
@@ -56,6 +68,7 @@ export class ComponentHealth {
       state: 'unconfigured',
       detail,
       since: new Date().toISOString(),
+      required: true,
     });
   }
 }

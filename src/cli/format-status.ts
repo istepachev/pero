@@ -26,10 +26,13 @@ export function formatStatus(status: StatusResult, cliVersion: string): string {
       '',
       'Components',
       ...table(
-        status.components.map(({ name, state, detail }) => [
+        status.components.map(({ name, state, detail, required }) => [
           name,
           state,
-          detail ?? '',
+          // Health does not depend on it, so it needs nothing now.
+          !required && state !== 'ok'
+            ? `${detail ?? ''} (not in use)`.trimStart()
+            : (detail ?? ''),
         ]),
       ).map((row) => `  ${row}`),
     );
@@ -53,7 +56,7 @@ export function formatDuration(ms: number): string {
 }
 
 /** Left-aligned columns separated by two spaces, without trailing blanks. */
-function table(rows: string[][]): string[] {
+export function table(rows: string[][]): string[] {
   const widths = rows[0]?.map((_, column) =>
     Math.max(...rows.map((row) => row[column]!.length)),
   );

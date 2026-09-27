@@ -16,6 +16,16 @@ import {
 } from './control-server.js';
 import { MAX_MESSAGE_BYTES, readLine, type StatusResult } from './protocol.js';
 
+/** Handlers these tests never call. */
+const unused = () => {
+  throw new Error('not used in this test');
+};
+const UNUSED_HANDLERS = {
+  'settings.get': unused,
+  'settings.update': unused,
+  'providers.check': unused,
+};
+
 const status: StatusResult = {
   pid: 1234,
   version: '1.2.3',
@@ -62,7 +72,12 @@ describe('ControlServer', () => {
     server = new ControlServer({
       socketPath,
       logger,
-      handlers: { status: () => status, shutdown: () => ({}), ...handlers },
+      handlers: {
+        ...UNUSED_HANDLERS,
+        status: () => status,
+        shutdown: () => ({}),
+        ...handlers,
+      },
     });
     await server.listen();
     return createControlClient(socketPath);

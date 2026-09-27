@@ -4,7 +4,11 @@ import {
   resolveBootstrapConfig,
 } from '../config/bootstrap-config.js';
 import { dataDirLayout, type DataDirLayout } from '../config/data-dir.js';
-import { type ControlClient, createControlClient } from '../control/client.js';
+import {
+  type ControlClient,
+  type ControlClientOptions,
+  createControlClient,
+} from '../control/client.js';
 import type { StatusResult } from '../control/protocol.js';
 import type { GlobalOptions } from './global-options.js';
 
@@ -27,8 +31,8 @@ export abstract class PeroCommand extends CommandRunner {
     return dataDirLayout(this.config().dataDir);
   }
 
-  protected client(): ControlClient {
-    return createControlClient(this.layout().controlSocket);
+  protected client(options?: ControlClientOptions): ControlClient {
+    return createControlClient(this.layout().controlSocket, options);
   }
 
   /**

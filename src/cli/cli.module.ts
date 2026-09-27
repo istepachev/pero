@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RunCommand } from './commands/run.command.js';
+import {
+  SettingsCommand,
+  SettingsSetCommand,
+  SettingsShowCommand,
+  SettingsUnsetCommand,
+} from './commands/settings.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
 import { GlobalOptionsSetup } from './global-options.js';
@@ -17,6 +23,10 @@ import { GlobalOptionsSetup } from './global-options.js';
     StopCommand,
     StatusCommand,
     LogsCommand,
+    SettingsCommand,
+    SettingsShowCommand,
+    SettingsSetCommand,
+    SettingsUnsetCommand,
     PingCommand,
   ],
 })

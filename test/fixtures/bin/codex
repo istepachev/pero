@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+// Stands in for `codex login status` in e2e tests: signed in only while
+// $PERO_FAKE_AUTH_DIR/codex exists. Like Codex, it reports on stderr.
+const { existsSync } = process.getBuiltinModule('node:fs');
+const { join } = process.getBuiltinModule('node:path');
+
+const dir = process.env.PERO_FAKE_AUTH_DIR;
+const loggedIn = Boolean(dir && existsSync(join(dir, 'codex')));
+console.error(loggedIn ? 'Logged in using ChatGPT' : 'Not logged in');
+process.exitCode = loggedIn ? 0 : 1;
