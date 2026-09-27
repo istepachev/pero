@@ -45,7 +45,8 @@
     "migration:run": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:run -d dist/persistence/data-source.js",
     "migration:show": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:show -d dist/persistence/data-source.js",
     "migration:revert": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:revert -d dist/persistence/data-source.js",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "pretest:e2e": "npm run build"
   },
   "dependencies": {
     "@nestjs/common": "12.1.0",
@@ -69,6 +70,7 @@
     "@nestjs/cli": "12.0.7",
     "@nestjs/schematics": "12.0.5",
     "@nestjs/testing": "12.1.0",
+    "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.20.4",
     "@vitest/coverage-v8": "5.0.2",
     "oxlint": "1.85.0",

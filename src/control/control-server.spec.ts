@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,7 +61,6 @@ describe('ControlServer', () => {
   async function listen(handlers: Partial<ControlHandlers> = {}) {
     server = new ControlServer({
       socketPath,
-      dataDir: tmp,
       logger,
       handlers: { status: () => status, shutdown: () => ({}), ...handlers },
     });
@@ -196,18 +195,12 @@ describe('ControlServer', () => {
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
-  it('refuses to start while another server answers on the socket', async () => {
-    await listen();
+  it('replaces a socket left behind by an earlier server', async () => {
+    writeFileSync(socketPath, '');
 
-    const second = new ControlServer({
-      socketPath,
-      dataDir: tmp,
-      logger,
-      handlers: { status: () => status, shutdown: () => ({}) },
-    });
-    await expect(second.listen()).rejects.toThrow(
-      `Pero is already running for ${tmp}`,
-    );
+    const client = await listen();
+
+    await expect(client.status()).resolves.toEqual(status);
   });
 
   it('refuses a socket path the OS cannot hold', async () => {

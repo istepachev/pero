@@ -14,6 +14,10 @@ export interface DataDirLayout {
   run: string;
   /** Unix socket of the control endpoint; owner-only. */
   controlSocket: string;
+  /** Held by the running daemon; the file itself stays after it stops. */
+  lockFile: string;
+  /** The running daemon's pid, version, and socket; JSON. */
+  metadataFile: string;
   secrets: string;
 }
 
@@ -32,6 +36,8 @@ export function dataDirLayout(root: string): DataDirLayout {
     logFile: join(logs, 'pero.log'),
     run,
     controlSocket: join(run, 'pero.sock'),
+    lockFile: join(run, 'pero.lock'),
+    metadataFile: join(run, 'pero.json'),
     secrets: join(root, 'secrets'),
   };
 }

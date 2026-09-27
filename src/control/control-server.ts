@@ -1,5 +1,5 @@
 import { chmodSync, rmSync } from 'node:fs';
-import { connect, createServer, type Server, type Socket } from 'node:net';
+import { createServer, type Server, type Socket } from 'node:net';
 import type { LoggerService } from '@nestjs/common';
 import {
   ConflictError,
@@ -43,8 +43,6 @@ export class ControlSocketError extends Error {
 
 export interface ControlServerOptions {
   socketPath: string;
-  /** Named in errors, such as when another daemon owns the socket. */
-  dataDir: string;
   handlers: ControlHandlers;
   /** Receives unexpected handler errors; carries its own context. */
   logger: LoggerService;
@@ -63,18 +61,15 @@ export class ControlServer {
   constructor(private readonly options: ControlServerOptions) {}
 
   async listen(): Promise<void> {
-    const { socketPath, dataDir } = this.options;
+    const { socketPath } = this.options;
     const length = Buffer.byteLength(socketPath);
     if (length > MAX_SOCKET_PATH_BYTES) {
       throw new ControlSocketError(
         `Control socket path is too long (${length} bytes, at most ${MAX_SOCKET_PATH_BYTES}): ${socketPath}. Choose a shorter data directory.`,
       );
     }
-    // Until the singleton lock exists, a live socket is the only sign of
-    // another daemon; a dead one is left over from a crash.
-    if (await answers(socketPath)) {
-      throw new ControlSocketError(`Pero is already running for ${dataDir}`);
-    }
+    // The daemon holds the data directory's lock, so a socket already here
+    // is left over from a crash.
     rmSync(socketPath, { force: true });
 
     // Half-open: a client may end its side right after the request line.
@@ -200,16 +195,4 @@ export class ControlServer {
 
 function failure(code: ControlErrorCode, message: string): ControlResponse {
   return { ok: false, error: { code, message } };
-}
-
-/** Whether something accepts connections on `socketPath`. */
-function answers(socketPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = connect(socketPath);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('error', () => resolve(false));
-  });
 }

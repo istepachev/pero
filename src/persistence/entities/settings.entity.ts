@@ -16,6 +16,9 @@ import { jsonTransformer } from '../json-transformer.js';
 /** The ID of the one settings row. */
 export const SETTINGS_ID = 1;
 
+/** The shutdown timeout a fresh installation starts with. */
+export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
+
 // Column types are explicit: nullable unions emit no usable design metadata.
 /** Installation defaults and operational limits; a singleton row. */
 @Entity('settings')
@@ -63,7 +66,11 @@ export class Settings {
   maxConcurrentRuns: number;
 
   /** How long graceful shutdown waits for active work. */
-  @Column({ name: 'shutdown_timeout_ms', type: 'integer', default: 30_000 })
+  @Column({
+    name: 'shutdown_timeout_ms',
+    type: 'integer',
+    default: DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  })
   shutdownTimeoutMs: number;
 
   @CreateDateColumn({ name: 'created_at' })

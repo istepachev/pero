@@ -11,7 +11,6 @@ import {
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { INestApplicationContext } from '@nestjs/common';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,8 +20,11 @@ import {
   createControlClient,
   DaemonNotRunningError,
 } from '../src/control/client.js';
-import { ControlSocketError } from '../src/control/control-server.js';
-import { startDaemon } from '../src/daemon/daemon.js';
+import {
+  type Daemon,
+  DaemonAlreadyRunningError,
+  startDaemon,
+} from '../src/daemon/daemon.js';
 
 const { version } = JSON.parse(
   readFileSync(join(import.meta.dirname, '../package.json'), 'utf8'),
@@ -33,7 +35,7 @@ describe('Control endpoint (e2e)', () => {
   let dataDir: string;
   let socketPath: string;
   let client: ControlClient;
-  let app: INestApplicationContext | undefined;
+  let app: Daemon | undefined;
 
   beforeEach(() => {
     // Short: macOS limits socket paths to 104 bytes.
@@ -44,7 +46,7 @@ describe('Control endpoint (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app?.close();
+    await app?.stop('test finished');
     app = undefined;
     rmSync(tmp, { recursive: true, force: true });
   });
@@ -57,13 +59,13 @@ describe('Control endpoint (e2e)', () => {
   }
 
   /** Requests shutdown and waits until the daemon has fully closed. */
-  async function shutDown(daemon: INestApplicationContext) {
-    const dataSource = daemon.get<DataSource>(getDataSourceToken());
+  async function shutDown(daemon: Daemon) {
+    const dataSource = daemon.app.get<DataSource>(getDataSourceToken());
     await client.shutdown();
-    await vi.waitFor(() => {
-      expect(existsSync(socketPath)).toBe(false);
-      expect(dataSource.isInitialized).toBe(false);
-    });
+    await expect(daemon.stopped).resolves.toEqual({ graceful: true });
+    expect(existsSync(socketPath)).toBe(false);
+    expect(existsSync(join(dataDir, 'run', 'pero.json'))).toBe(false);
+    expect(dataSource.isInitialized).toBe(false);
   }
 
   it('reports status through the client', async () => {
@@ -126,7 +128,7 @@ describe('Control endpoint (e2e)', () => {
   it('serves many clients at once and shuts down once', async () => {
     const daemon = await start();
     app = daemon;
-    const close = vi.spyOn(daemon, 'close');
+    const close = vi.spyOn(daemon.app, 'close');
 
     const statuses = await Promise.all(
       Array.from({ length: 20 }, () => client.status()),
@@ -140,7 +142,7 @@ describe('Control endpoint (e2e)', () => {
       client.shutdown(),
     ]);
     expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
-    await vi.waitFor(() => expect(existsSync(socketPath)).toBe(false));
+    await daemon.stopped;
     app = undefined;
     expect(close).toHaveBeenCalledOnce();
   });
@@ -178,9 +180,9 @@ describe('Control endpoint (e2e)', () => {
   it('refuses a second daemon on the same data directory', async () => {
     app = await start();
 
-    await expect(start()).rejects.toThrow(ControlSocketError);
+    await expect(start()).rejects.toThrow(DaemonAlreadyRunningError);
     await expect(start()).rejects.toThrow(
-      `Pero is already running for ${dataDir}`,
+      `Pero is already running for ${dataDir} (pid ${process.pid})`,
     );
     await expect(client.status()).resolves.toMatchObject({ dataDir });
   });
