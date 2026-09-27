@@ -1,15 +1,16 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { INestApplicationContext } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
+import { createControlClient } from '../src/control/client.js';
 import { startDaemon } from '../src/daemon/daemon.js';
 
 describe('Daemon startup (e2e)', () => {
   let tmp: string;
   let dataDir: string;
-  let app: NestFastifyApplication | undefined;
+  let app: INestApplicationContext | undefined;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-daemon-'));
@@ -23,7 +24,7 @@ describe('Daemon startup (e2e)', () => {
   });
 
   function config() {
-    return resolveBootstrapConfig({ dataDir, env: { PERO_PORT: '0' } });
+    return resolveBootstrapConfig({ dataDir, env: {} });
   }
 
   function logEntries(): Record<string, unknown>[] {
@@ -45,23 +46,16 @@ describe('Daemon startup (e2e)', () => {
       expect(statSync(join(dataDir, dir)).isDirectory()).toBe(true);
     }
     expect(statSync(join(dataDir, 'pero.sqlite')).isFile()).toBe(true);
-    const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(statSync(join(dataDir, 'run', 'pero.sock')).isSocket()).toBe(true);
 
     const entries = logEntries();
     expect(entries).toContainEqual(appliedMigration);
-    expect(entries).toContainEqual(
-      expect.objectContaining({
-        level: 30,
-        context: 'NestApplication',
-        msg: 'Nest application successfully started',
-      }),
-    );
     expect(entries.at(-1)).toMatchObject({
+      level: 30,
       msg: 'Pero daemon started',
       pid: process.pid,
       dataDir,
-      url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
+      socket: join(dataDir, 'run', 'pero.sock'),
     });
   });
 
@@ -75,7 +69,7 @@ describe('Daemon startup (e2e)', () => {
     const secondRun = logEntries().slice(firstRun);
     expect(secondRun).not.toContainEqual(appliedMigration);
     expect(secondRun.at(-1)).toMatchObject({ msg: 'Pero daemon started' });
-    const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toEqual({ status: 'ok' });
+    const client = createControlClient(join(dataDir, 'run', 'pero.sock'));
+    await expect(client.status()).resolves.toMatchObject({ dataDir });
   });
 });

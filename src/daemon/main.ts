@@ -5,6 +5,7 @@ import {
   resolveBootstrapConfig,
 } from '../config/bootstrap-config.js';
 import { DataDirError } from '../config/data-dir.js';
+import { ControlSocketError } from '../control/control-server.js';
 import { startDaemon } from './daemon.js';
 
 try {
@@ -22,6 +23,7 @@ try {
   const expected =
     error instanceof ConfigError ||
     error instanceof DataDirError ||
+    error instanceof ControlSocketError ||
     (error instanceof TypeError && 'code' in error); // parseArgs usage errors
   console.error(expected ? error.message : error);
   process.exitCode = 1;

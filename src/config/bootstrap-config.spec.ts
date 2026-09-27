@@ -13,11 +13,10 @@ function resolve(input: BootstrapConfigInput = {}) {
 }
 
 describe('resolveBootstrapConfig', () => {
-  it('defaults to ~/.pero, info logs, and port 7717', () => {
+  it('defaults to ~/.pero and info logs', () => {
     expect(resolve()).toEqual({
       dataDir: '/home/owner/.pero',
       logLevel: 'info',
-      port: 7717,
     });
   });
 
@@ -47,11 +46,9 @@ describe('resolveBootstrapConfig', () => {
     expect(resolve({ dataDir: ' /srv//pero/ ' }).dataDir).toBe('/srv/pero');
   });
 
-  it('reads the log level and port from the environment', () => {
-    const config = resolve({
-      env: { PERO_LOG_LEVEL: 'debug', PERO_PORT: '0' },
-    });
-    expect(config).toMatchObject({ logLevel: 'debug', port: 0 });
+  it('reads the log level from the environment', () => {
+    const config = resolve({ env: { PERO_LOG_LEVEL: 'debug' } });
+    expect(config.logLevel).toBe('debug');
   });
 
   it.each([
@@ -62,14 +59,6 @@ describe('resolveBootstrapConfig', () => {
     [
       { env: { PERO_LOG_LEVEL: 'loud' } },
       'PERO_LOG_LEVEL: must be one of fatal, error, warn, info, debug, trace',
-    ],
-    [
-      { env: { PERO_PORT: 'http' } },
-      'PERO_PORT: must be an integer from 0 to 65535',
-    ],
-    [
-      { env: { PERO_PORT: '70000' } },
-      'PERO_PORT: must be an integer from 0 to 65535',
     ],
   ] satisfies [BootstrapConfigInput, string][])(
     'rejects %j with a clear error',
@@ -86,10 +75,12 @@ describe('resolveBootstrapConfig', () => {
   });
 
   it('reports every invalid value at once', () => {
-    expect(() => resolve({ env: { PERO_HOME: '', PERO_PORT: 'x' } })).toThrow(
+    expect(() =>
+      resolve({ env: { PERO_HOME: '', PERO_LOG_LEVEL: 'loud' } }),
+    ).toThrow(
       'Invalid configuration:\n' +
         '  PERO_HOME: must not be empty\n' +
-        '  PERO_PORT: must be an integer from 0 to 65535',
+        '  PERO_LOG_LEVEL: must be one of fatal, error, warn, info, debug, trace',
     );
   });
 });

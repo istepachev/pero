@@ -1,16 +1,11 @@
+import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from '@nestjs/platform-fastify';
 import { AppModule } from '../app.module.js';
 import type { BootstrapConfig } from '../config/bootstrap-config.js';
 import { ensureDataDir } from '../config/data-dir.js';
+import { ControlService } from '../control/control.service.js';
 import { createLogger } from '../logging/logger.js';
 import { PinoLoggerService } from '../logging/pino-logger.service.js';
-
-// Loopback only: the HTTP surface is private until administration is authenticated.
-const HOST = '127.0.0.1';
 
 export interface DaemonOptions {
   config: BootstrapConfig;
@@ -18,10 +13,14 @@ export interface DaemonOptions {
   foreground: boolean;
 }
 
-/** Prepares the data directory and logging, then starts the daemon. */
+/**
+ * Prepares the data directory and logging, then starts the daemon. It has
+ * no network listener: the CLI reaches it through the control socket, which
+ * opens last, once the database is migrated.
+ */
 export async function startDaemon(
   options: DaemonOptions,
-): Promise<NestFastifyApplication> {
+): Promise<INestApplicationContext> {
   const { config } = options;
   const layout = ensureDataDir(config.dataDir);
   const logger = createLogger({
@@ -31,20 +30,26 @@ export async function startDaemon(
   });
 
   try {
-    const app = await NestFactory.create<NestFastifyApplication>(
+    const app = await NestFactory.createApplicationContext(
       AppModule.forRoot({ layout }),
-      new FastifyAdapter(),
       { logger: new PinoLoggerService(logger), abortOnError: false },
     );
     app.enableShutdownHooks();
     try {
-      await app.listen(config.port, HOST);
+      await app.get(ControlService).start({
+        onShutdown: () => {
+          logger.info('Shutdown requested');
+          app.close().catch((error: unknown) => {
+            logger.error({ err: error }, 'Pero daemon failed to shut down');
+          });
+        },
+      });
     } catch (error) {
       await app.close();
       throw error;
     }
     logger.info(
-      { dataDir: layout.root, url: await app.getUrl() },
+      { dataDir: layout.root, socket: layout.controlSocket },
       'Pero daemon started',
     );
     return app;

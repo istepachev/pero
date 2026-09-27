@@ -44,7 +44,7 @@ Add `SettingsService` (read and validated update of defaults) and an Agent creat
 
 ### 1.6 Control endpoint and component status
 
-Add `ControlModule`: a private endpoint on a Unix domain socket in `run/` with owner-only permissions. Define request/response schemas with Zod in a module shared with the CLI, plus a small typed client for the CLI. First operations: `status` (pid, version, data directory, uptime, component states) and `shutdown`. Add a component-health registry; Telegram and each provider report `unconfigured`/`degraded`/`ok`, and nothing fails startup. The endpoint answers only after migrations complete, which is the readiness signal.
+Add `ControlModule`: a private endpoint on a Unix domain socket in `run/` with owner-only permissions. Define request/response schemas with Zod in a module shared with the CLI, plus a small typed client for the CLI. First operations: `status` (pid, version, data directory, uptime, component states) and `shutdown`. Add a component-health registry; Telegram and each provider report `unconfigured`/`degraded`/`ok`, and nothing fails startup. The endpoint answers only after migrations complete, which is the readiness signal. The loopback HTTP listener from 1.0 is removed, so daemons for different data directories can run side by side.
 
 **Done when:** an e2e test boots the daemon on a temporary data directory and receives `status` through the client; the socket is not accessible to other users; a daemon with no Telegram or provider setup reports ready with those components degraded.
 

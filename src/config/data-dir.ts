@@ -12,6 +12,8 @@ export interface DataDirLayout {
   logs: string;
   logFile: string;
   run: string;
+  /** Unix socket of the control endpoint; owner-only. */
+  controlSocket: string;
   secrets: string;
 }
 
@@ -22,12 +24,14 @@ export class DataDirError extends Error {
 /** Returns the layout of `root` without touching the filesystem. */
 export function dataDirLayout(root: string): DataDirLayout {
   const logs = join(root, 'logs');
+  const run = join(root, 'run');
   return {
     root,
     database: join(root, 'pero.sqlite'),
     logs,
     logFile: join(logs, 'pero.log'),
-    run: join(root, 'run'),
+    run,
+    controlSocket: join(run, 'pero.sock'),
     secrets: join(root, 'secrets'),
   };
 }

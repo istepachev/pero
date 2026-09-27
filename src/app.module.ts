@@ -1,6 +1,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { AgentsModule } from './agents/agents.module.js';
 import type { DataDirLayout } from './config/data-dir.js';
+import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { SettingsModule } from './settings/settings.module.js';
@@ -20,6 +21,7 @@ export class AppModule {
         PersistenceModule.forRoot({ database: options.layout.database }),
         SettingsModule,
         AgentsModule,
+        ControlModule.forRoot({ layout: options.layout }),
       ],
     };
   }
