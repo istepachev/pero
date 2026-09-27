@@ -87,7 +87,7 @@ The Agent record supplies `provider` and `model`, and `AgentManager` resolves it
 
 [Codex SDK documentation](https://github.com/openai/codex/blob/main/sdk/typescript/README.md#working-directory-controls) says its working directory normally must be a Git repository. For a Codex Agent, validate this at setup. A shared notes folder such as an Obsidian vault is often not a Git repository, so a Codex Agent working there needs this setting. If the owner deliberately chooses a non-Git folder, expose an explicit setting that maps to `skipGitRepoCheck`; do not silently bypass the check. Changing a Claude Agent's working directory requires a new session according to Anthropic's configuration guide; Pero applies the same new-session rule when provider or model choice changes, for predictable behavior across adapters.
 
-Keep the database, managed Agent folders, and provider session state on persistent local storage owned by the account running the service. The default working directory or an Agent's own folder may be an existing folder outside the data directory, such as a notes vault or a project; document that folder's backup and permissions separately. Test session resume after a process restart. Keep credentials out of Agent definitions and database rows.
+Keep the database, working folders, and provider session state on persistent local storage owned by the account running the service. The shared working directory and any Agent's own folder live outside the data directory, such as a notes vault or a project; document their backup and permissions separately. Test session resume after a process restart. Keep credentials out of Agent definitions and database rows.
 
 ## 5. Channel integrations and HTTP
 
@@ -116,7 +116,7 @@ After installing a supported Node.js/npm version, the intended application insta
 
 Keep every Agent's working directory and resumable session state on persistent local storage. Protect the OS account's Claude and Codex credential stores as secrets. If either subscription sign-in is absent or expires, mark that Agent Runtime unavailable and show a clear reauthentication action; do not switch billing modes silently.
 
-**Backup:** make a consistent SQLite snapshot, then back up that snapshot together with managed Agent folders, any external Agent folders that need recovery, runtime session state, and configuration needed to restore. Either protect credential stores in a separate encrypted backup or sign in again after restore. Test restoration to a fresh data directory. Do not copy a live WAL database file alone. Logs can be sent to stdout or a system log service.
+**Backup:** make a consistent SQLite snapshot, then back up that snapshot together with the working folders that need recovery, runtime session state, and configuration needed to restore. Either protect credential stores in a separate encrypted backup or sign in again after restore. Test restoration to a fresh data directory. Do not copy a live WAL database file alone. Logs can be sent to stdout or a system log service.
 
 ## 8. Configuration and observability
 
@@ -124,7 +124,7 @@ Keep provider subscription credentials in the CLIs' protected credential stores.
 
 First-run setup obtains the Telegram token or reads it from the service environment, storing it in owner-only local secret storage if persistence is needed. Provider credentials and Telegram tokens do not belong in the settings row. Validate CLI input and any environment-supplied bootstrap values with Zod; fail early with a clear error.
 
-When the owner creates an Agent, Pero copies the selected provider and corresponding model choice from SQLite settings; changing those defaults affects future Agents only, so a default change never silently switches an existing Agent's provider or model. The working directory is different: an Agent follows the default working directory unless it has its own absolute folder, and with no default set it gets `<data dir>/workspaces/<agent-slug>`. Changing the default rotates the Sessions of the Agents that follow it. If an Agent's execution settings change, close its active Sessions and use the new settings for subsequent runs. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
+When the owner creates an Agent, Pero copies the selected provider and corresponding model choice from SQLite settings; changing those defaults affects future Agents only, so a default change never silently switches an existing Agent's provider or model. The working directory is different: every Agent uses the shared default working directory, filled during setup, unless the owner explicitly gives it its own absolute folder. Changing the default rotates the Sessions of the Agents that follow it. If an Agent's execution settings change, close its active Sessions and use the new settings for subsequent runs. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
 
 Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflowRunId`, `runtimeKind`, duration, and outcome. Redact tokens, prompts that may contain private data, and tool outputs by default. Expose basic counters for run states, queue depth, failure rates, and notification retries; add OpenTelemetry/Sentry later if operating experience calls for them.
 

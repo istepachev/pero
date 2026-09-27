@@ -20,13 +20,13 @@ Add a GitHub Actions workflow that runs `npm ci`, build, lint, typecheck, unit t
 
 ### 1.2 Bootstrap configuration, data directory, and logging
 
-Resolve bootstrap configuration with Zod: data directory from a `--data-dir` option or `PERO_HOME`, defaulting to `~/.pero`. Add one helper that yields the layout (`pero.sqlite`, `workspaces/`, `logs/`, `run/`, `secrets/`) and creates missing directories with owner-only permissions. Add Pino logging with redaction, writing structured logs to `logs/` and to stdout in foreground mode. Put shared configuration code where both the CLI and the daemon can import it without pulling in TypeORM.
+Resolve bootstrap configuration with Zod: data directory from a `--data-dir` option or `PERO_HOME`, defaulting to `~/.pero`. Add one helper that yields the layout (`pero.sqlite`, `logs/`, `run/`, `secrets/`) and creates missing directories with owner-only permissions. Add Pino logging with redaction, writing structured logs to `logs/` and to stdout in foreground mode. Put shared configuration code where both the CLI and the daemon can import it without pulling in TypeORM.
 
 **Done when:** unit tests cover option/env/default precedence and invalid values with a clear error; the daemon started against a temporary data directory creates the layout and writes JSON log lines to `logs/`.
 
 ### 1.3 Persistence foundation and settings
 
-Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, model choice per provider (null = provider default), default working directory (null = a per-Agent folder under `workspaces/`), shared instructions (null = none), timezone, and operational limits.
+Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, model choice per provider (null = provider default), default working directory (null until setup fills it), shared instructions (null = none), timezone, and operational limits.
 
 **Done when:** an integration test against a real temporary SQLite file shows a fresh database migrates, foreign keys are enforced, the settings row is seeded once, and a second startup is a no-op.
 
@@ -38,9 +38,9 @@ Add the remaining tables from [Architecture §7](./ARCHITECTURE.md#7-persistence
 
 ### 1.5 Settings and Agent services
 
-Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's model choice. Its working directory either is an explicit absolute folder or follows the default; add the resolver for the effective folder (own folder → default → `workspaces/<agent-slug>`, created on first use) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, model, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
+Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's model choice. Its working directory follows the default unless an explicit absolute folder is given; creation without a folder is rejected while no default is set; add the resolver for the effective folder (own folder, otherwise the default) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, model, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
 
-**Done when:** tests show a new Agent receives the default provider and model, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or model leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, and shared instructions are composed unless an Agent opts out.
+**Done when:** tests show a new Agent receives the default provider and model, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or model leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, an Agent cannot be created without a folder while the default is unset, and shared instructions are composed unless an Agent opts out.
 
 ### 1.6 Control endpoint and component status
 
@@ -68,13 +68,13 @@ Add a global `--data-dir` option. `pero run --foreground` runs the daemon attach
 
 ### 1.10 First-run setup and degraded configuration
 
-Interactive `pero run` detects missing setup over the control endpoint and guides it: prompt for the Telegram bot token and store it in `secrets/` with owner-only permissions (never in SQLite or logs), offer to set the default working directory that Agents share (for example a notes vault), and check `claude auth status` / `codex login status`, explaining the sign-in commands when needed. Non-interactive `pero run` leaves the daemon running degraded and prints actionable missing settings. Add `pero settings show` and `pero settings set` so defaults (including the default working directory and shared instructions) and the token can be changed later through the daemon.
+Interactive `pero run` detects missing setup over the control endpoint and guides it: prompt for the Telegram bot token and store it in `secrets/` with owner-only permissions (never in SQLite or logs), ask for the default working directory all Agents share, prefilled with the folder the CLI was started from or `~/workspace` when that is the home directory, and create it if missing, and check `claude auth status` / `codex login status`, explaining the sign-in commands when needed. Non-interactive `pero run` leaves the daemon running degraded and prints actionable missing settings, including an unset default working directory; it does not guess one. Add `pero settings show` and `pero settings set` so defaults (including the default working directory and shared instructions) and the token can be changed later through the daemon.
 
 **Done when:** a daemon with missing Telegram setup starts, reports it as degraded, and becomes configured through `pero settings set` without a restart; non-interactive runs print the missing settings and do not wait for input; secrets never appear in `status`, settings output, or logs.
 
 ### 1.11 Backup, restore, and packed install
 
-Add `pero backup <file>`: the daemon writes a consistent snapshot with the SQLite online backup API and archives it with managed workspaces. Add `pero restore <file> --data-dir <dir>`, which runs only with no daemon on the target directory. Add a CI job that installs the `npm pack` artifact into a temporary global prefix, loads `better-sqlite3`, and runs `pero run`, `status`, and `stop` from a fresh home directory.
+Add `pero backup <file>`: the daemon writes a consistent snapshot with the SQLite online backup API and archives it with the rest of the data directory. Working folders are the owner's (a vault may already sync elsewhere) and are not included; restore warns when a folder recorded in settings or on an Agent is missing. Add `pero restore <file> --data-dir <dir>`, which runs only with no daemon on the target directory. Add a CI job that installs the `npm pack` artifact into a temporary global prefix, loads `better-sqlite3`, and runs `pero run`, `status`, and `stop` from a fresh home directory.
 
 **Done when:** a backup restores into a fresh data directory and the daemon starts with the same records; the packed-install job passes on the CI matrix.
 
@@ -200,13 +200,13 @@ Add `pero runs ls|show|retry|cancel` and `pero notifications ls|show|retry` with
 
 ### 4.4 Operations documentation and restore drill
 
-Document install, provider and Telegram credentials, data layout, backup, and restore. Extend the 1.11 restore test to cover definitions, workspaces, and resumable Sessions.
+Document install, provider and Telegram credentials, data layout, backup, and restore. Extend the 1.11 restore test to cover definitions and resumable Sessions, and document backing up the working folders.
 
-**Done when:** a documented backup/restore on a fresh machine brings back definitions, workspaces, and resumable Sessions.
+**Done when:** a documented backup/restore on a fresh machine brings back definitions and resumable Sessions, with working folders restored from the owner's own backup.
 
 ### Phase 4 exit criteria
 
-A Workflow can notify a configured topic; a temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs; restore brings back definitions, workspaces, and resumable sessions.
+A Workflow can notify a configured topic; a temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs; restore brings back definitions and resumable sessions.
 
 ## Cross-cutting decisions to settle during coding
 
