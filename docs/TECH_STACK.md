@@ -4,7 +4,7 @@
 
 | Layer | Initial choice | Why it fits |
 |---|---|---|
-| Language and runtime | TypeScript on [Node.js 24 LTS](https://nodejs.org/en/about/previous-releases) | Shared types and a stable long-running server runtime. Declare and test the supported Node version. |
+| Language and runtime | TypeScript on [Node.js](https://nodejs.org/en/about/previous-releases) `^22.17.0 \|\| >=24.11.0` (22.17 is the first 22.x that loads the CommonJS nest-commander alongside ESM NestJS without a `require()` cycle error); develop on 24 LTS | Shared types and a stable long-running server runtime. Support the Node lines in active or maintenance LTS and test each one in CI; drop a line when it reaches end of life (Node 22: April 2027). |
 | Application framework | [NestJS 12](https://docs.nestjs.com/) modular monolith | Dependency injection, modules, lifecycle hooks, and one composition root for bot, scheduler, API, and workers. |
 | CLI framework | [nest-commander](https://nest-commander.jhunt.dev/) | `pero` commands are Nest providers built on `commander`, so they can inject the same validated application services as the daemon. The Nest CLI (`@nestjs/cli`) is a development tool only. |
 | HTTP adapter | Fastify via `@nestjs/platform-fastify` | Small HTTP surface for health checks, administration, and later webhooks. |

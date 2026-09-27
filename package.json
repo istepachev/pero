@@ -1,0 +1,70 @@
+{
+  "name": "@perokit/pero",
+  "version": "0.0.0",
+  "description": "Open-source Personal Agent Runtime for running an always-on AI assistant on your VPS.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/perokit/pero.git"
+  },
+  "homepage": "https://github.com/perokit/pero#readme",
+  "bugs": {
+    "url": "https://github.com/perokit/pero/issues"
+  },
+  "type": "module",
+  "bin": {
+    "pero": "./bin/pero.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": "^22.17.0 || >=24.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/daemon/main.js",
+    "cli": "node bin/pero.js",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "oxlint --type-aware src/ test/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@nestjs/common": "12.1.0",
+    "@nestjs/core": "12.1.0",
+    "@nestjs/platform-fastify": "12.1.0",
+    "nest-commander": "3.21.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "overrides": {
+    "@golevelup/nestjs-discovery": {
+      "@nestjs/common": "$@nestjs/common",
+      "@nestjs/core": "$@nestjs/core"
+    }
+  },
+  "devDependencies": {
+    "@nestjs/cli": "12.0.7",
+    "@nestjs/schematics": "12.0.5",
+    "@nestjs/testing": "12.1.0",
+    "@types/node": "22.20.4",
+    "@vitest/coverage-v8": "5.0.2",
+    "oxlint": "1.85.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

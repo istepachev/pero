@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build output
+/dist/
+*.tsbuildinfo
+
+# npm pack output
+*.tgz
+
+# Tests and coverage
+/coverage/
+/test-results/
+
+# Logs and process files
+logs/
+*.log
+npm-debug.log*
+*.pid
+
+# Local Pero data (dev runs with a data-directory override)
+/.pero/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Caches and scratch
+.cache/
+tmp/
+.tmp/
+
+# Editors and IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
