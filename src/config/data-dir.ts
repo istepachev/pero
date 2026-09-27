@@ -9,7 +9,6 @@ const OWNER_ONLY = 0o700;
 export interface DataDirLayout {
   root: string;
   database: string;
-  workspaces: string;
   logs: string;
   logFile: string;
   run: string;
@@ -26,7 +25,6 @@ export function dataDirLayout(root: string): DataDirLayout {
   return {
     root,
     database: join(root, 'pero.sqlite'),
-    workspaces: join(root, 'workspaces'),
     logs,
     logFile: join(logs, 'pero.log'),
     run: join(root, 'run'),
@@ -45,12 +43,7 @@ export function ensureDataDir(root: string): DataDirLayout {
   try {
     const created = mkdirSync(root, { recursive: true, mode: OWNER_ONLY });
     if (created !== undefined) chmodSync(root, OWNER_ONLY);
-    for (const dir of [
-      layout.workspaces,
-      layout.logs,
-      layout.run,
-      layout.secrets,
-    ]) {
+    for (const dir of [layout.logs, layout.run, layout.secrets]) {
       mkdirSync(dir, { recursive: true, mode: OWNER_ONLY });
       chmodSync(dir, OWNER_ONLY);
     }

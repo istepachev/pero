@@ -18,7 +18,6 @@ describe('dataDirLayout', () => {
     expect(dataDirLayout('/srv/pero')).toEqual({
       root: '/srv/pero',
       database: '/srv/pero/pero.sqlite',
-      workspaces: '/srv/pero/workspaces',
       logs: '/srv/pero/logs',
       logFile: '/srv/pero/logs/pero.log',
       run: '/srv/pero/run',
@@ -41,13 +40,7 @@ describe('ensureDataDir', () => {
   it('creates the root and subdirectories owner-only', () => {
     const layout = ensureDataDir(join(tmp, 'nested', 'pero'));
 
-    for (const dir of [
-      layout.root,
-      layout.workspaces,
-      layout.logs,
-      layout.run,
-      layout.secrets,
-    ]) {
+    for (const dir of [layout.root, layout.logs, layout.run, layout.secrets]) {
       expect(statSync(dir).isDirectory()).toBe(true);
       expect(mode(dir)).toBe(0o700);
     }

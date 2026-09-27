@@ -30,7 +30,7 @@ describe('Daemon startup (e2e)', () => {
 
     app = await startDaemon({ config, foreground: false });
 
-    for (const dir of ['workspaces', 'logs', 'run', 'secrets']) {
+    for (const dir of ['logs', 'run', 'secrets']) {
       expect(statSync(join(dataDir, dir)).isDirectory()).toBe(true);
     }
     const res = await app.inject({ method: 'GET', url: '/health' });

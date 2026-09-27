@@ -46,7 +46,6 @@ The default data directory is `~/.pero`, overridable with the `--data-dir` optio
 ```text
 ~/.pero/
 ├── pero.sqlite         # settings, definitions, and runtime state
-├── workspaces/          # default working folders for new Agents
 ├── logs/                # background-service logs (JSON lines in pero.log)
 ├── run/                 # local control endpoint and process metadata
 └── secrets/             # owner-only local secrets when needed

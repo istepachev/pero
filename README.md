@@ -30,6 +30,6 @@ npm run lint           # oxlint
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | HTTP port (loopback) | `PERO_PORT` | `7717` |
 
-The daemon creates the data directory layout owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting.
+The daemon creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting.
 
 Design docs live in [docs/](./docs/README.md).
