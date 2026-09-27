@@ -55,7 +55,6 @@ describe('SettingsService', () => {
       sharedInstructions: 'Answer in English.',
       timezone: 'europe/berlin',
       maxConcurrentRuns: 4,
-      shutdownTimeoutMs: 0,
     });
 
     expect(updated).toMatchObject({
@@ -64,7 +63,6 @@ describe('SettingsService', () => {
       sharedInstructions: 'Answer in English.',
       timezone: 'Europe/Berlin',
       maxConcurrentRuns: 4,
-      shutdownTimeoutMs: 0,
     });
     expect(await settings.get()).toEqual(updated);
 
@@ -125,7 +123,6 @@ describe('SettingsService', () => {
     ['a fixed offset', { timezone: '+05:00' }, /timezone: must be an IANA/],
     ['no concurrent runs', { maxConcurrentRuns: 0 }, /maxConcurrentRuns/],
     ['a fractional limit', { maxConcurrentRuns: 1.5 }, /maxConcurrentRuns/],
-    ['a negative timeout', { shutdownTimeoutMs: -1 }, /shutdownTimeoutMs/],
     [
       'a relative folder',
       { defaultWorkingDirectory: 'vault' },

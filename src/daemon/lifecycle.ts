@@ -1,11 +1,5 @@
 import type { Logger } from 'pino';
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '../persistence/entities/settings.entity.js';
-
-/**
- * Time allowed past the shutdown timeout for closing the control socket and
- * the database once active work has finished or been abandoned.
- */
-export const CLOSE_MARGIN_MS = 5000;
+import { STOP_DEADLINE_MS } from '../common/shutdown.js';
 
 export interface StopResult {
   /** False when closing failed or outlasted its deadline. */
@@ -18,12 +12,11 @@ export interface DaemonLifecycleOptions {
    * work drains, the database closes.
    */
   close: () => Promise<void>;
-  /** How long to wait for active work; read when stopping begins. */
-  shutdownTimeoutMs: () => Promise<number>;
   /** Clears `run/` and releases the lock; runs even when closing failed. */
   cleanup: () => void;
-  logger: Pick<Logger, 'info' | 'warn' | 'error'>;
-  closeMarginMs?: number;
+  logger: Pick<Logger, 'info' | 'error'>;
+  /** How long closing may take before the daemon gives up on it. */
+  deadlineMs?: number;
 }
 
 /** Stops the daemon once, however many times and ways it is asked to. */
@@ -49,9 +42,7 @@ export class DaemonLifecycle {
     const { logger } = this.options;
     logger.info({ reason }, 'Pero daemon stopping');
 
-    const deadlineMs =
-      (await this.shutdownTimeoutMs()) +
-      (this.options.closeMarginMs ?? CLOSE_MARGIN_MS);
+    const deadlineMs = this.options.deadlineMs ?? STOP_DEADLINE_MS;
     let graceful: boolean;
     try {
       graceful = await withDeadline(this.options.close(), deadlineMs);
@@ -77,18 +68,6 @@ export class DaemonLifecycle {
     const result = { graceful };
     this.resolveStopped(result);
     return result;
-  }
-
-  private async shutdownTimeoutMs(): Promise<number> {
-    try {
-      return await this.options.shutdownTimeoutMs();
-    } catch (error) {
-      this.options.logger.warn(
-        { err: error },
-        `Cannot read the shutdown timeout; using ${DEFAULT_SHUTDOWN_TIMEOUT_MS} ms`,
-      );
-      return DEFAULT_SHUTDOWN_TIMEOUT_MS;
-    }
   }
 }
 

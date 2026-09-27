@@ -50,7 +50,7 @@ Add `ControlModule`: a private endpoint on a Unix domain socket in `run/` with o
 
 ### 1.7 Daemon lifecycle: singleton and graceful shutdown
 
-Take an exclusive lock per data directory and write process metadata (pid, version, socket path) to `run/`. Treat metadata as current only if the control endpoint answers; recover from a stale lock after a crash. On `shutdown` or SIGTERM/SIGINT: stop intake, wait a bounded period (from settings), close the database, remove the socket and metadata, and exit.
+Take an exclusive lock per data directory and write process metadata (pid, version, socket path) to `run/`. Treat metadata as current only if the control endpoint answers; recover from a stale lock after a crash. On `shutdown` or SIGTERM/SIGINT: stop intake, wait a fixed bounded period, close the database, remove the socket and metadata, and exit.
 
 **Done when:** a second daemon on the same data directory exits with a clear message; a daemon killed with SIGKILL does not block the next start; both a `shutdown` request and SIGTERM leave the database closed and `run/` clean.
 

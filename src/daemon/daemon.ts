@@ -12,7 +12,6 @@ import {
 } from '../control/daemon-metadata.js';
 import { createLogger } from '../logging/logger.js';
 import { PinoLoggerService } from '../logging/pino-logger.service.js';
-import { SettingsService } from '../settings/settings.service.js';
 import { acquireDaemonLock } from './daemon-lock.js';
 import { DaemonLifecycle, type StopResult } from './lifecycle.js';
 
@@ -88,8 +87,6 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     );
     const lifecycle = new DaemonLifecycle({
       close: () => app.close(),
-      shutdownTimeoutMs: async () =>
-        (await app.get(SettingsService).get()).shutdownTimeoutMs,
       cleanup,
       logger,
     });

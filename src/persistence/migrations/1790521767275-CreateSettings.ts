@@ -18,10 +18,8 @@ export class CreateSettings1790521767275 implements MigrationInterface {
         `"shared_instructions" text, ` +
         `"timezone" text NOT NULL, ` +
         `"max_concurrent_runs" integer NOT NULL DEFAULT (2), ` +
-        `"shutdown_timeout_ms" integer NOT NULL DEFAULT (30000), ` +
         `"created_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
         `"updated_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
-        `CONSTRAINT "CHK_settings_shutdown_timeout_ms" CHECK ("shutdown_timeout_ms" >= 0), ` +
         `CONSTRAINT "CHK_settings_max_concurrent_runs" CHECK ("max_concurrent_runs" >= 1), ` +
         `CONSTRAINT "CHK_settings_provider_defaults" CHECK (json_valid("provider_defaults")), ` +
         `CONSTRAINT "CHK_settings_default_provider" CHECK ("default_provider" IN ('claude', 'codex')), ` +
