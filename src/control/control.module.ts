@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { BackupModule } from '../backup/backup.module.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import { HealthModule } from '../health/health.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
@@ -18,7 +19,12 @@ export class ControlModule {
   static forRoot(options: ControlOptions): DynamicModule {
     return {
       module: ControlModule,
-      imports: [HealthModule, SettingsModule, ProvidersModule],
+      imports: [
+        HealthModule,
+        SettingsModule,
+        ProvidersModule,
+        BackupModule.forRoot({ layout: options.layout }),
+      ],
       providers: [
         { provide: CONTROL_LAYOUT, useValue: options.layout },
         ControlService,

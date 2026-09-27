@@ -20,6 +20,7 @@ npm run cli -- --help  # built `pero` CLI
 npm test               # unit tests (Vitest)
 npm run test:e2e       # builds, then runs e2e tests
 npm run lint           # oxlint
+bash scripts/check-packed-install.sh  # install the npm pack artifact globally and drive it
 ```
 
 ### Bootstrap configuration
@@ -65,5 +66,18 @@ The daemon has no network port. Once ready, it answers on the owner-only control
 One daemon runs per data directory. It holds a lock on `run/pero.lock` for as long as it runs; a second daemon exits with `Pero is already running for <dir>`. The lock is released by the OS however the daemon ends, so a crashed or killed daemon never blocks the next start. Once ready, the daemon records its pid, version, and socket in `run/pero.json`; that file counts only while the socket answers with the same pid.
 
 The `shutdown` operation, SIGTERM, and SIGINT (Ctrl-C) stop the daemon the same way: it stops intake, waits up to 30 s for active work, closes the database, removes the socket and `run/pero.json`, and exits. `run/pero.lock` stays in place. A second signal exits immediately.
+
+### Backup and restore
+
+```sh
+npm run cli -- backup ~/backups/pero.tgz --data-dir .pero        # while Pero runs
+npm run cli -- restore ~/backups/pero.tgz --data-dir /srv/pero   # while it is stopped
+```
+
+`pero backup <file>` asks the running daemon for a backup. The daemon copies the database with SQLite's online backup API, so recent work still in the WAL is included and Pero keeps working meanwhile, then writes a gzip tar with that snapshot, `secrets/`, and a manifest. The archive is owner-only and replaces any file already at that path; it must be outside the data directory. It includes the Telegram bot token when one is stored (one from `PERO_TELEGRAM_BOT_TOKEN` is not), so keep it as private as the data directory. Logs and `run/` are left out.
+
+Working folders are not in the backup: they are yours, and a notes vault may already sync elsewhere. Back them up yourself. The manifest records the folders the settings and Agents point to.
+
+`pero restore <file>` runs without the daemon. It needs a data directory that is missing or empty, so it never overwrites an installation: to restore over one, stop Pero and move its folder aside first. It unpacks the archive next to the target and renames it into place in one step, then warns about each recorded working folder that does not exist on this machine. Start the restored installation with `pero run`; it applies any newer migrations as usual.
 
 Design docs live in [docs/](./docs/README.md).

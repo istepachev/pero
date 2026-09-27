@@ -1,3 +1,4 @@
+import { BackupFormatError } from '../backup/archive.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -30,6 +31,7 @@ const EXPECTED_ERRORS = [
   InvalidInputError,
   NotFoundError,
   ConflictError,
+  BackupFormatError,
 ];
 
 /**

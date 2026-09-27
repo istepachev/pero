@@ -37,3 +37,22 @@ jobs:
       - run: npm run test:e2e
       - name: CLI smoke test
         run: node bin/pero.js --version
+
+  packed-install:
+    name: Packed install / Node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['22.17.0', '22', '24']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      # Installs the `npm pack` artifact globally from a fresh home directory
+      # and runs `pero` from there: run, status, backup, stop, restore.
+      - run: bash scripts/check-packed-install.sh
