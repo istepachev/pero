@@ -22,24 +22,34 @@ describe('Daemon startup (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('creates the data directory layout and writes JSON logs', async () => {
-    const config = resolveBootstrapConfig({
-      dataDir,
-      env: { PERO_PORT: '0' },
-    });
+  function config() {
+    return resolveBootstrapConfig({ dataDir, env: { PERO_PORT: '0' } });
+  }
 
-    app = await startDaemon({ config, foreground: false });
+  function logEntries(): Record<string, unknown>[] {
+    return readFileSync(join(dataDir, 'logs', 'pero.log'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  const appliedMigration = expect.objectContaining({
+    context: 'Persistence',
+    msg: expect.stringMatching(/^Applied migration /),
+  });
+
+  it('creates the data directory layout and writes JSON logs', async () => {
+    app = await startDaemon({ config: config(), foreground: false });
 
     for (const dir of ['logs', 'run', 'secrets']) {
       expect(statSync(join(dataDir, dir)).isDirectory()).toBe(true);
     }
+    expect(statSync(join(dataDir, 'pero.sqlite')).isFile()).toBe(true);
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.json()).toEqual({ status: 'ok' });
 
-    const entries = readFileSync(join(dataDir, 'logs', 'pero.log'), 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const entries = logEntries();
+    expect(entries).toContainEqual(appliedMigration);
     expect(entries).toContainEqual(
       expect.objectContaining({
         level: 30,
@@ -53,5 +63,19 @@ describe('Daemon startup (e2e)', () => {
       dataDir,
       url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
     });
+  });
+
+  it('reuses the migrated database on the next start', async () => {
+    app = await startDaemon({ config: config(), foreground: false });
+    await app.close();
+    const firstRun = logEntries().length;
+
+    app = await startDaemon({ config: config(), foreground: false });
+
+    const secondRun = logEntries().slice(firstRun);
+    expect(secondRun).not.toContainEqual(appliedMigration);
+    expect(secondRun.at(-1)).toMatchObject({ msg: 'Pero daemon started' });
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.json()).toEqual({ status: 'ok' });
   });
 });

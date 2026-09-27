@@ -59,21 +59,29 @@ Commit `package-lock.json`. Use `npm install` when changing dependencies and `np
 
 ## 3. Database configuration
 
-Illustrative Nest configuration:
+`PersistenceModule` (`src/persistence/`) configures TypeORM:
 
 ```ts
-TypeOrmModule.forRoot({
-  type: 'better-sqlite3',
-  database: config.databasePath,
-  enableWAL: true,
-  timeout: 5000,
-  entities: [/* explicit entity list */],
-  migrations: [/* explicit migration list */],
-  synchronize: false,
+TypeOrmModule.forRootAsync({
+  useFactory: () => ({
+    type: 'better-sqlite3',
+    database: layout.database,
+    enableWAL: true,
+    timeout: 5000,
+    entities: ENTITIES, // explicit lists, no file globs
+    migrations: MIGRATIONS,
+    synchronize: false,
+    toRetry: () => false, // fail startup at once instead of retrying
+  }),
+  // initialize(), then runMigrations(): the DataSource provider resolves
+  // only once the schema is current.
+  dataSourceFactory: openDatabase,
 });
 ```
 
-TypeORM documents the `better-sqlite3` driver, `enableWAL`, and `timeout` options in its [SQLite driver guide](https://typeorm.io/docs/drivers/sqlite/). Run migrations during controlled startup before Telegram intake and scheduler ticks begin. Set foreign keys on and verify them in an integration test. Use short write transactions for schedule advancement, run creation, and delivery state changes; agent executions must run outside database transactions.
+TypeORM documents the `better-sqlite3` driver, `enableWAL`, and `timeout` options in its [SQLite driver guide](https://typeorm.io/docs/drivers/sqlite/); the driver turns foreign keys on for every connection. Migrations run during controlled startup, before Telegram intake and scheduler ticks begin, and an integration test verifies WAL, foreign keys, and the busy timeout. Use short write transactions for schedule advancement, run creation, and delivery state changes; agent executions must run outside database transactions.
+
+**Migrations** live in `src/persistence/migrations/`. Every migration is added by hand to the `MIGRATIONS` list in that folder's `index.ts`, so the compiled package ships them without globbing. Create a migration with `npm run migration:create -- src/persistence/migrations/<Name>`, or diff the entities against the development database with `migration:generate`. `migration:show`, `migration:run`, and `migration:revert` also exist. Each script except `migration:create` builds first and targets `PERO_HOME`, which defaults to the development data directory `.pero`. A test fails if the entities and the migrations describe different schemas.
 
 WAL allows readers while a writer is active, but SQLite still has one writer at a time. Store the database on a local persistent filesystem, not a network share. A live backup must use SQLite's backup API or another consistent snapshot method; copying only `pero.sqlite` while WAL is active may omit recent committed work. See [SQLite WAL](https://www.sqlite.org/wal.html) and the [SQLite online backup API](https://www.sqlite.org/backup.html).
 
@@ -83,9 +91,9 @@ WAL allows readers while a writer is active, but SQLite still has one writer at 
 
 The [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) runs the Claude Code agent loop in a process the operator controls and supports sessions and tools. The [Codex SDK](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) wraps the Codex CLI and supports persisted threads and streamed events. Package versions and exact adapter calls should be pinned and validated against the installed SDKs during implementation.
 
-The Agent record supplies `provider` and `model`, and `AgentManager` resolves its effective `workingDirectory` (see [Architecture §2](./ARCHITECTURE.md#agent-configuration-and-defaults)), for both interactive turns and Workflow Runs. The Claude adapter maps these to the SDK's `model` and `cwd` query options; the [Claude configuration guide](https://code.claude.com/docs/en/agent-sdk/configuration) documents both. The Codex adapter maps them to `model` and `workingDirectory` thread options, documented in the [Codex SDK options source](https://github.com/openai/codex/blob/main/sdk/typescript/src/threadOptions.ts). A null model means omit the provider's model option. Always pass the working directory explicitly instead of inheriting Pero's process directory.
+The Agent record supplies `provider` and its provider options (`model`, `effort`), and `AgentManager` resolves its effective `workingDirectory` (see [Architecture §2](./ARCHITECTURE.md#agent-configuration-and-defaults)), for both interactive turns and Workflow Runs. The Claude adapter maps these to the SDK's `model`, `effort`, and `cwd` query options; the [Claude configuration guide](https://code.claude.com/docs/en/agent-sdk/configuration) documents both. The Codex adapter maps them to `model`, `modelReasoningEffort`, and `workingDirectory` thread options, documented in the [Codex SDK options source](https://github.com/openai/codex/blob/main/sdk/typescript/src/threadOptions.ts). A null option means omit it, so the provider uses its default. Always pass the working directory explicitly instead of inheriting Pero's process directory.
 
-[Codex SDK documentation](https://github.com/openai/codex/blob/main/sdk/typescript/README.md#working-directory-controls) says its working directory normally must be a Git repository. For a Codex Agent, validate this at setup. A shared notes folder such as an Obsidian vault is often not a Git repository, so a Codex Agent working there needs this setting. If the owner deliberately chooses a non-Git folder, expose an explicit setting that maps to `skipGitRepoCheck`; do not silently bypass the check. Changing a Claude Agent's working directory requires a new session according to Anthropic's configuration guide; Pero applies the same new-session rule when provider or model choice changes, for predictable behavior across adapters.
+[Codex SDK documentation](https://github.com/openai/codex/blob/main/sdk/typescript/README.md#working-directory-controls) says its working directory normally must be a Git repository. For a Codex Agent, validate this at setup. A shared notes folder such as an Obsidian vault is often not a Git repository, so a Codex Agent working there needs this setting. If the owner deliberately chooses a non-Git folder, expose an explicit setting that maps to `skipGitRepoCheck`; do not silently bypass the check. Changing a Claude Agent's working directory requires a new session according to Anthropic's configuration guide; Pero applies the same new-session rule when the provider or any provider option changes, for predictable behavior across adapters.
 
 Keep the database, working folders, and provider session state on persistent local storage owned by the account running the service. The shared working directory and any Agent's own folder live outside the data directory, such as a notes vault or a project; document their backup and permissions separately. Test session resume after a process restart. Keep credentials out of Agent definitions and database rows.
 
@@ -120,11 +128,11 @@ Keep every Agent's working directory and resumable session state on persistent l
 
 ## 8. Configuration and observability
 
-Keep provider subscription credentials in the CLIs' protected credential stores. The CLI defaults to `~/.pero` for its data directory, with an explicit override available before opening SQLite. First-run setup creates the database and seeds a `settings` row. Settings, Agent/Channel definitions, Workflows, and Triggers are authoritative in SQLite and changed through validated CLI commands. These settings include default provider, a default model choice for each provider, default working directory, shared instructions, allowed users/chats, timezone, concurrency limits, and shutdown timeout. A null model choice means the provider's own default; a string pins a provider-specific model name. JSON export/import may be supported for review and bulk edits, but is not a second live configuration store.
+Keep provider subscription credentials in the CLIs' protected credential stores. The CLI defaults to `~/.pero` for its data directory, with an explicit override available before opening SQLite. First-run setup creates the database and seeds a `settings` row. Settings, Agent/Channel definitions, Workflows, and Triggers are authoritative in SQLite and changed through validated CLI commands. These settings include default provider, default options (model and effort) for each provider, default working directory, shared instructions, allowed users/chats, timezone, concurrency limits, and shutdown timeout. A null option means the provider's own default; a string pins a provider-specific model name or effort level. JSON export/import may be supported for review and bulk edits, but is not a second live configuration store.
 
 First-run setup obtains the Telegram token or reads it from the service environment, storing it in owner-only local secret storage if persistence is needed. Provider credentials and Telegram tokens do not belong in the settings row. Validate CLI input and any environment-supplied bootstrap values with Zod; fail early with a clear error.
 
-When the owner creates an Agent, Pero copies the selected provider and corresponding model choice from SQLite settings; changing those defaults affects future Agents only, so a default change never silently switches an existing Agent's provider or model. The working directory is different: every Agent uses the shared default working directory, filled during setup, unless the owner explicitly gives it its own absolute folder. Changing the default rotates the Sessions of the Agents that follow it. If an Agent's execution settings change, close its active Sessions and use the new settings for subsequent runs. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
+When the owner creates an Agent, Pero copies the selected provider and that provider's default options from SQLite settings; changing those defaults affects future Agents only, so a default change never silently switches an existing Agent's provider, model, or effort. The working directory is different: every Agent uses the shared default working directory, filled during setup, unless the owner explicitly gives it its own absolute folder. Changing the default rotates the Sessions of the Agents that follow it. If an Agent's execution settings change, close its active Sessions and use the new settings for subsequent runs. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
 
 Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflowRunId`, `runtimeKind`, duration, and outcome. Redact tokens, prompts that may contain private data, and tool outputs by default. Expose basic counters for run states, queue depth, failure rates, and notification retries; add OpenTelemetry/Sentry later if operating experience calls for them.
 

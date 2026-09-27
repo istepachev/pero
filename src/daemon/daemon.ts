@@ -32,7 +32,7 @@ export async function startDaemon(
 
   try {
     const app = await NestFactory.create<NestFastifyApplication>(
-      AppModule,
+      AppModule.forRoot({ layout }),
       new FastifyAdapter(),
       { logger: new PinoLoggerService(logger), abortOnError: false },
     );

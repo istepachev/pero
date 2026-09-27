@@ -1,8 +1,22 @@
-import { Module } from '@nestjs/common';
+import { type DynamicModule, Module } from '@nestjs/common';
+import type { DataDirLayout } from './config/data-dir.js';
 import { HealthModule } from './health/health.module.js';
+import { PersistenceModule } from './persistence/persistence.module.js';
+
+export interface AppOptions {
+  layout: DataDirLayout;
+}
 
 /** Full daemon module graph. The CLI never imports this module. */
-@Module({
-  imports: [HealthModule],
-})
-export class AppModule {}
+@Module({})
+export class AppModule {
+  static forRoot(options: AppOptions): DynamicModule {
+    return {
+      module: AppModule,
+      imports: [
+        HealthModule,
+        PersistenceModule.forRoot({ database: options.layout.database }),
+      ],
+    };
+  }
+}
