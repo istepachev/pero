@@ -59,21 +59,29 @@ Commit `package-lock.json`. Use `npm install` when changing dependencies and `np
 
 ## 3. Database configuration
 
-Illustrative Nest configuration:
+`PersistenceModule` (`src/persistence/`) configures TypeORM:
 
 ```ts
-TypeOrmModule.forRoot({
-  type: 'better-sqlite3',
-  database: config.databasePath,
-  enableWAL: true,
-  timeout: 5000,
-  entities: [/* explicit entity list */],
-  migrations: [/* explicit migration list */],
-  synchronize: false,
+TypeOrmModule.forRootAsync({
+  useFactory: () => ({
+    type: 'better-sqlite3',
+    database: layout.database,
+    enableWAL: true,
+    timeout: 5000,
+    entities: ENTITIES, // explicit lists, no file globs
+    migrations: MIGRATIONS,
+    synchronize: false,
+    toRetry: () => false, // fail startup at once instead of retrying
+  }),
+  // initialize(), then runMigrations(): the DataSource provider resolves
+  // only once the schema is current.
+  dataSourceFactory: openDatabase,
 });
 ```
 
-TypeORM documents the `better-sqlite3` driver, `enableWAL`, and `timeout` options in its [SQLite driver guide](https://typeorm.io/docs/drivers/sqlite/). Run migrations during controlled startup before Telegram intake and scheduler ticks begin. Set foreign keys on and verify them in an integration test. Use short write transactions for schedule advancement, run creation, and delivery state changes; agent executions must run outside database transactions.
+TypeORM documents the `better-sqlite3` driver, `enableWAL`, and `timeout` options in its [SQLite driver guide](https://typeorm.io/docs/drivers/sqlite/); the driver turns foreign keys on for every connection. Migrations run during controlled startup, before Telegram intake and scheduler ticks begin, and an integration test verifies WAL, foreign keys, and the busy timeout. Use short write transactions for schedule advancement, run creation, and delivery state changes; agent executions must run outside database transactions.
+
+**Migrations** live in `src/persistence/migrations/`. Every migration is added by hand to the `MIGRATIONS` list in that folder's `index.ts`, so the compiled package ships them without globbing. Create a migration with `npm run migration:create -- src/persistence/migrations/<Name>`, or diff the entities against the development database with `migration:generate`. `migration:show`, `migration:run`, and `migration:revert` also exist. Each script except `migration:create` builds first and targets `PERO_HOME`, which defaults to the development data directory `.pero`. A test fails if the entities and the migrations describe different schemas.
 
 WAL allows readers while a writer is active, but SQLite still has one writer at a time. Store the database on a local persistent filesystem, not a network share. A live backup must use SQLite's backup API or another consistent snapshot method; copying only `pero.sqlite` while WAL is active may omit recent committed work. See [SQLite WAL](https://www.sqlite.org/wal.html) and the [SQLite online backup API](https://www.sqlite.org/backup.html).
 
