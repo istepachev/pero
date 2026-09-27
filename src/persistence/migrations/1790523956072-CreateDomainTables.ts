@@ -11,6 +11,7 @@ export class CreateDomainTables1790523956072 implements MigrationInterface {
       `CREATE TABLE "agents" (` +
         `"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, ` +
         `"name" text NOT NULL, ` +
+        `"title" text, ` +
         `"provider" text NOT NULL, ` +
         `"instructions" text, ` +
         `"provider_options" text NOT NULL, ` +
@@ -22,6 +23,7 @@ export class CreateDomainTables1790523956072 implements MigrationInterface {
         `"enabled" boolean NOT NULL DEFAULT (1), ` +
         `"created_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
         `"updated_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
+        `CONSTRAINT "CHK_agents_name" CHECK ("name" <> '' AND length("name") <= 64 AND "name" NOT GLOB '*[^a-z0-9-]*' AND "name" NOT GLOB '-*' AND "name" NOT GLOB '*-' AND "name" NOT GLOB '*--*'), ` +
         `CONSTRAINT "CHK_agents_execution_config_version" CHECK ("execution_config_version" >= 1), ` +
         `CONSTRAINT "CHK_agents_tool_policy_json" CHECK (json_valid("tool_policy_json")), ` +
         `CONSTRAINT "CHK_agents_provider_options" CHECK (json_valid("provider_options")), ` +
@@ -74,12 +76,14 @@ export class CreateDomainTables1790523956072 implements MigrationInterface {
       `CREATE TABLE "workflows" (` +
         `"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, ` +
         `"name" text NOT NULL, ` +
+        `"title" text, ` +
         `"agent_id" integer NOT NULL, ` +
         `"input_template" text NOT NULL, ` +
         `"enabled" boolean NOT NULL DEFAULT (1), ` +
         `"concurrency_policy" text NOT NULL DEFAULT ('serial'), ` +
         `"created_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
         `"updated_at" datetime NOT NULL DEFAULT (datetime('now')), ` +
+        `CONSTRAINT "CHK_workflows_name" CHECK ("name" <> '' AND length("name") <= 64 AND "name" NOT GLOB '*[^a-z0-9-]*' AND "name" NOT GLOB '-*' AND "name" NOT GLOB '*-' AND "name" NOT GLOB '*--*'), ` +
         `CONSTRAINT "CHK_workflows_concurrency_policy" CHECK ("concurrency_policy" IN ('serial')), ` +
         `CONSTRAINT "FK_workflows_agent_id" FOREIGN KEY ("agent_id") REFERENCES "agents" ("id") ON DELETE RESTRICT ON UPDATE NO ACTION)`,
     );

@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { SLUG_MAX_LENGTH } from '../../config/slug.js';
 import {
   PROVIDERS,
   type Provider,
@@ -14,11 +15,12 @@ import {
   providerOptionsSchema,
 } from '../../config/provider-options.js';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
-import { oneOf } from './sql.js';
+import { isSlug, oneOf } from './sql.js';
 
 /** A saved definition of behavior; not a running process. */
 @Entity('agents')
 @Index('UQ_agents_name', ['name'], { unique: true })
+@Check('CHK_agents_name', isSlug('name', SLUG_MAX_LENGTH))
 @Check('CHK_agents_provider', oneOf('provider', PROVIDERS))
 @Check('CHK_agents_provider_options', `json_valid("provider_options")`)
 @Check('CHK_agents_tool_policy_json', `json_valid("tool_policy_json")`)
@@ -27,8 +29,13 @@ export class Agent {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
 
+  /** The slug the CLI addresses the Agent by. */
   @Column({ type: 'text' })
   name: string;
+
+  /** Display name; null shows `name`. */
+  @Column({ type: 'text', nullable: true })
+  title: string | null;
 
   @Column({ type: 'text' })
   provider: Provider;

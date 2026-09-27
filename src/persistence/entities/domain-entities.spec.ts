@@ -38,6 +38,7 @@ type Seeded = Awaited<ReturnType<typeof seed>>;
 async function seed(ds: DataSource) {
   const agent = await ds.getRepository(Agent).save({
     name: 'assistant',
+    title: 'Personal assistant',
     provider: 'claude',
     instructions: 'Be brief.',
     providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
@@ -58,6 +59,7 @@ async function seed(ds: DataSource) {
   });
   const workflow = await ds.getRepository(Workflow).save({
     name: 'daily-brief',
+    title: null,
     agentId: agent.id,
     inputTemplate: 'Summarize today.',
   });
@@ -184,6 +186,7 @@ describe('domain entities', () => {
 
     expect(await readAll(db)).toEqual(before);
     expect(before.agents[0]).toMatchObject({
+      title: 'Personal assistant',
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       useSharedInstructions: true,
       codexSkipGitRepoCheck: false,
@@ -496,6 +499,25 @@ describe('domain entities', () => {
       `UPDATE "inbound_updates" SET "status" = 'ignored'`,
     ])('rejects %s', async (sql) => {
       await rejectsWith(db.query(sql), 'SQLITE_CONSTRAINT_CHECK');
+    });
+
+    it.each([
+      'Assistant',
+      'daily brief',
+      'daily_brief',
+      '-daily',
+      'daily-',
+      'daily--brief',
+      '',
+      'a'.repeat(65),
+    ])('rejects the non-slug name %j', async (name) => {
+      for (const table of ['agents', 'workflows']) {
+        await rejectsWith(
+          db.query(`UPDATE "${table}" SET "name" = ?`, [name]),
+          'SQLITE_CONSTRAINT_CHECK',
+        );
+      }
+      await db.query(`UPDATE "agents" SET "name" = ?`, ['a'.repeat(64)]);
     });
 
     it('validates Agent provider options on write and read', async () => {

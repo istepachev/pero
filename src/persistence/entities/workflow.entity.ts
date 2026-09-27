@@ -9,8 +9,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { SLUG_MAX_LENGTH } from '../../config/slug.js';
 import { Agent } from './agent.entity.js';
-import { oneOf } from './sql.js';
+import { isSlug, oneOf } from './sql.js';
 
 /** `serial`: at most one active run per Workflow. */
 export const CONCURRENCY_POLICIES = ['serial'] as const;
@@ -20,6 +21,7 @@ export type ConcurrencyPolicy = (typeof CONCURRENCY_POLICIES)[number];
 /** A saved definition of autonomous work. */
 @Entity('workflows')
 @Index('UQ_workflows_name', ['name'], { unique: true })
+@Check('CHK_workflows_name', isSlug('name', SLUG_MAX_LENGTH))
 @Index('IDX_workflows_agent_id', ['agentId'])
 @Check(
   'CHK_workflows_concurrency_policy',
@@ -29,8 +31,13 @@ export class Workflow {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
 
+  /** The slug the CLI addresses the Workflow by. */
   @Column({ type: 'text' })
   name: string;
+
+  /** Display name; null shows `name`. */
+  @Column({ type: 'text', nullable: true })
+  title: string | null;
 
   @Column({ name: 'agent_id', type: 'integer' })
   agentId: number;
