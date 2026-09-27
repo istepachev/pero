@@ -5,23 +5,13 @@ import {
   Entity,
   PrimaryColumn,
   UpdateDateColumn,
-  type ValueTransformer,
 } from 'typeorm';
 import {
   type Provider,
   type ProviderDefaults,
   providerDefaultsSchema,
 } from '../../config/provider-options.js';
-
-// Validated in both directions, so an invalid value is never written and a
-// corrupted one fails loudly on read.
-const providerDefaultsTransformer: ValueTransformer = {
-  to: (value?: ProviderDefaults) =>
-    value === undefined
-      ? undefined
-      : JSON.stringify(providerDefaultsSchema.parse(value)),
-  from: (value: string) => providerDefaultsSchema.parse(JSON.parse(value)),
-};
+import { jsonTransformer } from '../json-transformer.js';
 
 // Column types are explicit: nullable unions emit no usable design metadata.
 /** Installation defaults and operational limits; a singleton row. */
@@ -49,7 +39,7 @@ export class Settings {
   @Column({
     name: 'provider_defaults',
     type: 'text',
-    transformer: providerDefaultsTransformer,
+    transformer: jsonTransformer(providerDefaultsSchema),
   })
   providerDefaults: ProviderDefaults;
 

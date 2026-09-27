@@ -48,6 +48,16 @@ export const providerDefaultsSchema = z.strictObject({
   codex: codexOptionsSchema.default({ model: null, effort: null }),
 });
 
+/**
+ * One Agent's options, valid for at least one provider. Matching them to the
+ * Agent's own provider needs the provider too, so the Agent service does it.
+ */
+export const providerOptionsSchema = z.union([
+  claudeOptionsSchema,
+  codexOptionsSchema,
+]);
+
 export type ClaudeOptions = z.infer<typeof claudeOptionsSchema>;
 export type CodexOptions = z.infer<typeof codexOptionsSchema>;
+export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
 export type ProviderDefaults = z.infer<typeof providerDefaultsSchema>;

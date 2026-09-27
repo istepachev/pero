@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { providerDefaultsSchema } from './provider-options.js';
+import {
+  providerDefaultsSchema,
+  providerOptionsSchema,
+} from './provider-options.js';
 
 describe('providerDefaultsSchema', () => {
   it('fills a missing provider or option with the provider default', () => {
@@ -38,6 +41,25 @@ describe('providerDefaultsSchema', () => {
       { codex: { model: ' ' } },
     ]) {
       expect(providerDefaultsSchema.safeParse(value).success).toBe(false);
+    }
+  });
+});
+
+describe('providerOptionsSchema', () => {
+  it("accepts either provider's options and fills missing ones", () => {
+    expect(providerOptionsSchema.parse({ effort: 'minimal' })).toEqual({
+      model: null,
+      effort: 'minimal',
+    });
+    expect(providerOptionsSchema.parse({})).toEqual({
+      model: null,
+      effort: null,
+    });
+  });
+
+  it('rejects unknown options and efforts no provider accepts', () => {
+    for (const value of [{ temperature: 1 }, { effort: 'extreme' }]) {
+      expect(providerOptionsSchema.safeParse(value).success).toBe(false);
     }
   });
 });
