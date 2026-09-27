@@ -5,7 +5,8 @@
 | Layer | Initial choice | Why it fits |
 |---|---|---|
 | Language and runtime | TypeScript on [Node.js 24 LTS](https://nodejs.org/en/about/previous-releases) | Shared types and a stable long-running server runtime. Declare and test the supported Node version. |
-| Application framework | NestJS modular monolith | Dependency injection, modules, lifecycle hooks, and one composition root for bot, scheduler, API, and workers. |
+| Application framework | [NestJS 12](https://docs.nestjs.com/) modular monolith | Dependency injection, modules, lifecycle hooks, and one composition root for bot, scheduler, API, and workers. |
+| CLI framework | [nest-commander](https://nest-commander.jhunt.dev/) | `pero` commands are Nest providers built on `commander`, so they can inject the same validated application services as the daemon. The Nest CLI (`@nestjs/cli`) is a development tool only. |
 | HTTP adapter | Fastify via `@nestjs/platform-fastify` | Small HTTP surface for health checks, administration, and later webhooks. |
 | First Channel integration | Telegram via grammY | Bot update handling and reply delivery; each Telegram topic is a Channel. Slack and Discord can be added later as separate Channel adapters. |
 | Agent execution | `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` | Provider implementations behind an internal `AgentRuntime` contract. |
@@ -15,7 +16,7 @@
 | Validation | Zod | Parse configuration, webhook payloads, and flexible JSON fields at boundaries. |
 | Logging | Pino | Structured logs with correlation IDs and redaction. |
 | Tests | Vitest | Unit tests for time calculations and integration tests for recovery and routing. |
-| Package management and distribution | Public scoped npm package with a `pero` executable | One package and `package-lock.json` for development; users install `@your-scope/pero` globally and invoke `pero`. |
+| Package management and distribution | Public `@perokit/pero` npm package with a `pero` executable | One package and `package-lock.json` for development; users install `@perokit/pero` globally and invoke `pero`. |
 | Deployment | `pero run` launches a native background service on the owner's machine or VPS | The CLI handles lifecycle and management; Claude Code and Codex use sign-in under the same OS account. |
 
 The earlier proposal of PostgreSQL, Drizzle, Redis/BullMQ, and separate gateway/worker processes was superseded by the self-hosted v1 decision. PostgreSQL and Redis remain possible future options, not mandatory dependencies.
@@ -27,7 +28,8 @@ pero/
 ├── bin/
 │   └── pero.js
 ├── src/
-│   ├── cli/
+│   ├── cli/             # nest-commander CliModule and commands; main.ts is the `pero` entry
+│   ├── daemon/          # daemon main.ts and AppModule bootstrap
 │   ├── control/
 │   ├── agents/
 │   ├── runtimes/
@@ -44,7 +46,7 @@ pero/
 │   ├── persistence/
 │   │   ├── entities/
 │   │   └── migrations/
-│   └── app.module.ts
+│   └── app.module.ts    # full daemon module graph
 ├── test/
 ├── package.json
 ├── package-lock.json
@@ -53,7 +55,7 @@ pero/
 
 A workspace/monorepo is unnecessary for the first deployable version. If gateway and worker become separate processes, this layout can be extracted into packages then.
 
-Commit `package-lock.json`. Use `npm install` when changing dependencies and `npm ci` for clean development and CI installs; [`npm ci` verifies the lockfile matches `package.json` without rewriting either file](https://docs.npmjs.com/cli/v11/commands/npm-ci/). Ship compiled JavaScript and migrations in the published package. The unscoped npm name `pero` is taken, so publish under the owner's user or organization [scope](https://docs.npmjs.com/about-scopes/), for example `@your-scope/pero`, using [`npm publish --access public`](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/). npm's [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) still exposes the global `pero` command. Test installation from `npm pack` output rather than assuming a source checkout behaves like the published package.
+Commit `package-lock.json`. Use `npm install` when changing dependencies and `npm ci` for clean development and CI installs; [`npm ci` verifies the lockfile matches `package.json` without rewriting either file](https://docs.npmjs.com/cli/v11/commands/npm-ci/). Ship compiled JavaScript and migrations in the published package. The unscoped npm name `pero` is taken, so Pero is published under the `perokit` organization [scope](https://docs.npmjs.com/about-scopes/) as `@perokit/pero`, using [`npm publish --access public`](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/). npm's [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) still exposes the global `pero` command. Test installation from `npm pack` output rather than assuming a source checkout behaves like the published package.
 
 ## 3. Database configuration
 
@@ -101,7 +103,7 @@ The in-process executor is deliberately disposable: its contents can be rebuilt 
 
 ## 7. Native installation and subscription authentication
 
-After installing a supported Node.js/npm version, the intended application install is `npm install -g @your-scope/pero` (replace the scope with the publisher's npm username or organization); then `pero run` initializes the local data directory on first use and starts the background service. See [CLI and service lifecycle](./CLI.md) for the command contract. Claude Code and Codex CLI sign-in must be available on the same machine and under the same OS account as Pero's long-lived process. Start with the owner's account for the simplest setup; a dedicated account is possible if the owner signs both CLIs in under that account. The runtime does not implement its own Claude or ChatGPT login screen and does not accept provider credentials through Agent definitions. First-run setup checks sign-ins and runs a short SDK execution for each configured provider before accepting work from that provider.
+After installing a supported Node.js/npm version, the intended application install is `npm install -g @perokit/pero`; then `pero run` initializes the local data directory on first use and starts the background service. See [CLI and service lifecycle](./CLI.md) for the command contract. Claude Code and Codex CLI sign-in must be available on the same machine and under the same OS account as Pero's long-lived process. Start with the owner's account for the simplest setup; a dedicated account is possible if the owner signs both CLIs in under that account. The runtime does not implement its own Claude or ChatGPT login screen and does not accept provider credentials through Agent definitions. First-run setup checks sign-ins and runs a short SDK execution for each configured provider before accepting work from that provider.
 
 | Agent execution | Owner setup | Verification |
 |---|---|---|
@@ -128,4 +130,4 @@ Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflow
 
 ## 9. Version and compatibility checks
 
-The stack is a design decision, not a floating dependency specification. Before starting implementation, pin mutually compatible releases of NestJS, TypeORM, `better-sqlite3`, grammY, both agent SDKs, and Node; commit the lockfile. Exercise a smoke test for each provider that creates a session, resumes it after process restart, and verifies workspace persistence. Recheck SDK authentication, permission, and session storage behavior when upgrading.
+The stack is a design decision, not a floating dependency specification. Before starting implementation, pin mutually compatible releases of NestJS 12 (`@nestjs/core`, `@nestjs/platform-fastify`, `@nestjs/schedule`, and `@nestjs/typeorm` on their 12.x lines), TypeORM, `better-sqlite3`, grammY, both agent SDKs, and Node; commit the lockfile. Exercise a smoke test for each provider that creates a session, resumes it after process restart, and verifies workspace persistence. Recheck SDK authentication, permission, and session storage behavior when upgrading.
