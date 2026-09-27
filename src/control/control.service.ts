@@ -36,7 +36,6 @@ export class ControlService implements OnModuleDestroy {
   async start(options: ControlStartOptions): Promise<void> {
     const server = new ControlServer({
       socketPath: this.layout.controlSocket,
-      dataDir: this.layout.root,
       logger: new Logger('Control'),
       handlers: {
         status: () => this.status(),
