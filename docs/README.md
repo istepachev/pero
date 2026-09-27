@@ -5,7 +5,7 @@ These documents turn the agreed design for Pero into a starting point for implem
 1. [Architecture](./ARCHITECTURE.md) — domain vocabulary, module boundaries, data model, request and workflow flows, recovery, and scaling path.
 2. [Tech stack](./TECH_STACK.md) — chosen technologies, deployment shape, configuration, and operational rules.
 3. [CLI and service lifecycle](./CLI.md) — installation, first run, commands, background process, and local files.
-4. [Implementation plan](./IMPLEMENTATION_PLAN.md) — build order and acceptance criteria for an initial release.
+4. [Implementation plan](./IMPLEMENTATION_PLAN.md) — build order, split into pull requests, with acceptance criteria for an initial release.
 
 ## Decision snapshot
 
