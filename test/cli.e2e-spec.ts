@@ -26,6 +26,10 @@ const DENY_DAEMON_DEPS = join(
 
 const NOT_RUNNING = "Pero isn't running — start it with pero run";
 
+/** `pero logs` shows this entry, in local time, for every started daemon. */
+const STARTED_ENTRY =
+  /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} INFO {2}Pero daemon started /m;
+
 interface Result {
   code: number | null;
   stdout: string;
@@ -225,14 +229,95 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     }
   });
 
-  it('never loads the database stack for status, ping, and stop', async () => {
+  it('shows recent logs readably whether or not the daemon runs', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const running = await pero(withDataDir('logs'));
+    expect(running.code).toBe(0);
+    expect(running.stdout).toMatch(STARTED_ENTRY);
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+
+    const stopped = await pero(withDataDir('logs'));
+    expect(stopped).toMatchObject({ code: 0, stderr: '' });
+    expect(stopped.stdout).toMatch(STARTED_ENTRY);
+    expect(stopped.stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/);
+    expect(stopped.stdout).not.toContain('{"level"');
+
+    const one = await pero(withDataDir('logs', '-n', '1'));
+    expect(one.stdout).toMatch(/^[^\n]+ INFO {2}Pero daemon stopped\n$/);
+
+    const json = await pero(withDataDir('logs', '--json', '--lines', '2'));
+    const entries = json.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries).toHaveLength(2);
+    expect(entries[1]).toMatchObject({ level: 30, msg: 'Pero daemon stopped' });
+  });
+
+  it('reports a missing log directory without creating anything', async () => {
+    const result = await pero(withDataDir('logs'));
+
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: '',
+      stderr: `No logs yet in ${layout.logs}\n`,
+    });
+    expect(existsSync(layout.root)).toBe(false);
+  });
+
+  it('follows new entries, from before the log exists until stopped', async () => {
+    const follower = spawn(process.execPath, [
+      PERO,
+      ...withDataDir('logs', '--follow'),
+    ]);
+    children.push(follower);
+    let stdout = '';
+    let stderr = '';
+    follower.stdout.on('data', (chunk: Buffer) => (stdout += chunk));
+    follower.stderr.on('data', (chunk: Buffer) => (stderr += chunk));
+    await vi.waitFor(() =>
+      expect(stderr).toBe(`Waiting for ${layout.logFile}…\n`),
+    );
+
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    await vi.waitFor(() => expect(stdout).toMatch(STARTED_ENTRY));
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    await vi.waitFor(() =>
+      expect(stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/),
+    );
+
+    expect(follower.exitCode).toBeNull();
+    expect(stdout).not.toContain('{"level"');
+  });
+
+  it('rejects a line count that is not a positive whole number', async () => {
+    for (const count of ['0', '-3', '1.5', 'many']) {
+      const result = await pero(withDataDir('logs', '-n', count));
+      expect(result).toMatchObject({
+        code: 1,
+        stderr: `--lines must be a positive whole number, not "${count}"\n`,
+      });
+    }
+  });
+
+  it('never loads the database stack for status, ping, logs, and stop', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
-    for (const command of ['status', 'ping', 'stop']) {
+    for (const command of ['status', 'ping', 'logs', 'stop']) {
       const result = await pero(withDataDir(command), { nodeArgs });
       expect(result, command).toMatchObject({ code: 0, stderr: '' });
     }
+    const follower = spawn(
+      process.execPath,
+      [...nodeArgs, PERO, ...withDataDir('logs', '--follow')],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    children.push(follower);
+    let followed = '';
+    follower.stdout!.on('data', (chunk: Buffer) => (followed += chunk));
+    await vi.waitFor(() => expect(followed).toMatch(STARTED_ENTRY));
+    expect(follower.exitCode).toBeNull();
     // The hook itself works: the daemon cannot start under it.
     const foreground = await pero(withDataDir('run', '--foreground'), {
       nodeArgs,
