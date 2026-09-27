@@ -26,16 +26,23 @@ npm run lint           # oxlint
 
 | Setting | Source | Default |
 |---|---|---|
-| Data directory | `--data-dir`, then `PERO_HOME` | `~/.pero` |
+| Data directory | `--data-dir` (any `pero` command, before or after its name), then `PERO_HOME` | `~/.pero` |
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 
 The daemon creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting.
 
-The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request:
+### Running the daemon
 
 ```sh
-echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock
+npm run cli -- run --data-dir .pero     # start in the background; waits until ready
+npm run cli -- status --data-dir .pero  # process, health, and components
+npm run cli -- stop --data-dir .pero    # graceful stop; waits until it exits
+npm run cli -- run --foreground --data-dir .pero  # attached; logs to stdout
 ```
+
+`pero run` starts the daemon detached in its own session, so it keeps running after the terminal closes, and reports the running daemon instead of starting a second one. The daemon's own stdout and stderr (startup errors, crashes) go to `logs/daemon.out`; on a failed start, `pero run` prints that output and both log paths. `pero stop` and a repeated `pero run` are safe when there is nothing to do. `pero status` exits 3 when Pero is stopped. Commands that need the daemon fail with `Pero isn't running — start it with pero run` rather than starting it.
+
+The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 
 One daemon runs per data directory. It holds a lock on `run/pero.lock` for as long as it runs; a second daemon exits with `Pero is already running for <dir>`. The lock is released by the OS however the daemon ends, so a crashed or killed daemon never blocks the next start. Once ready, the daemon records its pid, version, and socket in `run/pero.json`; that file counts only while the socket answers with the same pid.
 
