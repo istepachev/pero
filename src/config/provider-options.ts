@@ -28,16 +28,24 @@ export const CODEX_EFFORTS = [
 
 // null means "let the provider choose" for every option.
 const model = z.string().trim().min(1, 'must not be empty').nullable();
+const claudeEffort = z.enum(CLAUDE_EFFORTS).nullable();
+const codexEffort = z.enum(CODEX_EFFORTS).nullable();
 
 export const claudeOptionsSchema = z.strictObject({
   model: model.default(null),
-  effort: z.enum(CLAUDE_EFFORTS).nullable().default(null),
+  effort: claudeEffort.default(null),
 });
 
 export const codexOptionsSchema = z.strictObject({
   model: model.default(null),
-  effort: z.enum(CODEX_EFFORTS).nullable().default(null),
+  effort: codexEffort.default(null),
 });
+
+/** Each provider's options schema, to check options against their provider. */
+export const PROVIDER_OPTIONS_SCHEMAS = {
+  claude: claudeOptionsSchema,
+  codex: codexOptionsSchema,
+} as const;
 
 /**
  * Per-provider options copied into new Agents. A missing provider or option
@@ -57,7 +65,50 @@ export const providerOptionsSchema = z.union([
   codexOptionsSchema,
 ]);
 
+// Changes to some options: an omitted option keeps its current value.
+const claudeOptionsPatchSchema = z.strictObject({
+  model: model.optional(),
+  effort: claudeEffort.optional(),
+});
+const codexOptionsPatchSchema = z.strictObject({
+  model: model.optional(),
+  effort: codexEffort.optional(),
+});
+
+/** Changes to some provider defaults; the rest keep their values. */
+export const providerDefaultsPatchSchema = z.strictObject({
+  claude: claudeOptionsPatchSchema.optional(),
+  codex: codexOptionsPatchSchema.optional(),
+});
+
+/**
+ * Changes to one Agent's options, with any provider's effort level; the
+ * result is checked against the Agent's provider once they are merged.
+ * One object rather than a union, so errors name the offending option.
+ */
+export const providerOptionsPatchSchema = z.strictObject({
+  model: model.optional(),
+  effort: z
+    .enum([...new Set([...CLAUDE_EFFORTS, ...CODEX_EFFORTS])])
+    .nullable()
+    .optional(),
+});
+
+/** `options` with each option `patch` sets replaced. */
+export function mergeOptions(
+  options: object,
+  patch: object | undefined,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...options };
+  for (const [key, value] of Object.entries(patch ?? {})) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged;
+}
+
 export type ClaudeOptions = z.infer<typeof claudeOptionsSchema>;
 export type CodexOptions = z.infer<typeof codexOptionsSchema>;
 export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
 export type ProviderDefaults = z.infer<typeof providerDefaultsSchema>;
+export type ProviderDefaultsPatch = z.input<typeof providerDefaultsPatchSchema>;
+export type ProviderOptionsPatch = z.input<typeof providerOptionsPatchSchema>;

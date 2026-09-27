@@ -13,6 +13,9 @@ import {
 } from '../../config/provider-options.js';
 import { jsonTransformer } from '../json-transformer.js';
 
+/** The ID of the one settings row. */
+export const SETTINGS_ID = 1;
+
 // Column types are explicit: nullable unions emit no usable design metadata.
 /** Installation defaults and operational limits; a singleton row. */
 @Entity('settings')
