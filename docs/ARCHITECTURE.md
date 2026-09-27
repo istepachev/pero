@@ -28,9 +28,17 @@ A **Channel** is a saved conversation endpoint; a **Channel adapter** connects t
 
 An Agent owns three execution choices: `provider` (`claude` or `codex`), `model` (a provider-specific model name or an explicit “provider default” choice), and `workingDirectory` (the folder passed to the SDK). Instructions and tool policy belong to the same Agent. Channels choose an Agent; Workflows reference an Agent; neither needs to duplicate these execution settings.
 
-Pero also has installation defaults for new Agents: a default provider, one model choice for each provider, and a workspace root. These live in the SQLite `settings` record and are managed through the CLI. Creating an Agent copies the selected provider and its model choice into the Agent record. By default, Pero creates a dedicated folder under `workspaceRoot/<agent-slug>` and stores its resolved absolute path on the Agent. The owner may instead select an existing absolute folder, such as a Git repository. Sharing a folder between Agents is an explicit choice.
+Pero also keeps installation defaults in the SQLite `settings` record, managed through the CLI: a default provider, one model choice for each provider, a default working directory, and shared instructions. Provider and model are creation templates: creating an Agent copies the selected provider and its model choice into the Agent record, and changing them later affects future Agents only. When changing an Agent's provider, select a model for that provider; prefill that provider's configured default. A model set to “provider default” tells the adapter to omit the SDK model option, so the provider chooses its default when a new Session starts.
 
-Defaults are creation templates, not live fallbacks: changing them affects future Agents only. Editing an Agent changes its own record. When changing an Agent's provider, select a model for that provider; prefill that provider's configured default. A model set to “provider default” tells the adapter to omit the SDK model option, so the provider chooses its default when a new Session starts. Validate that the directory exists, resolves to the intended location, and is accessible to the service account before an Agent is enabled. The working directory establishes project context; tool permissions and sandboxing govern file access separately.
+**Working directory.** Several Agents often work on the same data, for example an Assistant, a Health, and a Finance Agent that all edit one Obsidian vault. So the working directory is a live default rather than a template: an Agent with no folder of its own follows `settings.default_working_directory`, and an Agent may override it with an explicit absolute folder. The effective folder is resolved in this order:
+
+1. the Agent's own `working_directory`, if set;
+2. `settings.default_working_directory`, if set;
+3. otherwise a dedicated folder, `<data dir>/workspaces/<agent-slug>`, created on first use.
+
+Changing the default moves every Agent that follows it, so the change increments those Agents' `execution_config_version` in the same transaction and their Sessions rotate like any other execution-setting edit. Validate that a folder exists, is absolute, resolves to the intended location, and is accessible to the service account before it is saved as the default or on an enabled Agent. The working directory establishes project context; tool permissions and sandboxing govern file access separately.
+
+**Shared instructions.** Agents serve different goals but can share a personality. `settings.shared_instructions` holds text that Pero places before each Agent's own `instructions` when it builds a runtime request; an Agent can opt out with `use_shared_instructions = false`. Instruction edits, shared or per-Agent, are not execution settings and do not rotate Sessions.
 
 ## 3. System boundaries
 
@@ -102,8 +110,9 @@ interface AgentRuntime {
 interface RuntimeRequest {
   agentId: string;
   input: string;
+  instructions: string; // shared instructions (unless opted out) + the Agent's own
   model: string | null; // null means use the provider's default
-  workingDirectory: string;
+  workingDirectory: string; // effective folder, already resolved
   providerSessionId?: string; // absent for a new conversation
   toolPolicy: ToolPolicy;
   signal: AbortSignal;
@@ -112,7 +121,7 @@ interface RuntimeRequest {
 
 The adapter returns a newly created or resumed provider session ID in a normalized event. `AgentManager` persists that mapping before accepting the next turn. Normalize text deltas, tool activity, final result, errors, and cancellation. Keep raw provider payloads behind the adapter boundary; store only what is needed for diagnostics and recovery. The interface is a design contract, not a claim that the two SDKs have identical APIs.
 
-**Session policy:** one active interactive Session per `(channel_id, agent_id)` in v1. On Agent reassignment, close the old Session and create a new one. Changing an Agent's provider, model choice, or working directory also closes its active Sessions; the next turn starts with the new configuration. Active executions finish with the configuration captured when they started. Workflow Runs use an isolated provider session or a stateless execution by default, so scheduled work does not change the Channel's conversation history. A Workflow may explicitly opt into a dedicated reusable workflow Session later.
+**Session policy:** one active interactive Session per `(channel_id, agent_id)` in v1. On Agent reassignment, close the old Session and create a new one. Changing an Agent's provider, model choice, or effective working directory (including a change to the default folder it follows) also closes its active Sessions; the next turn starts with the new configuration. Active executions finish with the configuration captured when they started. Workflow Runs use an isolated provider session or a stateless execution by default, so scheduled work does not change the Channel's conversation history. A Workflow may explicitly opt into a dedicated reusable workflow Session later.
 
 ## 6. Core flows
 
@@ -120,8 +129,8 @@ The adapter returns a newly created or resumed provider session ID in a normaliz
 
 1. grammY receives an update. Verify the sender/chat allowlist, ignore bot-originated loops, and deduplicate by Telegram update ID.
 2. Resolve the Channel from `integration_kind='telegram'` and an external key derived from `(chat_id, message_thread_id)`. If unknown, follow the configured enrollment policy; do not silently route to an arbitrary Agent.
-3. Load the Channel's assigned Agent and active Session. Serialize turns within that Session to preserve conversation order.
-4. `AgentManager` invokes the selected Runtime with the Session's provider ID and the Agent's model, working directory, and tool policy.
+3. Load the Channel's assigned Agent and active Session. Serialize turns within that Session to preserve conversation order; turns for other Sessions and Agents may run at the same time, even in the same folder.
+4. `AgentManager` invokes the selected Runtime with the Session's provider ID and the Agent's model, effective working directory, composed instructions, and tool policy.
 5. Persist the returned provider session ID and turn outcome. Send the reply back to the same Telegram topic.
 6. Record errors and send a concise failure message when appropriate. A direct reply is not a Notification record unless durable delivery is required.
 
@@ -145,13 +154,13 @@ Use relational columns for stable relationships and states. Use JSON only for ve
 
 | Table | Essential fields and constraints |
 |---|---|
-| `settings` | Singleton row for installation defaults (provider, model per provider, workspace root), timezone, and operational limits. Change through validated CLI commands. |
-| `agents` | `id`, `name`, `provider`, `instructions`, `model` (nullable for the provider default), `working_directory` (resolved absolute path), `codex_skip_git_repo_check` (false by default), `tool_policy_json`, `execution_config_version`, `enabled`, timestamps. Unique name. Increment the version when provider, model, or directory changes. |
+| `settings` | Singleton row for installation defaults (provider, model per provider, `default_working_directory` nullable, `shared_instructions` nullable), timezone, and operational limits. Change through validated CLI commands. |
+| `agents` | `id`, `name`, `provider`, `instructions`, `model` (nullable for the provider default), `working_directory` (resolved absolute path; null follows the default), `use_shared_instructions` (true by default), `codex_skip_git_repo_check` (false by default), `tool_policy_json`, `execution_config_version`, `enabled`, timestamps. Unique name. Increment the version when provider, model, or effective directory changes. |
 | `channels` | `id`, `integration_kind`, `external_key`, `address_json`, `agent_id`, `enabled`, timestamps. Unique `(integration_kind, external_key)`. For Telegram, derive the key from `chat_id` and the normalized `message_thread_id`; keep the structured IDs in `address_json`. |
 | `sessions` | `id`, `agent_id`, `channel_id`, `provider_session_id`, `agent_config_version`, `status`, timestamps. Index active Channel/Agent lookup; resume only if the saved version matches the Agent. |
 | `workflows` | `id`, `name`, `agent_id`, `input_template`, `enabled`, `concurrency_policy`, timestamps. |
 | `triggers` | `id`, `workflow_id`, `kind`, `config_json`, `timezone`, `next_run_at`, `last_run_at`, `enabled`. Index `(enabled, next_run_at)` for schedules. |
-| `workflow_runs` | `id`, `workflow_id`, `trigger_id`, `trigger_key`, `status`, `attempt`, `execution_config_json` (provider, model, working directory snapshot), `created_at`, `started_at`, `finished_at`, `result_json`, `error_text`. Unique `(workflow_id, trigger_key)`; index `(status, created_at)`. |
+| `workflow_runs` | `id`, `workflow_id`, `trigger_id`, `trigger_key`, `status`, `attempt`, `execution_config_json` (provider, model, resolved working directory snapshot), `created_at`, `started_at`, `finished_at`, `result_json`, `error_text`. Unique `(workflow_id, trigger_key)`; index `(status, created_at)`. |
 | `workflow_notification_targets` | `workflow_id`, `channel_id`, optional delivery rule. Composite primary key. |
 | `notifications` | `id`, `workflow_run_id`, `channel_id`, `status`, `payload`, `attempt`, `next_attempt_at`, `provider_message_id`, timestamps. Index delivery state; unique `(workflow_run_id, channel_id, notification_kind)` if one message of each kind is intended. |
 | `inbound_updates` | `integration_kind`, `external_update_id`, `received_at`, processing state. Unique integration/update ID; retain only as long as needed for deduplication. |
@@ -164,7 +173,7 @@ Define explicit migrations and disable production schema synchronization. Store 
 
 SQLite is the durable work ledger. The memory queue only limits active executions. At startup, load `pending` runs and inspect `running` runs. A run found `running` after an unclean stop becomes `interrupted`; retry only if its policy permits it. Tool side effects and Telegram delivery can occur before a crash is recorded, so execution is **at least once**, not exactly once. Use the trigger key to prevent duplicate run creation, and use idempotency keys or reconciliation for external side effects. Do not automatically replay an interrupted run that may have made irreversible changes unless that Workflow opts in.
 
-For one process, claim and state changes can use short SQLite transactions. Do not hold a transaction while an agent runs. Bound total concurrency and default to one active execution per working directory to prevent file conflicts, including across interactive turns and Workflow Runs. Graceful shutdown stops intake, halts new claims, requests cancellation, waits a bounded period, and leaves unresolved runs for startup recovery.
+For one process, claim and state changes can use short SQLite transactions. Do not hold a transaction while an agent runs. Bound total concurrency, serialize turns within a Session, and allow one active run per Workflow. Different Agents may run at the same time in a shared folder: they usually touch different notes, and when two edit the same file the last write wins. A per-folder exclusive option can be added if that proves a problem. Graceful shutdown stops intake, halts new claims, requests cancellation, waits a bounded period, and leaves unresolved runs for startup recovery.
 
 ## 9. Events, tools, and notifications
 
@@ -178,7 +187,7 @@ Notifications are durable outbound delivery requests. Each targets a Channel, ca
 
 Scale only when a measured bottleneck warrants it:
 
-1. Tune execution concurrency, per-workspace serialization, and SQLite indexes within the single process.
+1. Tune execution concurrency, per-Session serialization, and SQLite indexes within the single process.
 2. Separate Telegram/API intake from worker execution if responsiveness or crash isolation requires it. At that point, replace the in-memory wakeup with a cross-process dispatcher and define a single schedule owner.
 3. Move durable state to PostgreSQL when multiple writers or hosts require it. Migrate through repository interfaces and tested data migrations.
 4. Add Redis/BullMQ or another broker when distributed workers, queue throughput, or advanced retry coordination justify it. Keep the Workflow definition and Agent Runtime contracts stable.

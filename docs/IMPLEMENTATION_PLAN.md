@@ -26,7 +26,7 @@ Resolve bootstrap configuration with Zod: data directory from a `--data-dir` opt
 
 ### 1.3 Persistence foundation and settings
 
-Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, model choice per provider (null = provider default), workspace root, timezone, and operational limits.
+Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, model choice per provider (null = provider default), default working directory (null = a per-Agent folder under `workspaces/`), shared instructions (null = none), timezone, and operational limits.
 
 **Done when:** an integration test against a real temporary SQLite file shows a fresh database migrates, foreign keys are enforced, the settings row is seeded once, and a second startup is a no-op.
 
@@ -38,9 +38,9 @@ Add the remaining tables from [Architecture §7](./ARCHITECTURE.md#7-persistence
 
 ### 1.5 Settings and Agent services
 
-Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's model choice, creates `workspaceRoot/<agent-slug>` unless an existing absolute folder is given, and stores the resolved path. Editing provider, model, or folder increments `execution_config_version`. No CLI surface yet; these are the services the control endpoint will call.
+Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's model choice. Its working directory either is an explicit absolute folder or follows the default; add the resolver for the effective folder (own folder → default → `workspaces/<agent-slug>`, created on first use) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, model, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
 
-**Done when:** tests show a new Agent receives the defaults and a dedicated folder, changing defaults leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, and execution edits bump the version.
+**Done when:** tests show a new Agent receives the default provider and model, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or model leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, and shared instructions are composed unless an Agent opts out.
 
 ### 1.6 Control endpoint and component status
 
@@ -68,7 +68,7 @@ Add a global `--data-dir` option. `pero run --foreground` runs the daemon attach
 
 ### 1.10 First-run setup and degraded configuration
 
-Interactive `pero run` detects missing setup over the control endpoint and guides it: prompt for the Telegram bot token and store it in `secrets/` with owner-only permissions (never in SQLite or logs), and check `claude auth status` / `codex login status`, explaining the sign-in commands when needed. Non-interactive `pero run` leaves the daemon running degraded and prints actionable missing settings. Add `pero settings show` and `pero settings set` so defaults and the token can be changed later through the daemon.
+Interactive `pero run` detects missing setup over the control endpoint and guides it: prompt for the Telegram bot token and store it in `secrets/` with owner-only permissions (never in SQLite or logs), offer to set the default working directory that Agents share (for example a notes vault), and check `claude auth status` / `codex login status`, explaining the sign-in commands when needed. Non-interactive `pero run` leaves the daemon running degraded and prints actionable missing settings. Add `pero settings show` and `pero settings set` so defaults (including the default working directory and shared instructions) and the token can be changed later through the daemon.
 
 **Done when:** a daemon with missing Telegram setup starts, reports it as degraded, and becomes configured through `pero settings set` without a restart; non-interactive runs print the missing settings and do not wait for input; secrets never appear in `status`, settings output, or logs.
 
@@ -80,11 +80,11 @@ Add `pero backup <file>`: the daemon writes a consistent snapshot with the SQLit
 
 ### Phase 1 exit criteria
 
-Installation from a packed npm artifact exposes `pero`; `pero run` starts a background process and waits for readiness; a second `run` does not create a duplicate; `pero status` reports the process and any degraded components; management commands fail with a clear message when the daemon is stopped; a daemon with missing Telegram setup still starts and can be configured; `pero stop` shuts it down and is safe to repeat. A fresh install initializes its database and defaults; creating an Agent copies defaults into its record and creates a dedicated working folder; changing defaults leaves existing Agents unchanged; a restart keeps records; migrations run cleanly; a backup restores to a fresh data directory.
+Installation from a packed npm artifact exposes `pero`; `pero run` starts a background process and waits for readiness; a second `run` does not create a duplicate; `pero status` reports the process and any degraded components; management commands fail with a clear message when the daemon is stopped; a daemon with missing Telegram setup still starts and can be configured; `pero stop` shuts it down and is safe to repeat. A fresh install initializes its database and defaults; creating an Agent copies the default provider and model into its record and resolves its working folder from the shared default or its own override; changing the default provider or model leaves existing Agents unchanged; a restart keeps records; migrations run cleanly; a backup restores to a fresh data directory.
 
 ## Phase 2 — interactive path
 
-Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. Register each Telegram topic as a Channel and assign it an Agent. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session and working directory. Add allowlists and inbound deduplication.
+Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. Register each Telegram topic as a Channel and assign it an Agent. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session; different Agents may work in the same folder at the same time. Add allowlists and inbound deduplication.
 
 ### 2.1 Channel contract and router
 
@@ -94,9 +94,9 @@ Define the normalized inbound message and the adapter contract (`start(onMessage
 
 ### 2.2 Runtime contract, `AgentManager`, and Sessions
 
-Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runtime-contract), `SessionService` (one active Session per Channel/Agent; resume only when `agent_config_version` matches), and `AgentManager`, which builds the request from the Agent record, persists the returned provider session ID before the next turn, and serializes turns per Session and per working directory. Wire router → `AgentManager` → adapter reply. Test with a fake runtime.
+Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runtime-contract), `SessionService` (one active Session per Channel/Agent; resume only when `agent_config_version` matches), and `AgentManager`, which builds the request from the Agent record, persists the returned provider session ID before the next turn, and serializes turns per Session. Turns of different Agents run in parallel, even in a shared folder. Wire router → `AgentManager` → adapter reply. Test with a fake runtime.
 
-**Done when:** tests show ordered turns within a Session, parallel turns across unrelated folders, a stale config version starting a fresh Session, and provider session IDs persisted across a restart.
+**Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a stale config version starting a fresh Session, and provider session IDs persisted across a restart.
 
 ### 2.3 Telegram adapter
 
@@ -118,7 +118,7 @@ Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mappi
 
 ### 2.6 Agent management commands
 
-Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. Editing provider, model, or folder closes the Agent's active Sessions. Validate that folders exist and are accessible before enabling an Agent.
+Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. Editing provider, model, or folder closes the Agent's active Sessions. Validate that folders exist and are accessible before enabling an Agent.
 
 **Done when:** e2e tests cover each command, and an execution-setting edit makes the next turn start a fresh Session.
 
@@ -136,7 +136,7 @@ Add an e2e test with two topics routed to different Agents through the fake runt
 
 ### Phase 2 exit criteria
 
-Two Telegram topics assigned to different Agents retain separate contexts and work in their own folders; a follow-up resumes the right provider session after a process restart; editing provider, model, or folder starts a fresh Session; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
+Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing provider, model, or folder starts a fresh Session; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
 
 ## Phase 3 — durable workflows
 
@@ -150,9 +150,9 @@ Add Workflow and Trigger services and `pero workflows ls|show|create|edit|disabl
 
 ### 3.2 Manual runs and the bounded executor
 
-`pero workflows run <name>` creates a `pending` Workflow Run with a unique trigger key. A bounded in-process executor claims it, snapshots the Agent's execution settings, and runs it through `AgentManager` in an isolated context, sharing the per-working-directory lock with interactive turns. Record `completed` or `failed` with result or error.
+`pero workflows run <name>` creates a `pending` Workflow Run with a unique trigger key. A bounded in-process executor claims it, snapshots the Agent's execution settings, and runs it through `AgentManager` in an isolated context, with at most one active run per Workflow. Record `completed` or `failed` with result or error.
 
-**Done when:** tests show global and per-workspace concurrency limits hold, the snapshot is unaffected by later Agent edits, and a run never touches a Channel's interactive Session.
+**Done when:** tests show the global limit and one-run-per-Workflow rule hold, the snapshot is unaffected by later Agent edits, and a run never touches a Channel's interactive Session.
 
 ### 3.3 Schedule calculation
 
@@ -214,10 +214,11 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 |---|---|
 | Unknown Telegram topic | Reject with an owner-facing setup hint; explicit Channel enrollment. |
 | Missed schedule intervals | Coalesce to one catch-up run and record how many intervals were skipped. |
-| Workflow concurrency | One active run per Workflow and one per workspace unless explicitly overridden. |
+| Workflow concurrency | One active run per Workflow; different Agents and Workflows may share a folder concurrently (last write wins). |
 | Interrupted execution | Mark `interrupted`; manual retry by default when side effects may have occurred. |
 | Notification retry | Bounded attempts with backoff; retain failed records for inspection. |
-| Agent execution settings edit | Close active interactive Sessions when provider, model choice, or working directory changes; start a new provider context on the next turn. |
+| Agent execution settings edit | Close active interactive Sessions when provider, model choice, or effective working directory changes, including a change to the default an Agent follows; start a new provider context on the next turn. |
+| Shared instructions | Prepended to each Agent's instructions unless it opts out; edits apply to the next turn without rotating Sessions. Each runtime adapter verifies the SDK accepts updated instructions on a resumed session. |
 | Codex in a non-Git folder | Require an explicit Agent setting to skip the SDK Git repository check. |
 | Session history | Provider transcript is for provider context; the runtime database stores IDs and operational metadata. |
 | Configuration storage | SQLite is authoritative for Agents, Channels, Workflows, and Triggers; CLI operations validate changes. JSON export/import may be added without live file synchronization. |

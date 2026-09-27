@@ -33,20 +33,20 @@ Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access 
 | `pero stop` | Ask the running daemon to stop intake, cancel or finish active work within a bounded period, close the database, and exit. Report when it is already stopped. |
 | `pero status` | Show process state, version, data directory, health, and whether Telegram and each configured Agent Runtime are available. |
 | `pero logs` | Show recent daemon logs from local files; `--follow` streams new entries. Works whether or not the daemon is running. |
-| `pero agents ls` | List saved Agents, including provider, model choice, working directory, and enabled state. |
+| `pero agents ls` | List saved Agents, including provider, model choice, working directory (and whether it follows the default), and enabled state. |
 
 Every command except `run`, `run --foreground`, `stop`, `status`, and `logs` requires the running daemon. When it is stopped, the command exits with `Pero isn't running — start it with pero run` and does not start it implicitly.
 
-The same CLI will expose settings, Agent, Channel, Workflow, and Trigger management commands. Start with list/show/create/edit/disable operations; each sends a request to the daemon, whose application services validate references and apply the change. For example, creating an Agent should accept a provider, optional model choice, and optional working directory, with the SQLite installation defaults used when omitted. Changes to provider, model, or folder rotate that Agent's interactive Sessions according to the [architecture](./ARCHITECTURE.md#agent-configuration-and-defaults). Export/import commands can provide reviewable JSON for people who want to edit definitions as files; SQLite remains authoritative after import.
+The same CLI will expose settings, Agent, Channel, Workflow, and Trigger management commands. Start with list/show/create/edit/disable operations; each sends a request to the daemon, whose application services validate references and apply the change. For example, creating an Agent should accept a provider, optional model choice, and optional working directory, with the SQLite installation defaults used when omitted; an Agent without its own folder follows the default working directory. Changes to provider, model, or effective folder rotate that Agent's interactive Sessions according to the [architecture](./ARCHITECTURE.md#agent-configuration-and-defaults). Export/import commands can provide reviewable JSON for people who want to edit definitions as files; SQLite remains authoritative after import.
 
 ## First run and local files
 
-The default data directory is `~/.pero`, overridable with a CLI option or environment setting. On a first `pero run`, the daemon initializes the SQLite database, applies migrations, seeds installation defaults, creates the workspace root, and reports ready without Telegram or provider setup. An interactive `pero run` then guides the owner through Telegram setup and provider sign-in checks over the control endpoint, explaining the external Claude Code and Codex CLI sign-in commands when needed. A non-interactive run leaves the daemon running in a degraded state and prints the missing settings rather than waiting for input. A provider can be reported unavailable without silently changing billing mode or switching an Agent to another provider.
+The default data directory is `~/.pero`, overridable with a CLI option or environment setting. On a first `pero run`, the daemon initializes the SQLite database, applies migrations, seeds installation defaults, creates the `workspaces/` fallback folder, and reports ready without Telegram or provider setup. An interactive `pero run` then guides the owner through Telegram setup and provider sign-in checks over the control endpoint, explaining the external Claude Code and Codex CLI sign-in commands when needed. A non-interactive run leaves the daemon running in a degraded state and prints the missing settings rather than waiting for input. A provider can be reported unavailable without silently changing billing mode or switching an Agent to another provider.
 
 ```text
 ~/.pero/
 ├── pero.sqlite         # settings, definitions, and runtime state
-├── workspaces/          # default working folders for new Agents
+├── workspaces/          # per-Agent folders when no default working directory is set
 ├── logs/                # background-service logs
 ├── run/                 # local control endpoint and process metadata
 └── secrets/             # owner-only local secrets when needed
