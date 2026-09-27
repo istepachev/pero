@@ -37,10 +37,13 @@ The daemon creates the data directory (`logs/`, `run/`, `secrets/`) owner-only o
 npm run cli -- run --data-dir .pero     # start in the background; waits until ready
 npm run cli -- status --data-dir .pero  # process, health, and components
 npm run cli -- stop --data-dir .pero    # graceful stop; waits until it exits
+npm run cli -- logs -f --data-dir .pero # recent log entries, then new ones
 npm run cli -- run --foreground --data-dir .pero  # attached; logs to stdout
 ```
 
 `pero run` starts the daemon detached in its own session, so it keeps running after the terminal closes, and reports the running daemon instead of starting a second one. The daemon's own stdout and stderr (startup errors, crashes) go to `logs/daemon.out`; on a failed start, `pero run` prints that output and both log paths. `pero stop` and a repeated `pero run` are safe when there is nothing to do. `pero status` exits 3 when Pero is stopped. Commands that need the daemon fail with `Pero isn't running — start it with pero run` rather than starting it.
+
+`pero logs` prints the last 50 entries of `logs/pero.log` as readable lines in local time (`-n <count>` for more or fewer); `--follow` keeps streaming new entries, waiting for the file if Pero has not written it yet, and `--json` prints the raw lines for `jq`. It reads files only, so it works whether or not the daemon is running. It does not stream `logs/daemon.out`, but it names that file on stderr when it has content.
 
 The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 

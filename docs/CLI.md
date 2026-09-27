@@ -32,7 +32,7 @@ Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access 
 | `pero run --foreground` | Run the same daemon attached to the terminal for debugging or an external service manager. |
 | `pero stop` | Ask the running daemon to stop intake, cancel or finish active work within a bounded period, close the database, and exit. Report when it is already stopped. |
 | `pero status` | Show process state, version, data directory, health, and whether Telegram and each configured Agent Runtime are available. Exit with status 3 when Pero is stopped. |
-| `pero logs` | Show recent daemon logs from local files; `--follow` streams new entries. Works whether or not the daemon is running. |
+| `pero logs` | Show the most recent entries of `logs/pero.log` (`-n <count>`, default 50) as readable lines in local time; `--follow` streams new entries and `--json` prints the raw JSON lines. Reads files only, so it works whether or not the daemon is running; it points to `logs/daemon.out` rather than streaming it. |
 | `pero agents ls` | List saved Agents, including provider, model, effort, working directory (and whether it follows the default), and enabled state. |
 
 Every command except `run`, `run --foreground`, `stop`, `status`, and `logs` requires the running daemon. When it is stopped, the command exits with `Pero isn't running — start it with pero run` and does not start it implicitly.

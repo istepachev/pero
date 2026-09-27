@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RunCommand } from './commands/run.command.js';
 import { StatusCommand } from './commands/status.command.js';
@@ -15,6 +16,7 @@ import { GlobalOptionsSetup } from './global-options.js';
     RunCommand,
     StopCommand,
     StatusCommand,
+    LogsCommand,
     PingCommand,
   ],
 })
