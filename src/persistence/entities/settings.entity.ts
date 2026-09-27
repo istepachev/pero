@@ -5,11 +5,23 @@ import {
   Entity,
   PrimaryColumn,
   UpdateDateColumn,
+  type ValueTransformer,
 } from 'typeorm';
+import {
+  type Provider,
+  type ProviderDefaults,
+  providerDefaultsSchema,
+} from '../../config/provider-options.js';
 
-export const PROVIDERS = ['claude', 'codex'] as const;
-
-export type Provider = (typeof PROVIDERS)[number];
+// Validated in both directions, so an invalid value is never written and a
+// corrupted one fails loudly on read.
+const providerDefaultsTransformer: ValueTransformer = {
+  to: (value?: ProviderDefaults) =>
+    value === undefined
+      ? undefined
+      : JSON.stringify(providerDefaultsSchema.parse(value)),
+  from: (value: string) => providerDefaultsSchema.parse(JSON.parse(value)),
+};
 
 // Column types are explicit: nullable unions emit no usable design metadata.
 /** Installation defaults and operational limits; a singleton row. */
@@ -19,6 +31,7 @@ export type Provider = (typeof PROVIDERS)[number];
   'CHK_settings_default_provider',
   `"default_provider" IN ('claude', 'codex')`,
 )
+@Check('CHK_settings_provider_defaults', `json_valid("provider_defaults")`)
 @Check('CHK_settings_max_concurrent_runs', `"max_concurrent_runs" >= 1`)
 @Check('CHK_settings_shutdown_timeout_ms', `"shutdown_timeout_ms" >= 0`)
 export class Settings {
@@ -29,13 +42,16 @@ export class Settings {
   @Column({ name: 'default_provider', type: 'text', default: 'claude' })
   defaultProvider: Provider;
 
-  /** Model copied into new Claude Agents; null means the provider default. */
-  @Column({ name: 'claude_model', type: 'text', nullable: true })
-  claudeModel: string | null;
-
-  /** Model copied into new Codex Agents; null means the provider default. */
-  @Column({ name: 'codex_model', type: 'text', nullable: true })
-  codexModel: string | null;
+  /**
+   * Per-provider options (model, effort) copied into new Agents; a null
+   * option means the provider's own default. JSON text.
+   */
+  @Column({
+    name: 'provider_defaults',
+    type: 'text',
+    transformer: providerDefaultsTransformer,
+  })
+  providerDefaults: ProviderDefaults;
 
   /** Folder used by every Agent without its own; null until setup fills it. */
   @Column({ name: 'default_working_directory', type: 'text', nullable: true })

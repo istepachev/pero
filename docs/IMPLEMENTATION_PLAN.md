@@ -26,7 +26,7 @@ Resolve bootstrap configuration with Zod: data directory from a `--data-dir` opt
 
 ### 1.3 Persistence foundation and settings
 
-Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, model choice per provider (null = provider default), default working directory (null until setup fills it), shared instructions (null = none), timezone, and operational limits.
+Pin `@nestjs/typeorm`, `typeorm`, and `better-sqlite3`. Add `PersistenceModule`: WAL, foreign keys on, busy timeout, `synchronize: false`, and migrations run during startup before anything else touches the database. Add migration scripts and make the build ship compiled migrations. The first migration creates the singleton `settings` row with default provider, `provider_defaults` (JSON with each provider's model and effort, validated by a Zod schema per provider; null = provider default), default working directory (null until setup fills it), shared instructions (null = none), timezone, and operational limits.
 
 **Done when:** an integration test against a real temporary SQLite file shows a fresh database migrates, foreign keys are enforced, the settings row is seeded once, and a second startup is a no-op.
 
@@ -38,9 +38,9 @@ Add the remaining tables from [Architecture §7](./ARCHITECTURE.md#7-persistence
 
 ### 1.5 Settings and Agent services
 
-Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's model choice. Its working directory follows the default unless an explicit absolute folder is given; creation without a folder is rejected while no default is set; add the resolver for the effective folder (own folder, otherwise the default) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, model, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
+Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's options. Its working directory follows the default unless an explicit absolute folder is given; creation without a folder is rejected while no default is set; add the resolver for the effective folder (own folder, otherwise the default) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, provider options, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
 
-**Done when:** tests show a new Agent receives the default provider and model, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or model leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, an Agent cannot be created without a folder while the default is unset, and shared instructions are composed unless an Agent opts out.
+**Done when:** tests show a new Agent receives the default provider and its options, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or provider options leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, an Agent cannot be created without a folder while the default is unset, and shared instructions are composed unless an Agent opts out.
 
 ### 1.6 Control endpoint and component status
 
@@ -106,19 +106,19 @@ Add grammY long polling: derive the Channel key from `chat_id` and normalized `m
 
 ### 2.4 Claude runtime adapter
 
-Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` (omit when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out.
+Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out.
 
 **Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process, and sees a file written in the working directory.
 
 ### 2.5 Codex runtime adapter
 
-Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model` and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
+Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
 
 **Done when:** same coverage as 2.4, plus a test that a non-Git folder is refused unless the Agent opts out.
 
 ### 2.6 Agent management commands
 
-Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. Editing provider, model, or folder closes the Agent's active Sessions. Validate that folders exist and are accessible before enabling an Agent.
+Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. Editing provider, provider options, or folder closes the Agent's active Sessions. Validate that folders exist and are accessible before enabling an Agent.
 
 **Done when:** e2e tests cover each command, and an execution-setting edit makes the next turn start a fresh Session.
 
@@ -136,7 +136,7 @@ Add an e2e test with two topics routed to different Agents through the fake runt
 
 ### Phase 2 exit criteria
 
-Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing provider, model, or folder starts a fresh Session; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
+Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing provider, provider options, or folder starts a fresh Session; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
 
 ## Phase 3 — durable workflows
 
@@ -217,7 +217,7 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 | Workflow concurrency | One active run per Workflow; different Agents and Workflows may share a folder concurrently (last write wins). |
 | Interrupted execution | Mark `interrupted`; manual retry by default when side effects may have occurred. |
 | Notification retry | Bounded attempts with backoff; retain failed records for inspection. |
-| Agent execution settings edit | Close active interactive Sessions when provider, model choice, or effective working directory changes, including a change to the default an Agent follows; start a new provider context on the next turn. |
+| Agent execution settings edit | Close active interactive Sessions when provider, provider options (model, effort), or effective working directory changes, including a change to the default an Agent follows; start a new provider context on the next turn. |
 | Shared instructions | Prepended to each Agent's instructions unless it opts out; edits apply to the next turn without rotating Sessions. Each runtime adapter verifies the SDK accepts updated instructions on a resumed session. |
 | Codex in a non-Git folder | Require an explicit Agent setting to skip the SDK Git repository check. |
 | Session history | Provider transcript is for provider context; the runtime database stores IDs and operational metadata. |

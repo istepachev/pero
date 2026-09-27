@@ -95,8 +95,10 @@ describe('PersistenceModule', () => {
       {
         id: 1,
         defaultProvider: 'claude',
-        claudeModel: null,
-        codexModel: null,
+        providerDefaults: {
+          claude: { model: null, effort: null },
+          codex: { model: null, effort: null },
+        },
         defaultWorkingDirectory: null,
         sharedInstructions: null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -108,11 +110,14 @@ describe('PersistenceModule', () => {
     ]);
   });
 
-  it('rejects a second settings row and an unknown provider', async () => {
+  it('rejects a second row, an unknown provider, and malformed JSON', async () => {
     const ds = await start();
 
     await expect(
-      ds.query(`INSERT INTO "settings" ("id", "timezone") VALUES (2, 'UTC')`),
+      ds.query(
+        `INSERT INTO "settings" ("id", "provider_defaults", "timezone") ` +
+          `VALUES (2, '{}', 'UTC')`,
+      ),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
     });
@@ -121,6 +126,42 @@ describe('PersistenceModule', () => {
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
     });
+    await expect(
+      ds.query(`UPDATE "settings" SET "provider_defaults" = '{'`),
+    ).rejects.toMatchObject({
+      driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
+    });
+  });
+
+  it('validates provider defaults on write and read', async () => {
+    const ds = await start();
+    const repo = ds.getRepository(Settings);
+
+    await repo.update(1, {
+      providerDefaults: {
+        claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
+        codex: { model: null, effort: null },
+      },
+    });
+    expect((await repo.findOneByOrFail({ id: 1 })).providerDefaults).toEqual({
+      claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
+      codex: { model: null, effort: null },
+    });
+
+    await expect(
+      repo.update(1, {
+        providerDefaults: {
+          claude: { model: null, effort: 'minimal' as 'low' },
+          codex: { model: null, effort: null },
+        },
+      }),
+    ).rejects.toThrow(/effort/);
+
+    // Valid JSON that the schema rejects fails loudly on read.
+    await ds.query(
+      `UPDATE "settings" SET "provider_defaults" = '{"claude":{"temp":1}}'`,
+    );
+    await expect(repo.findOneByOrFail({ id: 1 })).rejects.toThrow(/temp/);
   });
 
   it('treats a second startup as a no-op', async () => {
