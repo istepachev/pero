@@ -11,6 +11,8 @@ export interface DataDirLayout {
   database: string;
   logs: string;
   logFile: string;
+  /** Plain-text stdout and stderr of a daemon started by `pero run`. */
+  daemonOutputFile: string;
   run: string;
   /** Unix socket of the control endpoint; owner-only. */
   controlSocket: string;
@@ -34,6 +36,7 @@ export function dataDirLayout(root: string): DataDirLayout {
     database: join(root, 'pero.sqlite'),
     logs,
     logFile: join(logs, 'pero.log'),
+    daemonOutputFile: join(logs, 'daemon.out'),
     run,
     controlSocket: join(run, 'pero.sock'),
     lockFile: join(run, 'pero.lock'),

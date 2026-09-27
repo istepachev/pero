@@ -101,7 +101,6 @@ describe('PersistenceModule', () => {
         sharedInstructions: null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         maxConcurrentRuns: 2,
-        shutdownTimeoutMs: 30_000,
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
       },

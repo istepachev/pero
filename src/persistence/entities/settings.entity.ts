@@ -16,9 +16,6 @@ import { jsonTransformer } from '../json-transformer.js';
 /** The ID of the one settings row. */
 export const SETTINGS_ID = 1;
 
-/** The shutdown timeout a fresh installation starts with. */
-export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
-
 // Column types are explicit: nullable unions emit no usable design metadata.
 /** Installation defaults and operational limits; a singleton row. */
 @Entity('settings')
@@ -29,7 +26,6 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 )
 @Check('CHK_settings_provider_defaults', `json_valid("provider_defaults")`)
 @Check('CHK_settings_max_concurrent_runs', `"max_concurrent_runs" >= 1`)
-@Check('CHK_settings_shutdown_timeout_ms', `"shutdown_timeout_ms" >= 0`)
 export class Settings {
   @PrimaryColumn({ type: 'integer' })
   id: number;
@@ -64,14 +60,6 @@ export class Settings {
   /** Upper bound on Workflow Runs executing at once. */
   @Column({ name: 'max_concurrent_runs', type: 'integer', default: 2 })
   maxConcurrentRuns: number;
-
-  /** How long graceful shutdown waits for active work. */
-  @Column({
-    name: 'shutdown_timeout_ms',
-    type: 'integer',
-    default: DEFAULT_SHUTDOWN_TIMEOUT_MS,
-  })
-  shutdownTimeoutMs: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

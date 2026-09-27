@@ -31,7 +31,7 @@ Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access 
 | `pero run` | Ensure one background Pero process is running for the selected data directory. On first use, create local directories and guide the owner through missing setup. Return only after startup and readiness succeed. Repeated calls report the existing process. |
 | `pero run --foreground` | Run the same daemon attached to the terminal for debugging or an external service manager. |
 | `pero stop` | Ask the running daemon to stop intake, cancel or finish active work within a bounded period, close the database, and exit. Report when it is already stopped. |
-| `pero status` | Show process state, version, data directory, health, and whether Telegram and each configured Agent Runtime are available. |
+| `pero status` | Show process state, version, data directory, health, and whether Telegram and each configured Agent Runtime are available. Exit with status 3 when Pero is stopped. |
 | `pero logs` | Show recent daemon logs from local files; `--follow` streams new entries. Works whether or not the daemon is running. |
 | `pero agents ls` | List saved Agents, including provider, model, effort, working directory (and whether it follows the default), and enabled state. |
 
@@ -46,7 +46,9 @@ The default data directory is `~/.pero`, overridable with the `--data-dir` optio
 ```text
 ~/.pero/
 ├── pero.sqlite         # settings, definitions, and runtime state
-├── logs/                # background-service logs (JSON lines in pero.log)
+├── logs/
+│   ├── pero.log         # daemon logs, JSON lines
+│   └── daemon.out       # raw stdout/stderr of a daemon started by `pero run`
 ├── run/                 # local control endpoint and process metadata
 └── secrets/             # owner-only local secrets when needed
 ```
@@ -59,7 +61,7 @@ The npm executable is a thin command entry point: `bin/pero.js` loads the compil
 
 Once the database is open and migrated, the daemon must start and report ready even when settings are missing or invalid. A bad Telegram token, a signed-out provider CLI, or an invalid Agent folder marks that component degraded in `pero status` instead of failing startup, so the owner can always fix configuration with ordinary commands. Only file-level maintenance that requires a stopped daemon, such as restoring a backup, runs without it.
 
-Permit only one daemon per data directory. Use an exclusive runtime lock and verify a live control endpoint before treating stored process metadata as current; a PID alone can be stale or reused. `pero stop` uses the control endpoint for graceful shutdown instead of killing whatever happens to have a saved PID. Database migrations happen before the daemon reports ready. `pero run` reports startup failures and where to find their logs.
+Permit only one daemon per data directory. Use an exclusive runtime lock and verify a live control endpoint before treating stored process metadata as current; a PID alone can be stale or reused. `pero stop` uses the control endpoint for graceful shutdown instead of killing whatever happens to have a saved PID. Database migrations happen before the daemon reports ready. `pero run` reports startup failures, printing the daemon's own output from `logs/daemon.out` and where to find the logs.
 
 `pero run` keeps the process alive after the invoking terminal exits. Automatic startup after login or reboot is a separate service-manager feature, not implied by this command. The foreground mode provides a stable entry point for launchd, systemd, or another supervisor if the owner chooses one later. Upgrading the global npm package does not replace a running process; restart Pero to use the new version, with migrations run on startup.
 

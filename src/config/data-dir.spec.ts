@@ -20,6 +20,7 @@ describe('dataDirLayout', () => {
       database: '/srv/pero/pero.sqlite',
       logs: '/srv/pero/logs',
       logFile: '/srv/pero/logs/pero.log',
+      daemonOutputFile: '/srv/pero/logs/daemon.out',
       run: '/srv/pero/run',
       controlSocket: '/srv/pero/run/pero.sock',
       lockFile: '/srv/pero/run/pero.lock',

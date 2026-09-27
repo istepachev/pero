@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '../persistence/entities/settings.entity.js';
+import { STOP_DEADLINE_MS } from '../common/shutdown.js';
 import { DaemonLifecycle, type DaemonLifecycleOptions } from './lifecycle.js';
 
 describe('DaemonLifecycle', () => {
-  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const logger = { info: vi.fn(), error: vi.fn() };
   const steps: string[] = [];
 
   afterEach(() => {
@@ -18,10 +18,9 @@ describe('DaemonLifecycle', () => {
         steps.push('close');
         return Promise.resolve();
       },
-      shutdownTimeoutMs: () => Promise.resolve(1000),
       cleanup: () => steps.push('cleanup'),
       logger,
-      closeMarginMs: 100,
+      deadlineMs: 1100,
       ...options,
     });
   }
@@ -74,19 +73,19 @@ describe('DaemonLifecycle', () => {
     );
   });
 
-  it('falls back to the default timeout when settings cannot be read', async () => {
+  it('gives up at the fixed stop deadline by default', async () => {
     vi.useFakeTimers();
     const daemon = lifecycle({
       close: () => new Promise(() => undefined),
-      shutdownTimeoutMs: () => Promise.reject(new Error('database closed')),
+      deadlineMs: undefined,
     });
 
     const result = daemon.stop('SIGTERM');
-    await vi.advanceTimersByTimeAsync(DEFAULT_SHUTDOWN_TIMEOUT_MS + 99);
+    await vi.advanceTimersByTimeAsync(STOP_DEADLINE_MS - 1);
     expect(steps).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
 
     await expect(result).resolves.toEqual({ graceful: false });
-    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(steps).toEqual(['cleanup']);
   });
 });

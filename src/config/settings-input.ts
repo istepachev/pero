@@ -42,7 +42,6 @@ export const settingsUpdateSchema = z.strictObject({
   sharedInstructions: z.string().nullable().optional(),
   timezone: timeZoneSchema.optional(),
   maxConcurrentRuns: z.int().min(1).optional(),
-  shutdownTimeoutMs: z.int().min(0).optional(),
 });
 
 export type SettingsUpdate = z.input<typeof settingsUpdateSchema>;
