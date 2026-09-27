@@ -41,12 +41,13 @@ The same CLI will expose settings, Agent, Channel, Workflow, and Trigger managem
 
 ## First run and local files
 
-The default data directory is `~/.pero`, overridable with the `--data-dir` option or the `PERO_HOME` environment variable (the option wins). On a first `pero run`, the daemon initializes the SQLite database, applies migrations, seeds installation defaults, creates the workspace root, and reports ready without Telegram or provider setup. An interactive `pero run` then guides the owner through Telegram setup and provider sign-in checks over the control endpoint, explaining the external Claude Code and Codex CLI sign-in commands when needed. A non-interactive run leaves the daemon running in a degraded state and prints the missing settings rather than waiting for input. A provider can be reported unavailable without silently changing billing mode or switching an Agent to another provider.
+The default data directory is `~/.pero`, overridable with a CLI option or environment setting. On a first `pero run`, the daemon initializes the SQLite database, applies migrations, seeds installation defaults, creates the workspace root, and reports ready without Telegram or provider setup. An interactive `pero run` then guides the owner through Telegram setup and provider sign-in checks over the control endpoint, explaining the external Claude Code and Codex CLI sign-in commands when needed. A non-interactive run leaves the daemon running in a degraded state and prints the missing settings rather than waiting for input. A provider can be reported unavailable without silently changing billing mode or switching an Agent to another provider.
 
 ```text
 ~/.pero/
 ├── pero.sqlite         # settings, definitions, and runtime state
-├── logs/                # background-service logs (JSON lines in pero.log)
+├── workspaces/          # default working folders for new Agents
+├── logs/                # background-service logs
 ├── run/                 # local control endpoint and process metadata
 └── secrets/             # owner-only local secrets when needed
 ```
