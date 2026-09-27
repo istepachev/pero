@@ -1,0 +1,131 @@
+# Pero tech stack and deployment
+
+## 1. Stack decision
+
+| Layer | Initial choice | Why it fits |
+|---|---|---|
+| Language and runtime | TypeScript on [Node.js 24 LTS](https://nodejs.org/en/about/previous-releases) | Shared types and a stable long-running server runtime. Declare and test the supported Node version. |
+| Application framework | NestJS modular monolith | Dependency injection, modules, lifecycle hooks, and one composition root for bot, scheduler, API, and workers. |
+| HTTP adapter | Fastify via `@nestjs/platform-fastify` | Small HTTP surface for health checks, administration, and later webhooks. |
+| First Channel integration | Telegram via grammY | Bot update handling and reply delivery; each Telegram topic is a Channel. Slack and Discord can be added later as separate Channel adapters. |
+| Agent execution | `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` | Provider implementations behind an internal `AgentRuntime` contract. |
+| Persistence | TypeORM + `better-sqlite3` + SQLite WAL | One local database file for configuration, sessions, schedules, run state, and notifications. |
+| Scheduling | `@nestjs/schedule` plus a database-backed due-trigger poller | The package clocks the tick; SQLite holds the authoritative schedule. |
+| Active work | Bounded in-process executor (`p-queue` or a small custom executor) | Controls concurrency without a Redis service; pending runs remain in SQLite. |
+| Validation | Zod | Parse configuration, webhook payloads, and flexible JSON fields at boundaries. |
+| Logging | Pino | Structured logs with correlation IDs and redaction. |
+| Tests | Vitest | Unit tests for time calculations and integration tests for recovery and routing. |
+| Package management and distribution | Public scoped npm package with a `pero` executable | One package and `package-lock.json` for development; users install `@your-scope/pero` globally and invoke `pero`. |
+| Deployment | `pero run` launches a native background service on the owner's machine or VPS | The CLI handles lifecycle and management; Claude Code and Codex use sign-in under the same OS account. |
+
+The earlier proposal of PostgreSQL, Drizzle, Redis/BullMQ, and separate gateway/worker processes was superseded by the self-hosted v1 decision. PostgreSQL and Redis remain possible future options, not mandatory dependencies.
+
+## 2. Repository layout
+
+```text
+pero/
+├── bin/
+│   └── pero.js
+├── src/
+│   ├── cli/
+│   ├── control/
+│   ├── agents/
+│   ├── runtimes/
+│   │   ├── claude/
+│   │   └── codex/
+│   ├── channels/
+│   │   └── telegram/
+│   ├── sessions/
+│   ├── workflows/
+│   ├── triggers/
+│   ├── scheduler/
+│   ├── notifications/
+│   ├── tools/
+│   ├── persistence/
+│   │   ├── entities/
+│   │   └── migrations/
+│   └── app.module.ts
+├── test/
+├── package.json
+├── package-lock.json
+└── README.md
+```
+
+A workspace/monorepo is unnecessary for the first deployable version. If gateway and worker become separate processes, this layout can be extracted into packages then.
+
+Commit `package-lock.json`. Use `npm install` when changing dependencies and `npm ci` for clean development and CI installs; [`npm ci` verifies the lockfile matches `package.json` without rewriting either file](https://docs.npmjs.com/cli/v11/commands/npm-ci/). Ship compiled JavaScript and migrations in the published package. The unscoped npm name `pero` is taken, so publish under the owner's user or organization [scope](https://docs.npmjs.com/about-scopes/), for example `@your-scope/pero`, using [`npm publish --access public`](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/). npm's [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) still exposes the global `pero` command. Test installation from `npm pack` output rather than assuming a source checkout behaves like the published package.
+
+## 3. Database configuration
+
+Illustrative Nest configuration:
+
+```ts
+TypeOrmModule.forRoot({
+  type: 'better-sqlite3',
+  database: config.databasePath,
+  enableWAL: true,
+  timeout: 5000,
+  entities: [/* explicit entity list */],
+  migrations: [/* explicit migration list */],
+  synchronize: false,
+});
+```
+
+TypeORM documents the `better-sqlite3` driver, `enableWAL`, and `timeout` options in its [SQLite driver guide](https://typeorm.io/docs/drivers/sqlite/). Run migrations during controlled startup before Telegram intake and scheduler ticks begin. Set foreign keys on and verify them in an integration test. Use short write transactions for schedule advancement, run creation, and delivery state changes; agent executions must run outside database transactions.
+
+WAL allows readers while a writer is active, but SQLite still has one writer at a time. Store the database on a local persistent filesystem, not a network share. A live backup must use SQLite's backup API or another consistent snapshot method; copying only `pero.sqlite` while WAL is active may omit recent committed work. See [SQLite WAL](https://www.sqlite.org/wal.html) and the [SQLite online backup API](https://www.sqlite.org/backup.html).
+
+## 4. Runtime integration
+
+`ClaudeRuntime` and `CodexRuntime` each own provider configuration, session/thread creation and resume, stream translation, cancellation, and error classification. Pero stores provider IDs as opaque values. It should never use a provider's native transcript as its only record of application state.
+
+The [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) runs the Claude Code agent loop in a process the operator controls and supports sessions and tools. The [Codex SDK](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) wraps the Codex CLI and supports persisted threads and streamed events. Package versions and exact adapter calls should be pinned and validated against the installed SDKs during implementation.
+
+The Agent record supplies `provider`, `model`, and `workingDirectory` for both interactive turns and Workflow Runs. The Claude adapter maps these to the SDK's `model` and `cwd` query options; the [Claude configuration guide](https://code.claude.com/docs/en/agent-sdk/configuration) documents both. The Codex adapter maps them to `model` and `workingDirectory` thread options, documented in the [Codex SDK options source](https://github.com/openai/codex/blob/main/sdk/typescript/src/threadOptions.ts). A null model means omit the provider's model option. Always pass the working directory explicitly instead of inheriting Pero's process directory.
+
+[Codex SDK documentation](https://github.com/openai/codex/blob/main/sdk/typescript/README.md#working-directory-controls) says its working directory normally must be a Git repository. For a Codex Agent, validate this at setup. If the owner deliberately chooses a non-Git folder, expose an explicit setting that maps to `skipGitRepoCheck`; do not silently bypass the check. Changing a Claude Agent's working directory requires a new session according to Anthropic's configuration guide; Pero applies the same new-session rule when provider or model choice changes, for predictable behavior across adapters.
+
+Keep the database, managed Agent folders, and provider session state on persistent local storage owned by the account running the service. An Agent may point to an existing project folder outside Pero's managed workspace root; document that folder's backup and permissions separately. Test session resume after a process restart. Keep credentials out of Agent definitions and database rows.
+
+## 5. Channel integrations and HTTP
+
+`ChannelsModule` exposes normalized inbound message and outbound delivery contracts. Telegram is the first implementation: its adapter resolves a topic to a Channel using the `chat_id` and `message_thread_id` provided by the [Bot API](https://core.telegram.org/bots/api), then replies with those same routing values. The initial transport may use long polling for a simple install; a webhook mode can be added if a public HTTPS endpoint is available. Only configured chats and users may invoke agents. Deduplicate inbound updates and guard against bot-generated message loops. Later Slack and Discord adapters provide their own address mapping, authorization checks, and delivery logic while reusing Agent, Session, Workflow, and Notification services.
+
+NestJS supports [Fastify as an HTTP adapter](https://docs.nestjs.com/techniques/performance). Keep the initial HTTP surface small: health/readiness, local admin actions, and later signed webhooks. Bind administration to a private interface or require authentication. HTTP availability must not be required for scheduled workflows if no external endpoint is configured.
+
+## 6. Scheduler and executor
+
+`@nestjs/schedule` runs one periodic poller; [Nest's scheduling guide](https://docs.nestjs.com/application/task-scheduling) describes the package. User schedules live in `triggers`, including cron expression, timezone, and `next_run_at`. The poller creates pending Workflow Runs in a transaction and advances `next_run_at`. The executor reads pending runs, applies global and per-workspace concurrency limits, and updates run status. After restart it recovers pending and interrupted runs according to policy.
+
+The in-process executor is deliberately disposable: its contents can be rebuilt from SQLite. It must not be the sole store of work. A Redis queue is an optional later change once there are multiple processes or hosts.
+
+## 7. Native installation and subscription authentication
+
+After installing a supported Node.js/npm version, the intended application install is `npm install -g @your-scope/pero` (replace the scope with the publisher's npm username or organization); then `pero run` initializes the local data directory on first use and starts the background service. See [CLI and service lifecycle](./CLI.md) for the command contract. Claude Code and Codex CLI sign-in must be available on the same machine and under the same OS account as Pero's long-lived process. Start with the owner's account for the simplest setup; a dedicated account is possible if the owner signs both CLIs in under that account. The runtime does not implement its own Claude or ChatGPT login screen and does not accept provider credentials through Agent definitions. First-run setup checks sign-ins and runs a short SDK execution for each configured provider before accepting work from that provider.
+
+| Agent execution | Owner setup | Verification |
+|---|---|---|
+| Codex SDK | Sign in to the Codex CLI with ChatGPT. On a headless host, use its device-code flow if enabled for the account. | `codex login status`, then an SDK run as the service account. |
+| Claude Agent SDK | Sign in to Claude Code with the owner's Claude subscription. | `claude auth status`, then an Agent SDK run as the service account. |
+
+[Official OpenAI documentation](https://learn.chatgpt.com/docs/auth) describes ChatGPT subscription sign-in, headless device-code login, and local credential storage under `CODEX_HOME`. The [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) controls a local Codex agent. Keep its credential store writable for token refresh and private to the service account.
+
+[Anthropic's June 2026 update](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) says the planned change to Agent SDK subscription usage was paused and that Agent SDK and third-party app usage continue to draw from subscription limits for now. The [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) documents subscription sign-in and `claude auth status`. Anthropic's [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) also contains separate approval wording about third-party products offering claude.ai login. Because these statements address different aspects of the integration, verify the policy for this distributed self-hosted runtime before release; the v1 implementation uses the owner's CLI sign-in and provides no embedded provider login flow.
+
+Keep every Agent's working directory and resumable session state on persistent local storage. Protect the OS account's Claude and Codex credential stores as secrets. If either subscription sign-in is absent or expires, mark that Agent Runtime unavailable and show a clear reauthentication action; do not switch billing modes silently.
+
+**Backup:** make a consistent SQLite snapshot, then back up that snapshot together with managed Agent folders, any external Agent folders that need recovery, runtime session state, and configuration needed to restore. Either protect credential stores in a separate encrypted backup or sign in again after restore. Test restoration to a fresh data directory. Do not copy a live WAL database file alone. Logs can be sent to stdout or a system log service.
+
+## 8. Configuration and observability
+
+Keep provider subscription credentials in the CLIs' protected credential stores. The CLI defaults to `~/.pero` for its data directory, with an explicit override available before opening SQLite. First-run setup creates the database and seeds a `settings` row. Settings, Agent/Channel definitions, Workflows, and Triggers are authoritative in SQLite and changed through validated CLI commands. These settings include default provider, a default model choice for each provider, workspace root, allowed users/chats, timezone, concurrency limits, and shutdown timeout. A null model choice means the provider's own default; a string pins a provider-specific model name. JSON export/import may be supported for review and bulk edits, but is not a second live configuration store.
+
+First-run setup obtains the Telegram token or reads it from the service environment, storing it in owner-only local secret storage if persistence is needed. Provider credentials and Telegram tokens do not belong in the settings row. Validate CLI input and any environment-supplied bootstrap values with Zod; fail early with a clear error.
+
+When the owner creates an Agent, Pero copies the selected provider and corresponding model choice from SQLite settings, creates `workspaceRoot/<agent-slug>` by default, and stores that folder's resolved absolute path. The owner can choose an existing absolute folder instead. Changing defaults affects future Agents only; an explicit Agent edit changes an existing Agent. This prevents a default change from silently switching an active Session's provider, model, or folder. If an Agent's execution settings change, close its active Sessions and use the new settings for subsequent runs. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
+
+Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflowRunId`, `runtimeKind`, duration, and outcome. Redact tokens, prompts that may contain private data, and tool outputs by default. Expose basic counters for run states, queue depth, failure rates, and notification retries; add OpenTelemetry/Sentry later if operating experience calls for them.
+
+## 9. Version and compatibility checks
+
+The stack is a design decision, not a floating dependency specification. Before starting implementation, pin mutually compatible releases of NestJS, TypeORM, `better-sqlite3`, grammY, both agent SDKs, and Node; commit the lockfile. Exercise a smoke test for each provider that creates a session, resumes it after process restart, and verifies workspace persistence. Recheck SDK authentication, permission, and session storage behavior when upgrading.
