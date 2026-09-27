@@ -1,22 +1,28 @@
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import { parseArgs } from 'node:util';
 import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from '@nestjs/platform-fastify';
-import { AppModule } from '../app.module.js';
+  ConfigError,
+  resolveBootstrapConfig,
+} from '../config/bootstrap-config.js';
+import { DataDirError } from '../config/data-dir.js';
+import { startDaemon } from './daemon.js';
 
-// Loopback only: the HTTP surface is private until administration is authenticated.
-const HOST = '127.0.0.1';
-const DEFAULT_PORT = 7717;
-
-async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-  );
-  app.enableShutdownHooks();
-  await app.listen(Number(process.env.PERO_PORT ?? DEFAULT_PORT), HOST);
+try {
+  const { values } = parseArgs({
+    options: {
+      'data-dir': { type: 'string' },
+      foreground: { type: 'boolean', default: false },
+    },
+  });
+  await startDaemon({
+    config: resolveBootstrapConfig({ dataDir: values['data-dir'] }),
+    foreground: values.foreground,
+  });
+} catch (error) {
+  const expected =
+    error instanceof ConfigError ||
+    error instanceof DataDirError ||
+    (error instanceof TypeError && 'code' in error); // parseArgs usage errors
+  console.error(expected ? error.message : error);
+  process.exitCode = 1;
 }
-
-await bootstrap();
