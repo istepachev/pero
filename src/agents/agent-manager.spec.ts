@@ -11,6 +11,7 @@ import type { InboundChat } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
 import { ChannelTurns } from '../channels/channel-stages.js';
 import { ChannelsModule } from '../channels/channels.module.js';
+import { ChannelsService } from '../channels/channels.service.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import {
   FakeChannelAdapter,
@@ -411,6 +412,68 @@ describe('AgentManager', () => {
     expect(
       (await allMessages()).find((message) => message.text === 'two'),
     ).toMatchObject({ direction: 'in', sessionId: null });
+  });
+
+  it('skips a turn whose Channel was assigned another Agent after it was accepted', async () => {
+    await say(OWNER, 'Hello');
+    const channel = await channelFor(OWNER.key);
+    await agents.create({ name: 'other' });
+    const held = claude.hold();
+    await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
+    await held.started;
+    await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
+    await moduleRef.get(ChannelsService).assign(channel.id, 'other');
+
+    held.release();
+    await idle();
+
+    expect(claude.requests.map((request) => request.input)).toEqual([
+      'Hello',
+      'one',
+    ]);
+    // The old Agent opened no Session in a Channel it no longer serves.
+    expect(
+      (await allSessions()).filter((session) => session.status === 'active'),
+    ).toEqual([]);
+
+    // The new Agent starts fresh, with the skipped message carried over.
+    await say(OWNER, 'three');
+    expect(claude.requests.at(-1)!.input).toMatch(/User: two\n.*\n\nthree$/s);
+    const other = await agents.get('other');
+    expect(
+      (await allSessions()).filter((session) => session.status === 'active'),
+    ).toEqual([
+      expect.objectContaining({ channelId: channel.id, agentId: other.id }),
+    ]);
+  });
+
+  it('skips a turn whose Channel was disabled after it was accepted, and resumes once enabled', async () => {
+    await say(OWNER, 'Hello');
+    const channel = await channelFor(OWNER.key);
+    const channels = moduleRef.get(ChannelsService);
+    const held = claude.hold();
+    await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
+    await held.started;
+    await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
+    await channels.setEnabled(channel.id, false);
+
+    held.release();
+    await idle();
+    expect(claude.requests.map((request) => request.input)).toEqual([
+      'Hello',
+      'one',
+    ]);
+
+    await say(OWNER, 'ignored');
+    expect(claude.requests).toHaveLength(2);
+
+    await channels.setEnabled(channel.id, true);
+    await say(OWNER, 'three');
+    expect(claude.requests.at(-1)).toMatchObject({
+      input: 'three',
+      providerSessionId: 'fake-claude-1',
+    });
+    expect(await allSessions()).toHaveLength(1);
   });
 
   describe('message history', () => {

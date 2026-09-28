@@ -181,7 +181,7 @@ Add `pero agents ls|show|create|edit|disable|enable` through the control endpoin
 
 ### 2.10 Channel management commands
 
-Add `pero channels ls|show|assign|disable|history`. Channels are created by onboarding, so there is no `enroll`; `assign` points a Channel at another Agent (for example, a new topic at an existing Agent instead of the one onboarding made) and closes the old Session. A disabled Channel ignores messages and is not onboarded again. `history <channel>` prints the Channel's latest messages (`-n <count>`), with time, direction, and origin.
+Add `pero channels ls|show|assign|disable|enable|history`. Channels are created by onboarding, so there is no `enroll`; `assign` points a Channel at another Agent (for example, a new topic at an existing Agent instead of the one onboarding made) and closes the old Session. A disabled Channel ignores messages and is not onboarded again. `history <channel>` prints the Channel's latest messages (`-n <count>`), with time, direction, and origin.
 
 **Done when:** e2e tests cover listing, reassignment (the new Agent's first turn carries over the Channel's history), disabling, and history, and two Channels assigned to different Agents keep separate Sessions.
 

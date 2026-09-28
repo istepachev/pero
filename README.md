@@ -79,6 +79,15 @@ npm run cli -- telegram deny -1001234567890 --data-dir .pero     # its Channels 
 
 To try a real bot before a provider is set up, start the daemon with `PERO_FAKE_RUNTIME=echo pero run`.
 
+Each topic, General topic, and direct chat is a Channel, created with its Agent when it first reaches Pero. `pero channels` lists them by ID:
+
+```sh
+npm run cli -- channels --data-dir .pero                  # each Channel with its Agent
+npm run cli -- channels assign 3 main --data-dir .pero    # topic 3 now talks to main, starting with its recent messages
+npm run cli -- channels disable 3 --data-dir .pero        # ignore it, without onboarding it again; enable brings it back
+npm run cli -- channels history 3 -n 50 --data-dir .pero  # its latest messages
+```
+
 ### Claude Agents
 
 Claude Agents run Claude Code through the Claude Agent SDK, signed in with the Claude Code sign-in of the account running Pero (`claude auth login`). Pero never passes `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on, so a key in the daemon's environment cannot switch the owner to API billing. An Agent works in its folder like Claude Code does: Claude Code's own system prompt with the Agent's instructions appended, and the owner's user, project, and local Claude Code settings, so the folder's `CLAUDE.md`, skills, and MCP servers apply. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.

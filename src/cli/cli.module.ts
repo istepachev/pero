@@ -9,6 +9,15 @@ import {
   AgentsShowCommand,
 } from './commands/agents.command.js';
 import { BackupCommand } from './commands/backup.command.js';
+import {
+  ChannelsAssignCommand,
+  ChannelsCommand,
+  ChannelsDisableCommand,
+  ChannelsEnableCommand,
+  ChannelsHistoryCommand,
+  ChannelsListCommand,
+  ChannelsShowCommand,
+} from './commands/channels.command.js';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
@@ -51,6 +60,13 @@ import { GlobalOptionsSetup } from './global-options.js';
     AgentsEditCommand,
     AgentsDisableCommand,
     AgentsEnableCommand,
+    ChannelsCommand,
+    ChannelsListCommand,
+    ChannelsShowCommand,
+    ChannelsAssignCommand,
+    ChannelsDisableCommand,
+    ChannelsEnableCommand,
+    ChannelsHistoryCommand,
     TelegramCommand,
     TelegramChatsCommand,
     TelegramAllowCommand,

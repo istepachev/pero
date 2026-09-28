@@ -62,6 +62,19 @@ export class SessionService {
     );
   }
 
+  /**
+   * Closes the Channel's active Sessions inside the caller's transaction,
+   * as when it is assigned another Agent: its next turn starts a fresh one.
+   */
+  async closeActiveWithin(
+    manager: EntityManager,
+    channelId: number,
+  ): Promise<void> {
+    await manager
+      .getRepository(Session)
+      .update({ channelId, status: 'active' }, { status: 'closed' });
+  }
+
   /** Records the provider's ID for `session` when it changed. */
   async recordProviderSessionId(
     session: Pick<Session, 'id' | 'providerSessionId'>,

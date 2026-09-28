@@ -7,6 +7,8 @@ import {
 import { AgentViews } from '../agents/agent-views.service.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { BackupService } from '../backup/backup.service.js';
+import { ChannelViews } from '../channels/channel-views.service.js';
+import { ChannelsService } from '../channels/channels.service.js';
 import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { withoutUndefined } from '../common/without-undefined.js';
@@ -22,7 +24,13 @@ import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { ControlServer } from './control-server.js';
-import type { AgentDetails, SettingsView, StatusResult } from './protocol.js';
+import type {
+  AgentDetails,
+  ChannelDetails,
+  ControlResult,
+  SettingsView,
+  StatusResult,
+} from './protocol.js';
 
 export const CONTROL_LAYOUT = Symbol('CONTROL_LAYOUT');
 
@@ -49,6 +57,8 @@ export class ControlService implements OnModuleDestroy {
     private readonly backup: BackupService,
     private readonly agents: AgentsService,
     private readonly agentViews: AgentViews,
+    private readonly channels: ChannelsService,
+    private readonly channelViews: ChannelViews,
   ) {}
 
   /**
@@ -75,6 +85,15 @@ export class ControlService implements OnModuleDestroy {
         'agents.get': ({ name }) => this.agentViews.details(name),
         'agents.create': (input) => this.createAgent(input),
         'agents.edit': ({ name, change }) => this.editAgent(name, change),
+        'channels.list': async () => ({
+          channels: await this.channelViews.list(),
+        }),
+        'channels.get': ({ id }) => this.channelViews.details(id),
+        'channels.assign': ({ id, agent }) => this.assignChannel(id, agent),
+        'channels.setEnabled': ({ id, enabled }) =>
+          this.setChannelEnabled(id, enabled),
+        'channels.history': ({ id, limit }) =>
+          this.channelViews.history(id, limit),
         'backup.create': ({ file }) => this.backup.create(file),
         'telegram.chats': () => this.telegramChats.list(),
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
@@ -162,6 +181,26 @@ export class ControlService implements OnModuleDestroy {
       `Agent ${agent.name} changed: ${changed.join(', ') || 'nothing'}`,
     );
     return this.agentViews.details(agent.name);
+  }
+
+  async assignChannel(
+    id: number,
+    agent: string,
+  ): Promise<ControlResult<'channels.assign'>> {
+    const { from, to, alreadyAssigned } = await this.channels.assign(id, agent);
+    if (!alreadyAssigned) {
+      this.logger.log(`Channel ${id} reassigned from Agent ${from} to ${to}`);
+    }
+    return { channel: await this.channelViews.details(id), alreadyAssigned };
+  }
+
+  async setChannelEnabled(
+    id: number,
+    enabled: boolean,
+  ): Promise<ChannelDetails> {
+    await this.channels.setEnabled(id, enabled);
+    this.logger.log(`Channel ${id} ${enabled ? 'enabled' : 'disabled'}`);
+    return this.channelViews.details(id);
   }
 
   async onModuleDestroy(): Promise<void> {

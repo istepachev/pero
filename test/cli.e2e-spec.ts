@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
+import type { Chat } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataDirLayout, type DataDirLayout } from '../src/config/data-dir.js';
 import { PACKAGE_VERSION } from '../src/common/package-version.js';
@@ -606,6 +607,111 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await settings('unset', 'main-agent')).toMatchObject({
       code: 0,
       stdout: expect.stringMatching(/^main-agent is now \(not set: main\)\n/),
+    });
+  });
+
+  it('lists, shows, assigns, disables, and enables Channels, and prints their history', async () => {
+    const channels = (...args: string[]) =>
+      pero(withDataDir('channels', ...args));
+    expect(await channels()).toMatchObject({
+      code: 1,
+      stderr: `${NOT_RUNNING}\n`,
+    });
+
+    const forum: Chat.SupergroupChat = {
+      id: -1001234567890,
+      type: 'supergroup',
+      title: 'Household',
+      is_forum: true,
+    };
+    api.chats.set(String(forum.id), forum);
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    mkdirSync(join(tmp, 'vault'));
+    await pero(
+      withDataDir(
+        'settings',
+        'set',
+        'default-working-directory',
+        join(tmp, 'vault'),
+      ),
+    );
+    await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
+      input: `${TOKEN}\n`,
+    });
+    await connectedStatus();
+    expect(await channels()).toMatchObject({
+      code: 0,
+      stdout: expect.stringMatching(/^No Channels yet\. /),
+    });
+    await pero(withDataDir('telegram', 'allow', String(forum.id)));
+    api.push({
+      message: {
+        message_id: 1,
+        date: 0,
+        chat: forum,
+        from: { id: 1234, is_bot: false, first_name: 'Ada' },
+        message_thread_id: 42,
+        is_topic_message: true,
+        forum_topic_created: { name: 'Groceries', icon_color: 0 },
+      },
+    } as never);
+    await vi.waitFor(() => expect(api.sent()).toHaveLength(1));
+
+    expect(await channels()).toEqual({
+      code: 0,
+      stdout:
+        'ID  CHANNEL                     TITLE      AGENT      STATE\n' +
+        '1   telegram -1001234567890:42  Groceries  groceries  enabled\n',
+      stderr: '',
+    });
+    const show = await channels('show', '1');
+    expect(show.code).toBe(0);
+    expect(show.stdout).toMatch(/^Channel 1 "Groceries"\n/);
+    expect(show.stdout).toMatch(/^ {2}next turn +starts its first Session$/m);
+    expect(show.stdout).toMatch(/^ {2}history +1 message, the latest at /m);
+
+    await pero(withDataDir('agents', 'create', 'chef'));
+    const described = 'Channel 1 (telegram -1001234567890:42 "Groceries")';
+    expect(await channels('assign', '1', 'chef')).toMatchObject({
+      code: 0,
+      stdout: `${described} now talks to Agent chef.\nIts next turn starts a fresh Session.\n`,
+    });
+    expect(await channels('assign', '1', 'chef')).toMatchObject({
+      code: 0,
+      stdout: `${described} already talks to Agent chef.\n`,
+    });
+    expect(await channels('disable', '1')).toMatchObject({
+      code: 0,
+      stdout: `Disabled ${described}. Its messages are ignored until pero channels enable 1.\n`,
+    });
+    expect((await channels('ls')).stdout).toMatch(/ chef +disabled\n$/);
+    expect(await channels('enable', '1')).toMatchObject({
+      code: 0,
+      stdout: `Enabled ${described}: it talks to Agent chef.\n`,
+    });
+
+    const history = await channels('history', '1', '-n', '5');
+    expect(history.code).toBe(0);
+    expect(history.stdout).toMatch(
+      /^\d{4}-\d\d-\d\d \d\d:\d\d {2}out {2}pero {2}This topic talks to Agent groceries: /,
+    );
+
+    expect(await channels('history', '1', '-n', '0')).toMatchObject({
+      code: 1,
+      stderr: '--lines must be a whole number from 1 to 500, not "0"\n',
+    });
+    expect(await channels('show', 'groceries')).toMatchObject({
+      code: 1,
+      stderr:
+        'channel must be a Channel ID, as pero channels ls lists it, not "groceries"\n',
+    });
+    expect(await channels('show', '9')).toMatchObject({
+      code: 1,
+      stderr: 'No Channel with ID 9\n',
+    });
+    expect(await channels('assign', '1', 'nobody')).toMatchObject({
+      code: 1,
+      stderr: 'No Agent named nobody\n',
     });
   });
 
