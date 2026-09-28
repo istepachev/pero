@@ -391,6 +391,8 @@ describe('AgentsService', () => {
           providerOptions: { model: 'gpt-5.5-codex', effort: 'minimal' },
           workingDirectory: vault,
           instructions: 'Answer in English.\n\nBe brief.',
+          toolPolicy: {},
+          enabled: true,
         });
         expect((await agents.resolve('coder')).instructions).toBe(
           'Write tests.',

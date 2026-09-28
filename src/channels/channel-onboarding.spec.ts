@@ -47,7 +47,10 @@ describe('Channel onboarding', () => {
   let agents: AgentsService;
   let settings: SettingsService;
   let adapter: FakeChannelAdapter;
-  const turns = { handle: vi.fn(() => Promise.resolve()) };
+  const turns = {
+    handle: vi.fn(() => Promise.resolve()),
+    drain: vi.fn(() => Promise.resolve()),
+  };
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-onboarding-'));

@@ -42,7 +42,10 @@ describe('ChannelRouter', () => {
   let agents: AgentsService;
   let allowedChats: AllowedChatsService;
   let adapter: FakeChannelAdapter;
-  const turns = { handle: vi.fn(() => Promise.resolve()) };
+  const turns = {
+    handle: vi.fn(() => Promise.resolve()),
+    drain: vi.fn(() => Promise.resolve()),
+  };
   const onboarding = {
     onUnknownChannel: vi.fn((): Promise<Channel | null> =>
       Promise.resolve(null),
@@ -336,12 +339,18 @@ describe('ChannelRouter', () => {
     });
   });
 
-  it('stops intake on shutdown', async () => {
+  it('stops intake on shutdown, then drains the turns', async () => {
     expect(adapter.running).toBe(true);
+    let runningAtDrain: boolean | null = null;
+    turns.drain.mockImplementationOnce(() => {
+      runningAtDrain = adapter.running;
+      return Promise.resolve();
+    });
 
     await moduleRef.close();
 
     expect(adapter.running).toBe(false);
+    expect(runningAtDrain).toBe(false);
     // afterEach closes it again; a closed module ignores that.
   });
 

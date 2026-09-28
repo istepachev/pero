@@ -110,25 +110,30 @@ Pero owns `AgentId`, `SessionId`, and `WorkflowRunId`. Provider IDs are opaque s
 ```ts
 interface AgentRuntime {
   readonly kind: 'claude' | 'codex';
-  execute(request: RuntimeRequest): AsyncIterable<RuntimeEvent>;
-  cancel(executionId: string): Promise<void>;
+  execute(request: RuntimeRequest): AsyncIterable<RuntimeEvent>; // throws RuntimeError
 }
 
 interface RuntimeRequest {
-  agentId: string;
+  agentId: number;
   input: string;
   instructions: string; // shared instructions (unless opted out) + the Agent's own
   providerOptions: ProviderOptions; // model, effort; null values are omitted
   workingDirectory: string; // effective folder, already resolved
   providerSessionId?: string; // absent for a new conversation
   toolPolicy: ToolPolicy;
-  signal: AbortSignal;
+  signal: AbortSignal; // cancels the turn
 }
+
+type RuntimeEvent =
+  | { type: 'session'; providerSessionId: string } // created or resumed
+  | { type: 'text'; delta: string }
+  | { type: 'tool'; name: string }
+  | { type: 'result'; text: string };
 ```
 
-The adapter returns a newly created or resumed provider session ID in a normalized event. `AgentManager` persists that mapping before accepting the next turn. Normalize text deltas, tool activity, final result, errors, and cancellation. Keep raw provider payloads behind the adapter boundary; store only what is needed for diagnostics and recovery. The interface is a design contract, not a claim that the two SDKs have identical APIs.
+The adapter returns a newly created or resumed provider session ID in a normalized event. `AgentManager` persists that mapping before accepting the next turn. Normalize text deltas, tool activity, and the final result as events; a failure throws a `RuntimeError` whose kind says whether the provider is signed out, the turn was cancelled through its signal, or it failed otherwise. Keep raw provider payloads behind the adapter boundary; store only what is needed for diagnostics and recovery. The interface is a design contract, not a claim that the two SDKs have identical APIs.
 
-**Session policy:** one active interactive Session per `(channel_id, agent_id)` in v1. On Agent reassignment, close the old Session and create a new one. A Session records the provider and the effective working directory it began with, and a turn resumes it only while the Agent still has both. When either differs, the turn closes that Session and starts a fresh one: another provider cannot read the session ID, and a provider session belongs to its folder (Claude Code stores sessions per project folder, and a Codex thread carries its folder in its history). A change of the default folder an Agent follows counts, since the effective folder is what is compared. Model, effort, and instructions are not part of this check: like switching the model inside the Claude Code or Codex CLI, an edit applies from the next turn of the same conversation. No version counter is kept; the comparison happens when a turn starts, so changing a setting and changing it back before the next message keeps the Session. Active executions finish with the configuration captured when they started. When a fresh Session replaces an earlier one in the same Channel (a changed provider or folder, or a reassigned Channel), its first turn starts with the Channel's latest messages from Pero's message history (§7), so the conversation carries over even to another provider; a resumed Session gets nothing extra. Workflow Runs use an isolated provider session or a stateless execution by default, so scheduled work does not change the Channel's conversation history. A Workflow may explicitly opt into a dedicated reusable workflow Session later.
+**Session policy:** one active interactive Session per `(channel_id, agent_id)` in v1. On Agent reassignment, close the old Session and create a new one. A Session records the provider and the effective working directory it began with, and a turn resumes it only while the Agent still has both. When either differs, the turn closes that Session and starts a fresh one: another provider cannot read the session ID, and a provider session belongs to its folder (Claude Code stores sessions per project folder, and a Codex thread carries its folder in its history). A change of the default folder an Agent follows counts, since the effective folder is what is compared. Model, effort, and instructions are not part of this check: like switching the model inside the Claude Code or Codex CLI, an edit applies from the next turn of the same conversation. No version counter is kept; the comparison happens when a turn starts, so changing a setting and changing it back before the next message keeps the Session. Active executions finish with the configuration captured when they started. When Pero stops, intake ends first; running turns get the shutdown timeout to finish and are then aborted through their signal, turns still queued never start, and each such Channel is told to send its message again. The provider session ID a turn already reported stays recorded. When a fresh Session replaces an earlier one in the same Channel (a changed provider or folder, or a reassigned Channel), its first turn starts with the Channel's latest messages from Pero's message history (§7), so the conversation carries over even to another provider; a resumed Session gets nothing extra. Workflow Runs use an isolated provider session or a stateless execution by default, so scheduled work does not change the Channel's conversation history. A Workflow may explicitly opt into a dedicated reusable workflow Session later.
 
 ## 6. Core flows
 
