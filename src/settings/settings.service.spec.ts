@@ -167,29 +167,37 @@ describe('SettingsService', () => {
       await agents.edit('health', { enabled: false });
     });
 
-    async function versions() {
+    async function folders() {
+      const names = (await agents.list()).map((agent) => agent.name);
       return Object.fromEntries(
-        (await agents.list()).map((agent) => [
-          agent.name,
-          agent.executionConfigVersion,
-        ]),
+        await Promise.all(
+          names.map(async (name) => [
+            name,
+            (await agents.resolve(name)).workingDirectory,
+          ]),
+        ),
       );
     }
 
-    it('moves and bumps every Agent that follows it, and no other', async () => {
+    it('moves every Agent that follows it, and no other', async () => {
       await settings.update({ defaultWorkingDirectory: other });
 
-      expect(await versions()).toEqual({ assistant: 2, health: 2, coder: 1 });
-      expect((await agents.resolve('assistant')).workingDirectory).toBe(other);
-      expect((await agents.resolve('health')).workingDirectory).toBe(other);
-      expect((await agents.resolve('coder')).workingDirectory).toBe(own);
+      expect(await folders()).toEqual({
+        assistant: other,
+        coder: own,
+        health: other,
+      });
     });
 
-    it('bumps nothing when the folder stays the same', async () => {
+    it('leaves the stored folder as given when only its spelling differs', async () => {
       await settings.update({ defaultWorkingDirectory: `${vault}/` });
-      await settings.update({ sharedInstructions: 'Answer in English.' });
 
-      expect(await versions()).toEqual({ assistant: 1, health: 1, coder: 1 });
+      expect((await settings.get()).defaultWorkingDirectory).toBe(vault);
+      expect(await folders()).toEqual({
+        assistant: vault,
+        coder: own,
+        health: vault,
+      });
     });
   });
 });

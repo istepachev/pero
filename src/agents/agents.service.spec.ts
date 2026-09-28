@@ -97,7 +97,6 @@ describe('AgentsService', () => {
           useSharedInstructions: true,
           codexSkipGitRepoCheck: false,
           toolPolicy: {},
-          executionConfigVersion: 1,
           enabled: true,
         });
         expect(await agents.get('assistant')).toEqual(agent);
@@ -227,11 +226,7 @@ describe('AgentsService', () => {
         await agents.create({ name: 'assistant', instructions: 'Be brief.' });
       });
 
-      async function version(): Promise<number> {
-        return (await agents.get('assistant')).executionConfigVersion;
-      }
-
-      it('changes descriptive fields without a new version', async () => {
+      it('changes descriptive fields', async () => {
         const agent = await agents.edit('Assistant', {
           title: 'Assistant',
           instructions: 'Be thorough.',
@@ -244,16 +239,10 @@ describe('AgentsService', () => {
           instructions: 'Be thorough.',
           useSharedInstructions: false,
           codexSkipGitRepoCheck: true,
-          executionConfigVersion: 1,
         });
       });
 
-      it('bumps the version when the options change, not when they are repeated', async () => {
-        await agents.edit('assistant', {
-          providerOptions: { model: 'gpt-5.5-codex' },
-        });
-        expect(await version()).toBe(1);
-
+      it('changes options one at a time, keeping the others', async () => {
         const agent = await agents.edit('assistant', {
           providerOptions: { effort: 'high' },
         });
@@ -261,7 +250,6 @@ describe('AgentsService', () => {
           model: 'gpt-5.5-codex',
           effort: 'high',
         });
-        expect(agent.executionConfigVersion).toBe(2);
       });
 
       it("switches provider with that provider's defaults unless options are given", async () => {
@@ -269,7 +257,6 @@ describe('AgentsService', () => {
         expect(agent).toMatchObject({
           provider: 'claude',
           providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
-          executionConfigVersion: 2,
         });
 
         agent = await agents.edit('assistant', {
@@ -279,7 +266,6 @@ describe('AgentsService', () => {
         expect(agent).toMatchObject({
           provider: 'codex',
           providerOptions: { model: 'gpt-5.5-codex', effort: 'xhigh' },
-          executionConfigVersion: 3,
         });
       });
 
@@ -295,33 +281,24 @@ describe('AgentsService', () => {
             providerOptions: { effort: 'persistent' },
           }),
         ).rejects.toThrow(/Invalid claude options/);
-        expect(await version()).toBe(2);
+        expect(await agents.get('assistant')).toMatchObject({
+          provider: 'claude',
+          providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
+        });
       });
 
-      it('bumps the version when the effective folder changes', async () => {
-        await agents.edit('assistant', { workingDirectory: own });
-        expect(await version()).toBe(2);
-
+      it('moves to its own folder and back to the default', async () => {
         await agents.edit('assistant', { workingDirectory: `${own}/` });
-        expect(await version()).toBe(2);
+        expect((await agents.get('assistant')).workingDirectory).toBe(own);
+        expect((await agents.resolve('assistant')).workingDirectory).toBe(own);
 
         const agent = await agents.edit('assistant', {
           workingDirectory: null,
         });
         expect(agent.workingDirectory).toBeNull();
-        expect(agent.executionConfigVersion).toBe(3);
         expect((await agents.resolve('assistant')).workingDirectory).toBe(
           vault,
         );
-      });
-
-      it('keeps the version when an own folder equals the default it followed', async () => {
-        const agent = await agents.edit('assistant', {
-          workingDirectory: vault,
-        });
-
-        expect(agent.workingDirectory).toBe(vault);
-        expect(agent.executionConfigVersion).toBe(1);
       });
 
       it('rejects an invalid folder and changes nothing', async () => {
@@ -369,8 +346,8 @@ describe('AgentsService', () => {
 
         expect(await agents.get('assistant')).toMatchObject({
           provider: 'claude',
+          providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
           workingDirectory: own,
-          executionConfigVersion: 4,
         });
       });
     });
@@ -392,21 +369,19 @@ describe('AgentsService', () => {
           providerOptions: { model: 'gpt-5.5-codex', effort: 'minimal' },
           workingDirectory: vault,
           instructions: 'Answer in English.\n\nBe brief.',
-          executionConfigVersion: 1,
         });
         expect((await agents.resolve('coder')).instructions).toBe(
           'Write tests.',
         );
       });
 
-      it('applies shared instruction edits without a new version', async () => {
+      it('applies shared instruction edits at once', async () => {
         await agents.create({ name: 'assistant', instructions: 'Be brief.' });
 
         await settings.update({ sharedInstructions: 'Answer in German.' });
 
         expect(await agents.resolve('assistant')).toMatchObject({
           instructions: 'Answer in German.\n\nBe brief.',
-          executionConfigVersion: 1,
         });
       });
     });

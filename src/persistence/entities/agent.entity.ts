@@ -24,7 +24,6 @@ import { isSlug, oneOf } from './sql.js';
 @Check('CHK_agents_provider', oneOf('provider', PROVIDERS))
 @Check('CHK_agents_provider_options', `json_valid("provider_options")`)
 @Check('CHK_agents_tool_policy_json', `json_valid("tool_policy_json")`)
-@Check('CHK_agents_execution_config_version', `"execution_config_version" >= 1`)
 export class Agent {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
@@ -78,13 +77,6 @@ export class Agent {
     transformer: jsonTransformer(jsonObject),
   })
   toolPolicy: Record<string, unknown>;
-
-  /**
-   * Incremented when the provider, provider options, or effective working
-   * directory changes; a Session resumes only at the version it began with.
-   */
-  @Column({ name: 'execution_config_version', type: 'integer', default: 1 })
-  executionConfigVersion: number;
 
   @Column({ type: 'boolean', default: true })
   enabled: boolean;

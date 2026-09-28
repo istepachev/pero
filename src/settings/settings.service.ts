@@ -12,7 +12,6 @@ import {
   settingsUpdateSchema,
 } from '../config/settings-input.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import {
   SETTINGS_ID,
   Settings,
@@ -33,7 +32,7 @@ export class SettingsService {
   /**
    * Applies `input` and returns the new settings. Provider defaults change
    * only future Agents. A new default working directory moves every Agent
-   * that follows it, so their execution config version increases with it.
+   * that follows it; their next turns start fresh Sessions there.
    */
   async update(input: SettingsUpdate): Promise<Settings> {
     const { providerDefaults, defaultWorkingDirectory, ...rest } = parseInput(
@@ -61,22 +60,12 @@ export class SettingsService {
           ),
         });
       }
-      const folderChanged =
-        folder !== undefined && folder !== current.defaultWorkingDirectory;
-      if (folderChanged) changes.defaultWorkingDirectory = folder;
+      if (folder !== undefined && folder !== current.defaultWorkingDirectory) {
+        changes.defaultWorkingDirectory = folder;
+      }
 
       if (Object.keys(changes).length > 0) {
         await repo.update(SETTINGS_ID, changes);
-      }
-      if (folderChanged) {
-        await manager
-          .createQueryBuilder()
-          .update(Agent)
-          .set({
-            executionConfigVersion: () => '"execution_config_version" + 1',
-          })
-          .where('"working_directory" IS NULL')
-          .execute();
       }
       return repo.findOneByOrFail({ id: SETTINGS_ID });
     });

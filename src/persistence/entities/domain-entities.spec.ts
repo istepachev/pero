@@ -55,7 +55,8 @@ async function seed(ds: DataSource) {
     agentId: agent.id,
     channelId: channel.id,
     providerSessionId: 'provider-session',
-    agentConfigVersion: agent.executionConfigVersion,
+    provider: agent.provider,
+    workingDirectory: '/home/owner/vault',
   });
   const workflow = await ds.getRepository(Workflow).save({
     name: 'daily-brief',
@@ -163,6 +164,8 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
+    // The Session resume migration, then the domain tables.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).toEqual([
       'migrations',
@@ -174,6 +177,45 @@ describe('domain entities', () => {
     await db.runMigrations({ transaction: 'each' });
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
     await seed(db);
+  });
+
+  it("gives existing Sessions their Agent's provider and folder, and reverts to config versions", async () => {
+    const db = await open();
+    await db
+      .getRepository(Settings)
+      .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
+    const seeded = await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(
+      await db.query(
+        `SELECT "agent_config_version", "provider_session_id" FROM "sessions"`,
+      ),
+    ).toEqual([
+      { agent_config_version: 1, provider_session_id: 'provider-session' },
+    ]);
+    expect(
+      await db.query(`SELECT "name", "execution_config_version" FROM "agents"`),
+    ).toEqual([{ name: 'assistant', execution_config_version: 1 }]);
+
+    // The Agent's own folder wins over the default it no longer follows.
+    await db.query(
+      `UPDATE "agents" SET "working_directory" = '/home/owner/own'`,
+    );
+    await db.runMigrations({ transaction: 'each' });
+
+    expect(
+      await db
+        .getRepository(Session)
+        .findOneByOrFail({ id: seeded.session.id }),
+    ).toMatchObject({
+      provider: 'claude',
+      workingDirectory: '/home/owner/own',
+      providerSessionId: 'provider-session',
+      status: 'active',
+    });
+    expect(await db.getRepository(Channel).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
   it('keeps every record across closing and reopening the database', async () => {
@@ -191,7 +233,6 @@ describe('domain entities', () => {
       useSharedInstructions: true,
       codexSkipGitRepoCheck: false,
       toolPolicy: { allow: ['Read'] },
-      executionConfigVersion: 1,
       enabled: true,
     });
     expect(before.triggers[0]!.nextRunAt).toEqual(
@@ -329,7 +370,8 @@ describe('domain entities', () => {
       const next = {
         agentId: seeded.agent.id,
         channelId: seeded.channel.id,
-        agentConfigVersion: 2,
+        provider: 'codex' as const,
+        workingDirectory: '/home/owner/code',
       };
       await rejectsWith(sessions.insert(next), 'SQLITE_CONSTRAINT_UNIQUE');
 
@@ -377,14 +419,14 @@ describe('domain entities', () => {
       [
         'sessions.agent_id',
         (s) =>
-          `INSERT INTO "sessions" ("agent_id", "channel_id", ` +
-          `"agent_config_version") VALUES (${MISSING}, ${s.channel.id}, 1)`,
+          `INSERT INTO "sessions" ("agent_id", "channel_id", "provider", ` +
+          `"working_directory") VALUES (${MISSING}, ${s.channel.id}, 'claude', '/x')`,
       ],
       [
         'sessions.channel_id',
         (s) =>
-          `INSERT INTO "sessions" ("agent_id", "channel_id", ` +
-          `"agent_config_version") VALUES (${s.agent.id}, ${MISSING}, 1)`,
+          `INSERT INTO "sessions" ("agent_id", "channel_id", "provider", ` +
+          `"working_directory") VALUES (${s.agent.id}, ${MISSING}, 'claude', '/x')`,
       ],
       [
         'workflows.agent_id',
@@ -490,6 +532,7 @@ describe('domain entities', () => {
       `UPDATE "agents" SET "tool_policy_json" = '['`,
       `UPDATE "channels" SET "integration_kind" = 'slack'`,
       `UPDATE "sessions" SET "status" = 'paused'`,
+      `UPDATE "sessions" SET "provider" = 'gpt'`,
       `UPDATE "workflows" SET "concurrency_policy" = 'parallel'`,
       `UPDATE "triggers" SET "kind" = 'webhook'`,
       `UPDATE "workflow_runs" SET "status" = 'done'`,

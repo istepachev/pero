@@ -18,6 +18,7 @@ import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { type DataDirLayout, ensureDataDir } from '../config/data-dir.js';
 import { writeSecret } from '../config/secret-store.js';
+import { MIGRATIONS } from '../persistence/migrations/index.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -92,7 +93,7 @@ describe('BackupService', () => {
       peroVersion: PACKAGE_VERSION,
       createdAt: result.createdAt,
       sourceDataDir: layout.root,
-      lastMigration: expect.stringMatching(/^CreateDomainTables\d+$/),
+      lastMigration: MIGRATIONS.at(-1)!.name,
       workingDirectories: [
         { path: vault, agent: null },
         { path: own, agent: 'coder' },
