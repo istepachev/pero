@@ -30,6 +30,10 @@ const UNUSED_HANDLERS = {
   'telegram.chats': unused,
   'telegram.allow': unused,
   'telegram.deny': unused,
+  'agents.list': unused,
+  'agents.get': unused,
+  'agents.create': unused,
+  'agents.edit': unused,
 };
 
 describe('daemon metadata', () => {

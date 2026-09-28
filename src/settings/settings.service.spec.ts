@@ -5,7 +5,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
-import { InvalidInputError } from '../common/errors.js';
+import { InvalidInputError, NotFoundError } from '../common/errors.js';
 import type { SettingsUpdate } from '../config/settings-input.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from './settings.module.js';
@@ -161,6 +161,38 @@ describe('SettingsService', () => {
       settings.update({ defaultWorkingDirectory: null as unknown as string }),
     ).rejects.toThrow(/cannot be cleared/);
     expect((await settings.get()).defaultWorkingDirectory).toBe(vault);
+  });
+
+  it('names an enabled Agent the main Agent by name, and clears it', async () => {
+    await settings.update({ defaultWorkingDirectory: vault });
+    const coach = await agents.create({ name: 'coach' });
+
+    await settings.update({ mainAgent: 'Coach' });
+    expect((await settings.get()).mainAgentId).toBe(coach.id);
+    expect(await settings.mainAgentName(await settings.get())).toBe('coach');
+
+    await settings.update({ mainAgent: null });
+    expect((await settings.get()).mainAgentId).toBeNull();
+    expect(await settings.mainAgentName(await settings.get())).toBeNull();
+  });
+
+  it('refuses a main Agent that does not exist or is disabled', async () => {
+    await settings.update({ defaultWorkingDirectory: vault });
+    await agents.create({ name: 'coach' });
+    await settings.update({ mainAgent: 'coach' });
+    await agents.create({ name: 'retired' });
+    await agents.edit('retired', { enabled: false });
+    const before = await settings.get();
+
+    await expect(settings.update({ mainAgent: 'nobody' })).rejects.toThrow(
+      new NotFoundError('No Agent named nobody'),
+    );
+    const disabled = settings.update({ mainAgent: 'retired' });
+    await expect(disabled).rejects.toThrow(InvalidInputError);
+    await expect(disabled).rejects.toThrow(
+      'Agent retired is disabled; enable it first with pero agents enable retired',
+    );
+    expect(await settings.get()).toEqual(before);
   });
 
   describe('changing the default working directory', () => {

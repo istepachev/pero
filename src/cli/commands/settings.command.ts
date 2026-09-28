@@ -98,6 +98,7 @@ async function apply(
     throw new InvalidInputError(renameField(error.message, key));
   }
   console.log(`${key.name} is now ${key.show(view)}`);
+  if (key.note !== undefined) console.log(key.note);
   if (key.secret && view.telegramBotToken.source === 'environment') {
     console.error(
       `${TELEGRAM_TOKEN_ENV} overrides the stored token while it is set`,

@@ -1,4 +1,13 @@
 import { Module } from '@nestjs/common';
+import {
+  AgentsCommand,
+  AgentsCreateCommand,
+  AgentsDisableCommand,
+  AgentsEditCommand,
+  AgentsEnableCommand,
+  AgentsListCommand,
+  AgentsShowCommand,
+} from './commands/agents.command.js';
 import { BackupCommand } from './commands/backup.command.js';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
@@ -35,6 +44,13 @@ import { GlobalOptionsSetup } from './global-options.js';
     SettingsShowCommand,
     SettingsSetCommand,
     SettingsUnsetCommand,
+    AgentsCommand,
+    AgentsListCommand,
+    AgentsShowCommand,
+    AgentsCreateCommand,
+    AgentsEditCommand,
+    AgentsDisableCommand,
+    AgentsEnableCommand,
     TelegramCommand,
     TelegramChatsCommand,
     TelegramAllowCommand,

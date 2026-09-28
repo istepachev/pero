@@ -94,7 +94,7 @@ The smoke test runs real turns as the current account, using a little of its sub
 
 Codex Agents run Codex through the Codex SDK, which bundles its own Codex CLI, signed in with the ChatGPT sign-in of the account running Pero (`codex login`, or `codex login --device-auth` on a headless host). Pero never passes `OPENAI_API_KEY` or `CODEX_API_KEY` on and forces the ChatGPT sign-in, so neither an environment variable nor a stored API-key login can switch the owner to API billing. An Agent works in its folder like the Codex CLI does: the owner's `~/.codex/config.toml` and the folder's `AGENTS.md` apply, and the Agent's instructions are added as developer instructions. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.
 
-Codex works only in a Git repository. For a folder that is not one, such as a notes vault, run `git init` there, or set the Agent's `codex_skip_git_repo_check`; until then its turns are refused with that advice.
+Codex works only in a Git repository. For a folder that is not one, such as a notes vault, run `git init` there, or let the Agent skip the check with `pero agents edit <name> --skip-git-repo-check`; until then its turns are refused with that advice.
 
 Codex runs each turn without a way to ask the owner, so the permission modes map to its sandbox instead:
 

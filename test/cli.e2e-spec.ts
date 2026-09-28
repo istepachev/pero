@@ -416,6 +416,199 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toMatch(/^telegram-bot-token +not set$/m);
   });
 
+  it('lists, shows, creates, edits, disables, and enables Agents', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    // The CLI sees the real path where the temporary folder is a link.
+    const cwd = realpathSync(tmp);
+    const vault = join(cwd, 'vault');
+    const own = join(cwd, 'own');
+    mkdirSync(vault);
+    const agents = (...args: string[]) =>
+      pero(withDataDir('agents', ...args), { cwd });
+
+    expect(await agents()).toMatchObject({
+      code: 0,
+      stdout:
+        'No Agents yet. Create a topic in an allowed Telegram group, or run pero agents create <name>.\n',
+    });
+    expect(await agents('create', 'notes')).toMatchObject({
+      code: 1,
+      stderr:
+        'No default working directory is set: give the Agent its own folder, or set the default working directory first\n',
+    });
+    await pero(withDataDir('settings', 'set', 'default-working-directory'), {
+      cwd,
+      input: 'vault\n',
+    });
+
+    expect(
+      await agents(
+        'create',
+        'Notes',
+        '--model',
+        'claude-opus-5-5',
+        '--no-shared-instructions',
+      ),
+    ).toMatchObject({
+      code: 0,
+      stdout: `Created Agent notes: claude, claude-opus-5-5, default effort, working in ${vault} (default)\n`,
+    });
+    expect(await agents('create', 'notes')).toMatchObject({
+      code: 1,
+      stderr: 'An Agent named notes already exists\n',
+    });
+    expect(
+      await agents('create', 'coder', '--working-directory', 'own'),
+    ).toMatchObject({
+      code: 1,
+      stderr: `Working directory ${own} does not exist\n`,
+    });
+    mkdirSync(own);
+    const coder = await pero(
+      withDataDir(
+        'agents',
+        'create',
+        'coder',
+        '--provider',
+        'codex',
+        '--effort',
+        'ultra',
+        '--working-directory',
+        'own',
+        '--instructions',
+        '-',
+        '--skip-git-repo-check',
+      ),
+      { cwd, input: 'Write tests first.\nKeep it short.\n' },
+    );
+    expect(coder).toMatchObject({
+      code: 0,
+      stdout: `Created Agent coder: codex, default model, ultra effort, working in ${own}\n`,
+    });
+
+    const ls = await agents('ls');
+    expect(ls).toMatchObject({ code: 0, stderr: '' });
+    expect(ls.stdout).toMatch(
+      new RegExp(
+        `^coder +codex +default +ultra +${escape(own)} +ask +enabled$`,
+        'm',
+      ),
+    );
+    expect(ls.stdout).toMatch(
+      new RegExp(
+        `^notes +claude +claude-opus-5-5 +default +${escape(vault)} \\(default\\) +ask +enabled$`,
+        'm',
+      ),
+    );
+
+    const show = await agents('show', 'coder');
+    expect(show).toMatchObject({ code: 0, stderr: '' });
+    expect(show.stdout).toContain(
+      [
+        'Agent coder',
+        '  provider             codex',
+        '  model                (provider default)',
+        '  effort               ultra',
+        `  working directory    ${own}`,
+        '  instructions         Write tests first. (2 lines)',
+        '  shared instructions  on',
+        '  permissions          ask',
+        '  codex git check      skipped',
+        '  state                enabled',
+        '  main agent           no',
+        '',
+        'No Channel is assigned to it yet.',
+      ].join('\n'),
+    );
+
+    expect(await agents('edit', 'notes', '--effort', 'ultra')).toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining('--effort: Invalid option'),
+    });
+    expect(await agents('edit', 'notes')).toMatchObject({
+      code: 1,
+      stderr:
+        'Nothing to change; see pero agents edit --help for the options\n',
+    });
+    expect(
+      await agents(
+        'edit',
+        'notes',
+        '--provider',
+        'codex',
+        '--effort',
+        'high',
+        '--working-directory',
+        'own',
+        '--shared-instructions',
+      ),
+    ).toMatchObject({
+      code: 0,
+      stdout: `Changed Agent notes: codex, default model, high effort, working in ${own}\n`,
+    });
+    expect(
+      await agents(
+        'edit',
+        'notes',
+        '--follow-default',
+        '--no-effort',
+        '--title',
+        'Notes',
+      ),
+    ).toMatchObject({
+      code: 0,
+      stdout: `Changed Agent notes: codex, default model, default effort, working in ${vault} (default)\n`,
+    });
+    expect(await agents('show', 'nobody')).toMatchObject({
+      code: 1,
+      stderr: 'No Agent named nobody\n',
+    });
+
+    expect(await agents('disable', 'coder')).toMatchObject({
+      code: 0,
+      stdout:
+        'Disabled Agent coder. Its Channels get no answer until pero agents enable coder.\n',
+    });
+    const settings = (...args: string[]) =>
+      pero(withDataDir('settings', ...args), { cwd });
+    expect(await settings('set', 'main-agent', 'coder')).toMatchObject({
+      code: 1,
+      stderr:
+        'Agent coder is disabled; enable it first with pero agents enable coder\n',
+    });
+    expect(await settings('set', 'main-agent', 'nobody')).toMatchObject({
+      code: 1,
+      stderr: 'No Agent named nobody\n',
+    });
+    rmSync(own, { recursive: true });
+    expect(await agents('enable', 'coder')).toMatchObject({
+      code: 1,
+      stderr: `Working directory ${own} does not exist\n`,
+    });
+    mkdirSync(own);
+    expect(await agents('enable', 'coder')).toMatchObject({
+      code: 0,
+      stdout: `Enabled Agent coder: codex, default model, ultra effort, working in ${own}\n`,
+    });
+
+    expect(await settings('set', 'main-agent', 'coder')).toMatchObject({
+      code: 0,
+      stdout:
+        'main-agent is now coder\nIt answers General topics and direct chats onboarded from now on; existing Channels keep their Agent.\n',
+    });
+    expect((await agents()).stdout).toMatch(/^coder \* +codex /m);
+    expect(await agents('disable', 'coder')).toMatchObject({
+      code: 0,
+      stderr: expect.stringContaining(
+        'Warning: coder is the main Agent, so General topics and direct chats get no answer either',
+      ),
+    });
+    expect(await settings('unset', 'main-agent')).toMatchObject({
+      code: 0,
+      stdout: expect.stringMatching(/^main-agent is now \(not set: main\)\n/),
+    });
+  });
+
   it('takes the token from PERO_TELEGRAM_BOT_TOKEN in the daemon environment', async () => {
     const run = await pero(withDataDir('run'), {
       env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },
@@ -808,6 +1001,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       'ping',
       'logs',
       'settings',
+      'agents',
       'telegram',
       'stop',
     ]) {

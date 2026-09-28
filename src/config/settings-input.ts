@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PROVIDERS, providerDefaultsPatchSchema } from './provider-options.js';
+import { slugSchema } from './slug.js';
 import { permissionModeSchema } from './tool-policy.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -41,6 +42,11 @@ export const settingsUpdateSchema = z.strictObject({
     })
     .optional(),
   sharedInstructions: z.string().nullable().optional(),
+  /**
+   * The name of an enabled Agent that primary Channels onboarded from now
+   * on get; null returns to `main`, created when first needed.
+   */
+  mainAgent: slugSchema.nullable().optional(),
   /** Messages a replacing Session starts with; 0 turns carry-over off. */
   historyCarryover: z.int().min(0).optional(),
   /** How new Agents' tools are approved; existing Agents keep theirs. */

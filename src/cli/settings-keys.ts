@@ -24,6 +24,8 @@ export interface SettingsKey {
   /** The change that clears it; a string explains why it cannot be. */
   unset: SettingsChange | string;
   show(view: SettingsView): string;
+  /** Printed after a change: what it does and does not affect. */
+  note?: string;
 }
 
 const PROVIDER_DEFAULT = '(provider default)';
@@ -77,6 +79,15 @@ export const SETTINGS_KEYS: readonly SettingsKey[] = [
     set: (value) => ({ sharedInstructions: value }),
     unset: { sharedInstructions: null },
     show: (view) => preview(view.sharedInstructions),
+  },
+  {
+    name: 'main-agent',
+    set: (value) => ({ mainAgent: value }),
+    unset: { mainAgent: null },
+    show: (view) => view.mainAgent ?? '(not set: main)',
+    note:
+      'It answers General topics and direct chats onboarded from now on; ' +
+      'existing Channels keep their Agent.',
   },
   {
     name: 'history-carryover',
@@ -139,7 +150,8 @@ export function renameField(message: string, key: SettingsKey): string {
   return message.replace(/^[\w.]+: /, `${key.name}: `);
 }
 
-function preview(text: string | null): string {
+/** The first line of `text`, shortened, and how many lines it has. */
+export function preview(text: string | null): string {
   if (text === null) return '(none)';
   const lines = text.split('\n');
   const first = lines[0]!.trim();
