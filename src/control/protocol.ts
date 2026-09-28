@@ -348,6 +348,8 @@ export const runViewSchema = z.object({
   triggerKey: z.string(),
   status: z.enum(RUN_STATUSES),
   attempt: z.int(),
+  /** Later times of its schedule that came due and were coalesced into it. */
+  skippedCount: z.int(),
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   finishedAt: z.iso.datetime().nullable(),

@@ -4,6 +4,7 @@ import { ResumeSessionsByProviderAndFolder1790578903382 } from './1790578903382-
 import { AllowedChatsAndChannelTitles1790581676882 } from './1790581676882-AllowedChatsAndChannelTitles.js';
 import { CreateMessageHistory1790590513558 } from './1790590513558-CreateMessageHistory.js';
 import { DefaultPermissions1790602942841 } from './1790602942841-DefaultPermissions.js';
+import { RunSkippedCount1790620569391 } from './1790620569391-RunSkippedCount.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -16,4 +17,5 @@ export const MIGRATIONS = [
   AllowedChatsAndChannelTitles1790581676882,
   CreateMessageHistory1790590513558,
   DefaultPermissions1790602942841,
+  RunSkippedCount1790620569391,
 ];

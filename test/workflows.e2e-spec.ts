@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ConflictError,
@@ -318,5 +319,58 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       status: 'completed',
       result: 'echo: Summarize the day.',
     });
+  });
+
+  it('starts one catch-up run for the times a schedule missed while Pero was down', async () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    await start();
+    await client.call('settings.update', { defaultWorkingDirectory: vault });
+    await client.call('agents.create', { name: 'coach' });
+    await client.call('workflows.create', {
+      name: 'hourly',
+      agent: 'coach',
+      inputTemplate: 'Check the inbox.',
+    });
+    const trigger = await client.call('triggers.add', {
+      workflow: 'hourly',
+      kind: 'schedule',
+      cron: '0 * * * *',
+      timezone: 'UTC',
+    });
+
+    // Down since the top of the hour three hours ago.
+    await daemon!.stop('downtime');
+    daemon = undefined;
+    const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+    const due = new Date(lastHour - 3 * HOUR_MS);
+    const db = new Database(join(dataDir, 'pero.sqlite'));
+    db.prepare(`UPDATE "triggers" SET "next_run_at" = ? WHERE "id" = ?`).run(
+      due.toISOString().replace('T', ' ').replace('Z', ''),
+      trigger.id,
+    );
+    db.close();
+
+    await start();
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: 1 })).toMatchObject({
+        workflow: 'hourly',
+        triggerId: trigger.id,
+        triggerKey: `schedule:${trigger.id}:${due.toISOString()}`,
+        // The three hours since; the first missed time is the run itself.
+        skippedCount: 3,
+        status: 'completed',
+        result: 'echo: Check the inbox.',
+      });
+    });
+    const [listed] = (
+      await client.call('triggers.list', { workflow: 'hourly' })
+    ).triggers;
+    expect(listed!.nextRunAt).toBe(new Date(lastHour + HOUR_MS).toISOString());
+    expect(listed!.lastRunAt).not.toBeNull();
+
+    await restart();
+    await expect(client.call('runs.get', { id: 2 })).rejects.toThrow(
+      new NotFoundError('No run with ID 2'),
+    );
   });
 });
