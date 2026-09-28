@@ -221,7 +221,11 @@ async function resolveAgent(
   };
 }
 
-async function findAgent(manager: EntityManager, name: string): Promise<Agent> {
+/** The Agent named `name`, in any case; `NotFoundError` otherwise. */
+export async function findAgent(
+  manager: EntityManager,
+  name: string,
+): Promise<Agent> {
   const agent = await manager
     .getRepository(Agent)
     .findOneBy({ name: name.toLowerCase() });

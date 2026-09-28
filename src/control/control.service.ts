@@ -4,10 +4,13 @@ import {
   Logger,
   type OnModuleDestroy,
 } from '@nestjs/common';
+import { AgentViews } from '../agents/agent-views.service.js';
+import { AgentsService } from '../agents/agents.service.js';
 import { BackupService } from '../backup/backup.service.js';
 import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { withoutUndefined } from '../common/without-undefined.js';
+import type { AgentCreate, AgentEdit } from '../config/agent-input.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import {
   type SettingsChange,
@@ -19,7 +22,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { ControlServer } from './control-server.js';
-import type { SettingsView, StatusResult } from './protocol.js';
+import type { AgentDetails, SettingsView, StatusResult } from './protocol.js';
 
 export const CONTROL_LAYOUT = Symbol('CONTROL_LAYOUT');
 
@@ -44,6 +47,8 @@ export class ControlService implements OnModuleDestroy {
     private readonly telegramChats: TelegramChats,
     private readonly providers: ProviderAuthService,
     private readonly backup: BackupService,
+    private readonly agents: AgentsService,
+    private readonly agentViews: AgentViews,
   ) {}
 
   /**
@@ -66,6 +71,10 @@ export class ControlService implements OnModuleDestroy {
           await this.providers.check();
           return this.status();
         },
+        'agents.list': async () => ({ agents: await this.agentViews.list() }),
+        'agents.get': ({ name }) => this.agentViews.details(name),
+        'agents.create': (input) => this.createAgent(input),
+        'agents.edit': ({ name, change }) => this.editAgent(name, change),
         'backup.create': ({ file }) => this.backup.create(file),
         'telegram.chats': () => this.telegramChats.list(),
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
@@ -94,10 +103,13 @@ export class ControlService implements OnModuleDestroy {
       id: _id,
       createdAt: _c,
       updatedAt: _u,
+      mainAgentId,
+      mainAgent: _m,
       ...settings
     } = await this.settings.get();
     return {
       ...settings,
+      mainAgent: await this.settings.mainAgentName({ mainAgentId }),
       telegramBotToken: {
         set: this.telegram.token() !== null,
         source: this.telegram.source(),
@@ -128,6 +140,28 @@ export class ControlService implements OnModuleDestroy {
     );
     this.logger.log(`Settings changed: ${changed.join(', ') || 'nothing'}`);
     return this.settingsView();
+  }
+
+  async createAgent(input: AgentCreate): Promise<AgentDetails> {
+    const agent = await this.agents.create(input);
+    await this.providers.refreshRequirements();
+    this.logger.log(`Agent ${agent.name} created`);
+    return this.agentViews.details(agent.name);
+  }
+
+  /**
+   * Changes an Agent. Its provider and whether it is enabled decide which
+   * providers health depends on. Only the names of changed fields are
+   * logged.
+   */
+  async editAgent(name: string, change: AgentEdit): Promise<AgentDetails> {
+    const agent = await this.agents.edit(name, change);
+    await this.providers.refreshRequirements();
+    const changed = Object.keys(withoutUndefined(change));
+    this.logger.log(
+      `Agent ${agent.name} changed: ${changed.join(', ') || 'nothing'}`,
+    );
+    return this.agentViews.details(agent.name);
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -6,6 +6,20 @@ import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
 /**
+ * Whether a turn of `agent` continues `session`: only while the Agent keeps
+ * the provider and effective working directory the Session began with.
+ */
+export function resumes(
+  session: Pick<Session, 'provider' | 'workingDirectory'>,
+  agent: Pick<ResolvedAgent, 'provider' | 'workingDirectory'>,
+): boolean {
+  return (
+    session.provider === agent.provider &&
+    session.workingDirectory === agent.workingDirectory
+  );
+}
+
+/**
  * The conversational context of each Channel with its Agent: one active
  * Session per Channel and Agent, resumed only while the Agent keeps the
  * provider and effective working directory the Session began with.
@@ -32,13 +46,7 @@ export class SessionService {
       agentId: agent.id,
       status: 'active',
     });
-    if (
-      active !== null &&
-      active.provider === agent.provider &&
-      active.workingDirectory === agent.workingDirectory
-    ) {
-      return active;
-    }
+    if (active !== null && resumes(active, agent)) return active;
     // Closed first: at most one Session per Channel and Agent is active.
     if (active !== null) {
       await sessions.update(active.id, { status: 'closed' });

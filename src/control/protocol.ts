@@ -1,12 +1,13 @@
 import type { Socket } from 'node:net';
 import { z } from 'zod';
+import { agentCreateSchema, agentEditSchema } from '../config/agent-input.js';
 import {
   PROVIDERS,
   providerDefaultsSchema,
 } from '../config/provider-options.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
-import { CHAT_KINDS } from '../persistence/entities/sql.js';
+import { CHAT_KINDS, INTEGRATION_KINDS } from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -63,6 +64,8 @@ export const settingsViewSchema = z.object({
   providerDefaults: providerDefaultsSchema,
   defaultWorkingDirectory: z.string().nullable(),
   sharedInstructions: z.string().nullable(),
+  /** The name of the Agent primary Channels get; null until one is chosen. */
+  mainAgent: z.string().nullable(),
   historyCarryover: z.int(),
   defaultPermissions: z.enum(PERMISSION_MODES),
   timezone: z.string(),
@@ -144,6 +147,80 @@ export const telegramChatsSchema = z.object({
 
 export type TelegramChats = z.infer<typeof telegramChatsSchema>;
 
+/** An Agent as the CLI sees it. */
+export const agentViewSchema = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  provider: z.enum(PROVIDERS),
+  /** Null: the provider's default. */
+  model: z.string().nullable(),
+  /** Null: the provider's default. */
+  effort: z.string().nullable(),
+  /** The Agent's own folder; null when it follows the default. */
+  workingDirectory: z.string().nullable(),
+  /** The folder its turns run in. */
+  effectiveWorkingDirectory: z.string(),
+  /** The Agent's own instructions; null means none. */
+  instructions: z.string().nullable(),
+  useSharedInstructions: z.boolean(),
+  permissions: z.enum(PERMISSION_MODES),
+  codexSkipGitRepoCheck: z.boolean(),
+  enabled: z.boolean(),
+  /** Whether it is the Agent primary Channels get when onboarded. */
+  main: z.boolean(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type AgentView = z.infer<typeof agentViewSchema>;
+
+/**
+ * What a Channel's next turn with its Agent does: `new` starts its first
+ * Session; `resume` continues the active one; `restart` keeps the active
+ * Session, whose first turn never reached the provider, and starts the
+ * provider session again; `fresh` closes it for a new one, because the
+ * provider or folder changed.
+ */
+export const NEXT_TURN_KINDS = ['new', 'resume', 'restart', 'fresh'] as const;
+
+export const nextTurnSchema = z.object({
+  kind: z.enum(NEXT_TURN_KINDS),
+  /** For `fresh`: what changed since the Session began. */
+  reason: z.enum(['provider', 'folder']).nullable(),
+  /** For `fresh`: the provider or folder the Session began with. */
+  from: z.string().nullable(),
+  /** The active Session; null when there is none. */
+  sessionId: z.int().nullable(),
+  /** Whether the turn starts with the Channel's recent messages. */
+  carriesOver: z.boolean(),
+});
+
+export type NextTurn = z.infer<typeof nextTurnSchema>;
+
+/** A Channel assigned to an Agent. */
+export const agentChannelSchema = z.object({
+  id: z.int(),
+  integrationKind: z.enum(INTEGRATION_KINDS),
+  /** The integration's address, such as `<chat_id>:<topic_id>`. */
+  key: z.string(),
+  title: z.string().nullable(),
+  enabled: z.boolean(),
+  nextTurn: nextTurnSchema,
+});
+
+export type AgentChannelView = z.infer<typeof agentChannelSchema>;
+
+export const agentDetailsSchema = agentViewSchema.extend({
+  /** Oldest first. */
+  channels: z.array(agentChannelSchema),
+  /** Why its folder cannot be used now; null when it can. */
+  folderProblem: z.string().nullable(),
+});
+
+export type AgentDetails = z.infer<typeof agentDetailsSchema>;
+
+const agentNameSchema = z.string().trim().min(1, 'must not be empty');
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -172,6 +249,21 @@ export const CONTROL_OPERATIONS = {
   'telegram.deny': {
     params: z.strictObject({ chatId: telegramChatIdSchema }),
     result: z.object({ chat: allowedChatSchema }),
+  },
+  /** Every Agent, by name. */
+  'agents.list': {
+    params: noParams,
+    result: z.object({ agents: z.array(agentViewSchema) }),
+  },
+  'agents.get': {
+    params: z.strictObject({ name: agentNameSchema }),
+    result: agentDetailsSchema,
+  },
+  'agents.create': { params: agentCreateSchema, result: agentDetailsSchema },
+  /** Also enables and disables an Agent. */
+  'agents.edit': {
+    params: z.strictObject({ name: agentNameSchema, change: agentEditSchema }),
+    result: agentDetailsSchema,
   },
   /** Writes a backup of the data directory to an absolute path. */
   'backup.create': {

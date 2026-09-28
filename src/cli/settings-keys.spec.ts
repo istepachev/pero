@@ -18,6 +18,7 @@ const view: SettingsView = {
   },
   defaultWorkingDirectory: null,
   sharedInstructions: null,
+  mainAgent: null,
   historyCarryover: 50,
   defaultPermissions: 'ask',
   timezone: 'Europe/Berlin',
@@ -42,6 +43,7 @@ describe('settings keys', () => {
     expect(set('shared-instructions', 'Be brief.\nBe kind.')).toEqual({
       sharedInstructions: 'Be brief.\nBe kind.',
     });
+    expect(set('main-agent', 'Coach')).toEqual({ mainAgent: 'Coach' });
     expect(set('timezone', 'utc')).toEqual({ timezone: 'utc' });
     expect(set('history-carryover', '0')).toEqual({ historyCarryover: 0 });
     expect(set('default-permissions', 'bypass')).toEqual({
@@ -80,6 +82,7 @@ describe('settings keys', () => {
     expect(findSettingsKey('telegram-bot-token').unset).toEqual({
       telegramBotToken: null,
     });
+    expect(findSettingsKey('main-agent').unset).toEqual({ mainAgent: null });
     expect(findSettingsKey('default-working-directory').unset).toBe(
       'default-working-directory cannot be unset; set another folder instead',
     );
@@ -120,6 +123,7 @@ describe('formatSettings', () => {
         'codex.effort               high',
         'default-working-directory  (not set)',
         'shared-instructions        (none)',
+        'main-agent                 (not set: main)',
         'history-carryover          50',
         'default-permissions        ask',
         'timezone                   Europe/Berlin',

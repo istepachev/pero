@@ -38,6 +38,7 @@ const settings: SettingsView = {
   },
   defaultWorkingDirectory: null,
   sharedInstructions: null,
+  mainAgent: null,
   historyCarryover: 50,
   defaultPermissions: 'ask',
   timezone: 'UTC',

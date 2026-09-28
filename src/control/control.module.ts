@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { AgentsModule } from '../agents/agents.module.js';
 import { BackupModule } from '../backup/backup.module.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import { HealthModule } from '../health/health.module.js';
@@ -23,6 +24,7 @@ export class ControlModule {
         HealthModule,
         SettingsModule,
         ProvidersModule,
+        AgentsModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],
       providers: [

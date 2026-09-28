@@ -175,7 +175,7 @@ Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mappi
 
 ### 2.9 Agent management commands
 
-Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services, and the `main-agent` setting to `pero settings`. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` lists the Channels assigned to the Agent and says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
+Add `pero agents ls|show|create|edit|disable|enable` through the control endpoint, using the 1.5 services, and the `main-agent` setting to `pero settings`. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` lists the Channels assigned to the Agent and says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
 
 **Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session that carries over the Channel's recent messages, and after a model or effort edit it resumes the same one; an Agent created by onboarding can be edited like any other.
 

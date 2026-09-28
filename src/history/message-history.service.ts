@@ -85,6 +85,27 @@ export class MessageHistory {
   }
 
   /**
+   * Which of `channelIds` have messages a fresh Session there would start
+   * with, inside the caller's transaction.
+   */
+  async channelsWithHistoryWithin(
+    manager: EntityManager,
+    channelIds: readonly number[],
+  ): Promise<Set<number>> {
+    if (channelIds.length === 0) return new Set();
+    const rows = await manager
+      .getRepository(Message)
+      .createQueryBuilder('message')
+      .select('DISTINCT message.channelId', 'channelId')
+      .where('message.channelId IN (:...channelIds)', { channelIds })
+      .andWhere('message.origin IN (:...origins)', {
+        origins: CARRIED_ORIGINS,
+      })
+      .getRawMany<{ channelId: number }>();
+    return new Set(rows.map((row) => Number(row.channelId)));
+  }
+
+  /**
    * `input` preceded by the Channel's latest messages from before message
    * `beforeId`, up to the `history-carryover` setting, for a Session whose
    * provider has none of the conversation yet. Also says how many it
