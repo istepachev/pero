@@ -24,6 +24,12 @@ describe('workflowChange', () => {
     ).toEqual({ title: 'Review', agent: 'coach', inputTemplate: 'Go' });
   });
 
+  it('passes --max-attempts on', async () => {
+    expect(await workflowChange({ maxAttempts: 3 }, context)).toEqual({
+      maxAttempts: 3,
+    });
+  });
+
   it('clears the title with --no-title', async () => {
     expect(await workflowChange({ title: false }, context)).toEqual({
       title: null,
@@ -88,6 +94,9 @@ describe('renameWorkflowFields', () => {
       ),
     ).toBe(
       '<name>: must be letters and digits; --cron: must be a cron expression; --timezone: must be an IANA time zone',
+    );
+    expect(renameWorkflowFields('change.maxAttempts: must be at most 10')).toBe(
+      '--max-attempts: must be at most 10',
     );
   });
 

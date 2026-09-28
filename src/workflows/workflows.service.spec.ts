@@ -76,6 +76,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       inputTemplate: "Review today's chats.",
       enabled: true,
       concurrencyPolicy: 'serial',
+      maxAttempts: 1,
       triggerCount: 0,
       triggers: [],
     });
@@ -152,6 +153,37 @@ describe('WorkflowsService and WorkflowViews', () => {
       new NotFoundError('No Workflow named missing'),
     );
     expect((await views.details('review')).agent).toBe('editor');
+  });
+
+  it('sets how many times a run may start, from 1 to 10', async () => {
+    await workflows.create({
+      name: 'review',
+      agent: 'coach',
+      inputTemplate: 'Go',
+      maxAttempts: 3,
+    });
+    expect((await views.details('review')).maxAttempts).toBe(3);
+
+    await workflows.edit('review', { maxAttempts: 1 });
+    expect((await views.details('review')).maxAttempts).toBe(1);
+
+    await expect(workflows.edit('review', { maxAttempts: 0 })).rejects.toThrow(
+      new InvalidInputError('maxAttempts: must be at least 1'),
+    );
+    await expect(workflows.edit('review', { maxAttempts: 11 })).rejects.toThrow(
+      new InvalidInputError('maxAttempts: must be at most 10'),
+    );
+    await expect(
+      workflows.create({
+        name: 'other',
+        agent: 'coach',
+        inputTemplate: 'Go',
+        maxAttempts: 1.5,
+      }),
+    ).rejects.toThrow(
+      new InvalidInputError('maxAttempts: must be a whole number'),
+    );
+    expect((await views.details('review')).maxAttempts).toBe(1);
   });
 
   it('disables and enables a Workflow, even while its Agent is disabled', async () => {

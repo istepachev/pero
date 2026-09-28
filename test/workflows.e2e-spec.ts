@@ -14,6 +14,9 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
+import { AgentManager } from '../src/agents/agent-manager.js';
+import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
+import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 
 describe('Workflow and Trigger definitions (e2e)', () => {
@@ -55,6 +58,24 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     await daemon!.stop('restart');
     daemon = undefined;
     await start();
+  }
+
+  /** The echo runtime Claude Agents use in the running daemon. */
+  function claude(): FakeAgentRuntime {
+    return daemon!.app.get(AgentRuntimes).get('claude') as FakeAgentRuntime;
+  }
+
+  /** An enabled Agent `coach` and Workflow `brief` that can be run by hand. */
+  async function manualBrief(maxAttempts?: number) {
+    await client.call('settings.update', { defaultWorkingDirectory: vault });
+    await client.call('agents.create', { name: 'coach' });
+    await client.call('workflows.create', {
+      name: 'brief',
+      agent: 'coach',
+      inputTemplate: 'Summarize the day.',
+      ...(maxAttempts === undefined ? {} : { maxAttempts }),
+    });
+    await client.call('triggers.add', { workflow: 'brief', kind: 'manual' });
   }
 
   it('creates, edits, disables, and enables Workflows and their Triggers, keeping them across a restart', async () => {
@@ -372,5 +393,85 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     await expect(client.call('runs.get', { id: 2 })).rejects.toThrow(
       new NotFoundError('No run with ID 2'),
     );
+  });
+
+  it('records a run Pero stopped as interrupted on the next start, and retries it as its Workflow allows', async () => {
+    await start();
+    await manualBrief(2);
+    const held = claude().hold();
+    const queued = await client.call('workflows.run', { name: 'brief' });
+    const request = await held.started;
+
+    // Stop with a short shutdown timeout, so the run is aborted mid-way.
+    await daemon!.app.get(AgentManager).drain(10);
+    expect(request.signal.aborted).toBe(true);
+    await restart();
+
+    await vi.waitFor(async () => {
+      expect(
+        await client.call('runs.get', { id: queued.id + 1 }),
+      ).toMatchObject({
+        workflow: 'brief',
+        triggerId: queued.triggerId,
+        triggerKey: `retry:${queued.id}`,
+        attempt: 2,
+        status: 'completed',
+        result: 'echo: Summarize the day.',
+      });
+    });
+    expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+      status: 'interrupted',
+      attempt: 1,
+      result: null,
+      error: `Pero stopped before the run finished; run ${queued.id + 1} retries it (attempt 2 of 2)`,
+    });
+    expect(
+      (await client.call('workflows.get', { name: 'brief' })).maxAttempts,
+    ).toBe(2);
+  });
+
+  it('cancels a run waiting to start at once, and a running one through its runtime', async () => {
+    await start();
+    await manualBrief();
+    await client.call('settings.update', { maxConcurrentRuns: 1 });
+    await client.call('workflows.create', {
+      name: 'other',
+      agent: 'coach',
+      inputTemplate: 'Something else.',
+    });
+    await client.call('triggers.add', { workflow: 'other', kind: 'manual' });
+    const held = claude().hold();
+    const running = await client.call('workflows.run', { name: 'brief' });
+    const request = await held.started;
+    const waiting = await client.call('workflows.run', { name: 'other' });
+
+    expect(await client.call('runs.cancel', { id: waiting.id })).toMatchObject({
+      status: 'cancelled',
+      startedAt: null,
+      error: 'Cancelled with pero runs cancel',
+    });
+    expect(await client.call('runs.cancel', { id: running.id })).toMatchObject({
+      status: 'running',
+    });
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: running.id })).toMatchObject({
+        status: 'cancelled',
+        result: null,
+        error: 'Cancelled with pero runs cancel',
+      });
+    });
+    expect(request.signal.aborted).toBe(true);
+    // The cancelled run never started.
+    expect(claude().requests).toHaveLength(1);
+    await expect(
+      client.call('runs.cancel', { id: running.id }),
+    ).rejects.toThrow(
+      new ConflictError(`Run ${running.id} has already finished (cancelled)`),
+    );
+
+    await restart();
+    expect(await client.call('runs.get', { id: running.id })).toMatchObject({
+      status: 'cancelled',
+    });
   });
 });

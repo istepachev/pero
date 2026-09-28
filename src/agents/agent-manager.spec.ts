@@ -30,7 +30,7 @@ import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { AgentManager } from './agent-manager.js';
+import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 import { AgentsService } from './agents.service.js';
 
@@ -618,6 +618,45 @@ describe('AgentManager', () => {
       await say(OWNER, 'two');
 
       expect(codex.requests[0]!.input).toBe('two');
+    });
+  });
+
+  describe('isolated turns', () => {
+    function isolated(signal: AbortSignal) {
+      const agent: RuntimeAgent = {
+        id: 1,
+        name: 'main',
+        provider: 'claude',
+        providerOptions: { model: null, effort: null },
+        workingDirectory: vault,
+        instructions: '',
+        toolPolicy: { permissions: 'ask' },
+        codexSkipGitRepoCheck: false,
+      };
+      return moduleRef
+        .get(AgentManager)
+        .runIsolated({ agent, input: 'Work', label: 'test', signal });
+    }
+
+    it('aborts the turn when its signal does', async () => {
+      const held = claude.hold();
+      const controller = new AbortController();
+      const result = isolated(controller.signal);
+      const request = await held.started;
+
+      controller.abort();
+
+      await expect(result).rejects.toThrow(TurnError);
+      expect(request.signal.aborted).toBe(true);
+    });
+
+    it('aborts a turn whose signal aborted before it started', async () => {
+      const held = claude.hold();
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(isolated(controller.signal)).rejects.toThrow(TurnError);
+      expect((await held.started).signal.aborted).toBe(true);
     });
   });
 

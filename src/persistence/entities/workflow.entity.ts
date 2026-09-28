@@ -61,6 +61,14 @@ export class Workflow {
   @Column({ name: 'concurrency_policy', type: 'text', default: 'serial' })
   concurrencyPolicy: ConcurrencyPolicy;
 
+  /**
+   * How many times a run of it may start in all. A run Pero stopped before
+   * it finished is queued again on startup while its attempt is below this;
+   * 1 leaves it for the owner.
+   */
+  @Column({ name: 'max_attempts', type: 'integer', default: 1 })
+  maxAttempts: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -2,17 +2,21 @@ import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { InvalidInputError, NotFoundError } from '../common/errors.js';
+import {
+  ConflictError,
+  InvalidInputError,
+  NotFoundError,
+} from '../common/errors.js';
 import type { RunView } from '../control/protocol.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { WorkflowExecutor } from './workflow-executor.js';
+import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { findWorkflow } from './workflows.service.js';
 
-/** Queues Workflow Runs started by hand and reads runs back. */
+/** Queues Workflow Runs started by hand, cancels runs, and reads them back. */
 @Injectable()
 export class WorkflowRuns {
   private readonly logger = new Logger('Workflows');
@@ -75,6 +79,44 @@ export class WorkflowRuns {
     });
     this.logger.log(`Run ${run.id} of Workflow ${run.workflow} queued`);
     void this.executor.wake();
+    return run;
+  }
+
+  /**
+   * Cancels run `id`. A pending run is `cancelled` at once; a running one
+   * has its Agent's turn aborted and is recorded `cancelled` when the turn
+   * stops, so it is returned still `running`. `ConflictError` once it has
+   * finished.
+   */
+  async cancel(id: number): Promise<RunView> {
+    // Serialized with claims, so a pending run cannot start meanwhile.
+    const status = await inTransaction(this.dataSource, async (manager) => {
+      const runs = manager.getRepository(WorkflowRun);
+      const run = await runs.findOneBy({ id });
+      if (run === null) throw new NotFoundError(`No run with ID ${id}`);
+      if (run.status === 'pending') {
+        await runs.update(id, {
+          status: 'cancelled',
+          finishedAt: new Date(),
+          errorText: CANCELLED,
+        });
+      } else if (run.status !== 'running') {
+        throw new ConflictError(
+          `Run ${id} has already finished (${run.status})`,
+        );
+      }
+      return run.status;
+    });
+    if (status === 'running') {
+      // False only if it finished since, which the view then shows.
+      this.executor.cancel(id);
+    }
+    const run = await this.get(id);
+    this.logger.log(
+      status === 'pending'
+        ? `Run ${id} of Workflow ${run.workflow} cancelled before it started`
+        : `Cancelling run ${id} of Workflow ${run.workflow}`,
+    );
     return run;
   }
 

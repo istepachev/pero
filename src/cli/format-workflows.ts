@@ -35,6 +35,7 @@ export function formatWorkflowDetails(workflow: WorkflowDetails): string {
       ['agent', agent(workflow)],
       ['input', preview(workflow.inputTemplate)],
       ['runs', 'one at a time'],
+      ['attempts', attempts(workflow.maxAttempts)],
       ['state', state(workflow.enabled)],
     ]).map((row) => `  ${row}`),
   ];
@@ -93,6 +94,13 @@ export function runOutcome(run: RunView): { ok: boolean; text: string } {
       `Run ${run.id} of Workflow ${run.workflow} ${run.status}: ` +
       (run.error ?? 'no reason was recorded'),
   };
+}
+
+/** How a Workflow treats a run Pero stopped before it finished. */
+function attempts(maxAttempts: number): string {
+  return maxAttempts === 1
+    ? '1 (a run Pero stops is not started again)'
+    : `up to ${maxAttempts} (a run Pero stops starts again when Pero does)`;
 }
 
 /** Why the Workflow cannot run; null when it can. */

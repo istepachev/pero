@@ -117,6 +117,7 @@ export class ControlService implements OnModuleDestroy {
         'workflows.edit': ({ name, change }) => this.editWorkflow(name, change),
         'workflows.run': ({ name }) => this.workflowRuns.start(name),
         'runs.get': ({ id }) => this.workflowRuns.get(id),
+        'runs.cancel': ({ id }) => this.workflowRuns.cancel(id),
         'triggers.list': async ({ workflow }) => ({
           triggers: await this.triggers.list(workflow),
         }),

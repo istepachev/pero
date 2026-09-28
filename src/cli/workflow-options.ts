@@ -9,6 +9,8 @@ export interface WorkflowOptions {
   title?: string | false;
   agent?: string;
   input?: string;
+  /** Parsed by the command as a positive whole number. */
+  maxAttempts?: number;
 }
 
 export interface WorkflowOptionsContext {
@@ -34,6 +36,9 @@ export async function workflowChange(
       );
     }
     change.inputTemplate = text;
+  }
+  if (options.maxAttempts !== undefined) {
+    change.maxAttempts = options.maxAttempts;
   }
   return change;
 }
@@ -79,6 +84,7 @@ const OPTION_NAMES: readonly [RegExp, string][] = [
   [/(^|; )(change\.)?agent:/g, '$1--agent:'],
   [/(^|; )(change\.)?inputTemplate:/g, '$1--input:'],
   [/(^|; )(change\.)?title:/g, '$1--title:'],
+  [/(^|; )(change\.)?maxAttempts:/g, '$1--max-attempts:'],
   [/(^|; )cron:/g, '$1--cron:'],
   [/(^|; )timezone:/g, '$1--timezone:'],
   [/(^|; )workflow:/g, '$1<workflow>:'],

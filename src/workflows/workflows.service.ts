@@ -20,8 +20,8 @@ import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
 /**
- * Creates and edits Workflow definitions. Nothing runs them yet; a Workflow
- * is never deleted, only disabled, since its runs refer to it.
+ * Creates and edits Workflow definitions. A Workflow is never deleted, only
+ * disabled, since its runs refer to it.
  */
 @Injectable()
 export class WorkflowsService {
@@ -48,6 +48,9 @@ export class WorkflowsService {
           title: fields.title ?? null,
           agentId: agent.id,
           inputTemplate: fields.inputTemplate,
+          ...(fields.maxAttempts === undefined
+            ? {}
+            : { maxAttempts: fields.maxAttempts }),
         }),
       );
       return workflows.findOneByOrFail({ id });
@@ -71,6 +74,7 @@ export class WorkflowsService {
         title: patch.title,
         agentId,
         inputTemplate: patch.inputTemplate,
+        maxAttempts: patch.maxAttempts,
         enabled: patch.enabled,
       });
       if (Object.keys(fields).length === 0) return workflow;

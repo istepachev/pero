@@ -1,11 +1,9 @@
-import { setTimeout as sleep } from 'node:timers/promises';
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import type { WorkflowEdit } from '../../config/workflow-input.js';
 import {
-  FINISHED_RUN_STATUSES,
-  type RunView,
-  type WorkflowView,
-} from '../../control/protocol.js';
+  MAX_ATTEMPTS_LIMIT,
+  type WorkflowEdit,
+} from '../../config/workflow-input.js';
+import type { WorkflowView } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
 import {
   agentWarning,
@@ -15,7 +13,9 @@ import {
 } from '../format-workflows.js';
 import { withOptionNames } from '../option-names.js';
 import { PeroCommand } from '../pero-command.js';
+import { positiveInt } from '../positive-int.js';
 import { readStdin } from '../prompts.js';
+import { waitForRun } from '../wait-for-run.js';
 import {
   renameWorkflowFields,
   type WorkflowOptions,
@@ -23,9 +23,6 @@ import {
 } from '../workflow-options.js';
 
 const NAME = { name: "the Workflow's name, as pero workflows ls lists it" };
-
-/** How often `workflows run` asks whether its run has finished. */
-const RUN_POLL_MS = 500;
 
 @SubCommand({
   name: 'ls',
@@ -92,6 +89,20 @@ abstract class WorkflowOptionsCommand extends PeroCommand {
   parseNoTitle(): false {
     return false;
   }
+
+  @Option({
+    flags: '--max-attempts <n>',
+    description: `how many times a run may start in all: a run Pero stopped before it finished starts again on the next start until it has started this often (1 to ${MAX_ATTEMPTS_LIMIT}; default 1, never again)`,
+  })
+  parseMaxAttempts(value: string): number {
+    const count = positiveInt(value);
+    if (count === null) {
+      throw new CliError(
+        `--max-attempts must be a positive whole number, not "${value}"`,
+      );
+    }
+    return count;
+  }
 }
 
 @SubCommand({
@@ -113,7 +124,8 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
         'Give what each run sends the Agent with --input <text> (- reads stdin)',
       );
     }
-    const { agent, inputTemplate, title } = await this.change(options);
+    const { agent, inputTemplate, title, maxAttempts } =
+      await this.change(options);
     const { client } = await this.requireDaemon();
     const workflow = await withOptionNames(
       () =>
@@ -122,6 +134,7 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
           agent: agent!,
           inputTemplate: inputTemplate!,
           ...(title === undefined ? {} : { title }),
+          ...(maxAttempts === undefined ? {} : { maxAttempts }),
         }),
       renameWorkflowFields,
     );
@@ -135,7 +148,7 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
 @SubCommand({
   name: 'edit',
   arguments: '<name>',
-  description: "Change a Workflow's Agent, input, or title",
+  description: "Change a Workflow's Agent, input, title, or attempts",
   argsDescription: NAME,
 })
 export class WorkflowsEditCommand extends WorkflowOptionsCommand {
@@ -208,7 +221,7 @@ interface RunOptions {
 export class WorkflowsRunCommand extends PeroCommand {
   async run([name]: string[], options: RunOptions): Promise<void> {
     const { client } = await this.requireDaemon();
-    let run: RunView = await client.call('workflows.run', { name: name! });
+    const run = await client.call('workflows.run', { name: name! });
     if (options.wait === false) {
       console.log(
         `Queued run ${run.id} of Workflow ${run.workflow}; it runs in the background.`,
@@ -216,11 +229,7 @@ export class WorkflowsRunCommand extends PeroCommand {
       return;
     }
     console.error(`Queued run ${run.id} of Workflow ${run.workflow}…`);
-    while (!isFinished(run)) {
-      await sleep(RUN_POLL_MS);
-      run = await client.call('runs.get', { id: run.id });
-    }
-    const outcome = runOutcome(run);
+    const outcome = runOutcome(await waitForRun(client, run));
     if (!outcome.ok) throw new CliError(outcome.text);
     console.log(outcome.text);
   }
@@ -252,10 +261,6 @@ export class WorkflowsCommand extends CommandRunner {
   async run(): Promise<void> {
     this.command.help();
   }
-}
-
-function isFinished(run: RunView): boolean {
-  return (FINISHED_RUN_STATUSES as readonly string[]).includes(run.status);
 }
 
 /** One line on a Workflow: its Agent and how many Triggers start it. */

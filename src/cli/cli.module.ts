@@ -22,6 +22,7 @@ import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
 import { RunCommand } from './commands/run.command.js';
+import { RunsCancelCommand, RunsCommand } from './commands/runs.command.js';
 import {
   SettingsCommand,
   SettingsSetCommand,
@@ -93,6 +94,8 @@ import { GlobalOptionsSetup } from './global-options.js';
     WorkflowsDisableCommand,
     WorkflowsEnableCommand,
     WorkflowsRunCommand,
+    RunsCommand,
+    RunsCancelCommand,
     TriggersCommand,
     TriggersListCommand,
     TriggersAddCommand,

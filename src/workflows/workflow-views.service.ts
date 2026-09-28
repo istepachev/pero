@@ -81,6 +81,7 @@ function workflowView(
     inputTemplate: workflow.inputTemplate,
     enabled: workflow.enabled,
     concurrencyPolicy: workflow.concurrencyPolicy,
+    maxAttempts: workflow.maxAttempts,
     triggerCount,
     createdAt: workflow.createdAt.toISOString(),
     updatedAt: workflow.updatedAt.toISOString(),

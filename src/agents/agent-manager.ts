@@ -46,6 +46,8 @@ export interface IsolatedTurn {
   input: string;
   /** Names the turn in logs, such as `Workflow daily-brief, run 7`. */
   label: string;
+  /** Cancels the turn, such as when the owner cancels its run. */
+  signal?: AbortSignal;
 }
 
 /** What an isolated turn answered. */
@@ -268,6 +270,9 @@ export class AgentManager implements BeforeApplicationShutdown {
   private async executeIsolated(turn: IsolatedTurn): Promise<IsolatedResult> {
     const controller = new AbortController();
     this.running.add(controller);
+    const cancel = () => controller.abort();
+    if (turn.signal?.aborted) cancel();
+    turn.signal?.addEventListener('abort', cancel, { once: true });
     const startedAt = Date.now();
     const { agent } = turn;
     const where = `${turn.label}, Agent ${agent.name} (${agent.provider})`;
@@ -284,6 +289,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     } catch (error) {
       throw this.failure(error, agent.provider, where, startedAt, controller);
     } finally {
+      turn.signal?.removeEventListener('abort', cancel);
       this.running.delete(controller);
     }
   }
