@@ -60,7 +60,11 @@ describe('TelegramCredentials', () => {
 
     expect(credentials.token()).toBe(TOKEN);
     expect(credentials.source()).toBe('secrets');
-    expect(telegram()).toMatchObject({ state: 'ok' });
+    // The adapter reports the connection from here on.
+    expect(telegram()).toMatchObject({
+      state: 'degraded',
+      detail: 'Connecting to Telegram',
+    });
     expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBe(TOKEN);
     expect(statSync(join(secretsDir, TELEGRAM_TOKEN_SECRET)).mode & 0o777).toBe(
       0o600,
@@ -86,9 +90,7 @@ describe('TelegramCredentials', () => {
 
     expect(credentials.token()).toBe(TOKEN);
     expect(credentials.source()).toBe('environment');
-    expect(telegram()?.detail).toBe(
-      'Bot token is set (from PERO_TELEGRAM_BOT_TOKEN)',
-    );
+    expect(telegram()?.detail).toBe('Connecting to Telegram');
 
     // Stored, but the environment still wins.
     credentials.set(OTHER);
@@ -114,6 +116,19 @@ describe('TelegramCredentials', () => {
 
     expect(credentials.token()).toBeNull();
     expect(telegram()?.state).toBe('degraded');
+  });
+
+  it('tells listeners about each change', () => {
+    const credentials = create();
+    const seen: (string | null)[] = [];
+    const stop = credentials.onChange((token) => seen.push(token));
+
+    credentials.set(TOKEN);
+    credentials.set(null);
+    stop();
+    credentials.set(OTHER);
+
+    expect(seen).toEqual([TOKEN, null]);
   });
 
   it('refuses an invalid token without storing it', () => {

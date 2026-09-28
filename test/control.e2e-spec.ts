@@ -27,6 +27,7 @@ import {
   DaemonAlreadyRunningError,
   startDaemon,
 } from '../src/daemon/daemon.js';
+import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 
 const { version } = JSON.parse(
   readFileSync(join(import.meta.dirname, '../package.json'), 'utf8'),
@@ -38,8 +39,11 @@ describe('Control endpoint (e2e)', () => {
   let socketPath: string;
   let client: ControlClient;
   let app: Daemon | undefined;
+  let api: FakeBotApi;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    api = new FakeBotApi();
+    await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
     tmp = mkdtempSync(join(tmpdir(), 'pero-'));
     dataDir = join(tmp, 'pero');
@@ -50,6 +54,7 @@ describe('Control endpoint (e2e)', () => {
   afterEach(async () => {
     await app?.stop('test finished');
     app = undefined;
+    await api.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -57,6 +62,8 @@ describe('Control endpoint (e2e)', () => {
     return startDaemon({
       config: resolveBootstrapConfig({ dataDir, env: {} }),
       foreground: false,
+      // Telegram is the fake Bot API, never the real one.
+      env: { PERO_TELEGRAM_API_ROOT: api.url },
     });
   }
 
@@ -139,11 +146,31 @@ describe('Control endpoint (e2e)', () => {
       telegramBotToken: { set: true, source: 'secrets' },
     });
     expect(JSON.stringify(view)).not.toContain(token);
-    const status = await client.status();
-    expect(status.components.find((c) => c.name === 'telegram')).toMatchObject({
-      state: 'ok',
-    });
-    expect(JSON.stringify(status)).not.toContain(token);
+    await vi.waitFor(async () =>
+      expect(
+        (await client.status()).components.find((c) => c.name === 'telegram'),
+      ).toMatchObject({ state: 'ok', detail: 'Connected as @pero_test_bot' }),
+    );
+    expect(api.callsOf('getMe')[0]?.token).toBe(token);
+    expect(JSON.stringify(await client.status())).not.toContain(token);
+  });
+
+  it('keeps running when Telegram rejects the bot token', async () => {
+    const token = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
+    api.rejectToken(token);
+    app = await start();
+
+    await client.call('settings.update', { telegramBotToken: token });
+
+    await vi.waitFor(async () =>
+      expect(
+        (await client.status()).components.find((c) => c.name === 'telegram'),
+      ).toMatchObject({
+        state: 'unconfigured',
+        detail: 'Telegram rejected the bot token',
+      }),
+    );
+    expect((await client.status()).pid).toBe(process.pid);
   });
 
   it('keeps the socket from other users', async () => {

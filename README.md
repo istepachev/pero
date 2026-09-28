@@ -30,6 +30,8 @@ bash scripts/check-packed-install.sh  # install the npm pack artifact globally a
 | Data directory | `--data-dir` (any `pero` command, before or after its name), then `PERO_HOME` | `~/.pero` |
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then `secrets/telegram-bot-token` | none |
+| Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
+| Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every Agent answers `echo: <message>` instead of running Claude or Codex | unset |
 
 The daemon creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting.
 
@@ -60,6 +62,12 @@ npm run cli -- settings unset claude.model --data-dir .pero    # back to the pro
 ```
 
 Keys: `default-provider`, `claude.model`, `claude.effort`, `codex.model`, `codex.effort`, `default-working-directory`, `shared-instructions`, `timezone`, `max-concurrent-runs`, `telegram-bot-token`. A value left out is read from a prompt on a terminal, otherwise from stdin; the token is never accepted as an argument. It is stored owner-only in `secrets/telegram-bot-token` and never shown or logged. Changes apply without a restart.
+
+### Telegram
+
+With a bot token set, the daemon long-polls Telegram for messages and membership changes; readiness never waits for it. `pero status` shows `telegram ok Connected as @<bot>` once connected, and `degraded` while connecting, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its allowlist entry and Channel to the new ID.
+
+To try a real bot before a provider is set up, start the daemon with `PERO_FAKE_RUNTIME=echo pero run`.
 
 The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 

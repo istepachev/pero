@@ -22,7 +22,10 @@ export interface InboundChat {
 
 /** The conversation endpoint within a chat, such as one Telegram topic. */
 export interface InboundChannel {
-  /** Unique per integration; the Channel's external key. */
+  /**
+   * Unique per integration; the Channel's external key. A chat's primary
+   * Channel has the chat's own key, which chat migration relies on.
+   */
   key: string;
   title: string | null;
   address: ChannelAddress;

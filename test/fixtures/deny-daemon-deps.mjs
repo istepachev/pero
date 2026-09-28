@@ -1,8 +1,13 @@
 // Preloaded with `node --import` to prove a CLI command never loads the
-// daemon's database stack.
+// daemon's database stack or its Telegram client.
 import { registerHooks } from 'node:module';
 
-const DENIED = new Set(['typeorm', '@nestjs/typeorm', 'better-sqlite3']);
+const DENIED = new Set([
+  'typeorm',
+  '@nestjs/typeorm',
+  'better-sqlite3',
+  'grammy',
+]);
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
