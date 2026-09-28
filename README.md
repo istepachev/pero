@@ -106,7 +106,10 @@ npm run cli -- channels history 3 -n 50 --data-dir .pero  # its latest messages
 
 ### Workflows
 
-A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand. A schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run when it starts again, which records how many it stands for; so do times that come due while the previous run of the same schedule is still waiting to start. A schedule whose Workflow or Agent is disabled passes its times without a run. Each run starts a provider conversation of its own, apart from every Channel's Session and history, with the Agent's settings as they were when the run started. At most `max-concurrent-runs` run at once (default 2), and one at a time per Workflow:
+A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand. A schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run when it starts again, which records how many it stands for; so do times that come due while the previous run of the same schedule is still waiting to start. A schedule whose Workflow or Agent is disabled passes its times without a run. Each run starts a provider conversation of its own, apart from every Channel's Session and history, with the Agent's settings as they were when the run started. At most `max-concurrent-runs` run at once (default 2), and one at a time per Workflow.
+
+A run Pero stops before it finishes, by crashing or through `pero stop` once the shutdown timeout has passed, is recorded `interrupted` when Pero starts again. Its Agent may already have changed files, so it is not started again unless the Workflow allows more than one attempt (`--max-attempts <n>`, at most 10); then it is queued again as a new run with the next attempt number, until it has started that often. `pero runs cancel <id>` cancels a run: one waiting to start never does, and a running one has its Agent's turn stopped.
+
 
 ```sh
 npm run cli -- workflows create evening-review --agent coach --input "Review today's chats" --data-dir .pero
@@ -114,6 +117,8 @@ npm run cli -- triggers add evening-review --cron "0 21 * * *" --data-dir .pero 
 npm run cli -- workflows show evening-review --data-dir .pero                      # its Agent, input, and Triggers
 npm run cli -- triggers add evening-review --manual --data-dir .pero                # allow runs by hand
 npm run cli -- workflows run evening-review --data-dir .pero                       # run it now and print the answer
+npm run cli -- workflows edit evening-review --max-attempts 2 --data-dir .pero     # start a run Pero stopped once more
+npm run cli -- runs cancel 7 --data-dir .pero                                      # cancel run 7
 npm run cli -- workflows disable evening-review --data-dir .pero                   # keep it, and its Triggers, without running
 ```
 

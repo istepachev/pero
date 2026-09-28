@@ -55,12 +55,26 @@ const inputTemplateSchema = z
   .string()
   .refine((text) => text.trim() !== '', 'must not be empty');
 
+/** The most times a Workflow may start one run. */
+export const MAX_ATTEMPTS_LIMIT = 10;
+
+/**
+ * How many times a run may start in all: 1 leaves a run Pero stopped for
+ * the owner, more queues it again on startup until it has started that
+ * often.
+ */
+export const workflowMaxAttemptsSchema = z
+  .int('must be a whole number')
+  .min(1, 'must be at least 1')
+  .max(MAX_ATTEMPTS_LIMIT, `must be at most ${MAX_ATTEMPTS_LIMIT}`);
+
 /** A new Workflow; its Agent must exist and be enabled. */
 export const workflowCreateSchema = z.strictObject({
   name: slugSchema,
   title: titleSchema.optional(),
   agent: agentReferenceSchema,
   inputTemplate: inputTemplateSchema,
+  maxAttempts: workflowMaxAttemptsSchema.optional(),
 });
 
 /** Changes to a Workflow; an omitted field keeps its value. */
@@ -68,6 +82,7 @@ export const workflowEditSchema = z.strictObject({
   title: titleSchema.optional(),
   agent: agentReferenceSchema.optional(),
   inputTemplate: inputTemplateSchema.optional(),
+  maxAttempts: workflowMaxAttemptsSchema.optional(),
   enabled: z.boolean().optional(),
 });
 

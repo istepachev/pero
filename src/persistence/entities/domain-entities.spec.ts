@@ -191,9 +191,9 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Skipped counts, default permissions, message history, the allowlist,
-    // the Session resume migration, then the domain tables.
-    for (let i = 0; i < 6; i++) {
+    // Attempts, skipped counts, default permissions, message history, the
+    // allowlist, the Session resume migration, then the domain tables.
+    for (let i = 0; i < 7; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -215,9 +215,9 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Skipped counts, default permissions, message history, the allowlist,
-    // then the Session resume migration.
-    for (let i = 0; i < 5; i++) {
+    // Attempts, skipped counts, default permissions, message history, the
+    // allowlist, then the Session resume migration.
+    for (let i = 0; i < 6; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -259,9 +259,9 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Skipped counts, default permissions, message history, then the
-    // allowlist.
-    for (let i = 0; i < 4; i++) {
+    // Attempts, skipped counts, default permissions, message history, then
+    // the allowlist.
+    for (let i = 0; i < 5; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -298,8 +298,8 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Skipped counts, default permissions, then message history.
-    for (let i = 0; i < 3; i++) {
+    // Attempts, skipped counts, default permissions, then message history.
+    for (let i = 0; i < 4; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -329,9 +329,10 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // Skipped counts, then default permissions.
-    await db.undoLastMigration({ transaction: 'each' });
-    await db.undoLastMigration({ transaction: 'each' });
+    // Attempts, skipped counts, then default permissions.
+    for (let i = 0; i < 3; i++) {
+      await db.undoLastMigration({ transaction: 'each' });
+    }
     const columns = await db.query<{ name: string }[]>(
       `SELECT "name" FROM pragma_table_info('settings')`,
     );
@@ -366,6 +367,8 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
+    // Attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
       `SELECT "name" FROM pragma_table_info('workflow_runs')`,
@@ -383,6 +386,36 @@ describe('domain entities', () => {
       await db.getRepository(WorkflowRun).findOneByOrFail({ id: run.id }),
     ).toMatchObject({ triggerKey: run.triggerKey, skippedCount: 0 });
     expect(await db.getRepository(Notification).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps Workflows and their runs through the attempts migration and back', async () => {
+    const db = await open();
+    const { workflow, run, notification } = await seed(db);
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({ maxAttempts: 1 });
+    await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('workflows')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain('max_attempts');
+    expect(await db.query(`SELECT "id", "name" FROM "workflows"`)).toEqual([
+      { id: workflow.id, name: workflow.name },
+    ]);
+    expect(await db.query(`SELECT "id" FROM "workflow_runs"`)).toEqual([
+      { id: run.id },
+    ]);
+    expect(await db.query(`SELECT "id" FROM "notifications"`)).toEqual([
+      { id: notification.id },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({ name: workflow.name, maxAttempts: 1 });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 

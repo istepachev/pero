@@ -900,10 +900,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: [
         'Workflow evening-review "Evening review"',
-        '  agent  coach (disabled)',
-        "  input  Review today's chats.",
-        '  runs   one at a time',
-        '  state  enabled',
+        '  agent     coach (disabled)',
+        "  input     Review today's chats.",
+        '  runs      one at a time',
+        '  attempts  1 (a run Pero stops is not started again)',
+        '  state     enabled',
         '',
         'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
         '',
@@ -965,6 +966,39 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stdout: 'Queued run 2 of Workflow brief; it runs in the background.\n',
       stderr: '',
     });
+
+    const runs = (...args: string[]) => pero(withDataDir('runs', ...args));
+    expect(await runs('cancel', '1')).toMatchObject({
+      code: 1,
+      stderr: 'Run 1 has already finished (completed)\n',
+    });
+    expect(await runs('cancel', 'brief')).toMatchObject({
+      code: 1,
+      stderr: 'run must be a run ID, not "brief"\n',
+    });
+    expect(await runs('cancel', '9')).toMatchObject({
+      code: 1,
+      stderr: 'No run with ID 9\n',
+    });
+
+    expect(
+      await workflows('edit', 'brief', '--max-attempts', '0'),
+    ).toMatchObject({
+      code: 1,
+      stderr: '--max-attempts must be a positive whole number, not "0"\n',
+    });
+    expect(
+      await workflows('edit', 'brief', '--max-attempts', '11'),
+    ).toMatchObject({
+      code: 1,
+      stderr: '--max-attempts: must be at most 10\n',
+    });
+    expect(
+      await workflows('edit', 'brief', '--max-attempts', '3'),
+    ).toMatchObject({ code: 0 });
+    expect((await workflows('show', 'brief')).stdout).toContain(
+      '  attempts  up to 3 (a run Pero stops starts again when Pero does)\n',
+    );
   });
 
   it('takes the token from PERO_TELEGRAM_BOT_TOKEN in the daemon environment', async () => {

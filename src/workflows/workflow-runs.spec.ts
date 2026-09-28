@@ -17,7 +17,11 @@ import {
   inboundMessage,
   privateChat,
 } from '../channels/testing/fake-channel-adapter.js';
-import { InvalidInputError, NotFoundError } from '../common/errors.js';
+import {
+  ConflictError,
+  InvalidInputError,
+  NotFoundError,
+} from '../common/errors.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
@@ -31,7 +35,7 @@ import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
-import { WorkflowExecutor } from './workflow-executor.js';
+import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
@@ -350,36 +354,264 @@ describe('Workflow Runs and the executor', () => {
     });
   });
 
-  it('records a run that Pero stopped as interrupted', async () => {
-    await manualWorkflow('brief');
-    const held = claude.hold();
-    const { id } = await runs.start('brief');
-    const request = await held.started;
+  describe('recovery', () => {
+    /**
+     * Starts a run of `workflow` and stops Pero while its Agent works, as
+     * `pero stop` does once the shutdown timeout has passed. Returns the
+     * run's ID and the aborted request.
+     */
+    async function stopMidRun(
+      workflow: string,
+    ): Promise<{ id: number; request: RuntimeRequest }> {
+      const held = claude.hold();
+      const { id } = await runs.start(workflow);
+      const request = await held.started;
+      await moduleRef.get(AgentManager).drain(10);
+      await executor.idle();
+      return { id, request };
+    }
 
-    await moduleRef.get(AgentManager).drain(10);
-    await executor.idle();
+    async function restart(): Promise<void> {
+      await moduleRef.close();
+      await boot();
+      await executor.idle();
+    }
 
-    expect(request.signal.aborted).toBe(true);
-    expect(await run(id)).toMatchObject({
-      status: 'interrupted',
-      error: 'Pero stopped before the run finished',
+    function allRuns(): Promise<WorkflowRun[]> {
+      return ds.getRepository(WorkflowRun).find({ order: { id: 'ASC' } });
+    }
+
+    it('leaves a run Pero stopped for the next start, which records it interrupted', async () => {
+      await manualWorkflow('brief');
+      const { id, request } = await stopMidRun('brief');
+
+      expect(request.signal.aborted).toBe(true);
+      // Nothing is recorded while Pero stops.
+      expect(await run(id)).toMatchObject({
+        status: 'running',
+        finishedAt: null,
+        error: null,
+      });
+      await expect(
+        moduleRef.get(AgentManager).runIsolated({
+          agent: {
+            id: 1,
+            name: 'coach',
+            provider: 'claude',
+            providerOptions: { model: null, effort: null },
+            workingDirectory: vault,
+            instructions: '',
+            toolPolicy: { permissions: 'ask' },
+            codexSkipGitRepoCheck: false,
+          },
+          input: 'Late',
+          label: 'test',
+        }),
+      ).rejects.toThrow(TurnError);
+
+      await restart();
+
+      const interrupted = await run(id);
+      expect(interrupted).toMatchObject({
+        status: 'interrupted',
+        error:
+          'Pero stopped before the run finished; not retried: Workflow brief allows 1 attempt',
+      });
+      expect(interrupted.finishedAt).not.toBeNull();
+      expect(await allRuns()).toHaveLength(1);
+      expect(claude.requests).toHaveLength(1);
     });
-    await expect(
-      moduleRef.get(AgentManager).runIsolated({
-        agent: {
-          id: 1,
-          name: 'coach',
-          provider: 'claude',
-          providerOptions: { model: null, effort: null },
-          workingDirectory: vault,
-          instructions: '',
-          toolPolicy: { permissions: 'ask' },
-          codexSkipGitRepoCheck: false,
-        },
-        input: 'Late',
-        label: 'test',
-      }),
-    ).rejects.toThrow(TurnError);
+
+    it('records a run left running by a crash interrupted', async () => {
+      await manualWorkflow('brief');
+      const workflow = await workflows.get('brief');
+      const repo = ds.getRepository(WorkflowRun);
+      const { id } = await repo.save(
+        repo.create({
+          workflowId: workflow.id,
+          triggerId: null,
+          triggerKey: 'manual:crashed',
+          status: 'running',
+          attempt: 1,
+          startedAt: new Date(),
+        }),
+      );
+
+      await restart();
+
+      expect(await run(id)).toMatchObject({
+        status: 'interrupted',
+        error:
+          'Pero stopped before the run finished; not retried: Workflow brief allows 1 attempt',
+      });
+      expect(claude.requests).toHaveLength(0);
+    });
+
+    it('retries an interrupted run as a new run while the Workflow allows more attempts', async () => {
+      await manualWorkflow('brief');
+      await workflows.edit('brief', { maxAttempts: 2 });
+      const { id } = await stopMidRun('brief');
+      const { triggerId } = await run(id);
+
+      await restart();
+
+      const [original, retry] = await allRuns();
+      expect(retry).toMatchObject({
+        workflowId: original!.workflowId,
+        triggerId,
+        triggerKey: `retry:${id}`,
+        attempt: 2,
+        status: 'completed',
+      });
+      expect(await run(id)).toMatchObject({
+        status: 'interrupted',
+        attempt: 1,
+        error: `Pero stopped before the run finished; run ${retry!.id} retries it (attempt 2 of 2)`,
+      });
+      expect(claude.requests.map((request) => request.input)).toEqual([
+        'Run brief.',
+        'Run brief.',
+      ]);
+    });
+
+    it('stops retrying once a run has had its attempts', async () => {
+      await manualWorkflow('brief');
+      await workflows.edit('brief', { maxAttempts: 2 });
+      const { id } = await stopMidRun('brief');
+      // The retry is stopped as well.
+      const held = claude.hold();
+      await moduleRef.close();
+      await boot();
+      await held.started;
+      await moduleRef.get(AgentManager).drain(10);
+      await executor.idle();
+
+      await restart();
+
+      const [, retry, ...more] = await allRuns();
+      expect(more).toEqual([]);
+      expect(await run(retry!.id)).toMatchObject({
+        status: 'interrupted',
+        attempt: 2,
+        error:
+          'Pero stopped before the run finished; not retried: Workflow brief allows 2 attempts',
+      });
+      expect((await run(id)).status).toBe('interrupted');
+    });
+
+    it('does not retry while the Workflow or its Agent is disabled', async () => {
+      await manualWorkflow('a');
+      await manualWorkflow('b');
+      await workflows.edit('a', { maxAttempts: 3 });
+      await workflows.edit('b', { maxAttempts: 3 });
+      const a = await stopMidRun('a');
+      await workflows.edit('a', { enabled: false });
+      await restart();
+      const b = await stopMidRun('b');
+      await agents.edit('coach', { enabled: false });
+
+      await restart();
+
+      expect((await run(a.id)).error).toBe(
+        'Pero stopped before the run finished; not retried: Workflow a is disabled',
+      );
+      expect((await run(b.id)).error).toBe(
+        'Pero stopped before the run finished; not retried: Agent coach is disabled',
+      );
+      expect(await allRuns()).toHaveLength(2);
+    });
+
+    it('queues one retry however often it recovers a run', async () => {
+      await manualWorkflow('brief');
+      await workflows.edit('brief', { maxAttempts: 2 });
+      const { id } = await stopMidRun('brief');
+      await restart();
+      const [, retry] = await allRuns();
+
+      // As if recording the run had not been committed.
+      await ds.getRepository(WorkflowRun).update(id, { status: 'running' });
+      await executor.recover();
+
+      expect(await allRuns()).toHaveLength(2);
+      expect(await run(id)).toMatchObject({
+        status: 'interrupted',
+        error: `Pero stopped before the run finished; run ${retry!.id} retries it (attempt 2 of 2)`,
+      });
+    });
+  });
+
+  describe('cancelling', () => {
+    it('cancels a pending run before it starts', async () => {
+      await settings.update({ maxConcurrentRuns: 1 });
+      await manualWorkflow('a');
+      await manualWorkflow('b');
+      const held = claude.hold();
+      await runs.start('a');
+      const b = await runs.start('b');
+      await held.started;
+
+      const cancelled = await runs.cancel(b.id);
+      held.release();
+      await executor.idle();
+
+      expect(cancelled).toMatchObject({
+        status: 'cancelled',
+        startedAt: null,
+        error: CANCELLED,
+      });
+      expect(cancelled.finishedAt).not.toBeNull();
+      expect(await run(b.id)).toMatchObject({ status: 'cancelled' });
+      expect(claude.requests).toHaveLength(1);
+    });
+
+    it("aborts a running run's Agent and records it cancelled", async () => {
+      await manualWorkflow('brief');
+      const held = claude.hold();
+      const first = await runs.start('brief');
+      const second = await runs.start('brief');
+      const request = await held.started;
+
+      const cancelling = await runs.cancel(first.id);
+      expect(cancelling.status).toBe('running');
+      await executor.idle();
+
+      // Cancellation reaches the runtime.
+      expect(request.signal.aborted).toBe(true);
+      expect(await run(first.id)).toMatchObject({
+        status: 'cancelled',
+        result: null,
+        error: CANCELLED,
+      });
+      // The Workflow's next run starts once it is free.
+      expect(await run(second.id)).toMatchObject({ status: 'completed' });
+    });
+
+    it('records a run cancelled while Pero stops cancelled, not left for recovery', async () => {
+      await manualWorkflow('brief');
+      const held = claude.hold();
+      const { id } = await runs.start('brief');
+      await held.started;
+
+      const drained = moduleRef.get(AgentManager).drain(10_000);
+      await runs.cancel(id);
+      await drained;
+      await executor.idle();
+
+      expect((await run(id)).status).toBe('cancelled');
+    });
+
+    it('refuses a run that has finished, or does not exist', async () => {
+      await manualWorkflow('brief');
+      const { id } = await runs.start('brief');
+      await executor.idle();
+
+      await expect(runs.cancel(id)).rejects.toThrow(
+        new ConflictError(`Run ${id} has already finished (completed)`),
+      );
+      await expect(runs.cancel(99)).rejects.toThrow(
+        new NotFoundError('No run with ID 99'),
+      );
+    });
   });
 
   it('fails a queued run whose Workflow was disabled before it started', async () => {

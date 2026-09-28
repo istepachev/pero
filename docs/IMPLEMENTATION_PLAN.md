@@ -225,7 +225,7 @@ Add a `@nestjs/schedule` polling tick, every 10 seconds and once at startup, tha
 
 ### 3.5 Recovery, retry, and cancellation
 
-On startup, re-queue `pending` runs and mark leftover `running` runs `interrupted`, retrying only when the Workflow's policy allows. Add `pero runs cancel <id>`; graceful shutdown requests cancellation and leaves unresolved runs for recovery.
+On startup, re-queue `pending` runs and mark leftover `running` runs `interrupted`, retrying only when the Workflow's policy allows: `--max-attempts <n>` (default 1) on `pero workflows create|edit`, with each retry a new run keyed `retry:<run id>`. Add `pero runs cancel <id>`; graceful shutdown requests cancellation once the shutdown timeout passes and leaves unresolved runs `running` for recovery.
 
 **Done when:** tests show an interrupted run is visibly recorded and handled according to its policy, and cancellation reaches the runtime.
 

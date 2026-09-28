@@ -3,11 +3,13 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
 import { AgentsService } from '../agents/agents.service.js';
+import { Agent } from '../persistence/entities/agent.entity.js';
 import {
   SETTINGS_ID,
   Settings,
@@ -31,10 +33,20 @@ interface ClaimedRun {
   snapshot: ExecutionSnapshot;
 }
 
-/** How a run ended, as recorded. */
+/**
+ * How a run ended: recorded, or `left` running for startup recovery when
+ * Pero stopped it.
+ */
 type Outcome =
   | { status: 'completed'; text: string; providerSessionId: string | null }
-  | { status: Extract<RunStatus, 'failed' | 'interrupted'>; error: string };
+  | { status: Extract<RunStatus, 'failed' | 'cancelled'>; error: string }
+  | { status: 'left' };
+
+/** Why a run Pero stopped did not finish. */
+export const INTERRUPTED = 'Pero stopped before the run finished';
+
+/** Why a run the owner cancelled did not finish. */
+export const CANCELLED = 'Cancelled with pero runs cancel';
 
 /**
  * The bounded in-process executor for Workflow Runs. SQLite holds the work:
@@ -42,16 +54,24 @@ type Outcome =
  * `max-concurrent-runs` setting are running, at most one per Workflow, and
  * runs it through `AgentManager` in a context of its own, away from every
  * Channel's Session. It never holds a transaction while an Agent works.
+ *
+ * A run Pero stops, by crashing or by aborting it on shutdown, stays
+ * `running` until the next startup records it `interrupted` and, when its
+ * Workflow allows another attempt, queues a retry.
  */
 @Injectable()
 export class WorkflowExecutor
-  implements OnApplicationBootstrap, BeforeApplicationShutdown
+  implements OnModuleInit, OnApplicationBootstrap, BeforeApplicationShutdown
 {
   private readonly logger = new Logger('Workflows');
   /** Each running run until its outcome is recorded, by run ID. */
   private readonly active = new Map<number, Promise<void>>();
   /** Workflows with a run in `active`. */
   private readonly busyWorkflows = new Set<number>();
+  /** Cancels each run in `active`, by run ID. */
+  private readonly cancels = new Map<number, AbortController>();
+  /** Runs the owner cancelled that have not recorded their outcome yet. */
+  private readonly cancelRequested = new Set<number>();
   /** The latest pass over pending runs; passes run one at a time. */
   private pass: Promise<void> = Promise.resolve();
   /** A pass that has not begun yet, which later wakes share. */
@@ -64,9 +84,109 @@ export class WorkflowExecutor
     private readonly agentManager: AgentManager,
   ) {}
 
-  /** Picks up runs left `pending` when Pero last stopped. */
+  /**
+   * Records runs left `running` when Pero last stopped. Every module's
+   * `onModuleInit` settles before any `onApplicationBootstrap`, so this
+   * finishes before anything can claim a run.
+   */
+  onModuleInit(): Promise<void> {
+    return this.recover();
+  }
+
+  /** Picks up runs left `pending` when Pero last stopped, and retries. */
   onApplicationBootstrap(): Promise<void> {
     return this.wake();
+  }
+
+  /**
+   * Cancels a run this executor is running: aborts its Agent's turn, and
+   * records it `cancelled` once the turn stops. False when the run is not
+   * executing here, such as one that has just finished.
+   */
+  cancel(runId: number): boolean {
+    const controller = this.cancels.get(runId);
+    if (controller === undefined) return false;
+    this.cancelRequested.add(runId);
+    controller.abort();
+    return true;
+  }
+
+  /**
+   * Marks each run left `running` `interrupted`, since nothing runs it any
+   * more, and queues a retry when its Workflow allows another attempt and
+   * it and its Agent are enabled. Each retry is a new run keyed by the one
+   * it retries, so recovering twice queues it once.
+   */
+  async recover(): Promise<void> {
+    const left = await this.dataSource.getRepository(WorkflowRun).find({
+      select: { id: true },
+      where: { status: 'running' },
+      order: { id: 'ASC' },
+    });
+    for (const { id } of left) {
+      if (this.active.has(id)) continue;
+      try {
+        await inTransaction(this.dataSource, (manager) =>
+          this.recoverWithin(manager, id),
+        );
+      } catch (error) {
+        this.logger.error(`Could not recover run ${id}: ${describe(error)}`);
+      }
+    }
+  }
+
+  private async recoverWithin(
+    manager: EntityManager,
+    id: number,
+  ): Promise<void> {
+    const runs = manager.getRepository(WorkflowRun);
+    const run = await runs.findOne({
+      where: { id },
+      relations: { workflow: true },
+    });
+    if (run === null || run.status !== 'running') return;
+    // The foreign keys guarantee the Workflow and its Agent.
+    const workflow = run.workflow!;
+    const agent = await manager
+      .getRepository(Agent)
+      .findOneByOrFail({ id: workflow.agentId });
+    const attempts = `${workflow.maxAttempts} ${workflow.maxAttempts === 1 ? 'attempt' : 'attempts'}`;
+    let outcome: string;
+    if (run.attempt >= workflow.maxAttempts) {
+      outcome = `not retried: Workflow ${workflow.name} allows ${attempts}`;
+    } else if (!workflow.enabled) {
+      outcome = `not retried: Workflow ${workflow.name} is disabled`;
+    } else if (!agent.enabled) {
+      outcome = `not retried: Agent ${agent.name} is disabled`;
+    } else {
+      const triggerKey = `retry:${run.id}`;
+      await runs
+        .createQueryBuilder()
+        .insert()
+        .values({
+          workflowId: workflow.id,
+          triggerId: run.triggerId,
+          triggerKey,
+          status: 'pending',
+          attempt: run.attempt + 1,
+        })
+        .orIgnore()
+        .execute();
+      // Found rather than taken from the insert, which an earlier
+      // recovery's retry may have made a no-op.
+      const retryId = (
+        await runs.findOneByOrFail({ workflowId: workflow.id, triggerKey })
+      ).id;
+      outcome = `run ${retryId} retries it (attempt ${run.attempt + 1} of ${workflow.maxAttempts})`;
+    }
+    await runs.update(run.id, {
+      status: 'interrupted',
+      finishedAt: new Date(),
+      errorText: `${INTERRUPTED}; ${outcome}`,
+    });
+    this.logger.warn(
+      `Run ${run.id} of Workflow ${workflow.name} was interrupted; ${outcome}`,
+    );
   }
 
   /**
@@ -192,7 +312,9 @@ export class WorkflowExecutor
 
   private start(claimed: ClaimedRun): void {
     this.busyWorkflows.add(claimed.workflowId);
-    const done = this.execute(claimed)
+    const controller = new AbortController();
+    this.cancels.set(claimed.runId, controller);
+    const done = this.execute(claimed, controller.signal)
       .catch((error: unknown) => {
         this.logger.error(
           `Could not record the outcome of run ${claimed.runId}: ${describe(error)}`,
@@ -200,13 +322,18 @@ export class WorkflowExecutor
       })
       .finally(() => {
         this.active.delete(claimed.runId);
+        this.cancels.delete(claimed.runId);
+        this.cancelRequested.delete(claimed.runId);
         this.busyWorkflows.delete(claimed.workflowId);
         void this.wake();
       });
     this.active.set(claimed.runId, done);
   }
 
-  private async execute(claimed: ClaimedRun): Promise<void> {
+  private async execute(
+    claimed: ClaimedRun,
+    signal: AbortSignal,
+  ): Promise<void> {
     const { runId, workflow, snapshot } = claimed;
     const label = `Workflow ${workflow}, run ${runId}`;
     this.logger.log(`Run ${runId} of Workflow ${workflow} started`);
@@ -225,21 +352,31 @@ export class WorkflowExecutor
         },
         input: snapshot.input,
         label,
+        signal,
       });
       outcome = { status: 'completed', text, providerSessionId };
     } catch (error) {
       if (!(error instanceof TurnError)) {
         this.logger.error(`${label} failed: ${describe(error)}`);
       }
-      outcome =
-        error instanceof TurnError
-          ? {
-              status: error.interrupted ? 'interrupted' : 'failed',
-              error: error.interrupted
-                ? 'Pero stopped before the run finished'
-                : error.message,
-            }
-          : { status: 'failed', error: 'Pero failed to run it; see pero logs' };
+      // The owner's cancel wins over Pero stopping at the same time.
+      outcome = this.cancelRequested.has(runId)
+        ? { status: 'cancelled', error: CANCELLED }
+        : error instanceof TurnError && error.interrupted
+          ? { status: 'left' }
+          : {
+              status: 'failed',
+              error:
+                error instanceof TurnError
+                  ? error.message
+                  : 'Pero failed to run it; see pero logs',
+            };
+    }
+    if (outcome.status === 'left') {
+      this.logger.warn(
+        `Run ${runId} of Workflow ${workflow} stopped before it finished; the next start records it`,
+      );
+      return;
     }
     await inTransaction(this.dataSource, (manager) =>
       manager.getRepository(WorkflowRun).update(runId, {

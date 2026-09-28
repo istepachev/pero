@@ -295,6 +295,8 @@ export const workflowViewSchema = z.object({
   inputTemplate: z.string(),
   enabled: z.boolean(),
   concurrencyPolicy: z.enum(CONCURRENCY_POLICIES),
+  /** How many times a run may start in all; see `Workflow.maxAttempts`. */
+  maxAttempts: z.int(),
   /** How many Triggers it has, enabled or not. */
   triggerCount: z.int().nonnegative(),
   createdAt: z.iso.datetime(),
@@ -474,6 +476,14 @@ export const CONTROL_OPERATIONS = {
     result: runViewSchema,
   },
   'runs.get': {
+    params: z.strictObject({ id: runIdSchema }),
+    result: runViewSchema,
+  },
+  /**
+   * Cancels a pending run at once, or aborts a running one, which is
+   * returned still `running` until its turn stops.
+   */
+  'runs.cancel': {
     params: z.strictObject({ id: runIdSchema }),
     result: runViewSchema,
   },
