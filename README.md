@@ -106,7 +106,7 @@ npm run cli -- channels history 3 -n 50 --data-dir .pero  # its latest messages
 
 ### Workflows
 
-A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand. Runs started by hand work now; schedules are saved and checked, and start runs once scheduling ships. Each run starts a provider conversation of its own, apart from every Channel's Session and history, with the Agent's settings as they were when the run started. At most `max-concurrent-runs` run at once (default 2), and one at a time per Workflow:
+A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand. Runs started by hand work now; schedules show their next run, and start runs once the scheduler ships. Each run starts a provider conversation of its own, apart from every Channel's Session and history, with the Agent's settings as they were when the run started. At most `max-concurrent-runs` run at once (default 2), and one at a time per Workflow:
 
 ```sh
 npm run cli -- workflows create evening-review --agent coach --input "Review today's chats" --data-dir .pero

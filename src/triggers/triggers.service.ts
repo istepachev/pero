@@ -1,7 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
-import { ConflictError, NotFoundError, parseInput } from '../common/errors.js';
+import { type DataSource, type EntityManager, IsNull } from 'typeorm';
+import {
+  ConflictError,
+  InvalidInputError,
+  NotFoundError,
+  parseInput,
+} from '../common/errors.js';
 import { type TriggerAdd, triggerAddSchema } from '../config/workflow-input.js';
 import type { TriggerView } from '../control/protocol.js';
 import {
@@ -13,14 +18,33 @@ import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { triggerView } from '../workflows/workflow-views.service.js';
 import { findWorkflow } from '../workflows/workflows.service.js';
+import { nextOccurrence } from './schedule.js';
 
 /**
- * Adds, removes, and switches the Triggers that start Workflows. Nothing
- * fires them yet: a schedule's next run is computed once scheduling ships.
+ * Adds, removes, and switches the Triggers that start Workflows. An enabled
+ * schedule always has its next run; a disabled one has none.
  */
 @Injectable()
-export class TriggersService {
+export class TriggersService implements OnApplicationBootstrap {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+
+  /** Gives enabled schedules saved without a next run one, from now. */
+  onApplicationBootstrap(): Promise<void> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const triggers = manager.getRepository(Trigger);
+      const unscheduled = await triggers.findBy({
+        kind: 'schedule',
+        enabled: true,
+        nextRunAt: IsNull(),
+      });
+      const now = new Date();
+      for (const trigger of unscheduled) {
+        await triggers.update(trigger.id, {
+          nextRunAt: nextRun(trigger, now),
+        });
+      }
+    });
+  }
 
   /** Every Trigger, or those of the Workflow named `workflow`, by ID. */
   list(workflow?: string): Promise<TriggerView[]> {
@@ -70,11 +94,21 @@ export class TriggersService {
             `Workflow ${workflow.name} already has this schedule: Trigger ${same.id}`,
           );
         }
+        const nextRunAt = nextOccurrence(
+          { cron: fields.cron, timezone },
+          new Date(),
+        );
+        if (nextRunAt === null) {
+          throw new InvalidInputError(
+            `cron: "${fields.cron}" never runs: no date matches it`,
+          );
+        }
         trigger = triggers.create({
           workflowId: workflow.id,
           kind: 'schedule',
           config: { cron: fields.cron },
           timezone,
+          nextRunAt,
         });
       } else {
         const manual = existing.find((other) => other.kind === 'manual');
@@ -104,12 +138,22 @@ export class TriggersService {
     });
   }
 
-  /** Enables or disables Trigger `id`; a disabled one starts nothing. */
+  /**
+   * Enables or disables Trigger `id`; a disabled one starts nothing. An
+   * enabled schedule runs next at its first time from now, so the time it
+   * spent disabled is never caught up.
+   */
   setEnabled(id: number, enabled: boolean): Promise<TriggerView> {
     return inTransaction(this.dataSource, async (manager) => {
       const { trigger, workflow } = await findTrigger(manager, id);
-      await manager.getRepository(Trigger).update(id, { enabled });
+      // Enabling an enabled schedule keeps its next run, even an overdue one.
+      if (trigger.kind === 'schedule' && enabled !== trigger.enabled) {
+        trigger.nextRunAt = enabled ? nextRun(trigger, new Date()) : null;
+      }
       trigger.enabled = enabled;
+      await manager
+        .getRepository(Trigger)
+        .update(id, { enabled, nextRunAt: trigger.nextRunAt });
       return triggerView(trigger, workflow);
     });
   }
@@ -127,4 +171,11 @@ async function findTrigger(
   if (trigger === null) throw new NotFoundError(`No Trigger with ID ${id}`);
   // The foreign key guarantees the Workflow.
   return { trigger, workflow: trigger.workflow! };
+}
+
+/** A schedule Trigger's first time after `after`; `null` if it has none. */
+function nextRun(trigger: Trigger, after: Date): Date | null {
+  const { cron } = trigger.config;
+  if (typeof cron !== 'string' || trigger.timezone === null) return null;
+  return nextOccurrence({ cron, timezone: trigger.timezone }, after);
 }

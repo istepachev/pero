@@ -94,9 +94,17 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       kind: 'schedule',
       cron: '0 21 * * *',
       timezone: 'Europe/Berlin',
-      nextRunAt: null,
       enabled: true,
     });
+    // 21:00 in Berlin, within the next day.
+    const nextRun = new Date(daily.nextRunAt!);
+    expect(nextRun.getTime()).toBeGreaterThan(Date.now());
+    expect(nextRun.getTime() - Date.now()).toBeLessThanOrEqual(
+      24 * 60 * 60 * 1000,
+    );
+    expect(
+      nextRun.toLocaleTimeString('en-GB', { timeZone: 'Europe/Berlin' }),
+    ).toBe('21:00:00');
     const manual = await client.call('triggers.add', {
       workflow: 'evening-review',
       kind: 'manual',
@@ -113,7 +121,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         id: daily.id,
         enabled: false,
       }),
-    ).toMatchObject({ id: daily.id, enabled: false });
+    ).toMatchObject({ id: daily.id, enabled: false, nextRunAt: null });
     expect(await client.call('triggers.remove', { id: weekly.id })).toEqual(
       weekly,
     );
@@ -139,11 +147,11 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     ]);
     expect(
       (await client.call('workflows.get', { name: 'evening-review' })).triggers,
-    ).toEqual([{ ...daily, enabled: false }, manual]);
+    ).toEqual([{ ...daily, enabled: false, nextRunAt: null }, manual]);
     expect(
       (await client.call('triggers.list', { workflow: 'evening-review' }))
         .triggers,
-    ).toEqual([{ ...daily, enabled: false }, manual]);
+    ).toEqual([{ ...daily, enabled: false, nextRunAt: null }, manual]);
 
     await client.call('workflows.edit', {
       name: 'evening-review',
@@ -154,7 +162,10 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       await client.call('workflows.get', { name: 'evening-review' }),
     ).toMatchObject({
       enabled: true,
-      triggers: [{ id: daily.id, enabled: true }, { id: manual.id }],
+      triggers: [
+        { id: daily.id, enabled: true, nextRunAt: expect.any(String) },
+        { id: manual.id },
+      ],
     });
   });
 

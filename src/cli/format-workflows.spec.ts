@@ -7,6 +7,7 @@ import type {
 } from '../control/protocol.js';
 import {
   agentWarning,
+  describeScheduledTrigger,
   describeTrigger,
   formatTriggerList,
   formatWorkflowDetails,
@@ -84,8 +85,8 @@ describe('Workflow formatting', () => {
     const details: WorkflowDetails = {
       ...review,
       triggers: [
-        schedule,
-        { ...schedule, id: 5, nextRunAt: '2026-09-28T19:00:00.000Z' },
+        { ...schedule, nextRunAt: '2026-09-28T19:00:00.000Z' },
+        { ...schedule, id: 5, enabled: false },
         manual,
       ],
     };
@@ -99,10 +100,10 @@ describe('Workflow formatting', () => {
         '  state  enabled',
         '',
         'Triggers',
-        '  ID  SCHEDULE                  NEXT RUN           STATE',
-        '  3   0 21 * * * Europe/Berlin  not scheduled yet  enabled',
-        '  5   0 21 * * * Europe/Berlin  2026-09-29 00:00   enabled',
-        '  4   manual                    —                  disabled',
+        '  ID  SCHEDULE                  NEXT RUN          STATE',
+        '  3   0 21 * * * Europe/Berlin  2026-09-29 00:00  enabled',
+        '  5   0 21 * * * Europe/Berlin  —                 disabled',
+        '  4   manual                    —                 disabled',
       ].join('\n'),
     );
   });
@@ -135,9 +136,9 @@ describe('Workflow formatting', () => {
   it('lists Triggers with their Workflow', () => {
     expect(formatTriggerList([schedule, manual])).toBe(
       [
-        'ID  WORKFLOW        SCHEDULE                  NEXT RUN           STATE',
-        '3   evening-review  0 21 * * * Europe/Berlin  not scheduled yet  enabled',
-        '4   evening-review  manual                    —                  disabled',
+        'ID  WORKFLOW        SCHEDULE                  NEXT RUN  STATE',
+        '3   evening-review  0 21 * * * Europe/Berlin  none      enabled',
+        '4   evening-review  manual                    —         disabled',
       ].join('\n'),
     );
     expect(formatTriggerList([])).toBe(
@@ -152,6 +153,16 @@ describe('Workflow formatting', () => {
     expect(describeTrigger(manual)).toBe(
       'Trigger 4 of evening-review (manual)',
     );
+    expect(
+      describeScheduledTrigger({
+        ...schedule,
+        nextRunAt: '2026-09-28T19:00:00.000Z',
+      }),
+    ).toBe(
+      'Trigger 3 of evening-review (0 21 * * * Europe/Berlin), next run 2026-09-29 00:00',
+    );
+    expect(describeScheduledTrigger(schedule)).toBe(describeTrigger(schedule));
+    expect(describeScheduledTrigger(manual)).toBe(describeTrigger(manual));
   });
 
   it("gives a finished run's answer, or why there is none", () => {
