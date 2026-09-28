@@ -6,6 +6,8 @@ import type { DataDirLayout } from '../config/data-dir.js';
 import { HealthModule } from '../health/health.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
+import { TriggersModule } from '../triggers/triggers.module.js';
+import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
 
 export interface ControlOptions {
@@ -27,6 +29,8 @@ export class ControlModule {
         ProvidersModule,
         AgentsModule,
         ChannelsModule,
+        WorkflowsModule,
+        TriggersModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],
       providers: [

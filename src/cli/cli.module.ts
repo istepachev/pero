@@ -36,6 +36,23 @@ import {
   TelegramCommand,
   TelegramDenyCommand,
 } from './commands/telegram.command.js';
+import {
+  TriggersAddCommand,
+  TriggersCommand,
+  TriggersDisableCommand,
+  TriggersEnableCommand,
+  TriggersListCommand,
+  TriggersRemoveCommand,
+} from './commands/triggers.command.js';
+import {
+  WorkflowsCommand,
+  WorkflowsCreateCommand,
+  WorkflowsDisableCommand,
+  WorkflowsEditCommand,
+  WorkflowsEnableCommand,
+  WorkflowsListCommand,
+  WorkflowsShowCommand,
+} from './commands/workflows.command.js';
 import { GlobalOptionsSetup } from './global-options.js';
 
 /**
@@ -67,6 +84,19 @@ import { GlobalOptionsSetup } from './global-options.js';
     ChannelsDisableCommand,
     ChannelsEnableCommand,
     ChannelsHistoryCommand,
+    WorkflowsCommand,
+    WorkflowsListCommand,
+    WorkflowsShowCommand,
+    WorkflowsCreateCommand,
+    WorkflowsEditCommand,
+    WorkflowsDisableCommand,
+    WorkflowsEnableCommand,
+    TriggersCommand,
+    TriggersListCommand,
+    TriggersAddCommand,
+    TriggersRemoveCommand,
+    TriggersDisableCommand,
+    TriggersEnableCommand,
     TelegramCommand,
     TelegramChatsCommand,
     TelegramAllowCommand,

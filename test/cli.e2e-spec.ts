@@ -715,6 +715,207 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
+  it('lists, shows, creates, edits, disables, and enables Workflows and their Triggers', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const vault = join(tmp, 'vault');
+    mkdirSync(vault);
+    await pero(
+      withDataDir('settings', 'set', 'default-working-directory', vault),
+    );
+    await pero(withDataDir('settings', 'set', 'timezone', 'Europe/Berlin'));
+    await pero(withDataDir('agents', 'create', 'coach'));
+    const workflows = (...args: string[]) =>
+      pero(withDataDir('workflows', ...args));
+    const triggers = (...args: string[]) =>
+      pero(withDataDir('triggers', ...args));
+
+    expect(await workflows()).toMatchObject({
+      code: 0,
+      stdout:
+        'No Workflows yet. Create one with pero workflows create <name> --agent <agent> --input <text>.\n',
+    });
+    expect(
+      await workflows('create', 'evening-review', '--input', 'Go'),
+    ).toMatchObject({
+      code: 1,
+      stderr: 'Give the Agent its runs use with --agent <name>\n',
+    });
+    expect(
+      await workflows(
+        'create',
+        'evening review',
+        '--agent',
+        'coach',
+        '--input',
+        'Go',
+      ),
+    ).toMatchObject({
+      code: 1,
+      stderr:
+        '<name>: must be letters and digits, in words joined by single hyphens\n',
+    });
+    expect(
+      await workflows(
+        'create',
+        'evening-review',
+        '--agent',
+        'nobody',
+        '--input',
+        'Go',
+      ),
+    ).toMatchObject({ code: 1, stderr: 'No Agent named nobody\n' });
+    expect(
+      await pero(
+        withDataDir(
+          'workflows',
+          'create',
+          'Evening-Review',
+          '--agent',
+          'coach',
+          '--input',
+          '-',
+        ),
+        { input: "Review today's chats.\n" },
+      ),
+    ).toMatchObject({
+      code: 0,
+      stdout:
+        'Created Workflow evening-review: runs Agent coach, 0 Triggers\n' +
+        'Start it on a schedule with pero triggers add evening-review --cron "<expression>".\n',
+    });
+    expect(
+      await workflows('edit', 'evening-review', '--title', 'Evening review'),
+    ).toMatchObject({
+      code: 0,
+      stdout: 'Changed Workflow evening-review: runs Agent coach, 0 Triggers\n',
+    });
+    expect(await workflows('edit', 'evening-review')).toMatchObject({
+      code: 1,
+      stderr:
+        'Nothing to change; see pero workflows edit --help for the options\n',
+    });
+
+    expect(await triggers('add', 'evening-review')).toMatchObject({
+      code: 1,
+      stderr:
+        'Give a schedule with --cron "<expression>", such as --cron "0 9 * * *", or --manual\n',
+    });
+    expect(
+      await triggers('add', 'evening-review', '--cron', '@daily', '--manual'),
+    ).toMatchObject({
+      code: 1,
+      stderr: 'Give either --cron or --manual, not both\n',
+    });
+    expect(
+      await triggers('add', 'evening-review', '--cron', '0 21 * *'),
+    ).toMatchObject({
+      code: 1,
+      stderr: expect.stringMatching(
+        /^--cron: must be a cron expression of five fields/,
+      ),
+    });
+    expect(
+      await triggers(
+        'add',
+        'evening-review',
+        '--cron',
+        '0 21 * * *',
+        '--timezone',
+        'Mars/Base',
+      ),
+    ).toMatchObject({
+      code: 1,
+      stderr: '--timezone: must be an IANA time zone such as Europe/Berlin\n',
+    });
+    expect(await triggers('add', 'nothing', '--manual')).toMatchObject({
+      code: 1,
+      stderr: 'No Workflow named nothing\n',
+    });
+    expect(
+      await triggers('add', 'evening-review', '--cron', '0 21 * * *'),
+    ).toMatchObject({
+      code: 0,
+      stdout: 'Added Trigger 1 of evening-review (0 21 * * * Europe/Berlin).\n',
+    });
+    expect(await triggers('add', 'evening-review', '--manual')).toMatchObject({
+      code: 0,
+      stdout: 'Added Trigger 2 of evening-review (manual).\n',
+    });
+
+    expect(await triggers()).toMatchObject({
+      code: 0,
+      stdout: [
+        'ID  WORKFLOW        SCHEDULE                  NEXT RUN           STATE',
+        '1   evening-review  0 21 * * * Europe/Berlin  not scheduled yet  enabled',
+        '2   evening-review  manual                    —                  enabled',
+        '',
+      ].join('\n'),
+    });
+    expect(await triggers('disable', '1')).toMatchObject({
+      code: 0,
+      stdout:
+        'Disabled Trigger 1 of evening-review (0 21 * * * Europe/Berlin). It starts nothing until pero triggers enable 1.\n',
+    });
+    expect(await triggers('remove', '2')).toMatchObject({
+      code: 0,
+      stdout: 'Removed Trigger 2 of evening-review (manual).\n',
+    });
+    expect(await triggers('remove', 'two')).toMatchObject({
+      code: 1,
+      stderr:
+        'trigger must be a Trigger ID, as pero triggers ls lists it, not "two"\n',
+    });
+    expect(await triggers('enable', '2')).toMatchObject({
+      code: 1,
+      stderr: 'No Trigger with ID 2\n',
+    });
+
+    expect(await workflows('disable', 'evening-review')).toMatchObject({
+      code: 0,
+      stdout:
+        'Disabled Workflow evening-review. Its Triggers start nothing until pero workflows enable evening-review.\n',
+    });
+    expect(await workflows()).toMatchObject({
+      code: 0,
+      stdout: [
+        'NAME            AGENT  TRIGGERS  STATE',
+        'evening-review  coach  1         disabled',
+        '',
+      ].join('\n'),
+    });
+    await pero(withDataDir('agents', 'disable', 'coach'));
+    expect(await workflows('enable', 'evening-review')).toMatchObject({
+      code: 0,
+      stdout: 'Enabled Workflow evening-review: runs Agent coach, 1 Trigger\n',
+      stderr:
+        'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.\n',
+    });
+    expect(await workflows('show', 'evening-review')).toMatchObject({
+      code: 0,
+      stdout: [
+        'Workflow evening-review "Evening review"',
+        '  agent  coach (disabled)',
+        "  input  Review today's chats.",
+        '  runs   one at a time',
+        '  state  enabled',
+        '',
+        'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
+        '',
+        'Triggers',
+        '  ID  SCHEDULE                  NEXT RUN           STATE',
+        '  1   0 21 * * * Europe/Berlin  not scheduled yet  disabled',
+        '',
+      ].join('\n'),
+    });
+    expect(
+      await workflows('edit', 'evening-review', '--agent', 'coach'),
+    ).toMatchObject({
+      code: 1,
+      stderr:
+        'Agent coach is disabled; enable it first with pero agents enable coach\n',
+    });
+  });
+
   it('takes the token from PERO_TELEGRAM_BOT_TOKEN in the daemon environment', async () => {
     const run = await pero(withDataDir('run'), {
       env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },

@@ -58,6 +58,7 @@
     "@nestjs/typeorm": "12.0.1",
     "@openai/codex-sdk": "0.158.0",
     "better-sqlite3": "12.11.1",
+    "croner": "10.0.1",
     "grammy": "1.46.0",
     "nest-commander": "3.21.0",
     "pino": "10.3.1",

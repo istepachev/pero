@@ -8,10 +8,18 @@ import {
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import {
+  triggerAddSchema,
+  workflowCreateSchema,
+  workflowEditSchema,
+  workflowReferenceSchema,
+} from '../config/workflow-input.js';
+import {
   CHAT_KINDS,
+  CONCURRENCY_POLICIES,
   INTEGRATION_KINDS,
   MESSAGE_DIRECTIONS,
   MESSAGE_ORIGINS,
+  TRIGGER_KINDS,
 } from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -275,6 +283,52 @@ export const DEFAULT_HISTORY_MESSAGES = 20;
 
 const channelIdSchema = z.int().positive();
 
+/** A Workflow as `pero workflows ls` lists it. */
+export const workflowViewSchema = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  /** The name of the Agent its runs use. */
+  agent: z.string(),
+  agentEnabled: z.boolean(),
+  /** The input each run sends to the Agent. */
+  inputTemplate: z.string(),
+  enabled: z.boolean(),
+  concurrencyPolicy: z.enum(CONCURRENCY_POLICIES),
+  /** How many Triggers it has, enabled or not. */
+  triggerCount: z.int().nonnegative(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type WorkflowView = z.infer<typeof workflowViewSchema>;
+
+/** A Trigger of a Workflow. */
+export const triggerViewSchema = z.object({
+  id: z.int(),
+  /** The name of the Workflow it starts. */
+  workflow: z.string(),
+  kind: z.enum(TRIGGER_KINDS),
+  /** A schedule's cron expression; null for other kinds. */
+  cron: z.string().nullable(),
+  /** A schedule's IANA time zone; null for other kinds. */
+  timezone: z.string().nullable(),
+  /** When a schedule is next due; null until it is scheduled. */
+  nextRunAt: z.iso.datetime().nullable(),
+  lastRunAt: z.iso.datetime().nullable(),
+  enabled: z.boolean(),
+});
+
+export type TriggerView = z.infer<typeof triggerViewSchema>;
+
+export const workflowDetailsSchema = workflowViewSchema.extend({
+  /** Oldest first. */
+  triggers: z.array(triggerViewSchema),
+});
+
+export type WorkflowDetails = z.infer<typeof workflowDetailsSchema>;
+
+const triggerIdSchema = z.int().positive();
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -355,6 +409,42 @@ export const CONTROL_OPERATIONS = {
       channel: channelViewSchema,
       messages: z.array(historyMessageSchema),
     }),
+  },
+  /** Every Workflow, by name. */
+  'workflows.list': {
+    params: noParams,
+    result: z.object({ workflows: z.array(workflowViewSchema) }),
+  },
+  'workflows.get': {
+    params: z.strictObject({ name: workflowReferenceSchema }),
+    result: workflowDetailsSchema,
+  },
+  'workflows.create': {
+    params: workflowCreateSchema,
+    result: workflowDetailsSchema,
+  },
+  /** Also enables and disables a Workflow. */
+  'workflows.edit': {
+    params: z.strictObject({
+      name: workflowReferenceSchema,
+      change: workflowEditSchema,
+    }),
+    result: workflowDetailsSchema,
+  },
+  /** Every Trigger, or one Workflow's, by ID. */
+  'triggers.list': {
+    params: z.strictObject({ workflow: workflowReferenceSchema.optional() }),
+    result: z.object({ triggers: z.array(triggerViewSchema) }),
+  },
+  'triggers.add': { params: triggerAddSchema, result: triggerViewSchema },
+  /** Runs it created are kept, with no Trigger. */
+  'triggers.remove': {
+    params: z.strictObject({ id: triggerIdSchema }),
+    result: triggerViewSchema,
+  },
+  'triggers.setEnabled': {
+    params: z.strictObject({ id: triggerIdSchema, enabled: z.boolean() }),
+    result: triggerViewSchema,
   },
   /** Writes a backup of the data directory to an absolute path. */
   'backup.create': {

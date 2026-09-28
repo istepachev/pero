@@ -1,6 +1,5 @@
 import { homedir } from 'node:os';
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import { InvalidInputError } from '../../common/errors.js';
 import type { AgentEdit } from '../../config/agent-input.js';
 import type { AgentDetails } from '../../control/protocol.js';
 import {
@@ -15,6 +14,7 @@ import {
   sessionEffect,
   summarize,
 } from '../format-agents.js';
+import { withOptionNames } from '../option-names.js';
 import { PeroCommand } from '../pero-command.js';
 import { readStdin } from '../prompts.js';
 
@@ -186,8 +186,9 @@ export class AgentsCreateCommand extends AgentOptionsCommand {
   async run([name]: string[], options: AgentOptions): Promise<void> {
     const change = await this.change(options);
     const { client } = await this.requireDaemon();
-    const agent = await withOptionNames(() =>
-      client.call('agents.create', { name: name!, ...change }),
+    const agent = await withOptionNames(
+      () => client.call('agents.create', { name: name!, ...change }),
+      renameAgentFields,
     );
     console.log(`Created Agent ${agent.name}: ${summarize(agent)}`);
     warnAboutFolder(agent);
@@ -210,8 +211,9 @@ export class AgentsEditCommand extends AgentOptionsCommand {
       );
     }
     const { client } = await this.requireDaemon();
-    const agent = await withOptionNames(() =>
-      client.call('agents.edit', { name: name!, change }),
+    const agent = await withOptionNames(
+      () => client.call('agents.edit', { name: name!, change }),
+      renameAgentFields,
     );
     console.log(`Changed Agent ${agent.name}: ${summarize(agent)}`);
     const effect = sessionEffect(
@@ -293,16 +295,6 @@ export class AgentsCommand extends CommandRunner {
   // `ls` is the default subcommand, so this only runs if that changes.
   async run(): Promise<void> {
     this.command.help();
-  }
-}
-
-/** Runs `call`, naming fields in its errors as the command's options do. */
-async function withOptionNames<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (error) {
-    if (!(error instanceof InvalidInputError)) throw error;
-    throw new InvalidInputError(renameAgentFields(error.message));
   }
 }
 

@@ -47,10 +47,19 @@ Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access 
 | `pero channels show <channel>` | Show a Channel by its ID: its Agent, what its next turn does with its Session, and how much history it holds. |
 | `pero channels assign <channel> <agent>` | Point a Channel at another enabled Agent, such as a new topic at an existing Agent instead of the one onboarding made. Its Session is closed, so the Agent's next turn there starts a fresh one that carries over the Channel's recent messages. |
 | `pero channels disable <channel>` / `enable <channel>` | Ignore a Channel's messages, keeping its Agent and Sessions, or let it reach its Agent again. A disabled Channel is not onboarded again. |
-| `pero channels history <channel>` | Print the Channel's latest messages (`-n <count>`, default 20, at most 500) in local time, with direction (`in` or `out`) and origin (`user`, the Agent, or `pero` for Pero's own notices).
+| `pero channels history <channel>` | Print the Channel's latest messages (`-n <count>`, default 20, at most 500) in local time, with direction (`in` or `out`) and origin (`user`, the Agent, or `pero` for Pero's own notices). |
 | `pero telegram chats` | List allowed chats (kind, title, whether topics are on, whether the bot is an administrator) and chats that recently asked to pair, with their IDs. |
 | `pero telegram allow <chat-id>` | Allow a group or direct chat. A group's ID is negative (`-100…`); a direct chat's ID is the owner's user ID. Both appear in the pairing hint the bot sends to a chat it does not serve yet. |
 | `pero telegram deny <chat-id>` | Remove a chat from the allowlist. Its Channels and Agents stay and resume if it is allowed again. |
+| `pero workflows ls` | List Workflows by name with their Agent, how many Triggers they have, and enabled state. `pero workflows` alone does the same. |
+| `pero workflows show <name>` | Show a Workflow's Agent, input, and Triggers, each with its schedule and next run. Warns when its Agent is disabled. |
+| `pero workflows create <name>` | Create a Workflow: `--agent <name>` (an enabled Agent) and `--input <text>` (what each run sends it; `-` reads stdin) are required, `--title` is optional. A Workflow runs only once a Trigger starts it. |
+| `pero workflows edit <name>` | Change a Workflow with the same options; `--no-title` clears the title. A new Agent must be enabled. The name cannot change. |
+| `pero workflows disable <name>` / `enable <name>` | Stop a Workflow's Triggers from starting it, keeping them, or let them start it again. Workflows are never deleted, since their runs refer to them. |
+| `pero triggers ls [workflow]` | List Triggers by ID, or one Workflow's, with their schedule, next run, and enabled state. `pero triggers` alone does the same. |
+| `pero triggers add <workflow>` | Start a Workflow on a schedule: `--cron "<expression>"` takes five fields (minute hour day month weekday, such as `"0 9 * * *"`) or `@hourly`, `@daily`, `@weekly`, `@monthly`, or `@yearly`; `--timezone <zone>` is the IANA time zone it follows, by default the `timezone` setting at the time it is added. `--manual` adds instead the Trigger for runs started by hand; a Workflow has at most one. |
+| `pero triggers remove <trigger>` | Remove a Trigger by ID. The runs it started are kept. |
+| `pero triggers disable <trigger>` / `enable <trigger>` | Stop a Trigger from starting its Workflow, keeping it, or let it start it again. |
 
 Every command except `run`, `run --foreground`, `stop`, `status`, `logs`, and `restore` requires the running daemon. When it is stopped, the command exits with `Pero isn't running — start it with pero run` and does not start it implicitly.
 

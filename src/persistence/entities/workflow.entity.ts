@@ -11,12 +11,14 @@ import {
 } from 'typeorm';
 import { SLUG_MAX_LENGTH } from '../../config/slug.js';
 import { Agent } from './agent.entity.js';
-import { isSlug, oneOf } from './sql.js';
+import {
+  CONCURRENCY_POLICIES,
+  type ConcurrencyPolicy,
+  isSlug,
+  oneOf,
+} from './sql.js';
 
-/** `serial`: at most one active run per Workflow. */
-export const CONCURRENCY_POLICIES = ['serial'] as const;
-
-export type ConcurrencyPolicy = (typeof CONCURRENCY_POLICIES)[number];
+export { CONCURRENCY_POLICIES, type ConcurrencyPolicy };
 
 /** A saved definition of autonomous work. */
 @Entity('workflows')
