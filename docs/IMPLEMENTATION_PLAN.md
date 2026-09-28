@@ -234,17 +234,17 @@ On startup, re-queue `pending` runs and mark leftover `running` runs `interrupte
 A Workflow can read Channel history, so an Agent can review conversations on a schedule. For example, an `english-coach` Agent can read the day's chats every evening and suggest improvements.
 
 Add optional history input to Workflows as `history_json`, validated with Zod. It chooses:
-- **Channels:** all of them, or a list.
-- **Messages:** only the ones people wrote, or both directions.
+- **Channels:** all of them, or a list of Channel IDs.
+- **Messages:** only the ones people wrote, or the Agents' replies too; Pero's own notices never.
 - **Window:** since the previous successful run (the default; a first run reads the last 24 hours), or a fixed number of hours.
 
 How a run reads its window:
 - **Fixed on claim:** when the executor claims a run, it fixes the end of the window and records the window in the run's snapshot. Mark the window's end by message ID: `created_at` has whole seconds, so a time alone can split or repeat messages at the boundary.
-- **Retries and later runs:** a retry reads the same messages, and the next run starts where this one ended, with no gaps and no overlaps.
+- **Retries and later runs:** a retry reads the same messages, and is claimed before other pending runs of its Workflow. The next run starts where the latest completed one ended, with no gaps and no overlaps. A run that fails or is cancelled leaves its messages for the next run.
 - **Rendering:** the messages become a transcript: local time, Channel title, who spoke, and text. It goes into the input template's `{{history}}` placeholder, or after the input when there is none.
 - **Size limit:** a character budget drops the oldest messages first, and the transcript notes that it did.
 - **Empty windows:** a run whose window has no messages completes without invoking the Agent and records that it was skipped. A Workflow can opt out of this and run anyway.
-- **CLI:** `pero workflows create|edit` set and clear the history input.
+- **CLI:** `pero workflows create|edit` set and clear the history input: `--history`, `--history-channels`, `--history-messages`, `--history-hours` or `--history-since-last-run`, `--run-when-empty`, and `--no-history`.
 
 **Done when:** tests show:
 - consecutive runs cover adjacent windows;

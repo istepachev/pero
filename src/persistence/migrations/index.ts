@@ -6,6 +6,7 @@ import { CreateMessageHistory1790590513558 } from './1790590513558-CreateMessage
 import { DefaultPermissions1790602942841 } from './1790602942841-DefaultPermissions.js';
 import { RunSkippedCount1790620569391 } from './1790620569391-RunSkippedCount.js';
 import { WorkflowMaxAttempts1790621795251 } from './1790621795251-WorkflowMaxAttempts.js';
+import { WorkflowHistory1790623147117 } from './1790623147117-WorkflowHistory.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -20,4 +21,5 @@ export const MIGRATIONS = [
   DefaultPermissions1790602942841,
   RunSkippedCount1790620569391,
   WorkflowMaxAttempts1790621795251,
+  WorkflowHistory1790623147117,
 ];

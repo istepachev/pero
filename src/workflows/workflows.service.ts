@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
+import { type DataSource, type EntityManager, In } from 'typeorm';
 import { findAgent } from '../agents/agents.service.js';
 import {
   ConflictError,
@@ -10,12 +10,15 @@ import {
 } from '../common/errors.js';
 import { withoutUndefined } from '../common/without-undefined.js';
 import {
+  patchHistory,
   type WorkflowCreate,
   type WorkflowEdit,
+  type WorkflowHistory,
   workflowCreateSchema,
   workflowEditSchema,
 } from '../config/workflow-input.js';
 import type { Agent } from '../persistence/entities/agent.entity.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
@@ -42,12 +45,17 @@ export class WorkflowsService {
         );
       }
       const agent = await enabledAgent(manager, fields.agent);
+      const history =
+        fields.history === undefined
+          ? null
+          : await existingChannels(manager, patchHistory(null, fields.history));
       const { id } = await workflows.save(
         workflows.create({
           name: fields.name,
           title: fields.title ?? null,
           agentId: agent.id,
           inputTemplate: fields.inputTemplate,
+          history,
           ...(fields.maxAttempts === undefined
             ? {}
             : { maxAttempts: fields.maxAttempts }),
@@ -70,12 +78,20 @@ export class WorkflowsService {
         patch.agent === undefined
           ? undefined
           : (await enabledAgent(manager, patch.agent)).id;
+      const history =
+        patch.history === undefined || patch.history === null
+          ? patch.history
+          : await existingChannels(
+              manager,
+              patchHistory(workflow.history, patch.history),
+            );
       const fields = withoutUndefined({
         title: patch.title,
         agentId,
         inputTemplate: patch.inputTemplate,
         maxAttempts: patch.maxAttempts,
         enabled: patch.enabled,
+        history,
       });
       if (Object.keys(fields).length === 0) return workflow;
       await workflows.update(workflow.id, fields);
@@ -94,6 +110,28 @@ export async function findWorkflow(
     .findOneBy({ name: name.toLowerCase() });
   if (workflow === null) throw new NotFoundError(`No Workflow named ${name}`);
   return workflow;
+}
+
+/**
+ * `history`, once each Channel it names exists; `InvalidInputError`
+ * otherwise.
+ */
+async function existingChannels(
+  manager: EntityManager,
+  history: WorkflowHistory,
+): Promise<WorkflowHistory> {
+  if (history.channels === 'all') return history;
+  const found = await manager
+    .getRepository(Channel)
+    .findBy({ id: In(history.channels) });
+  const known = new Set(found.map((channel) => channel.id));
+  const missing = history.channels.filter((id) => !known.has(id));
+  if (missing.length > 0) {
+    throw new InvalidInputError(
+      `history.channels: no Channel with ID ${missing.join(', ')}; pero channels ls lists them`,
+    );
+  }
+  return history;
 }
 
 /** The Agent named `name`, which must be enabled to take on a Workflow. */

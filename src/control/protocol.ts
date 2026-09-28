@@ -8,6 +8,7 @@ import {
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import {
+  HISTORY_MESSAGES,
   triggerAddSchema,
   workflowCreateSchema,
   workflowEditSchema,
@@ -297,6 +298,16 @@ export const workflowViewSchema = z.object({
   concurrencyPolicy: z.enum(CONCURRENCY_POLICIES),
   /** How many times a run may start in all; see `Workflow.maxAttempts`. */
   maxAttempts: z.int(),
+  /** The Channel history its runs read; null when they read none. */
+  history: z
+    .object({
+      channels: z.union([z.literal('all'), z.array(z.int())]),
+      messages: z.enum(HISTORY_MESSAGES),
+      /** A fixed window in hours; null reads since the previous run. */
+      hours: z.int().nullable(),
+      runWhenEmpty: z.boolean(),
+    })
+    .nullable(),
   /** How many Triggers it has, enabled or not. */
   triggerCount: z.int().nonnegative(),
   createdAt: z.iso.datetime(),
@@ -357,6 +368,11 @@ export const runViewSchema = z.object({
   finishedAt: z.iso.datetime().nullable(),
   /** What the Agent answered; null until it completes. */
   result: z.string().nullable(),
+  /**
+   * Completed without its Agent, since its history window had no
+   * messages; `result` is then null.
+   */
+  skipped: z.boolean(),
   /** Why it did not complete; null otherwise. */
   error: z.string().nullable(),
 });

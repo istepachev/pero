@@ -82,6 +82,7 @@ function workflowView(
     enabled: workflow.enabled,
     concurrencyPolicy: workflow.concurrencyPolicy,
     maxAttempts: workflow.maxAttempts,
+    history: workflow.history,
     triggerCount,
     createdAt: workflow.createdAt.toISOString(),
     updatedAt: workflow.updatedAt.toISOString(),

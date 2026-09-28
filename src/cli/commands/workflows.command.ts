@@ -1,6 +1,9 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import {
+  HISTORY_MESSAGES,
+  type HistoryMessages,
   MAX_ATTEMPTS_LIMIT,
+  MAX_HISTORY_HOURS,
   type WorkflowEdit,
 } from '../../config/workflow-input.js';
 import type { WorkflowView } from '../../control/protocol.js';
@@ -17,6 +20,7 @@ import { positiveInt } from '../positive-int.js';
 import { readStdin } from '../prompts.js';
 import { waitForRun } from '../wait-for-run.js';
 import {
+  parseHistoryChannels,
   renameWorkflowFields,
   type WorkflowOptions,
   workflowChange,
@@ -103,6 +107,87 @@ abstract class WorkflowOptionsCommand extends PeroCommand {
     }
     return count;
   }
+
+  @Option({
+    flags: '--history',
+    description:
+      "put Channel history in each run's input, at {{history}} or after it: by default what people wrote in every Channel since the previous run (the last 24 hours for the first)",
+  })
+  parseHistory(): true {
+    return true;
+  }
+
+  @Option({
+    flags: '--no-history',
+    description: 'stop putting Channel history in the input',
+  })
+  parseNoHistory(): false {
+    return false;
+  }
+
+  @Option({
+    flags: '--history-channels <ids>',
+    description:
+      'the Channels whose history runs read: IDs separated by commas, as pero channels ls lists them, or all',
+  })
+  parseHistoryChannels(value: string): 'all' | number[] {
+    return parseHistoryChannels(value);
+  }
+
+  @Option({
+    flags: '--history-messages <which>',
+    description:
+      "people (only what people wrote) or all (the Agents' replies too)",
+  })
+  parseHistoryMessages(value: string): HistoryMessages {
+    const which = value.trim().toLowerCase();
+    if (!(HISTORY_MESSAGES as readonly string[]).includes(which)) {
+      throw new CliError(
+        `--history-messages must be people or all, not "${value}"`,
+      );
+    }
+    return which as HistoryMessages;
+  }
+
+  @Option({
+    flags: '--history-hours <n>',
+    description: `read a fixed window: the last n hours before each run (1 to ${MAX_HISTORY_HOURS})`,
+  })
+  parseHistoryHours(value: string): number {
+    const hours = positiveInt(value);
+    if (hours === null) {
+      throw new CliError(
+        `--history-hours must be a positive whole number, not "${value}"`,
+      );
+    }
+    return hours;
+  }
+
+  @Option({
+    flags: '--history-since-last-run',
+    description:
+      'read everything since the previous successful run, once each (the default)',
+  })
+  parseHistorySinceLastRun(): true {
+    return true;
+  }
+
+  @Option({
+    flags: '--run-when-empty',
+    description:
+      'run the Agent even when there is no history to read; by default such a run completes without it',
+  })
+  parseRunWhenEmpty(): true {
+    return true;
+  }
+
+  @Option({
+    flags: '--no-run-when-empty',
+    description: 'complete a run with no history to read without the Agent',
+  })
+  parseNoRunWhenEmpty(): false {
+    return false;
+  }
 }
 
 @SubCommand({
@@ -124,7 +209,7 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
         'Give what each run sends the Agent with --input <text> (- reads stdin)',
       );
     }
-    const { agent, inputTemplate, title, maxAttempts } =
+    const { agent, inputTemplate, title, maxAttempts, history } =
       await this.change(options);
     const { client } = await this.requireDaemon();
     const workflow = await withOptionNames(
@@ -135,6 +220,8 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
           inputTemplate: inputTemplate!,
           ...(title === undefined ? {} : { title }),
           ...(maxAttempts === undefined ? {} : { maxAttempts }),
+          // A new Workflow reads no history until asked.
+          ...(history === undefined || history === null ? {} : { history }),
         }),
       renameWorkflowFields,
     );
@@ -148,7 +235,8 @@ export class WorkflowsCreateCommand extends WorkflowOptionsCommand {
 @SubCommand({
   name: 'edit',
   arguments: '<name>',
-  description: "Change a Workflow's Agent, input, title, or attempts",
+  description:
+    "Change a Workflow's Agent, input, title, attempts, or history input",
   argsDescription: NAME,
 })
 export class WorkflowsEditCommand extends WorkflowOptionsCommand {
@@ -263,11 +351,15 @@ export class WorkflowsCommand extends CommandRunner {
   }
 }
 
-/** One line on a Workflow: its Agent and how many Triggers start it. */
+/**
+ * One line on a Workflow: its Agent, whether it reads history, and how many
+ * Triggers start it.
+ */
 function summarize(workflow: WorkflowView): string {
   const triggers =
     workflow.triggerCount === 1
       ? '1 Trigger'
       : `${workflow.triggerCount} Triggers`;
-  return `runs Agent ${workflow.agent}, ${triggers}`;
+  const history = workflow.history === null ? '' : ', reads Channel history';
+  return `runs Agent ${workflow.agent}${history}, ${triggers}`;
 }

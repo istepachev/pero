@@ -1,0 +1,107 @@
+import type { EntityManager } from 'typeorm';
+import type { WorkflowHistory } from '../config/workflow-input.js';
+import { renderHistoryInput } from '../history/history-input.js';
+import type { MessageHistory } from '../history/message-history.service.js';
+import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import {
+  type HistoryRead,
+  type HistoryWindowSnapshot,
+  historyWindowSchema,
+} from './execution-snapshot.js';
+
+/** How far back a Workflow's first run reads when it has no earlier window. */
+export const FIRST_WINDOW_HOURS = 24;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** What a run being claimed reads its history window with. */
+export interface HistoryWindowRequest {
+  workflowId: number;
+  /** The Workflow's history input; null when it reads none. */
+  config: WorkflowHistory | null;
+  /** The window a retry inherits from the run it retries, if any. */
+  inherited: unknown;
+  /** The Workflow's input template. */
+  template: string;
+  /** When the run is claimed. */
+  now: Date;
+  /** The installation's time zone, for the transcript. */
+  timeZone: string;
+}
+
+/**
+ * Fixes the history window of a run being claimed, inside the claim's
+ * transaction, and renders its input. A retry keeps the window of the run
+ * it retries. Otherwise the window ends at the latest message and starts
+ * after the previous completed run's window, or a fixed number of hours
+ * back (24 for a first run). Null when the run reads no history.
+ */
+export async function readHistoryWindow(
+  manager: EntityManager,
+  history: MessageHistory,
+  request: HistoryWindowRequest,
+): Promise<{ input: string; read: HistoryRead } | null> {
+  const inherited = historyWindowSchema.safeParse(request.inherited);
+  let window: HistoryWindowSnapshot;
+  if (inherited.success) {
+    window = inherited.data;
+  } else if (request.config === null) {
+    return null;
+  } else {
+    const { config } = request;
+    const untilId = await history.latestIdWithin(manager);
+    const afterId =
+      config.hours === null
+        ? await previousWindowEnd(manager, request.workflowId)
+        : null;
+    const hours = config.hours ?? FIRST_WINDOW_HOURS;
+    window = {
+      channels: config.channels,
+      messages: config.messages,
+      runWhenEmpty: config.runWhenEmpty,
+      afterId,
+      since:
+        afterId === null
+          ? new Date(request.now.getTime() - hours * HOUR_MS).toISOString()
+          : null,
+      untilId,
+    };
+  }
+  const messages = await history.windowWithin(manager, window);
+  const { input, dropped } = renderHistoryInput(
+    request.template,
+    messages.map((message) => ({
+      // The foreign key guarantees the Channel.
+      channel: message.channel!.title ?? message.channel!.externalKey,
+      speaker:
+        message.origin === 'user' ? 'User' : (message.agent?.name ?? 'Agent'),
+      text: message.text,
+      createdAt: message.createdAt,
+    })),
+    request.timeZone,
+  );
+  return { input, read: { ...window, count: messages.length, dropped } };
+}
+
+/**
+ * Where the Workflow's latest completed window ended; null when none of
+ * its completed runs read history. Runs that failed, were cancelled, or
+ * were interrupted leave their window for the next run to read.
+ */
+async function previousWindowEnd(
+  manager: EntityManager,
+  workflowId: number,
+): Promise<number | null> {
+  const row = await manager
+    .getRepository(WorkflowRun)
+    .createQueryBuilder('run')
+    .select(
+      `MAX(json_extract(run.executionConfig, '$.history.untilId'))`,
+      'untilId',
+    )
+    .where('run.workflowId = :workflowId', { workflowId })
+    .andWhere('run.status = :status', { status: 'completed' })
+    .getRawOne<{ untilId: number | null }>();
+  const untilId = row?.untilId ?? null;
+  return untilId === null ? null : Number(untilId);
+}

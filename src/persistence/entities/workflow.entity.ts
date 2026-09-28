@@ -10,6 +10,11 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { SLUG_MAX_LENGTH } from '../../config/slug.js';
+import {
+  type WorkflowHistory,
+  workflowHistorySchema,
+} from '../../config/workflow-input.js';
+import { jsonTransformer } from '../json-transformer.js';
 import { Agent } from './agent.entity.js';
 import {
   CONCURRENCY_POLICIES,
@@ -54,6 +59,18 @@ export class Workflow {
   /** The input each run sends to the Agent. */
   @Column({ name: 'input_template', type: 'text' })
   inputTemplate: string;
+
+  /**
+   * The Channel history each run reads as input; null reads none. See
+   * `workflowHistorySchema`. JSON text.
+   */
+  @Column({
+    name: 'history_json',
+    type: 'text',
+    nullable: true,
+    transformer: jsonTransformer(workflowHistorySchema),
+  })
+  history: WorkflowHistory | null;
 
   @Column({ type: 'boolean', default: true })
   enabled: boolean;

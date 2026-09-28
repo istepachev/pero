@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
+import type { HistoryMessages } from '../config/workflow-input.js';
 import {
   Message,
   type MessageOrigin,
@@ -35,6 +36,27 @@ export interface OutboundEntry {
 
 /** The conversation a fresh Session starts from; Pero's notices are left out. */
 const CARRIED_ORIGINS: readonly MessageOrigin[] = ['user', 'agent'];
+
+/** The origins each choice of a Workflow's history input reads. */
+const WINDOW_ORIGINS: Record<HistoryMessages, readonly MessageOrigin[]> = {
+  people: ['user'],
+  all: CARRIED_ORIGINS,
+};
+
+/**
+ * A window of history a Workflow Run reads: messages after `afterId`, or
+ * from `since` when there is no earlier window, up to `untilId`.
+ */
+export interface HistoryWindow {
+  channels: 'all' | readonly number[];
+  messages: HistoryMessages;
+  /** Exclusive; null starts at `since`. */
+  afterId: number | null;
+  /** ISO time; used only while `afterId` is null. */
+  since: string | null;
+  /** Inclusive. */
+  untilId: number;
+}
 
 /**
  * Each Channel's message history: the text sent and received there, and
@@ -121,6 +143,53 @@ export class MessageHistory {
       take: limit,
     });
     return latest.reverse();
+  }
+
+  /**
+   * The ID of the latest message of any Channel, 0 when there is none,
+   * inside the caller's transaction. Writes are serialized, so no message
+   * recorded later can have a lower ID.
+   */
+  async latestIdWithin(manager: EntityManager): Promise<number> {
+    const row = await manager
+      .getRepository(Message)
+      .createQueryBuilder('message')
+      .select('MAX(message.id)', 'id')
+      .getRawOne<{ id: number | null }>();
+    return Number(row?.id ?? 0);
+  }
+
+  /**
+   * The messages of `window`, oldest first, with their Channel and the
+   * Agent each was to or from, inside the caller's transaction. Pero's own
+   * notices are left out.
+   */
+  async windowWithin(
+    manager: EntityManager,
+    window: HistoryWindow,
+  ): Promise<Message[]> {
+    const query = manager
+      .getRepository(Message)
+      .createQueryBuilder('message')
+      .innerJoinAndSelect('message.channel', 'channel')
+      .leftJoinAndSelect('message.agent', 'agent')
+      .where('message.id <= :untilId', { untilId: window.untilId })
+      .andWhere('message.origin IN (:...origins)', {
+        origins: WINDOW_ORIGINS[window.messages],
+      });
+    if (window.afterId !== null) {
+      query.andWhere('message.id > :afterId', { afterId: window.afterId });
+    } else if (window.since !== null) {
+      query.andWhere('message.createdAt >= :since', {
+        since: new Date(window.since),
+      });
+    }
+    if (window.channels !== 'all') {
+      query.andWhere('message.channelId IN (:...channelIds)', {
+        channelIds: window.channels,
+      });
+    }
+    return query.orderBy('message.id', 'ASC').getMany();
   }
 
   /**
