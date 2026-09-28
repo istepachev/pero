@@ -1,4 +1,5 @@
 import type {
+  RunView,
   TriggerView,
   WorkflowDetails,
   WorkflowView,
@@ -67,6 +68,20 @@ export function formatTriggerList(triggers: readonly TriggerView[]): string {
 /** `Trigger 3 of daily-brief (0 9 * * * Europe/Berlin)`, for one-liners. */
 export function describeTrigger(trigger: TriggerView): string {
   return `Trigger ${trigger.id} of ${trigger.workflow} (${schedule(trigger)})`;
+}
+
+/**
+ * What a finished run leaves the owner: the Agent's answer, or why there
+ * is none.
+ */
+export function runOutcome(run: RunView): { ok: boolean; text: string } {
+  if (run.status === 'completed') return { ok: true, text: run.result ?? '' };
+  return {
+    ok: false,
+    text:
+      `Run ${run.id} of Workflow ${run.workflow} ${run.status}: ` +
+      (run.error ?? 'no reason was recorded'),
+  };
 }
 
 /** Why the Workflow cannot run; null when it can. */

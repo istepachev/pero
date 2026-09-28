@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ConflictError,
   InvalidInputError,
@@ -45,8 +45,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     daemon = await startDaemon({
       config: resolveBootstrapConfig({ dataDir, env: {} }),
       foreground: false,
-      // Telegram is the fake Bot API, never the real one.
-      env: { PERO_TELEGRAM_API_ROOT: api.url },
+      // Telegram is the fake Bot API and Agents echo: nothing real runs.
+      env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
   }
 
@@ -253,5 +253,59 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     expect(
       (await client.call('workflows.list')).workflows.map(({ name }) => name),
     ).toEqual(['review']);
+  });
+
+  it('runs a Workflow by hand through its manual Trigger, away from every Channel', async () => {
+    await start();
+    await client.call('settings.update', { defaultWorkingDirectory: vault });
+    await client.call('agents.create', { name: 'coach' });
+    await client.call('workflows.create', {
+      name: 'brief',
+      agent: 'coach',
+      inputTemplate: 'Summarize the day.',
+    });
+
+    await expect(
+      client.call('workflows.run', { name: 'brief' }),
+    ).rejects.toThrow(
+      new InvalidInputError(
+        'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual',
+      ),
+    );
+    await expect(
+      client.call('workflows.run', { name: 'nothing' }),
+    ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
+    await expect(client.call('runs.get', { id: 99 })).rejects.toThrow(
+      new NotFoundError('No run with ID 99'),
+    );
+
+    const trigger = await client.call('triggers.add', {
+      workflow: 'brief',
+      kind: 'manual',
+    });
+    const queued = await client.call('workflows.run', { name: 'brief' });
+    expect(queued).toMatchObject({
+      workflow: 'brief',
+      triggerId: trigger.id,
+      attempt: 1,
+    });
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+        status: 'completed',
+        result: 'echo: Summarize the day.',
+        error: null,
+      });
+    });
+    const [listed] = (await client.call('triggers.list', { workflow: 'brief' }))
+      .triggers;
+    expect(listed!.lastRunAt).not.toBeNull();
+    // No Channel took part.
+    expect((await client.call('channels.list')).channels).toEqual([]);
+
+    await restart();
+    expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+      status: 'completed',
+      result: 'echo: Summarize the day.',
+    });
   });
 });

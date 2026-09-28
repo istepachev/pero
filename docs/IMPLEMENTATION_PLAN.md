@@ -207,7 +207,7 @@ Add Workflow and Trigger services and `pero workflows ls|show|create|edit|disabl
 
 ### 3.2 Manual runs and the bounded executor
 
-`pero workflows run <name>` creates a `pending` Workflow Run with a unique trigger key. A bounded in-process executor claims it, snapshots the Agent's execution settings, and runs it through `AgentManager` in an isolated context, with at most one active run per Workflow. Record `completed` or `failed` with result or error.
+`pero workflows run <name>` creates a `pending` Workflow Run with a unique trigger key through the Workflow's enabled manual Trigger, then waits for the run and prints its answer (`--no-wait` returns at once). A bounded in-process executor claims it while fewer than `max-concurrent-runs` run, snapshots the Agent's execution settings and the input, and runs it through `AgentManager` in an isolated context (no Session, history, or tool approver), with at most one active run per Workflow. Record `completed` or `failed` with result or error; a run Pero stops mid-way is recorded `interrupted`.
 
 **Done when:** tests show the global limit and one-run-per-Workflow rule hold, the snapshot is unaffected by later Agent edits, and a run never touches a Channel's interactive Session.
 

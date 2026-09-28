@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
+  RunView,
   TriggerView,
   WorkflowDetails,
   WorkflowView,
@@ -10,6 +11,7 @@ import {
   formatTriggerList,
   formatWorkflowDetails,
   formatWorkflowList,
+  runOutcome,
 } from './format-workflows.js';
 
 const review: WorkflowView = {
@@ -150,5 +152,39 @@ describe('Workflow formatting', () => {
     expect(describeTrigger(manual)).toBe(
       'Trigger 4 of evening-review (manual)',
     );
+  });
+
+  it("gives a finished run's answer, or why there is none", () => {
+    const run: RunView = {
+      id: 7,
+      workflow: 'evening-review',
+      triggerId: 4,
+      triggerKey: 'manual:0f8c',
+      status: 'completed',
+      attempt: 1,
+      createdAt: '2026-09-28T19:00:00.000Z',
+      startedAt: '2026-09-28T19:00:01.000Z',
+      finishedAt: '2026-09-28T19:00:09.000Z',
+      result: 'Two suggestions.',
+      error: null,
+    };
+    expect(runOutcome(run)).toEqual({ ok: true, text: 'Two suggestions.' });
+    expect(
+      runOutcome({
+        ...run,
+        status: 'failed',
+        result: null,
+        error: 'The model is overloaded',
+      }),
+    ).toEqual({
+      ok: false,
+      text: 'Run 7 of Workflow evening-review failed: The model is overloaded',
+    });
+    expect(
+      runOutcome({ ...run, status: 'interrupted', result: null, error: null }),
+    ).toEqual({
+      ok: false,
+      text: 'Run 7 of Workflow evening-review interrupted: no reason was recorded',
+    });
   });
 });

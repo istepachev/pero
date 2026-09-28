@@ -9,20 +9,11 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
-import { oneOf } from './sql.js';
+import { oneOf, RUN_STATUSES, type RunStatus } from './sql.js';
 import { Trigger } from './trigger.entity.js';
 import { Workflow } from './workflow.entity.js';
 
-export const RUN_STATUSES = [
-  'pending',
-  'running',
-  'completed',
-  'failed',
-  'cancelled',
-  'interrupted',
-] as const;
-
-export type RunStatus = (typeof RUN_STATUSES)[number];
+export { RUN_STATUSES, type RunStatus };
 
 /** One execution of a Workflow. */
 @Entity('workflow_runs')
@@ -75,8 +66,9 @@ export class WorkflowRun {
   attempt: number;
 
   /**
-   * Provider, provider options, and resolved working directory, captured
-   * when the run is claimed. JSON text.
+   * What the run executes with, captured when the executor claims it: the
+   * Agent's provider, options, resolved folder, composed instructions, and
+   * tool policy, and the input. See `executionSnapshotSchema`. JSON text.
    */
   @Column({
     name: 'execution_config_json',
@@ -95,7 +87,7 @@ export class WorkflowRun {
   @Column({ name: 'finished_at', type: 'datetime', nullable: true })
   finishedAt: Date | null;
 
-  /** JSON text. */
+  /** The Agent's answer (`text`) and its provider session ID. JSON text. */
   @Column({
     name: 'result_json',
     type: 'text',

@@ -41,6 +41,8 @@ const UNUSED_HANDLERS = {
   'workflows.get': unused,
   'workflows.create': unused,
   'workflows.edit': unused,
+  'workflows.run': unused,
+  'runs.get': unused,
   'triggers.list': unused,
   'triggers.add': unused,
   'triggers.remove': unused,

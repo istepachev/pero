@@ -10,7 +10,6 @@ import type { Provider } from '../config/provider-options.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
@@ -37,6 +36,28 @@ export interface TurnResult {
   text: string;
 }
 
+/**
+ * A turn outside any Channel, such as a Workflow Run: no Session to resume
+ * or record, no history, and no one to approve tools.
+ */
+export interface IsolatedTurn {
+  /** The Agent's settings as captured for this turn. */
+  agent: RuntimeAgent;
+  input: string;
+  /** Names the turn in logs, such as `Workflow daily-brief, run 7`. */
+  label: string;
+}
+
+/** What an isolated turn answered. */
+export interface IsolatedResult {
+  text: string;
+  /** The provider's ID for the conversation; null if it reported none. */
+  providerSessionId: string | null;
+}
+
+/** The Agent settings a turn runs with. */
+export type RuntimeAgent = Omit<ResolvedAgent, 'enabled'>;
+
 /** A turn that produced no answer; the message says why, for the owner. */
 export class TurnError extends Error {
   override name = 'TurnError';
@@ -56,9 +77,10 @@ const STOPPING = 'Pero is stopping';
  * Runs Agents' turns: builds each request from the Agent record, runs it
  * in the Channel's Session, and persists the provider's session ID as soon
  * as the runtime reports it. A Session whose provider has none of the
- * conversation yet starts from the Channel's latest messages. Turns within a Session run one at a time in
- * the order they were accepted; turns of other Sessions run alongside,
- * even in a shared folder.
+ * conversation yet starts from the Channel's latest messages. Turns within
+ * a Session run one at a time in the order they were accepted; turns of
+ * other Sessions run alongside, even in a shared folder. Isolated turns,
+ * such as Workflow Runs, use none of a Channel's state.
  */
 @Injectable()
 export class AgentManager implements BeforeApplicationShutdown {
@@ -100,6 +122,23 @@ export class AgentManager implements BeforeApplicationShutdown {
       this.accepted.delete(settled);
       if (this.queues.get(key) === settled) this.queues.delete(key);
     });
+    return result;
+  }
+
+  /**
+   * Runs a turn in a new provider conversation of its own, touching no
+   * Session or history. Tools the Agent's permissions leave to the owner
+   * are refused, since no one is there to ask. Settles with the answer or a
+   * `TurnError`; the caller bounds how many run at once.
+   */
+  runIsolated(turn: IsolatedTurn): Promise<IsolatedResult> {
+    if (this.draining !== null) {
+      return Promise.reject(new TurnError(STOPPING, true));
+    }
+    const result = this.executeIsolated(turn);
+    const settled = result.catch(() => undefined);
+    this.accepted.add(settled);
+    void settled.then(() => this.accepted.delete(settled));
     return result;
   }
 
@@ -197,10 +236,17 @@ export class AgentManager implements BeforeApplicationShutdown {
       }
       const text = await this.run(
         agent,
-        session,
         input,
-        turn.approve,
+        {
+          ...(session.providerSessionId === null
+            ? {}
+            : { providerSessionId: session.providerSessionId }),
+          ...(turn.approve ? { approve: turn.approve } : {}),
+        },
         controller,
+        // Committed before this turn settles, so before the next starts.
+        (providerSessionId) =>
+          this.sessions.recordProviderSessionId(session, providerSessionId),
       );
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
@@ -213,26 +259,59 @@ export class AgentManager implements BeforeApplicationShutdown {
         text,
       };
     } catch (error) {
-      const failure = asTurnError(error, controller.signal.aborted);
-      if (
-        provider !== null &&
-        error instanceof RuntimeError &&
-        error.kind === 'auth'
-      ) {
-        this.health.report(
-          provider,
-          'degraded',
-          `A turn was refused as signed out — run ${signInHint(provider)}`,
-        );
-      }
-      this.logger.warn(
-        `Turn failed in ${where} after ${Date.now() - startedAt} ms: ` +
-          `${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw failure;
+      throw this.failure(error, provider, where, startedAt, controller);
     } finally {
       this.running.delete(controller);
     }
+  }
+
+  private async executeIsolated(turn: IsolatedTurn): Promise<IsolatedResult> {
+    const controller = new AbortController();
+    this.running.add(controller);
+    const startedAt = Date.now();
+    const { agent } = turn;
+    const where = `${turn.label}, Agent ${agent.name} (${agent.provider})`;
+    try {
+      let providerSessionId: string | null = null;
+      const text = await this.run(agent, turn.input, {}, controller, (id) => {
+        providerSessionId = id;
+      });
+      this.logger.log(
+        `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
+      );
+      this.signedIn(agent.provider);
+      return { text, providerSessionId };
+    } catch (error) {
+      throw this.failure(error, agent.provider, where, startedAt, controller);
+    } finally {
+      this.running.delete(controller);
+    }
+  }
+
+  /** Logs a failed turn and says why it failed, for the owner. */
+  private failure(
+    error: unknown,
+    provider: Provider | null,
+    where: string,
+    startedAt: number,
+    controller: AbortController,
+  ): TurnError {
+    if (
+      provider !== null &&
+      error instanceof RuntimeError &&
+      error.kind === 'auth'
+    ) {
+      this.health.report(
+        provider,
+        'degraded',
+        `A turn was refused as signed out — run ${signInHint(provider)}`,
+      );
+    }
+    this.logger.warn(
+      `Turn failed in ${where} after ${Date.now() - startedAt} ms: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+    return asTurnError(error, controller.signal.aborted);
   }
 
   /** A turn succeeded, so a provider reported signed out no longer is. */
@@ -242,13 +321,16 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
   }
 
-  /** Runs the turn on the Agent's runtime; resolves to the reply text. */
+  /**
+   * Runs the turn on the Agent's runtime, passing each provider session ID
+   * it reports to `onSession`; resolves to the reply text.
+   */
   private async run(
-    agent: ResolvedAgent,
-    session: Session,
+    agent: RuntimeAgent,
     input: string,
-    approve: ToolApprover | undefined,
+    options: { providerSessionId?: string; approve?: ToolApprover },
     controller: AbortController,
+    onSession: (providerSessionId: string) => unknown,
   ): Promise<string> {
     const runtime = this.runtimes.get(agent.provider);
     if (runtime === null) {
@@ -263,20 +345,13 @@ export class AgentManager implements BeforeApplicationShutdown {
       providerOptions: agent.providerOptions,
       workingDirectory: agent.workingDirectory,
       skipGitRepoCheck: agent.codexSkipGitRepoCheck,
-      ...(session.providerSessionId === null
-        ? {}
-        : { providerSessionId: session.providerSessionId }),
+      ...options,
       toolPolicy: agent.toolPolicy,
-      ...(approve ? { approve } : {}),
       signal: controller.signal,
     })) {
       switch (event.type) {
         case 'session':
-          // Committed before this turn settles, so before the next starts.
-          await this.sessions.recordProviderSessionId(
-            session,
-            event.providerSessionId,
-          );
+          await onSession(event.providerSessionId);
           break;
         case 'text':
           streamed += event.delta;

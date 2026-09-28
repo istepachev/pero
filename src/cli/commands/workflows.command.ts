@@ -1,11 +1,17 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import type { WorkflowEdit } from '../../config/workflow-input.js';
-import type { WorkflowView } from '../../control/protocol.js';
+import {
+  FINISHED_RUN_STATUSES,
+  type RunView,
+  type WorkflowView,
+} from '../../control/protocol.js';
 import { CliError } from '../errors.js';
 import {
   agentWarning,
   formatWorkflowDetails,
   formatWorkflowList,
+  runOutcome,
 } from '../format-workflows.js';
 import { withOptionNames } from '../option-names.js';
 import { PeroCommand } from '../pero-command.js';
@@ -17,6 +23,9 @@ import {
 } from '../workflow-options.js';
 
 const NAME = { name: "the Workflow's name, as pero workflows ls lists it" };
+
+/** How often `workflows run` asks whether its run has finished. */
+const RUN_POLL_MS = 500;
 
 @SubCommand({
   name: 'ls',
@@ -184,9 +193,50 @@ export class WorkflowsEnableCommand extends PeroCommand {
   }
 }
 
+interface RunOptions {
+  /** False with --no-wait. */
+  wait?: boolean;
+}
+
+@SubCommand({
+  name: 'run',
+  arguments: '<name>',
+  description:
+    "Run a Workflow now through its manual Trigger and print the Agent's answer",
+  argsDescription: NAME,
+})
+export class WorkflowsRunCommand extends PeroCommand {
+  async run([name]: string[], options: RunOptions): Promise<void> {
+    const { client } = await this.requireDaemon();
+    let run: RunView = await client.call('workflows.run', { name: name! });
+    if (options.wait === false) {
+      console.log(
+        `Queued run ${run.id} of Workflow ${run.workflow}; it runs in the background.`,
+      );
+      return;
+    }
+    console.error(`Queued run ${run.id} of Workflow ${run.workflow}…`);
+    while (!isFinished(run)) {
+      await sleep(RUN_POLL_MS);
+      run = await client.call('runs.get', { id: run.id });
+    }
+    const outcome = runOutcome(run);
+    if (!outcome.ok) throw new CliError(outcome.text);
+    console.log(outcome.text);
+  }
+
+  @Option({
+    flags: '--no-wait',
+    description: 'queue the run and return without waiting for it',
+  })
+  parseNoWait(): false {
+    return false;
+  }
+}
+
 @Command({
   name: 'workflows',
-  description: 'List, show, create, and change Workflows',
+  description: 'List, show, create, change, and run Workflows',
   subCommands: [
     WorkflowsListCommand,
     WorkflowsShowCommand,
@@ -194,6 +244,7 @@ export class WorkflowsEnableCommand extends PeroCommand {
     WorkflowsEditCommand,
     WorkflowsDisableCommand,
     WorkflowsEnableCommand,
+    WorkflowsRunCommand,
   ],
 })
 export class WorkflowsCommand extends CommandRunner {
@@ -201,6 +252,10 @@ export class WorkflowsCommand extends CommandRunner {
   async run(): Promise<void> {
     this.command.help();
   }
+}
+
+function isFinished(run: RunView): boolean {
+  return (FINISHED_RUN_STATUSES as readonly string[]).includes(run.status);
 }
 
 /** One line on a Workflow: its Agent and how many Triggers start it. */
