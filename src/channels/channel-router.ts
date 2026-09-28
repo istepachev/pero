@@ -60,7 +60,10 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     });
   }
 
-  /** Stops intake before active work drains and the database closes. */
+  /**
+   * Stops intake, then lets accepted turns finish or ends them, all before
+   * the database closes.
+   */
   async beforeApplicationShutdown(): Promise<void> {
     await Promise.all(
       this.sender.all().map(async (adapter) => {
@@ -73,6 +76,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         }
       }),
     );
+    await this.turns.drain();
   }
 
   /** Routes one message; failures are logged, never thrown at the adapter. */

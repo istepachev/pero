@@ -1,4 +1,3 @@
-import { Injectable, Logger } from '@nestjs/common';
 import type { Agent } from '../persistence/entities/agent.entity.js';
 import type { Channel } from '../persistence/entities/channel.entity.js';
 import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
@@ -22,6 +21,12 @@ export abstract class ChannelTurns {
     channel: RoutedChannel,
     message: InboundMessage,
   ): Promise<void>;
+
+  /**
+   * Lets accepted turns finish, or ends them, and sends their replies.
+   * Intake has stopped by then.
+   */
+  abstract drain(): Promise<void>;
 }
 
 /** Creates Channels and follows chat changes in allowed chats. */
@@ -37,17 +42,4 @@ export abstract class ChannelOnboarding {
 
   /** Any event from an allowed chat. */
   abstract onEvent(event: ChannelEvent): Promise<void>;
-}
-
-/** Stands in until the Agent manager can run turns. */
-@Injectable()
-export class UnwiredChannelTurns extends ChannelTurns {
-  private readonly logger = new Logger('Channels');
-
-  handle(channel: RoutedChannel): Promise<void> {
-    this.logger.warn(
-      `Agents cannot answer yet; dropped a message for Channel ${channel.id}`,
-    );
-    return Promise.resolve();
-  }
 }

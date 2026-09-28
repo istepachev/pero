@@ -45,6 +45,8 @@ export interface ResolvedAgent {
   providerOptions: ProviderOptions;
   workingDirectory: string;
   instructions: string;
+  toolPolicy: Record<string, unknown>;
+  enabled: boolean;
 }
 
 /** Creates, edits, and resolves Agent definitions. */
@@ -172,19 +174,37 @@ export class AgentsService {
   /** The Agent's execution settings with its folder and instructions resolved. */
   resolve(name: string): Promise<ResolvedAgent> {
     // A transaction reads the Agent and settings as one consistent snapshot.
-    return inTransaction(this.dataSource, async (manager) => {
-      const agent = await findAgent(manager, name);
-      const settings = await getSettings(manager);
-      return {
-        id: agent.id,
-        name: agent.name,
-        provider: agent.provider,
-        providerOptions: agent.providerOptions,
-        workingDirectory: effectiveWorkingDirectory(agent, settings),
-        instructions: composeInstructions(agent, settings),
-      };
-    });
+    return inTransaction(this.dataSource, async (manager) =>
+      resolveAgent(manager, await findAgent(manager, name)),
+    );
   }
+
+  /** `resolve` by ID, inside the caller's transaction. */
+  async resolveWithin(
+    manager: EntityManager,
+    id: number,
+  ): Promise<ResolvedAgent> {
+    const agent = await manager.getRepository(Agent).findOneBy({ id });
+    if (agent === null) throw new NotFoundError(`No Agent with ID ${id}`);
+    return resolveAgent(manager, agent);
+  }
+}
+
+async function resolveAgent(
+  manager: EntityManager,
+  agent: Agent,
+): Promise<ResolvedAgent> {
+  const settings = await getSettings(manager);
+  return {
+    id: agent.id,
+    name: agent.name,
+    provider: agent.provider,
+    providerOptions: agent.providerOptions,
+    workingDirectory: effectiveWorkingDirectory(agent, settings),
+    instructions: composeInstructions(agent, settings),
+    toolPolicy: agent.toolPolicy,
+    enabled: agent.enabled,
+  };
 }
 
 async function findAgent(manager: EntityManager, name: string): Promise<Agent> {
