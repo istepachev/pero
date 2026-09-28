@@ -2,7 +2,7 @@
 
 ## 1. Purpose and scope
 
-Build Pero as a personal, self-hosted runtime that accepts conversation through Channels and performs background work through configured Agents. Telegram is the first Channel integration; one Telegram topic is one Channel. A single installation serves one owner. The architecture leaves room for Slack, Discord, and other communication integrations later.
+Build Pero as a personal, self-hosted runtime that accepts conversation through Channels and performs background work through configured Agents. Telegram is the first Channel integration; each topic of the owner's Telegram group is one Channel, as are the group's General topic and a direct chat with the bot. A single installation serves one owner. The architecture leaves room for Slack, Discord, and other communication integrations later.
 
 **Initial deployment:** one globally installed `pero` CLI, one background NestJS service, and one SQLite database on persistent local storage. `pero run` starts the service; `pero stop` stops it; management commands such as `pero agents ls` use the same application services. No mandatory PostgreSQL, Redis, external queue, or workflow engine. See the [CLI contract](./CLI.md).
 
@@ -12,7 +12,7 @@ Build Pero as a personal, self-hosted runtime that accepts conversation through 
 |---|---|---|
 | **Agent** | A saved definition of behavior: instructions, provider and provider options (model, effort), working directory, and allowed tools. | `assistant`, `reforma`, or `health` are examples. An Agent definition is not a running process. |
 | **Agent Runtime** | Adapter that executes an Agent using a provider SDK and normalizes the result. | `ClaudeRuntime` uses Claude Agent SDK; `CodexRuntime` uses Codex SDK. |
-| **Channel** | A transport-independent conversation endpoint assigned to one active Agent. | The first integration is Telegram: one topic maps to one Channel. Future adapters can map Slack threads, Discord channels, or other endpoints to Channels. |
+| **Channel** | A transport-independent conversation endpoint assigned to one active Agent. | The first integration is Telegram: one topic, the General topic, or a direct chat maps to one Channel. A new topic onboards a new Agent. Future adapters can map Slack threads, Discord channels, or other endpoints to Channels. |
 | **Session** | Persistent conversational context for a Channel and Agent, including the provider's session/thread ID. | Interactive turns continue the same Session until reset or Agent reassignment. |
 | **Workflow** | Saved definition of autonomous work: Agent, input, trigger, execution policy, and notification destinations. | A Workflow definition can have many Workflow Runs. |
 | **Trigger** | Rule or signal that starts a Workflow. | `schedule` and `manual` first; `webhook` and `event` fit the same contract later. |
@@ -20,9 +20,17 @@ Build Pero as a personal, self-hosted runtime that accepts conversation through 
 | **Tool** | Capability granted to a runtime execution. | Filesystem, shell, browser, or external service, controlled per Agent and execution context. |
 | **Notification** | Outbound message produced outside a direct chat reply. | A Workflow may send one to a configured Channel. |
 
-Each Channel record names its integration (`telegram` initially) and holds a provider-specific address behind the Channel boundary. Telegram's address contains `chat_id` and `message_thread_id`; a topic is a Channel instance, not a separate domain type. Slack and Discord adapters can supply their own address types later without changing Agents, Sessions, or Workflows. See the [Telegram Bot API](https://core.telegram.org/bots/api) for topic routing fields.
+Each Channel record names its integration (`telegram` initially) and holds a provider-specific address behind the Channel boundary. Telegram's address contains `chat_id` and, for a topic, `message_thread_id`; the General topic, a group without topics, and a direct chat have no topic ID. A topic is a Channel instance, not a separate domain type. Slack and Discord adapters can supply their own address types later without changing Agents, Sessions, or Workflows. See the [Telegram Bot API](https://core.telegram.org/bots/api) for topic routing fields.
 
 A **Channel** is a saved conversation endpoint; a **Channel adapter** connects that endpoint to a communication service. The adapter normalizes incoming identity, text, and attachments, and sends replies or Notifications to its own address type. For example, Telegram uses a chat/topic pair, while a future Slack adapter may use workspace/channel/thread identifiers. The rest of the runtime routes by `channel_id`.
+
+### Telegram chats, topics, and onboarding
+
+The recommended setup is one private group used as a workspace: the owner creates a bot with BotFather, creates a group, enables topics, adds the bot as an administrator, and allows the group's chat ID on the host with `pero telegram allow`. Administrator rights matter because Telegram otherwise delivers only commands, mentions, and replies to a bot in a group; the bot needs no specific right. A direct chat with the bot is also supported: the owner allows their own user ID, which is that chat's ID.
+
+Authorization is per chat. `allowed_chats` lists the chats Pero serves; anyone who can post in an allowed group may reach its Agents, so group membership is the owner's control. A chat that is not allowed never reaches an Agent: its messages get a rate-limited pairing hint naming the chat ID and the `pero telegram allow` command. Chats are allowed only through the CLI on the host, never from a Telegram message. Enabling topics converts a basic group into a supergroup with a new chat ID; the adapter follows `migrate_to_chat_id` and moves the allowlist entry and Channel keys.
+
+Channels are created by onboarding, not by manual enrollment. When a topic is created in an allowed chat, Pero creates an Agent named after the topic (a slug of its title, made unique) with the installation defaults, assigns it to the new Channel, and posts a welcome in the topic. The chat's primary Channel (the General topic, a group without topics, or a direct chat) is assigned the **main Agent**, named by `settings.main_agent_id` and created as `main` on first use, so a General topic and a direct chat share one Agent with separate Sessions. The owner can point any Channel at another Agent with `pero channels assign`; onboarding never changes an existing assignment.
 
 ### Agent configuration and defaults
 
@@ -125,11 +133,11 @@ The adapter returns a newly created or resumed provider session ID in a normaliz
 
 ### Interactive Telegram message
 
-1. grammY receives an update. Verify the sender/chat allowlist, ignore bot-originated loops, and deduplicate by Telegram update ID.
-2. Resolve the Channel from `integration_kind='telegram'` and an external key derived from `(chat_id, message_thread_id)`. If unknown, follow the configured enrollment policy; do not silently route to an arbitrary Agent.
+1. grammY receives an update. Ignore bot-originated messages, check the chat against `allowed_chats` (a chat that is not allowed gets the pairing hint and stops here), and deduplicate by Telegram update ID.
+2. Resolve the Channel from `integration_kind='telegram'` and an external key: `<chat_id>:<message_thread_id>` for a topic message (`is_topic_message`), otherwise `<chat_id>`. If unknown, onboard it: a topic gets a new Agent, a primary Channel gets the main Agent. Never route an unknown key to an existing Channel's Agent.
 3. Load the Channel's assigned Agent and active Session. Serialize turns within that Session to preserve conversation order; turns for other Sessions and Agents may run at the same time, even in the same folder.
 4. `AgentManager` invokes the selected Runtime with the Session's provider ID and the Agent's provider options, effective working directory, composed instructions, and tool policy.
-5. Persist the returned provider session ID and turn outcome. Send the reply back to the same Telegram topic.
+5. Persist the returned provider session ID and turn outcome. Send the reply back to the same chat and topic, without `message_thread_id` for a primary Channel.
 6. Record errors and send a concise failure message when appropriate. A direct reply is not a Notification record unless durable delivery is required.
 
 ### Background Workflow
@@ -152,9 +160,10 @@ Use relational columns for stable relationships and states. Use JSON only for ve
 
 | Table | Essential fields and constraints |
 |---|---|
-| `settings` | Singleton row for installation defaults (`default_provider`, `provider_defaults` JSON with each provider's options, `default_working_directory` nullable, `shared_instructions` nullable), timezone, and operational limits. Change through validated CLI commands. |
+| `settings` | Singleton row for installation defaults (`default_provider`, `provider_defaults` JSON with each provider's options, `default_working_directory` nullable, `shared_instructions` nullable, `main_agent_id` nullable, the Agent primary Channels are assigned), timezone, and operational limits. Change through validated CLI commands. |
 | `agents` | `id`, `name` (slug), `title` (optional display name), `provider`, `instructions`, `provider_options` (JSON, validated for `provider`; null values mean the provider default), `working_directory` (resolved absolute path; null follows the default), `use_shared_instructions` (true by default), `codex_skip_git_repo_check` (false by default), `tool_policy_json`, `enabled`, timestamps. Unique name. |
-| `channels` | `id`, `integration_kind`, `external_key`, `address_json`, `agent_id`, `enabled`, timestamps. Unique `(integration_kind, external_key)`. For Telegram, derive the key from `chat_id` and the normalized `message_thread_id`; keep the structured IDs in `address_json`. |
+| `channels` | `id`, `integration_kind`, `external_key`, `address_json`, `title` (topic or chat name, for display), `agent_id`, `enabled`, timestamps. Unique `(integration_kind, external_key)`. For Telegram, the key is `<chat_id>:<message_thread_id>` for a topic and `<chat_id>` for a primary Channel; keep the structured IDs in `address_json`. |
+| `allowed_chats` | `id`, `integration_kind`, `chat_key`, `kind` (`private` or `group`), `title`, timestamps. Unique `(integration_kind, chat_key)`. Only these chats reach Channels. |
 | `sessions` | `id`, `agent_id`, `channel_id`, `provider_session_id`, `provider`, `working_directory` (the resolved absolute folder it began in), `status`, timestamps. A partial unique index on `(channel_id, agent_id)` where `status = 'active'` allows one active Session and serves the lookup; resume only while the Agent's provider and effective working directory still match. |
 | `workflows` | `id`, `name` (slug), `title` (optional display name), `agent_id`, `input_template`, `enabled`, `concurrency_policy`, timestamps. Unique name. |
 | `triggers` | `id`, `workflow_id`, `kind`, `config_json`, `timezone`, `next_run_at`, `last_run_at`, `enabled`. Index `(enabled, next_run_at)` for schedules. |
@@ -179,7 +188,7 @@ For one process, claim and state changes can use short SQLite transactions. Do n
 
 Events are typed application facts with `type`, `occurredAt`, `source`, `correlationId`, and payload. Start with an in-process dispatcher. Persist business state and any delivery obligation first; publishing an in-memory event alone must never be the only record of a required Workflow Run or Notification. Add an outbox if more integrations need reliable asynchronous event delivery.
 
-Tools are capabilities granted by policy. An Agent definition lists permitted tools, and the Runtime adapter maps that list to provider controls. A working directory is the starting context, not a filesystem security boundary; use provider permissions and sandbox settings where file access must be constrained. Keep secrets in configuration/secret storage rather than prompts or database rows. Treat external text and tool output as untrusted input. Apply owner/chat authorization before a Telegram message can reach an Agent.
+Tools are capabilities granted by policy. An Agent definition lists permitted tools, and the Runtime adapter maps that list to provider controls. A working directory is the starting context, not a filesystem security boundary; use provider permissions and sandbox settings where file access must be constrained. Keep secrets in configuration/secret storage rather than prompts or database rows. Treat external text and tool output as untrusted input. Apply chat authorization before a Telegram message can reach an Agent or create one.
 
 Notifications are durable outbound delivery requests. Each targets a Channel, carries a rendered payload, and records attempts and provider message ID. Failed delivery stays visible for retry; successful delivery is terminal. Keep reply routing and background notification routing separate so a workflow cannot accidentally overwrite an interactive Session.
 

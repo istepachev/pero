@@ -84,59 +84,82 @@ Installation from a packed npm artifact exposes `pero`; `pero run` starts a back
 
 ## Phase 2 — interactive path
 
-Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. Register each Telegram topic as a Channel and assign it an Agent. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session; different Agents may work in the same folder at the same time. Add allowlists and inbound deduplication.
+Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. The recommended Telegram setup is one private forum group: the owner creates a bot, creates a group, enables topics, adds the bot as an administrator, and allows the group's chat ID. Each topic in that group is a Channel, and creating a topic onboards a new Agent for it. The group's General topic and a direct chat with the bot are Channels too; neither has a topic ID. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session; different Agents may work in the same folder at the same time. Add the chat allowlist, pairing, and inbound deduplication.
 
-### 2.1 Channel contract and router
+Telegram addressing, used throughout this phase:
 
-Define the normalized inbound message and the adapter contract (`start(onMessage)`, `send(address, message)`). The router resolves `(integration_kind, external_key)` to a Channel, applies the owner/chat allowlist from settings, deduplicates through `inbound_updates`, and rejects unknown addresses with an owner-facing setup hint. Test with an in-memory fake adapter.
+| Where the message is | Channel key | Reply goes to | Channel created as |
+|---|---|---|---|
+| A topic of an allowed forum group | `<chat_id>:<message_thread_id>` | same chat and `message_thread_id` | a new Agent named after the topic |
+| The General topic of an allowed forum group | `<chat_id>` | same chat, no `message_thread_id` | the main Agent |
+| An allowed group without topics | `<chat_id>` | same chat, no `message_thread_id` | the main Agent |
+| A direct chat with the bot (allowed user ID) | `<chat_id>` (equals the user ID) | same chat | the main Agent |
 
-**Done when:** tests show unauthorized and duplicate messages never reach the next stage, unknown addresses get the setup hint, and known ones resolve to their Channel and assigned Agent.
+A `message_thread_id` counts only when `is_topic_message` is true; in a group without topics it identifies a reply thread and is ignored, so replies there never split a Channel. The main Agent is the one named by the `main-agent` setting; when unset, the first General topic or direct chat creates an Agent named `main` and records it there.
 
-### 2.2 Runtime contract, `AgentManager`, and Sessions
+### 2.1 Channel contract, router, and allowlist
+
+Define the normalized inbound message and the adapter contract: `start(handlers)` with a message handler and a channel-event handler (topic created or renamed, chat ID migrated, bot membership changed), and `send(address, message)`. A normalized message carries the integration kind, the chat (key, kind `private`/`group`, title), the Channel key and title, the external message and sender IDs, and content. Add a migration for `allowed_chats` (integration kind, chat key, kind, title, timestamps; unique per integration and chat key), a `title` column on `channels`, and a nullable `main_agent_id` in settings. The router checks the chat against `allowed_chats`, deduplicates through `inbound_updates`, and resolves `(integration_kind, external_key)` to a Channel. A chat that is not allowed never reaches the next stage; it gets a pairing hint naming its chat ID and the command that allows it (`pero telegram allow <chat-id>`) when the bot is added to it or receives a message there, at most once per chat per hour. An unknown Channel in an allowed chat goes to onboarding (2.2) instead of being rejected. Test with an in-memory fake adapter.
+
+**Done when:** tests show messages from chats not in the allowlist and duplicate updates never reach the next stage, the pairing hint is rate-limited, known Channel keys resolve to their Channel and assigned Agent, and unknown keys in an allowed chat are handed to onboarding.
+
+### 2.2 Channel onboarding
+
+A new Channel in an allowed chat creates its Agent through the 1.5 services and then its Channel, in one transaction. A topic gets a new Agent: its name is the topic title as a slug, with `-2`, `-3`, … when that name is taken, or `topic-<message_thread_id>` when the title has no letters or digits to keep; its title is the topic title. The Agent receives the default provider and options, follows the default working directory, and has no instructions of its own. A General topic or direct chat is assigned the main Agent, creating `main` when the setting is unset. Onboarding runs on the topic-created event, and on the first message in an unknown topic (a topic created before the bot joined, or while Pero was down past Telegram's update retention), taking the title from the topic-creation message the Bot API attaches when present. It then posts a welcome in the new Channel: the Agent's name, provider, model, and folder, and the command to change it. When no default working directory is set, onboarding creates nothing, replies with the `pero settings set default-working-directory` hint, and runs again on the next message there. A renamed topic updates the Channel title and the Agent title, never the Agent name. Onboarding never changes an existing Channel's assignment.
+
+**Done when:** tests show a created topic yields exactly one Agent and one Channel even when the topic-created event and its first message both arrive, name collisions and titles without letters or digits get unique slugs, a General topic and a direct chat share the main Agent through separate Channels, a missing default folder leaves nothing behind and succeeds on retry once it is set, and a rename changes titles only.
+
+### 2.3 Runtime contract, `AgentManager`, and Sessions
 
 Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runtime-contract), `SessionService` (one active Session per Channel/Agent; resume only while the Agent's provider and effective working directory match the ones the Session recorded, otherwise close it and start fresh), and `AgentManager`, which builds the request from the Agent record, persists the returned provider session ID before the next turn, and serializes turns per Session. Turns of different Agents run in parallel, even in a shared folder. Wire router → `AgentManager` → adapter reply. Test with a fake runtime.
 
-**Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a changed provider or effective folder starting a fresh Session while a changed model or effort resumes the same one, and provider session IDs persisted across a restart.
+**Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a changed provider or effective folder starting a fresh Session while a changed model or effort resumes the same one, provider session IDs persisted across a restart, and a General topic and a direct chat assigned to the same Agent keeping separate Sessions.
 
-### 2.3 Telegram adapter
+### 2.4 Telegram adapter
 
-Add grammY long polling: derive the Channel key from `chat_id` and normalized `message_thread_id`, ignore bot-originated messages, reply in the same topic, and read the token from the secret store. A bad token or network failure marks Telegram degraded rather than stopping the daemon.
+Add grammY long polling for `message` and `my_chat_member` updates, reading the token from the secret store. Normalize addresses as in the table above; map `forum_topic_created` and `forum_topic_edited` service messages to channel events, and `migrate_to_chat_id` to a chat-migrated event that moves the allowlist entry and Channel keys to the supergroup's new ID (enabling topics on a basic group changes its chat ID). Ignore messages from bots, which also stops loops. Reply in the same topic; in the General topic, a group without topics, or a direct chat, send without `message_thread_id`. On startup and on each membership change, check with `getChatMember` whether the bot is an administrator of each allowed group: without that (or privacy mode turned off in BotFather) Telegram delivers only commands, mentions, and replies to the bot, so the chat is reported degraded with the fix. A bad token or network failure marks Telegram degraded rather than stopping the daemon.
 
-**Done when:** tests against a mocked Bot API cover topic routing, bot-loop protection, reply addressing, and degraded status for an invalid token; a manual check with a real bot answers through the fake runtime.
+**Done when:** tests against a mocked Bot API cover the four address kinds in both directions, reply-thread IDs ignored in a group without topics, topic created/renamed events, chat migration, bot-loop protection, the not-an-administrator warning, and degraded status for an invalid token; a manual check with a real bot in a forum group and a direct chat answers through the fake runtime and onboards a new topic.
 
-### 2.4 Claude runtime adapter
+### 2.5 Telegram chats and pairing
+
+Add `pero telegram chats` (allowed chats with kind, title, the bot's administrator status and whether topics are on, followed by chats that recently asked to pair), `pero telegram allow <chat-id>`, and `pero telegram deny <chat-id>`, which removes the chat from the allowlist and keeps its Channels and Agents for when it is allowed again. Allowing happens only on the host, never from a Telegram message. `pero status` shows the bot's username and flags Telegram degraded while no chat is allowed or an allowed group lacks administrator rights. Extend first-run setup (1.10): once the token is valid and no chat is allowed, an interactive `pero run` prints the recommended steps (create a group, enable topics, add the bot as an administrator, or message the bot directly), waits for the first update from a new chat, and asks whether to allow it. Non-interactive runs list `pero telegram allow` among the missing settings.
+
+**Done when:** e2e tests cover allow, deny, and listing through a fake adapter; interactive setup allows a chat that sent its first message during setup; a denied chat's messages reach no runtime, and allowing it again resumes its Channels and Sessions.
+
+### 2.6 Claude runtime adapter
 
 Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out.
 
 **Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process with a different model and effort, and sees a file written in the working directory.
 
-### 2.5 Codex runtime adapter
+### 2.7 Codex runtime adapter
 
 Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
 
-**Done when:** same coverage as 2.4, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
+**Done when:** same coverage as 2.6, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
 
-### 2.6 Agent management commands
+### 2.8 Agent management commands
 
-Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
+Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services, and the `main-agent` setting to `pero settings`. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` lists the Channels assigned to the Agent and says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
 
-**Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session, and after a model or effort edit it resumes the same one.
+**Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session, and after a model or effort edit it resumes the same one; an Agent created by onboarding can be edited like any other.
 
-### 2.7 Channel management commands
+### 2.9 Channel management commands
 
-Add `pero channels ls|show|enroll|assign|disable`. Enrolling accepts the key from the setup hint; reassigning an Agent closes the old Session.
+Add `pero channels ls|show|assign|disable`. Channels are created by onboarding, so there is no `enroll`; `assign` points a Channel at another Agent (for example, a new topic at an existing Agent instead of the one onboarding made) and closes the old Session. A disabled Channel ignores messages and is not onboarded again.
 
-**Done when:** e2e tests cover enrollment and reassignment, and two Channels assigned to different Agents keep separate Sessions.
+**Done when:** e2e tests cover listing, reassignment, and disabling, and two Channels assigned to different Agents keep separate Sessions.
 
-### 2.8 End-to-end verification and smoke-test docs
+### 2.10 End-to-end verification and smoke-test docs
 
-Add an e2e test with two topics routed to different Agents through the fake runtime across a daemon restart. Document how to run the Claude and Codex smoke tests under the service's OS account.
+Add an e2e test through the fake adapter and fake runtime: a forum group is allowed, two topics are created and onboard two Agents, the General topic and a direct chat reach the main Agent, and every Channel continues its Session across a daemon restart. Document the recommended Telegram setup and how to run the Claude and Codex smoke tests under the service's OS account.
 
 **Done when:** the Phase 2 exit criteria are covered by automated or documented, repeatable tests.
 
 ### Phase 2 exit criteria
 
-Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing the provider or folder starts a fresh Session, while a new model or effort continues the conversation; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
+In an allowed forum group, creating a topic onboards a new Agent that answers there; two topics keep separate contexts while working in the same shared folder, and an Agent with its own folder works there. The General topic and a direct chat with the bot, neither of which has a topic ID, reach the main Agent in separate Sessions. A follow-up resumes the right provider session after a process restart; editing the provider or folder starts a fresh Session, while a new model or effort continues the conversation. Messages from a chat that is not allowed never invoke a runtime or create an Agent and get only the pairing hint. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
 
 ## Phase 3 — durable workflows
 
@@ -212,7 +235,8 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 
 | Decision | Proposed v1 default |
 |---|---|
-| Unknown Telegram topic | Reject with an owner-facing setup hint; explicit Channel enrollment. |
+| New Telegram topic | In an allowed chat, onboard a new Agent named after the topic; the General topic and direct chats use the main Agent. The owner can reassign with `pero channels assign`. |
+| Unknown Telegram chat | Never reaches a runtime; reply with a rate-limited pairing hint. Chats are allowed only from the host with `pero telegram allow`. |
 | Missed schedule intervals | Coalesce to one catch-up run and record how many intervals were skipped. |
 | Workflow concurrency | One active run per Workflow; different Agents and Workflows may share a folder concurrently (last write wins). |
 | Interrupted execution | Mark `interrupted`; manual retry by default when side effects may have occurred. |
@@ -226,4 +250,4 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 
 ## Highest-value verification
 
-Test the boundaries that could lose or misroute work: CLI start/readiness/stop, singleton process behavior, Telegram topic identity, Session resume after restart, atomic schedule claim/deduplication, interruption handling, and Notification retries. Use a real temporary SQLite database for persistence tests. Test global installation from a packed npm artifact on supported operating systems, including `better-sqlite3` loading. Provider SDK smoke tests can be gated on credentials; mocks alone cannot prove resume and filesystem behavior.
+Test the boundaries that could lose or misroute work: CLI start/readiness/stop, singleton process behavior, Telegram topic identity (topics, General, direct chats, and chat migration), onboarding idempotency, Session resume after restart, atomic schedule claim/deduplication, interruption handling, and Notification retries. Use a real temporary SQLite database for persistence tests. Test global installation from a packed npm artifact on supported operating systems, including `better-sqlite3` loading. Provider SDK smoke tests can be gated on credentials; mocks alone cannot prove resume and filesystem behavior.
