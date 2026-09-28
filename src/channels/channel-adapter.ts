@@ -72,14 +72,48 @@ export type ChannelEvent =
       status: 'administrator' | 'member' | 'left';
     });
 
+/** Someone pressed a button of a message Pero sent. */
+export interface InboundAction {
+  integrationKind: IntegrationKind;
+  updateId: string;
+  chat: InboundChat;
+  /** The Channel of the message the button belongs to. */
+  channel: InboundChannel;
+  /** The pressed button's `id`, as it was sent. */
+  actionId: string;
+  /** The message the button belongs to. */
+  messageId: string;
+  senderId: string;
+  /** How to name the sender to the chat, such as `@ada`; null if unknown. */
+  senderName: string | null;
+}
+
+/** What the person who pressed a button is shown; null shows nothing. */
+export interface ActionResult {
+  notice: string | null;
+}
+
 /** Where an adapter hands what it receives; set when it starts. */
 export interface ChannelHandlers {
   onMessage(message: InboundMessage): Promise<void>;
   onEvent(event: ChannelEvent): Promise<void>;
+  onAction(action: InboundAction): Promise<ActionResult>;
 }
+
+/** A button under a message; pressing it reaches `onAction` with its `id`. */
+export interface OutboundButton {
+  /** At most `MAX_BUTTON_ID_BYTES` bytes of UTF-8. */
+  id: string;
+  label: string;
+}
+
+/** The longest button ID every integration can carry (Telegram: 64). */
+export const MAX_BUTTON_ID_BYTES = 64;
 
 export interface OutboundMessage {
   text: string;
+  /** Shown in one row under the message; none by default. */
+  buttons?: readonly OutboundButton[];
 }
 
 /**
@@ -98,4 +132,13 @@ export interface ChannelAdapter {
   /** Ends intake. Sending may still work until the process exits. */
   stop(): Promise<void>;
   send(address: ChannelAddress, message: OutboundMessage): Promise<SentMessage>;
+  /**
+   * Replaces a sent message's text and buttons; a message without buttons
+   * removes them. The text must fit in one message.
+   */
+  edit(
+    address: ChannelAddress,
+    messageId: string,
+    message: OutboundMessage,
+  ): Promise<void>;
 }

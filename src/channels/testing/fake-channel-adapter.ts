@@ -1,5 +1,6 @@
 import type { IntegrationKind } from '../../persistence/entities/sql.js';
 import type {
+  ActionResult,
   ChannelAdapter,
   ChannelAddress,
   ChannelEvent,
@@ -7,6 +8,7 @@ import type {
   InboundChannel,
   InboundChat,
   InboundMessage,
+  InboundAction,
   OutboundMessage,
   SentMessage,
 } from '../channel-adapter.js';
@@ -17,13 +19,22 @@ export interface SentRecord {
   message: OutboundMessage;
 }
 
+/** An edit the fake adapter was asked to make. */
+export interface EditRecord {
+  address: ChannelAddress;
+  messageId: string;
+  message: OutboundMessage;
+}
+
 /**
- * An in-memory Channel adapter for tests. `deliver` and `emit` play an
- * update into the router and wait until it has been routed; `sent` records
- * everything sent back.
+ * An in-memory Channel adapter for tests. `deliver`, `emit`, and `press`
+ * play an update into the router and wait until it has been routed; `sent`
+ * and `edited` record everything sent back. The message `sent[i]` has the
+ * ID `String(i + 1)`.
  */
 export class FakeChannelAdapter implements ChannelAdapter {
   readonly sent: SentRecord[] = [];
+  readonly edited: EditRecord[] = [];
   running = false;
   /** Makes the next sends fail, as an unreachable service would. */
   failSends = false;
@@ -52,12 +63,43 @@ export class FakeChannelAdapter implements ChannelAdapter {
     return Promise.resolve({ messageId: String(this.nextMessageId++) });
   }
 
+  edit(
+    address: ChannelAddress,
+    messageId: string,
+    message: OutboundMessage,
+  ): Promise<void> {
+    if (this.failSends) return Promise.reject(new Error('Service unreachable'));
+    this.edited.push({ address, messageId, message });
+    return Promise.resolve();
+  }
+
   deliver(message: InboundMessage): Promise<void> {
     return this.started().onMessage(message);
   }
 
   emit(event: ChannelEvent): Promise<void> {
     return this.started().onEvent(event);
+  }
+
+  /**
+   * Presses the button labelled `label` under `record`, one of `sent`, as
+   * someone in `chat` (in topic `topic` when given).
+   */
+  press(
+    record: SentRecord,
+    label: string,
+    chat: InboundChat,
+    options: { topic?: string; senderName?: string | null } = {},
+  ): Promise<ActionResult> {
+    const button = record.message.buttons?.find((b) => b.label === label);
+    if (!button) throw new Error(`No button labelled ${label}`);
+    return this.started().onAction(
+      buttonPress(chat, {
+        ...options,
+        actionId: button.id,
+        messageId: String(this.sent.indexOf(record) + 1),
+      }),
+    );
   }
 
   private started(): ChannelHandlers {
@@ -125,6 +167,28 @@ export function inboundMessage(
     messageId: String(nextMessageId++),
     senderId: '42',
     content: { text: options.text ?? 'Hello' },
+  };
+}
+
+/** A press of button `actionId` under message `messageId` in `chat`. */
+export function buttonPress(
+  chat: InboundChat,
+  options: {
+    actionId: string;
+    messageId: string;
+    topic?: string;
+    senderName?: string | null;
+  },
+): InboundAction {
+  return {
+    integrationKind: 'telegram',
+    updateId: String(nextUpdateId++),
+    chat,
+    channel: inboundChannel(chat, options.topic),
+    actionId: options.actionId,
+    messageId: options.messageId,
+    senderId: '42',
+    senderName: options.senderName === undefined ? '@ada' : options.senderName,
   };
 }
 

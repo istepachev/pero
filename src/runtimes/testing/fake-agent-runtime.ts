@@ -16,12 +16,14 @@ export interface HeldTurn {
 
 type Script =
   | { kind: 'hold'; held: Deferred<void>; started: Deferred<RuntimeRequest> }
-  | { kind: 'fail'; error: RuntimeError };
+  | { kind: 'fail'; error: RuntimeError }
+  | { kind: 'ask'; tool: string; summary: string };
 
 /**
  * An in-memory runtime for tests. Each turn reports a session (the resumed
- * one, or a new `fake-<kind>-<n>`) and answers `echo: <input>`. `hold` and
- * `failNext` script the next turns in order; `requests` records every one.
+ * one, or a new `fake-<kind>-<n>`) and answers `echo: <input>`. `hold`,
+ * `failNext`, and `askNext` script the next turns in order; `requests`
+ * records every one.
  */
 export class FakeAgentRuntime implements AgentRuntime {
   readonly requests: RuntimeRequest[] = [];
@@ -43,6 +45,15 @@ export class FakeAgentRuntime implements AgentRuntime {
     this.scripts.push({ kind: 'fail', error });
   }
 
+  /**
+   * Makes the next unscripted turn ask for `tool` first, and add to its
+   * answer whether it was allowed: ` (<tool> allowed)` or
+   * ` (<tool> denied: <reason>)`.
+   */
+  askNext(tool = 'Bash', summary = 'Bash: ls') {
+    this.scripts.push({ kind: 'ask', tool, summary });
+  }
+
   async *execute(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
     this.requests.push(request);
     const script = this.scripts.shift();
@@ -56,7 +67,21 @@ export class FakeAgentRuntime implements AgentRuntime {
       await untilAborted(script.held.promise, request.signal);
     }
     if (script?.kind === 'fail') throw script.error;
-    yield { type: 'result', text: `echo: ${request.input}` };
+    let asked = '';
+    if (script?.kind === 'ask') {
+      yield { type: 'tool', name: script.tool };
+      const answer = request.approve
+        ? await request.approve({
+            tool: script.tool,
+            summary: script.summary,
+            signal: request.signal,
+          })
+        : { allow: false as const, reason: 'no one can approve tools here' };
+      asked = answer.allow
+        ? ` (${script.tool} allowed)`
+        : ` (${script.tool} denied: ${answer.reason})`;
+    }
+    yield { type: 'result', text: `echo: ${request.input}${asked}` };
   }
 }
 

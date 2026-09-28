@@ -375,7 +375,8 @@ describe('AgentManager', () => {
       approve,
     });
 
-    expect(claude.requests[0]).not.toHaveProperty('approve');
+    // A turn from the Channel asks there; this one asks `approve`.
+    expect(claude.requests[0]!.approve).toBeTypeOf('function');
     expect(claude.requests[1]!.approve).toBe(approve);
   });
 

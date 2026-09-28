@@ -169,6 +169,19 @@ export class FakeBotApi {
         return this.getChat(res, payload);
       case 'sendMessage':
         return this.sendMessage(res, payload);
+      case 'editMessageText':
+        return this.ok(res, {
+          message_id: payload.message_id,
+          date: Math.floor(Date.now() / 1000),
+          chat: {
+            id: Number(payload.chat_id),
+            type: 'supergroup',
+            title: 'Chat',
+          },
+          text: payload.text,
+        });
+      case 'answerCallbackQuery':
+        return this.ok(res, true);
       default:
         return this.fail(res, {
           error_code: 404,

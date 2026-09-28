@@ -43,6 +43,20 @@ export class ChannelSender {
     return adapter.send(address, message);
   }
 
+  /** Replaces the text and buttons of a message sent through `kind`. */
+  edit(
+    kind: IntegrationKind,
+    address: ChannelAddress,
+    messageId: string,
+    message: OutboundMessage,
+  ): Promise<void> {
+    const adapter = this.adapters.get(kind);
+    if (!adapter) {
+      return Promise.reject(new Error(`No ${kind} adapter is connected`));
+    }
+    return adapter.edit(address, messageId, message);
+  }
+
   /**
    * Sends `text` to `channel`, then records it in the Channel's history. A
    * failed send throws and records nothing; a failed record is only logged,
