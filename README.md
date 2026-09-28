@@ -19,9 +19,12 @@ npm run start:dev      # daemon in watch mode on ./.pero
 npm run cli -- --help  # built `pero` CLI
 npm test               # unit tests (Vitest)
 npm run test:e2e       # builds, then runs e2e tests
+npm run test:smoke     # builds, then runs real Claude and Codex turns when enabled
 npm run lint           # oxlint
 bash scripts/check-packed-install.sh  # install the npm pack artifact globally and drive it
 ```
+
+[Testing](./docs/TESTING.md) describes each test layer, how to run the provider smoke tests as the account the service runs as, how to check a real bot by hand, and where each Phase 2 exit criterion is verified.
 
 ### Bootstrap configuration
 
@@ -65,6 +68,21 @@ Keys: `default-provider`, `claude.model`, `claude.effort`, `codex.model`, `codex
 
 ### Telegram
 
+#### Recommended setup
+
+Pero talks to you in a private Telegram group with topics, where each topic is a conversation with an Agent of its own:
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and give Pero its token: an interactive `pero run` asks for it, or `pero settings set telegram-bot-token` reads it from a prompt or stdin.
+2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it.
+3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
+4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` waits for that message and offers to allow the chat itself.
+5. Create a topic for each conversation you want. Each new topic onboards a new Agent named after it, working in the default working directory, and the bot posts which one answers there. The General topic talks to the main Agent.
+6. Optionally, allow a direct chat with the bot too: message the bot, then allow your user ID the same way. It also talks to the main Agent, in a conversation separate from the General topic.
+
+Before signing in to a provider, you can try the whole setup with the echo runtime: `PERO_FAKE_RUNTIME=echo pero run` (see [Checking a real bot by hand](./docs/TESTING.md#checking-a-real-bot-by-hand)).
+
+#### How it works
+
 With a bot token set, the daemon long-polls Telegram for messages and membership changes; readiness never waits for it. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its allowlist entry and Channel to the new ID.
 
 Pero serves only the chats allowed on its host. A chat it does not serve gets, at most once an hour, a reply naming its chat ID and the command that allows it:
@@ -76,8 +94,6 @@ npm run cli -- telegram deny -1001234567890 --data-dir .pero     # its Channels 
 ```
 
 `pero telegram chats` shows for each allowed group whether topics are on and whether the bot is an administrator. `pero status` shows Telegram `degraded` while no chat is allowed. Once the token works, an interactive `pero run` explains how to set up a group or a direct chat, waits for the first message to the bot, and offers to allow that chat; a non-interactive one lists `pero telegram allow` among what is missing.
-
-To try a real bot before a provider is set up, start the daemon with `PERO_FAKE_RUNTIME=echo pero run`.
 
 Each topic, General topic, and direct chat is a Channel, created with its Agent when it first reaches Pero. `pero channels` lists them by ID:
 
@@ -97,7 +113,7 @@ Each Agent's tools run under one of two permission modes, copied from `default-p
 - `ask` (the default): reading and editing files in the Agent's folder runs freely; any other tool that needs permission, such as a shell command or a web fetch, asks in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
 
-The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that an `ask` Agent's command is refused, and aborts a turn.
+The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that an `ask` Agent's command is refused, and aborts a turn. Run it as the account the service runs as, as [Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account) describes, so that it checks the sign-in Pero will use.
 
 ### Codex Agents
 
@@ -110,7 +126,7 @@ Codex runs each turn without a way to ask the owner, so the permission modes map
 - `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it).
 - `bypass`: no sandbox, like `codex --dangerously-bypass-approvals-and-sandbox`.
 
-The smoke test runs real turns as the current account: `PERO_SMOKE_CODEX=1 npm run test:smoke` (set `PERO_SMOKE_CODEX_MODEL` to change the model the resumed turn switches to, `gpt-5.5` by default). It creates a thread that writes a file, resumes it from another process with a different model and effort, checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, aborts a turn, and checks that a signed-out Codex is reported as such.
+The smoke test runs real turns as the current account: `PERO_SMOKE_CODEX=1 npm run test:smoke` (set `PERO_SMOKE_CODEX_MODEL` to change the model the resumed turn switches to, `gpt-5.5` by default). It creates a thread that writes a file, resumes it from another process with a different model and effort, checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, aborts a turn, and checks that a signed-out Codex is reported as such. As with Claude, run it as the account the service runs as ([Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account)).
 
 The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 
