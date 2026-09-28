@@ -12,12 +12,19 @@ export type TelegramConnection =
   | { state: 'conflict' }
   | { state: 'unreachable'; reason: string };
 
+/** The problem Telegram reports while it serves no chat at all. */
+export const NO_CHAT_ALLOWED =
+  'no chat is allowed yet: add the bot to a group or message it, then ' +
+  'pero telegram allow <chat-id>';
+
 /** The bot's standing in one allowed group, as last checked. */
 export interface ChatAccess {
   chatKey: string;
   title: string | null;
   /** The bot's membership; `unknown` when Telegram could not say. */
   status: 'administrator' | 'member' | 'left' | 'unknown';
+  /** Whether the group has topics; null when Telegram could not say. */
+  topics: boolean | null;
   /** Why the bot cannot see every message there; null when it can. */
   problem: string | null;
   checkedAt: Date;
@@ -32,6 +39,8 @@ export interface ChatAccess {
 export class TelegramStatus {
   private connection: TelegramConnection | null = null;
   private readonly chats = new Map<string, ChatAccess>();
+  /** How many chats are allowed; null until the adapter has counted. */
+  private allowedChats: number | null = null;
 
   constructor(private readonly health: ComponentHealth) {}
 
@@ -58,6 +67,19 @@ export class TelegramStatus {
 
   forgetAccess(chatKey: string): void {
     if (this.chats.delete(chatKey)) this.report();
+  }
+
+  /** Notes that group `chatKey` has topics, as a topic created there shows. */
+  markTopics(chatKey: string): void {
+    const access = this.chats.get(chatKey);
+    if (access === undefined || access.topics === true) return;
+    this.chats.set(chatKey, { ...access, topics: true });
+  }
+
+  /** Records how many chats are allowed; none leaves Telegram degraded. */
+  setAllowedChats(count: number): void {
+    this.allowedChats = count;
+    this.report();
   }
 
   private report(): void {
@@ -94,6 +116,7 @@ export class TelegramStatus {
         const problems = [...this.chats.values()]
           .map((chat) => chat.problem)
           .filter((problem) => problem !== null);
+        if (this.allowedChats === 0) problems.unshift(NO_CHAT_ALLOWED);
         if (problems.length === 0) {
           this.health.report('telegram', 'ok', connected);
         } else {

@@ -65,7 +65,17 @@ Keys: `default-provider`, `claude.model`, `claude.effort`, `codex.model`, `codex
 
 ### Telegram
 
-With a bot token set, the daemon long-polls Telegram for messages and membership changes; readiness never waits for it. `pero status` shows `telegram ok Connected as @<bot>` once connected, and `degraded` while connecting, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its allowlist entry and Channel to the new ID.
+With a bot token set, the daemon long-polls Telegram for messages and membership changes; readiness never waits for it. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its allowlist entry and Channel to the new ID.
+
+Pero serves only the chats allowed on its host. A chat it does not serve gets, at most once an hour, a reply naming its chat ID and the command that allows it:
+
+```sh
+npm run cli -- telegram --data-dir .pero                         # the bot, allowed chats, and chats that asked to pair
+npm run cli -- telegram allow -1001234567890 --data-dir .pero    # a group (negative ID) or a direct chat (your user ID)
+npm run cli -- telegram deny -1001234567890 --data-dir .pero     # its Channels and Agents stay for when it is allowed again
+```
+
+`pero telegram chats` shows for each allowed group whether topics are on and whether the bot is an administrator. `pero status` shows Telegram `degraded` while no chat is allowed. Once the token works, an interactive `pero run` explains how to set up a group or a direct chat, waits for the first message to the bot, and offers to allow that chat; a non-interactive one lists `pero telegram allow` among what is missing.
 
 To try a real bot before a provider is set up, start the daemon with `PERO_FAKE_RUNTIME=echo pero run`.
 

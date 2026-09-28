@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import type { Update, UserFromGetMe } from 'grammy/types';
+import type { ChatKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import type {
   ChannelAdapter,
@@ -24,10 +25,19 @@ import {
 } from './telegram-credentials.service.js';
 import { type ChatAccess, TelegramStatus } from './telegram-status.js';
 import {
+  describeChat,
   membershipStatus,
   parseAddress,
   toInbound,
 } from './telegram-updates.js';
+
+/** What Telegram says about a chat when asked by its ID. */
+export interface ChatLookup {
+  kind: ChatKind;
+  title: string | null;
+  /** Whether a group has topics; false for a direct chat. */
+  topics: boolean;
+}
 
 /** The Bot API server Pero talks to unless told otherwise. */
 export const DEFAULT_TELEGRAM_API_ROOT = 'https://api.telegram.org';
@@ -44,6 +54,9 @@ const MAX_FLOOD_WAIT_S = 60;
 
 /** Waits between attempts to start polling after a failure. */
 const RESTART_DELAYS_MS = [1_000, 5_000, 15_000, 60_000, 300_000];
+
+/** How long looking up a chat for the owner may take. */
+const LOOKUP_TIMEOUT_MS = 3_000;
 
 /** How long stopping may wait for Telegram to confirm the last update. */
 const STOP_TIMEOUT_MS = 5_000;
@@ -134,7 +147,8 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
 
   /**
    * Checks whether the bot can see every message in allowed group
-   * `chatKey`, and reports it when it cannot.
+   * `chatKey`, and whether it has topics, and reports it when the bot
+   * cannot see everything. Records the group's name when it has none yet.
    */
   async checkChat(chatKey: string): Promise<void> {
     const bot = this.connection?.bot;
@@ -153,9 +167,47 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       status = 'unknown';
       reason = this.describe(error);
     }
+    const found = await this.lookUpChat(chatKey);
+    const title = chat.title ?? found?.title ?? null;
+    if (chat.title === null) {
+      await this.allowedChats.refreshTitle(chat, found?.title ?? null);
+    }
+    if (this.connection?.bot !== bot) return;
     this.status.setAccess(
-      access(chatKey, chat.title, status, bot.botInfo, reason),
+      access(
+        chatKey,
+        title,
+        status,
+        found?.topics ?? null,
+        bot.botInfo,
+        reason,
+      ),
     );
+  }
+
+  /**
+   * What Telegram says about chat `chatKey`; null while disconnected, when
+   * the bot cannot see the chat, or when Telegram does not answer quickly.
+   */
+  async lookUpChat(chatKey: string): Promise<ChatLookup | null> {
+    const bot = this.connection?.bot;
+    if (!bot?.isInited()) return null;
+    try {
+      const chat = await bot.api.getChat(
+        chatKey,
+        // grammY types the signal as its polyfill's, which Node's satisfies.
+        AbortSignal.timeout(LOOKUP_TIMEOUT_MS) as Parameters<
+          Bot['api']['getChat']
+        >[1],
+      );
+      const described = describeChat(chat);
+      return described && { ...described, topics: chat.is_forum === true };
+    } catch (error) {
+      this.logger.debug(
+        `Failed to look up Telegram chat ${chatKey}: ${this.describe(error)}`,
+      );
+      return null;
+    }
   }
 
   /** Replaces the connection with one for `token`, or none when null. */
@@ -265,6 +317,7 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
   private async checkChats(bot: Bot): Promise<void> {
     try {
       const chats = await this.allowedChats.list('telegram');
+      this.status.setAllowedChats(chats.length);
       for (const chat of chats) {
         if (this.connection?.bot !== bot) return;
         if (chat.kind === 'group') await this.checkChat(chat.chatKey);
@@ -304,16 +357,25 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       await this.checkChat(event.newChatKey);
       return;
     }
+    // Topics can be turned on in a supergroup without a new chat ID.
+    if (event.type === 'topic-created') {
+      this.status.markTopics(event.chat.key);
+      return;
+    }
     if (event.type !== 'membership-changed' || event.chat.kind !== 'group') {
       return;
     }
     const chat = await this.allowedChats.find('telegram', event.chat.key);
     if (chat === null || this.connection?.bot !== bot) return;
+    const known = this.status
+      .access()
+      .find((candidate) => candidate.chatKey === chat.chatKey);
     this.status.setAccess(
       access(
         chat.chatKey,
         event.chat.title ?? chat.title,
         event.status,
+        known?.topics ?? null,
         me,
         null,
       ),
@@ -391,6 +453,7 @@ function access(
   chatKey: string,
   title: string | null,
   status: ChatAccess['status'],
+  topics: boolean | null,
   me: UserFromGetMe,
   reason: string | null,
 ): ChatAccess {
@@ -406,7 +469,7 @@ function access(
   } else if (status === 'unknown') {
     problem = `couldn't check the bot's rights in ${name}: ${reason}`;
   }
-  return { chatKey, title, status, problem, checkedAt: new Date() };
+  return { chatKey, title, status, topics, problem, checkedAt: new Date() };
 }
 
 /** Waits `ms`; an abort ends the wait early without an error. */

@@ -16,6 +16,7 @@ import {
 import { ComponentHealth } from '../health/component-health.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { ControlServer } from './control-server.js';
 import type { SettingsView, StatusResult } from './protocol.js';
@@ -40,6 +41,7 @@ export class ControlService implements OnModuleDestroy {
     private readonly health: ComponentHealth,
     private readonly settings: SettingsService,
     private readonly telegram: TelegramCredentials,
+    private readonly telegramChats: TelegramChats,
     private readonly providers: ProviderAuthService,
     private readonly backup: BackupService,
   ) {}
@@ -65,6 +67,9 @@ export class ControlService implements OnModuleDestroy {
           return this.status();
         },
         'backup.create': ({ file }) => this.backup.create(file),
+        'telegram.chats': () => this.telegramChats.list(),
+        'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
+        'telegram.deny': ({ chatId }) => this.telegramChats.deny(chatId),
       },
     });
     await server.listen();

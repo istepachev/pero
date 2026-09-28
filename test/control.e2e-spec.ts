@@ -149,7 +149,13 @@ describe('Control endpoint (e2e)', () => {
     await vi.waitFor(async () =>
       expect(
         (await client.status()).components.find((c) => c.name === 'telegram'),
-      ).toMatchObject({ state: 'ok', detail: 'Connected as @pero_test_bot' }),
+      ).toMatchObject({
+        // Until a chat is allowed.
+        state: 'degraded',
+        detail: expect.stringMatching(
+          /^Connected as @pero_test_bot; no chat is allowed yet/,
+        ),
+      }),
     );
     expect(api.callsOf('getMe')[0]?.token).toBe(token);
     expect(JSON.stringify(await client.status())).not.toContain(token);

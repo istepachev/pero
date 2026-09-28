@@ -25,6 +25,9 @@ const UNUSED_HANDLERS = {
   'settings.update': unused,
   'providers.check': unused,
   'backup.create': unused,
+  'telegram.chats': unused,
+  'telegram.allow': unused,
+  'telegram.deny': unused,
 };
 
 const status: StatusResult = {

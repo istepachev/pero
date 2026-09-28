@@ -3,6 +3,7 @@ import type {
   ComponentStatus,
   SettingsView,
   StatusResult,
+  TelegramChats,
 } from '../../control/protocol.js';
 import { formatPendingSetup, pendingSetup } from './pending-setup.js';
 
@@ -143,5 +144,67 @@ describe('pendingSetup', () => {
     expect(item?.message).toBe(
       'Telegram: PERO_TELEGRAM_BOT_TOKEN is not a valid bot token — start Pero with a valid PERO_TELEGRAM_BOT_TOKEN',
     );
+  });
+
+  describe('with Telegram connected', () => {
+    const ready = status([
+      component('claude', 'ok', 'Signed in'),
+      component('telegram', 'degraded', 'Connected as @pero_bot; no chat…'),
+    ]);
+    const configured: SettingsView = {
+      ...settings,
+      defaultWorkingDirectory: '/home/owner/notes',
+      telegramBotToken: { set: true, source: 'secrets' },
+    };
+    const none: TelegramChats = { bot: 'pero_bot', allowed: [], pairing: [] };
+
+    it('asks for a chat while none is allowed', () => {
+      expect(pendingSetup(ready, configured, none)).toEqual([
+        {
+          name: 'telegram-chat',
+          message:
+            'Telegram: no chat is allowed yet — add the bot to a group as an administrator or message it, then pero telegram allow <chat-id>',
+        },
+      ]);
+    });
+
+    it('names the latest chat that asked to pair', () => {
+      const [item] = pendingSetup(ready, configured, {
+        ...none,
+        pairing: [
+          {
+            chatId: '-100555',
+            kind: 'group',
+            title: 'Home',
+            firstSeenAt: since,
+            lastSeenAt: since,
+          },
+        ],
+      });
+
+      expect(item?.message).toBe(
+        'Telegram: no chat is allowed yet — pero telegram allow -100555 allows the group "Home" (-100555) that asked to pair',
+      );
+    });
+
+    it('needs nothing once a chat is allowed, or from a daemon that cannot list them', () => {
+      const allowed: TelegramChats = {
+        ...none,
+        allowed: [
+          {
+            chatId: '1234',
+            kind: 'private',
+            title: 'Ada',
+            bot: null,
+            topics: null,
+            problem: null,
+            allowedAt: since,
+          },
+        ],
+      };
+
+      expect(pendingSetup(ready, configured, allowed)).toEqual([]);
+      expect(pendingSetup(ready, configured, null)).toEqual([]);
+    });
   });
 });

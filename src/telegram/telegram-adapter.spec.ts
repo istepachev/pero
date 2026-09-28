@@ -20,6 +20,7 @@ import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramCredentials } from './telegram-credentials.service.js';
+import { TelegramStatus } from './telegram-status.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
 
@@ -70,7 +71,10 @@ describe('TelegramAdapter', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Boots the Telegram path with the token in the environment by default. */
+  /**
+   * Boots the Telegram path with the token in the environment and the
+   * direct chat allowed by default.
+   */
   async function start(
     options: { env?: NodeJS.ProcessEnv; allow?: Chat[] } = {},
   ) {
@@ -94,7 +98,7 @@ describe('TelegramAdapter', () => {
     await moduleRef
       .get(SettingsService)
       .update({ defaultWorkingDirectory: join(tmp, 'vault') });
-    for (const chat of options.allow ?? []) await allow(chat);
+    for (const chat of options.allow ?? [DIRECT]) await allow(chat);
     await moduleRef.init();
   }
 
@@ -167,6 +171,19 @@ describe('TelegramAdapter', () => {
       await vi.waitFor(() =>
         expect(api.callsOf('getUpdates')[0]?.payload).toMatchObject({
           allowed_updates: ['message', 'my_chat_member'],
+        }),
+      );
+    });
+
+    it('reports Telegram degraded while no chat is allowed', async () => {
+      await start({ allow: [] });
+
+      await vi.waitFor(() =>
+        expect(telegram()).toMatchObject({
+          state: 'degraded',
+          detail:
+            'Connected as @pero_test_bot; no chat is allowed yet: add the ' +
+            'bot to a group or message it, then pero telegram allow <chat-id>',
         }),
       );
     });
@@ -460,6 +477,43 @@ describe('TelegramAdapter', () => {
         expect(api.callsOf('getChatMember')).toHaveLength(1),
       );
       expect(telegram()?.state).toBe('ok');
+    });
+
+    it('records whether an allowed group has topics', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+      api.chats.set(String(PLAIN_GROUP.id), PLAIN_GROUP);
+      const topics = (chat: Chat) =>
+        get(TelegramStatus)
+          .access()
+          .find((access) => access.chatKey === String(chat.id))?.topics;
+
+      await start({ allow: [FORUM, PLAIN_GROUP] });
+
+      await vi.waitFor(() => {
+        expect(topics(FORUM)).toBe(true);
+        expect(topics(PLAIN_GROUP)).toBe(false);
+      });
+
+      // Topics turned on without a new chat ID show in their first topic.
+      api.push(
+        inTopic(PLAIN_GROUP, 7, {
+          text: undefined,
+          forum_topic_created: { name: 'Plans', icon_color: 0 },
+        }),
+      );
+      await vi.waitFor(() => expect(topics(PLAIN_GROUP)).toBe(true));
+    });
+
+    it('fills in the name of a group allowed by its ID alone', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+
+      await start({ allow: [{ ...FORUM, title: undefined } as never] });
+
+      await vi.waitFor(async () =>
+        expect(
+          await get(AllowedChatsService).find('telegram', String(FORUM.id)),
+        ).toMatchObject({ title: 'Household' }),
+      );
     });
 
     it('flags a group the bot has left', async () => {

@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { HealthModule } from '../health/health.module.js';
 import { TelegramAdapter } from './telegram-adapter.js';
+import { TelegramChats } from './telegram-chats.service.js';
 import {
   TELEGRAM_OPTIONS,
   TelegramCredentials,
@@ -10,9 +11,9 @@ import {
 import { TelegramStatus } from './telegram-status.js';
 
 /**
- * Telegram: the bot token and the Channel adapter, which connects to the
- * Channel router at startup. Global, so the control endpoint can change the
- * token without importing it again.
+ * Telegram: the bot token, the Channel adapter, which connects to the
+ * Channel router at startup, and the allowlist commands. Global, so the
+ * control endpoint can reach them without importing it again.
  */
 @Module({})
 export class TelegramModule {
@@ -26,8 +27,14 @@ export class TelegramModule {
         TelegramCredentials,
         TelegramStatus,
         TelegramAdapter,
+        TelegramChats,
       ],
-      exports: [TelegramCredentials, TelegramStatus, TelegramAdapter],
+      exports: [
+        TelegramCredentials,
+        TelegramStatus,
+        TelegramAdapter,
+        TelegramChats,
+      ],
     };
   }
 }
