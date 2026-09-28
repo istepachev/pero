@@ -173,6 +173,7 @@ describe('Workflow formatting', () => {
       triggerKey: 'manual:0f8c',
       status: 'completed',
       attempt: 1,
+      skippedCount: 0,
       createdAt: '2026-09-28T19:00:00.000Z',
       startedAt: '2026-09-28T19:00:01.000Z',
       finishedAt: '2026-09-28T19:00:09.000Z',

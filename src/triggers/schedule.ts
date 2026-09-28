@@ -32,7 +32,7 @@ const MAX_STEPS = 10_000;
  *   the clocks go forward, are one run.
  */
 export function nextOccurrence(schedule: Schedule, after: Date): Date | null {
-  const cron = new Cron(schedule.cron, { timezone: 'UTC', mode: '5-part' });
+  const cron = parse(schedule.cron);
   let wall = toWallClock(after, schedule.timezone);
   for (let step = 0; step < MAX_STEPS; step++) {
     const match = cron.nextRun(wall);
@@ -46,6 +46,41 @@ export function nextOccurrence(schedule: Schedule, after: Date): Date | null {
   throw new Error(
     `No occurrence of "${schedule.cron}" in ${schedule.timezone} found after ${after.toISOString()}`,
   );
+}
+
+/**
+ * How many times `schedule` runs after `after` up to and including `until`,
+ * counting no further than `limit`.
+ */
+export function countOccurrences(
+  schedule: Schedule,
+  after: Date,
+  until: Date,
+  limit: number,
+): number {
+  let count = 0;
+  let next = nextOccurrence(schedule, after);
+  while (next !== null && next <= until && count < limit) {
+    count++;
+    next = nextOccurrence(schedule, next);
+  }
+  return count;
+}
+
+const crons = new Map<string, Cron>();
+
+/**
+ * The parsed expression, matched against UTC fields. `utcOffset: 0` rather
+ * than `timezone: 'UTC'`: the same matches, without croner converting every
+ * candidate through Intl, which is about 60 times slower.
+ */
+function parse(expression: string): Cron {
+  let cron = crons.get(expression);
+  if (cron === undefined) {
+    cron = new Cron(expression, { utcOffset: 0, mode: '5-part' });
+    crons.set(expression, cron);
+  }
+  return cron;
 }
 
 /** Local time in `timeZone` at `instant`, as a Date whose UTC fields hold it. */

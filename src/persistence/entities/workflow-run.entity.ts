@@ -66,6 +66,14 @@ export class WorkflowRun {
   attempt: number;
 
   /**
+   * How many later times of its schedule came due without a run of their
+   * own and were coalesced into this one: missed while Pero was down, or
+   * while this run waited to start.
+   */
+  @Column({ name: 'skipped_count', type: 'integer', default: 0 })
+  skippedCount: number;
+
+  /**
    * What the run executes with, captured when the executor claims it: the
    * Agent's provider, options, resolved folder, composed instructions, and
    * tool policy, and the input. See `executionSnapshotSchema`. JSON text.

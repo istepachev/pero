@@ -219,7 +219,7 @@ A pure function computes a schedule Trigger's next occurrence (cron expression a
 
 ### 3.4 Scheduler tick
 
-Add a `@nestjs/schedule` polling tick that, in one short transaction per Trigger, creates the pending run and advances `next_run_at`. Missed intervals coalesce to one catch-up run that records the skipped count.
+Add a `@nestjs/schedule` polling tick, every 10 seconds and once at startup, that, in one short transaction per Trigger, creates the pending run and advances `next_run_at`. The run's trigger key is the Trigger and the due time it read, so however often a time is polled the unique key allows one run. Missed intervals coalesce to one catch-up run that records the skipped count (`skipped_count`), as do times that come due while that Trigger's previous run is still pending. A schedule whose Workflow or Agent is disabled advances without a run.
 
 **Done when:** tests show concurrent or repeated polls create one run per occurrence, and a daemon started after downtime creates exactly one catch-up run.
 

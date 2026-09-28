@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AgentsModule } from './agents/agents.module.js';
 import { ChannelsModule } from './channels/channels.module.js';
 import type { DataDirLayout } from './config/data-dir.js';
@@ -8,6 +9,7 @@ import { HealthModule } from './health/health.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
+import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 import { TriggersModule } from './triggers/triggers.module.js';
@@ -42,6 +44,8 @@ export class AppModule {
         ChannelsModule,
         WorkflowsModule,
         TriggersModule,
+        ScheduleModule.forRoot(),
+        SchedulerModule,
         TelegramModule.forRoot({
           secretsDir: options.layout.secrets,
           env,

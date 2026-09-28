@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextOccurrence, type Schedule } from './schedule.js';
+import { countOccurrences, nextOccurrence, type Schedule } from './schedule.js';
 
 /** The next `count` occurrences of `cron` in `timezone` after `from`. */
 function occurrences(
@@ -313,5 +313,55 @@ describe('nextOccurrence', () => {
         previous = next;
       }
     }
+  });
+});
+
+describe('countOccurrences', () => {
+  const hourly: Schedule = { cron: '0 * * * *', timezone: 'Europe/Berlin' };
+
+  it('counts the times after the start up to and including the end', () => {
+    const count = (after: string, until: string) =>
+      countOccurrences(hourly, new Date(after), new Date(until), 100);
+    expect(count('2026-09-28T10:00:00Z', '2026-09-28T10:59:59Z')).toBe(0);
+    expect(count('2026-09-28T10:00:00Z', '2026-09-28T11:00:00Z')).toBe(1);
+    expect(count('2026-09-28T10:00:00Z', '2026-09-28T15:30:00Z')).toBe(5);
+    expect(count('2026-09-28T10:30:00Z', '2026-09-28T10:00:00Z')).toBe(0);
+  });
+
+  it('counts a time the clocks repeat once and a skipped one once', () => {
+    const quarterly: Schedule = {
+      cron: '*/15 * * * *',
+      timezone: 'Europe/Berlin',
+    };
+    // 2026-10-25: 03:00 CEST becomes 02:00 CET, so 02:00-02:45 repeat.
+    expect(
+      countOccurrences(
+        quarterly,
+        new Date('2026-10-24T23:00:00Z'), // 01:00 CEST
+        new Date('2026-10-25T02:00:00Z'), // 03:00 CET
+        100,
+      ),
+    ).toBe(8);
+    // 2026-03-29: 02:00 CET becomes 03:00 CEST; 02:00-02:45 all run at 03:00.
+    expect(
+      countOccurrences(
+        quarterly,
+        new Date('2026-03-29T00:00:00Z'), // 01:00 CET
+        new Date('2026-03-29T01:00:00Z'), // 03:00 CEST
+        100,
+      ),
+    ).toBe(4);
+  });
+
+  it('stops at the limit', () => {
+    const minutely: Schedule = { cron: '* * * * *', timezone: 'UTC' };
+    expect(
+      countOccurrences(
+        minutely,
+        new Date('2026-01-01T00:00:00Z'),
+        new Date('2027-01-01T00:00:00Z'),
+        10_000,
+      ),
+    ).toBe(10_000);
   });
 });

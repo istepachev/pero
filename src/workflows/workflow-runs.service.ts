@@ -103,6 +103,7 @@ export function runView(
     triggerKey: run.triggerKey,
     status: run.status,
     attempt: run.attempt,
+    skippedCount: run.skippedCount,
     createdAt: run.createdAt.toISOString(),
     startedAt: run.startedAt?.toISOString() ?? null,
     finishedAt: run.finishedAt?.toISOString() ?? null,
