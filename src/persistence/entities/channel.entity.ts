@@ -49,6 +49,10 @@ export class Channel {
   })
   address: Record<string, unknown>;
 
+  /** The topic or chat name, for display; null when the integration has none. */
+  @Column({ type: 'text', nullable: true })
+  title: string | null;
+
   @Column({ name: 'agent_id', type: 'integer' })
   agentId: number;
 
