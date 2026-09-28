@@ -34,6 +34,11 @@ const UNUSED_HANDLERS = {
   'agents.get': unused,
   'agents.create': unused,
   'agents.edit': unused,
+  'channels.list': unused,
+  'channels.get': unused,
+  'channels.assign': unused,
+  'channels.setEnabled': unused,
+  'channels.history': unused,
 };
 
 describe('daemon metadata', () => {

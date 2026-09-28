@@ -4,11 +4,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
+import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { signInHint } from '../providers/provider-auth.js';
@@ -81,8 +82,8 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   /**
    * Accepts a turn behind the Session's earlier ones and settles when it
-   * has run: with the answer, null when the Agent was disabled meanwhile,
-   * or a `TurnError`.
+   * has run: with the answer, null when the Agent or Channel was disabled
+   * or the Channel reassigned meanwhile, or a `TurnError`.
    */
   runTurn(turn: TurnInput): Promise<TurnResult | null> {
     if (this.draining !== null) {
@@ -146,12 +147,19 @@ export class AgentManager implements BeforeApplicationShutdown {
     try {
       // One snapshot of the Agent, settings, Session, and history as the
       // turn starts.
-      const { agent, session, input, carried } = await inTransaction(
+      const { agent, session, input, carried, skipped } = await inTransaction(
         this.dataSource,
         async (manager) => {
           const agent = await this.agents.resolveWithin(manager, turn.agentId);
-          if (!agent.enabled) {
-            return { agent, session: null, input: turn.input, carried: 0 };
+          const skipped = await skipReasonWithin(manager, turn, agent);
+          if (skipped !== null) {
+            return {
+              agent,
+              session: null,
+              input: turn.input,
+              carried: 0,
+              skipped,
+            };
           }
           const session = await this.sessions.beginWithin(
             manager,
@@ -175,11 +183,11 @@ export class AgentManager implements BeforeApplicationShutdown {
                   turn.input,
                 )
               : { input: turn.input, carried: 0 };
-          return { agent, session, input, carried };
+          return { agent, session, input, carried, skipped: null };
         },
       );
       if (session === null) {
-        this.logger.debug(`Skipped a turn in ${where}: the Agent is disabled`);
+        this.logger.debug(`Skipped a turn in ${where}: ${skipped}`);
         return null;
       }
       provider = agent.provider;
@@ -282,6 +290,27 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
     return (result ?? streamed).trim();
   }
+}
+
+/**
+ * Why a turn accepted earlier no longer runs: its Agent was disabled, or
+ * its Channel was disabled or reassigned meanwhile. Null when it runs.
+ */
+async function skipReasonWithin(
+  manager: EntityManager,
+  turn: Pick<TurnInput, 'channelId' | 'agentId'>,
+  agent: Pick<ResolvedAgent, 'enabled'>,
+): Promise<string | null> {
+  if (!agent.enabled) return 'the Agent is disabled';
+  const channel = await manager
+    .getRepository(Channel)
+    .findOneByOrFail({ id: turn.channelId });
+  if (!channel.enabled) return 'the Channel is disabled';
+  // Otherwise the old Agent would open a Session where it no longer answers.
+  if (channel.agentId !== turn.agentId) {
+    return 'the Channel was assigned another Agent';
+  }
+  return null;
 }
 
 /** `error` as the owner should read it. */

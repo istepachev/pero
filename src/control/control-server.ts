@@ -12,9 +12,9 @@ import {
   ControlError,
   type ControlErrorCode,
   type ControlOperation,
-  type ControlParams,
   type ControlResponse,
   type ControlResult,
+  type ParsedControlParams,
   controlRequestSchema,
   isControlOperation,
   readLine,
@@ -32,7 +32,7 @@ const MAX_SOCKET_PATH_BYTES = process.platform === 'linux' ? 107 : 103;
 /** One function per operation, receiving validated parameters. */
 export type ControlHandlers = {
   [Op in ControlOperation]: (
-    params: ControlParams<Op>,
+    params: ParsedControlParams<Op>,
   ) => ControlResult<Op> | Promise<ControlResult<Op>>;
 };
 

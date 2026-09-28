@@ -11,19 +11,20 @@ import {
 import { Agent } from './agent.entity.js';
 import { Channel } from './channel.entity.js';
 import { Session } from './session.entity.js';
-import { oneOf } from './sql.js';
+import {
+  MESSAGE_DIRECTIONS,
+  MESSAGE_ORIGINS,
+  type MessageDirection,
+  type MessageOrigin,
+  oneOf,
+} from './sql.js';
 
-export const MESSAGE_DIRECTIONS = ['in', 'out'] as const;
-
-export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
-
-/**
- * Who wrote a message: a person in the chat, the Channel's Agent, or Pero
- * itself, such as a welcome or a failure notice.
- */
-export const MESSAGE_ORIGINS = ['user', 'agent', 'pero'] as const;
-
-export type MessageOrigin = (typeof MESSAGE_ORIGINS)[number];
+export {
+  MESSAGE_DIRECTIONS,
+  MESSAGE_ORIGINS,
+  type MessageDirection,
+  type MessageOrigin,
+};
 
 /**
  * One text message exchanged in a Channel: its history. Only the text sent

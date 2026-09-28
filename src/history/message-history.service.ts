@@ -106,6 +106,41 @@ export class MessageHistory {
   }
 
   /**
+   * The Channel's latest `limit` messages, oldest first, with the Agent
+   * each was to or from, inside the caller's transaction.
+   */
+  async latestWithin(
+    manager: EntityManager,
+    channelId: number,
+    limit: number,
+  ): Promise<Message[]> {
+    const latest = await manager.getRepository(Message).find({
+      where: { channelId },
+      relations: { agent: true },
+      order: { id: 'DESC' },
+      take: limit,
+    });
+    return latest.reverse();
+  }
+
+  /**
+   * How many messages the Channel's history holds, and when the latest
+   * was sent, inside the caller's transaction.
+   */
+  async statsWithin(
+    manager: EntityManager,
+    channelId: number,
+  ): Promise<{ count: number; lastAt: Date | null }> {
+    const messages = manager.getRepository(Message);
+    const count = await messages.countBy({ channelId });
+    const last = await messages.findOne({
+      where: { channelId },
+      order: { id: 'DESC' },
+    });
+    return { count, lastAt: last?.createdAt ?? null };
+  }
+
+  /**
    * `input` preceded by the Channel's latest messages from before message
    * `beforeId`, up to the `history-carryover` setting, for a Session whose
    * provider has none of the conversation yet. Also says how many it

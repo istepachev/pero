@@ -25,3 +25,16 @@ export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 export const CHAT_KINDS = ['private', 'group'] as const;
 
 export type ChatKind = (typeof CHAT_KINDS)[number];
+
+/** Whether a message came into a Channel or went out from Pero. */
+export const MESSAGE_DIRECTIONS = ['in', 'out'] as const;
+
+export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
+
+/**
+ * Who wrote a message: a person in the chat, the Channel's Agent, or Pero
+ * itself, such as a welcome or a failure notice.
+ */
+export const MESSAGE_ORIGINS = ['user', 'agent', 'pero'] as const;
+
+export type MessageOrigin = (typeof MESSAGE_ORIGINS)[number];

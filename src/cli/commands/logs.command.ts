@@ -4,6 +4,7 @@ import { CliError } from '../errors.js';
 import { formatLogLine } from '../format-log.js';
 import { followFile, readLastLines } from '../log-file.js';
 import { PeroCommand } from '../pero-command.js';
+import { positiveInt } from '../positive-int.js';
 
 const DEFAULT_LINES = 50;
 
@@ -61,8 +62,8 @@ export class LogsCommand extends PeroCommand {
     description: `how many recent entries to show (default: ${DEFAULT_LINES})`,
   })
   parseLines(value: string): number {
-    const count = Number(value);
-    if (!/^\d+$/.test(value) || !Number.isSafeInteger(count) || count < 1) {
+    const count = positiveInt(value);
+    if (count === null) {
       throw new CliError(
         `--lines must be a positive whole number, not "${value}"`,
       );

@@ -7,7 +7,12 @@ import {
 } from '../config/provider-options.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
-import { CHAT_KINDS, INTEGRATION_KINDS } from '../persistence/entities/sql.js';
+import {
+  CHAT_KINDS,
+  INTEGRATION_KINDS,
+  MESSAGE_DIRECTIONS,
+  MESSAGE_ORIGINS,
+} from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -221,6 +226,55 @@ export type AgentDetails = z.infer<typeof agentDetailsSchema>;
 
 const agentNameSchema = z.string().trim().min(1, 'must not be empty');
 
+/** A Channel as `pero channels ls` lists it. */
+export const channelViewSchema = z.object({
+  id: z.int(),
+  integrationKind: z.enum(INTEGRATION_KINDS),
+  /** The integration's address, such as `<chat_id>:<topic_id>`. */
+  key: z.string(),
+  title: z.string().nullable(),
+  /** The name of the Agent it is assigned. */
+  agent: z.string(),
+  agentEnabled: z.boolean(),
+  enabled: z.boolean(),
+  createdAt: z.iso.datetime(),
+});
+
+export type ChannelView = z.infer<typeof channelViewSchema>;
+
+export const channelDetailsSchema = channelViewSchema.extend({
+  /** What the next turn with its Agent does with its Session. */
+  nextTurn: nextTurnSchema,
+  /** How many messages its history holds. */
+  messages: z.int().nonnegative(),
+  /** When the latest of them was sent; null when there is none. */
+  lastMessageAt: z.iso.datetime().nullable(),
+});
+
+export type ChannelDetails = z.infer<typeof channelDetailsSchema>;
+
+/** One message of a Channel's history. */
+export const historyMessageSchema = z.object({
+  id: z.int(),
+  createdAt: z.iso.datetime(),
+  direction: z.enum(MESSAGE_DIRECTIONS),
+  origin: z.enum(MESSAGE_ORIGINS),
+  /** The Agent it was to or from; null for Pero's own notices. */
+  agent: z.string().nullable(),
+  /** The integration's ID for who wrote it; null for what Pero sent. */
+  senderId: z.string().nullable(),
+  text: z.string(),
+});
+
+export type HistoryMessage = z.infer<typeof historyMessageSchema>;
+
+/** The most messages `channels.history` returns at once. */
+export const MAX_HISTORY_MESSAGES = 500;
+
+export const DEFAULT_HISTORY_MESSAGES = 20;
+
+const channelIdSchema = z.int().positive();
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -265,6 +319,43 @@ export const CONTROL_OPERATIONS = {
     params: z.strictObject({ name: agentNameSchema, change: agentEditSchema }),
     result: agentDetailsSchema,
   },
+  /** Every Channel, by ID. */
+  'channels.list': {
+    params: noParams,
+    result: z.object({ channels: z.array(channelViewSchema) }),
+  },
+  'channels.get': {
+    params: z.strictObject({ id: channelIdSchema }),
+    result: channelDetailsSchema,
+  },
+  /** Points a Channel at another enabled Agent and closes its Session. */
+  'channels.assign': {
+    params: z.strictObject({ id: channelIdSchema, agent: agentNameSchema }),
+    result: z.object({
+      channel: channelDetailsSchema,
+      alreadyAssigned: z.boolean(),
+    }),
+  },
+  /** A disabled Channel ignores messages and is not onboarded again. */
+  'channels.setEnabled': {
+    params: z.strictObject({ id: channelIdSchema, enabled: z.boolean() }),
+    result: channelDetailsSchema,
+  },
+  /** The Channel's latest messages, oldest first. */
+  'channels.history': {
+    params: z.strictObject({
+      id: channelIdSchema,
+      limit: z
+        .int()
+        .min(1)
+        .max(MAX_HISTORY_MESSAGES)
+        .default(DEFAULT_HISTORY_MESSAGES),
+    }),
+    result: z.object({
+      channel: channelViewSchema,
+      messages: z.array(historyMessageSchema),
+    }),
+  },
   /** Writes a backup of the data directory to an absolute path. */
   'backup.create': {
     params: z.strictObject({ file: z.string().min(1) }),
@@ -275,6 +366,11 @@ export const CONTROL_OPERATIONS = {
 export type ControlOperation = keyof typeof CONTROL_OPERATIONS;
 
 export type ControlParams<Op extends ControlOperation> = z.input<
+  (typeof CONTROL_OPERATIONS)[Op]['params']
+>;
+
+/** An operation's parameters once validated, with defaults filled in. */
+export type ParsedControlParams<Op extends ControlOperation> = z.output<
   (typeof CONTROL_OPERATIONS)[Op]['params']
 >;
 
