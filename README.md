@@ -90,6 +90,19 @@ Each Agent's tools run under one of two permission modes, copied from `default-p
 
 The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that an `ask` Agent's command is refused, and aborts a turn.
 
+### Codex Agents
+
+Codex Agents run Codex through the Codex SDK, which bundles its own Codex CLI, signed in with the ChatGPT sign-in of the account running Pero (`codex login`, or `codex login --device-auth` on a headless host). Pero never passes `OPENAI_API_KEY` or `CODEX_API_KEY` on and forces the ChatGPT sign-in, so neither an environment variable nor a stored API-key login can switch the owner to API billing. An Agent works in its folder like the Codex CLI does: the owner's `~/.codex/config.toml` and the folder's `AGENTS.md` apply, and the Agent's instructions are added as developer instructions. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.
+
+Codex works only in a Git repository. For a folder that is not one, such as a notes vault, run `git init` there, or set the Agent's `codex_skip_git_repo_check`; until then its turns are refused with that advice.
+
+Codex runs each turn without a way to ask the owner, so the permission modes map to its sandbox instead:
+
+- `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it).
+- `bypass`: no sandbox, like `codex --dangerously-bypass-approvals-and-sandbox`.
+
+The smoke test runs real turns as the current account: `PERO_SMOKE_CODEX=1 npm run test:smoke` (set `PERO_SMOKE_CODEX_MODEL` to change the model the resumed turn switches to, `gpt-5.5` by default). It creates a thread that writes a file, resumes it from another process with a different model and effort, checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, aborts a turn, and checks that a signed-out Codex is reported as such.
+
 The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 
 One daemon runs per data directory. It holds a lock on `run/pero.lock` for as long as it runs; a second daemon exits with `Pero is already running for <dir>`. The lock is released by the OS however the daemon ends, so a crashed or killed daemon never blocks the next start. Once ready, the daemon records its pid, version, and socket in `run/pero.json`; that file counts only while the socket answers with the same pid.

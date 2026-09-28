@@ -163,13 +163,13 @@ Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and 
 
 ### 2.7b Tool approvals in Telegram
 
-Answer the runtime request's approver from the Channel: post what the Agent wants to run with Allow and Deny buttons, which anyone in the allowed chat may press, and edit the message to show who answered. Extend the Channel contract with buttons, editing a sent message, and a handler for button presses, and have the Telegram adapter poll `callback_query`. A request not answered within 10 minutes, or whose turn is aborted or outlived by Pero, is denied, and a later press is told it expired. Workflow Runs have no approver.
+Answer the runtime request's approver from the Channel: post what the Agent wants to run with Allow and Deny buttons, which anyone in the allowed chat may press, and edit the message to show who answered. Extend the Channel contract with buttons, editing a sent message, and a handler for button presses, and have the Telegram adapter poll `callback_query`. A request not answered within 10 minutes, or whose turn is aborted or outlived by Pero, is denied, and a later press is told it expired. Workflow Runs have no approver, and neither do Codex Agents, whose `ask` mode is their sandbox (2.8).
 
 **Done when:** tests with the fake adapter and a mocked Bot API cover allow, deny, timeout, abort, a stale press, and a press from a chat that is not allowed, and a turn continues after an allow.
 
 ### 2.8 Codex runtime adapter
 
-Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
+Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders. Pass the Agent's instructions as Codex developer instructions. `codex exec` cannot ask the owner mid-turn, so map the permission modes to Codex's sandbox: `ask` writes and runs commands only in the Agent's folder without network access, and `bypass` runs unsandboxed.
 
 **Done when:** same coverage as 2.7, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
 

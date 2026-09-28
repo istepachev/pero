@@ -47,6 +47,8 @@ export interface ResolvedAgent {
   workingDirectory: string;
   instructions: string;
   toolPolicy: ToolPolicy;
+  /** Whether a Codex Agent may work in a folder outside a Git repository. */
+  codexSkipGitRepoCheck: boolean;
   enabled: boolean;
 }
 
@@ -214,6 +216,7 @@ async function resolveAgent(
     workingDirectory: effectiveWorkingDirectory(agent, settings),
     instructions: composeInstructions(agent, settings),
     toolPolicy: agent.toolPolicy,
+    codexSkipGitRepoCheck: agent.codexSkipGitRepoCheck,
     enabled: agent.enabled,
   };
 }
