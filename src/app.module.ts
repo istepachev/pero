@@ -10,6 +10,8 @@ import { ProvidersModule } from './providers/providers.module.js';
 import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
+import { TriggersModule } from './triggers/triggers.module.js';
+import { WorkflowsModule } from './workflows/workflows.module.js';
 
 export interface AppOptions {
   layout: DataDirLayout;
@@ -38,6 +40,8 @@ export class AppModule {
         SettingsModule,
         AgentsModule,
         ChannelsModule,
+        WorkflowsModule,
+        TriggersModule,
         TelegramModule.forRoot({
           secretsDir: options.layout.secrets,
           env,

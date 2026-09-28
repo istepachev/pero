@@ -37,6 +37,14 @@ const UNUSED_HANDLERS = {
   'channels.assign': unused,
   'channels.setEnabled': unused,
   'channels.history': unused,
+  'workflows.list': unused,
+  'workflows.get': unused,
+  'workflows.create': unused,
+  'workflows.edit': unused,
+  'triggers.list': unused,
+  'triggers.add': unused,
+  'triggers.remove': unused,
+  'triggers.setEnabled': unused,
 };
 
 const status: StatusResult = {

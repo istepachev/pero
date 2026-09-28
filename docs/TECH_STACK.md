@@ -12,7 +12,7 @@
 | First Channel integration | Telegram via grammY | Bot update handling and reply delivery; each topic of the owner's forum group is a Channel, as are its General topic and a direct chat with the bot. Slack and Discord can be added later as separate Channel adapters. |
 | Agent execution | `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` | Provider implementations behind an internal `AgentRuntime` contract. |
 | Persistence | TypeORM + `better-sqlite3` + SQLite WAL | One local database file for configuration, sessions, schedules, run state, and notifications. |
-| Scheduling | `@nestjs/schedule` plus a database-backed due-trigger poller | The package clocks the tick; SQLite holds the authoritative schedule. |
+| Scheduling | `@nestjs/schedule` plus a database-backed due-trigger poller; [croner](https://github.com/hexagon/croner) for cron expressions | The package clocks the tick; SQLite holds the authoritative schedule. croner validates five-field cron expressions and computes occurrences in a time zone, with no dependencies. |
 | Active work | Bounded in-process executor (`p-queue` or a small custom executor) | Controls concurrency without a Redis service; pending runs remain in SQLite. |
 | Validation | Zod | Parse configuration, webhook payloads, and flexible JSON fields at boundaries. |
 | Logging | Pino | Structured logs with correlation IDs and redaction. |

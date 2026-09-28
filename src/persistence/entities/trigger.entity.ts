@@ -8,12 +8,10 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
-import { oneOf } from './sql.js';
+import { oneOf, TRIGGER_KINDS, type TriggerKind } from './sql.js';
 import { Workflow } from './workflow.entity.js';
 
-export const TRIGGER_KINDS = ['schedule', 'manual'] as const;
-
-export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+export { TRIGGER_KINDS, type TriggerKind };
 
 /** A rule that starts a Workflow; removed along with its Workflow. */
 @Entity('triggers')

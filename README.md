@@ -104,6 +104,17 @@ npm run cli -- channels disable 3 --data-dir .pero        # ignore it, without o
 npm run cli -- channels history 3 -n 50 --data-dir .pero  # its latest messages
 ```
 
+### Workflows
+
+A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand. Runs and scheduling are still to come; for now the definitions are saved and checked:
+
+```sh
+npm run cli -- workflows create evening-review --agent coach --input "Review today's chats" --data-dir .pero
+npm run cli -- triggers add evening-review --cron "0 21 * * *" --data-dir .pero   # 21:00 in the timezone setting
+npm run cli -- workflows show evening-review --data-dir .pero                      # its Agent, input, and Triggers
+npm run cli -- workflows disable evening-review --data-dir .pero                   # keep it, and its Triggers, without running
+```
+
 ### Claude Agents
 
 Claude Agents run Claude Code through the Claude Agent SDK, signed in with the Claude Code sign-in of the account running Pero (`claude auth login`). Pero never passes `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on, so a key in the daemon's environment cannot switch the owner to API billing. An Agent works in its folder like Claude Code does: Claude Code's own system prompt with the Agent's instructions appended, and the owner's user, project, and local Claude Code settings, so the folder's `CLAUDE.md`, skills, and MCP servers apply. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.

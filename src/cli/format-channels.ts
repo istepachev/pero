@@ -145,7 +145,7 @@ function describeHistory(channel: ChannelDetails): string {
 }
 
 /** `2026-09-28 14:03` in the local time zone. */
-function localDateTime(date: Date): string {
+export function localDateTime(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   return (
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +

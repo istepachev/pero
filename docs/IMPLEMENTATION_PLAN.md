@@ -201,7 +201,7 @@ Add manual Triggers, Workflow Runs, and the bounded executor. Add schedule Trigg
 
 ### 3.1 Workflow and Trigger definitions
 
-Add Workflow and Trigger services and `pero workflows ls|show|create|edit|disable` and `pero triggers ls|add|remove|disable`, validating Agent references and trigger config with Zod. No execution yet.
+Add Workflow and Trigger services and `pero workflows ls|show|create|edit|disable|enable` and `pero triggers ls|add|remove|disable|enable`, validating Agent references and trigger config with Zod. Schedule Triggers take a cron expression, validated with `croner`, and an IANA time zone that defaults to the `timezone` setting; their next run is computed from 3.3. No execution yet.
 
 **Done when:** e2e tests cover creating, editing, and disabling definitions, and invalid references are rejected.
 

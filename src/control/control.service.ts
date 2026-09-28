@@ -13,6 +13,11 @@ import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { withoutUndefined } from '../common/without-undefined.js';
 import type { AgentCreate, AgentEdit } from '../config/agent-input.js';
+import type {
+  TriggerAdd,
+  WorkflowCreate,
+  WorkflowEdit,
+} from '../config/workflow-input.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import {
   type SettingsChange,
@@ -23,6 +28,9 @@ import { ProviderAuthService } from '../providers/provider-auth.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
+import { TriggersService } from '../triggers/triggers.service.js';
+import { WorkflowViews } from '../workflows/workflow-views.service.js';
+import { WorkflowsService } from '../workflows/workflows.service.js';
 import { ControlServer } from './control-server.js';
 import type {
   AgentDetails,
@@ -30,6 +38,8 @@ import type {
   ControlResult,
   SettingsView,
   StatusResult,
+  TriggerView,
+  WorkflowDetails,
 } from './protocol.js';
 
 export const CONTROL_LAYOUT = Symbol('CONTROL_LAYOUT');
@@ -59,6 +69,9 @@ export class ControlService implements OnModuleDestroy {
     private readonly agentViews: AgentViews,
     private readonly channels: ChannelsService,
     private readonly channelViews: ChannelViews,
+    private readonly workflows: WorkflowsService,
+    private readonly workflowViews: WorkflowViews,
+    private readonly triggers: TriggersService,
   ) {}
 
   /**
@@ -94,6 +107,19 @@ export class ControlService implements OnModuleDestroy {
           this.setChannelEnabled(id, enabled),
         'channels.history': ({ id, limit }) =>
           this.channelViews.history(id, limit),
+        'workflows.list': async () => ({
+          workflows: await this.workflowViews.list(),
+        }),
+        'workflows.get': ({ name }) => this.workflowViews.details(name),
+        'workflows.create': (input) => this.createWorkflow(input),
+        'workflows.edit': ({ name, change }) => this.editWorkflow(name, change),
+        'triggers.list': async ({ workflow }) => ({
+          triggers: await this.triggers.list(workflow),
+        }),
+        'triggers.add': (input) => this.addTrigger(input),
+        'triggers.remove': ({ id }) => this.removeTrigger(id),
+        'triggers.setEnabled': ({ id, enabled }) =>
+          this.setTriggerEnabled(id, enabled),
         'backup.create': ({ file }) => this.backup.create(file),
         'telegram.chats': () => this.telegramChats.list(),
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
@@ -201,6 +227,45 @@ export class ControlService implements OnModuleDestroy {
     await this.channels.setEnabled(id, enabled);
     this.logger.log(`Channel ${id} ${enabled ? 'enabled' : 'disabled'}`);
     return this.channelViews.details(id);
+  }
+
+  async createWorkflow(input: WorkflowCreate): Promise<WorkflowDetails> {
+    const workflow = await this.workflows.create(input);
+    this.logger.log(`Workflow ${workflow.name} created`);
+    return this.workflowViews.details(workflow.name);
+  }
+
+  /** Changes a Workflow; only the names of changed fields are logged. */
+  async editWorkflow(
+    name: string,
+    change: WorkflowEdit,
+  ): Promise<WorkflowDetails> {
+    const workflow = await this.workflows.edit(name, change);
+    const changed = Object.keys(withoutUndefined(change));
+    this.logger.log(
+      `Workflow ${workflow.name} changed: ${changed.join(', ') || 'nothing'}`,
+    );
+    return this.workflowViews.details(workflow.name);
+  }
+
+  async addTrigger(input: TriggerAdd): Promise<TriggerView> {
+    const trigger = await this.triggers.add(input);
+    this.logger.log(
+      `Trigger ${trigger.id} (${trigger.kind}) added to Workflow ${trigger.workflow}`,
+    );
+    return trigger;
+  }
+
+  async removeTrigger(id: number): Promise<TriggerView> {
+    const trigger = await this.triggers.remove(id);
+    this.logger.log(`Trigger ${id} removed from Workflow ${trigger.workflow}`);
+    return trigger;
+  }
+
+  async setTriggerEnabled(id: number, enabled: boolean): Promise<TriggerView> {
+    const trigger = await this.triggers.setEnabled(id, enabled);
+    this.logger.log(`Trigger ${id} ${enabled ? 'enabled' : 'disabled'}`);
+    return trigger;
   }
 
   async onModuleDestroy(): Promise<void> {

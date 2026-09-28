@@ -38,3 +38,13 @@ export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 export const MESSAGE_ORIGINS = ['user', 'agent', 'pero'] as const;
 
 export type MessageOrigin = (typeof MESSAGE_ORIGINS)[number];
+
+/** What starts a Workflow; `webhook` and `event` fit the same contract later. */
+export const TRIGGER_KINDS = ['schedule', 'manual'] as const;
+
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+
+/** `serial`: at most one active run per Workflow. */
+export const CONCURRENCY_POLICIES = ['serial'] as const;
+
+export type ConcurrencyPolicy = (typeof CONCURRENCY_POLICIES)[number];
