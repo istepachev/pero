@@ -71,6 +71,17 @@ export function describeTrigger(trigger: TriggerView): string {
 }
 
 /**
+ * `Trigger 3 of daily-brief (0 9 * * * Europe/Berlin), next run 2026-09-29
+ * 09:00`, for a schedule that has one.
+ */
+export function describeScheduledTrigger(trigger: TriggerView): string {
+  const described = describeTrigger(trigger);
+  return trigger.kind === 'schedule' && trigger.nextRunAt !== null
+    ? `${described}, next run ${localDateTime(new Date(trigger.nextRunAt))}`
+    : described;
+}
+
+/**
  * What a finished run leaves the owner: the Agent's answer, or why there
  * is none.
  */
@@ -122,9 +133,9 @@ function schedule(trigger: TriggerView): string {
 }
 
 function nextRun(trigger: TriggerView): string {
-  if (trigger.kind !== 'schedule') return '—';
+  if (trigger.kind !== 'schedule' || !trigger.enabled) return '—';
   return trigger.nextRunAt === null
-    ? 'not scheduled yet'
+    ? 'none'
     : localDateTime(new Date(trigger.nextRunAt));
 }
 

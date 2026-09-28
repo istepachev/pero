@@ -213,7 +213,7 @@ Add Workflow and Trigger services and `pero workflows ls|show|create|edit|disabl
 
 ### 3.3 Schedule calculation
 
-Add schedule Triggers (cron expression and IANA timezone) and a pure function that computes the next occurrence with an explicit daylight-saving policy.
+A pure function computes a schedule Trigger's next occurrence (cron expression and IANA timezone, added in 3.1) with an explicit daylight-saving policy: a local time the clocks skip runs the moment they jump, a repeated local time runs once at its first occurrence, and times that land on the same instant are one run. Adding or enabling a schedule sets `next_run_at` from now, disabling clears it, and startup fills it for enabled schedules that have none; a schedule no date matches is refused.
 
 **Done when:** unit tests cover time zones, DST gaps and overlaps, and month/year boundaries.
 

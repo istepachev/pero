@@ -1,6 +1,10 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import { CliError } from '../errors.js';
-import { describeTrigger, formatTriggerList } from '../format-workflows.js';
+import {
+  describeScheduledTrigger,
+  describeTrigger,
+  formatTriggerList,
+} from '../format-workflows.js';
 import { withOptionNames } from '../option-names.js';
 import { PeroCommand } from '../pero-command.js';
 import { positiveInt } from '../positive-int.js';
@@ -47,7 +51,7 @@ export class TriggersAddCommand extends PeroCommand {
       () => client.call('triggers.add', { workflow: workflow!, ...kind }),
       renameWorkflowFields,
     );
-    console.log(`Added ${describeTrigger(trigger)}.`);
+    console.log(`Added ${describeScheduledTrigger(trigger)}.`);
   }
 
   @Option({
@@ -126,7 +130,7 @@ export class TriggersEnableCommand extends PeroCommand {
       id,
       enabled: true,
     });
-    console.log(`Enabled ${describeTrigger(view)}.`);
+    console.log(`Enabled ${describeScheduledTrigger(view)}.`);
   }
 }
 

@@ -835,7 +835,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       await triggers('add', 'evening-review', '--cron', '0 21 * * *'),
     ).toMatchObject({
       code: 0,
-      stdout: 'Added Trigger 1 of evening-review (0 21 * * * Europe/Berlin).\n',
+      stdout: expect.stringMatching(
+        /^Added Trigger 1 of evening-review \(0 21 \* \* \* Europe\/Berlin\), next run \d{4}-\d\d-\d\d \d\d:\d\d\.\n$/,
+      ),
     });
     expect(await triggers('add', 'evening-review', '--manual')).toMatchObject({
       code: 0,
@@ -844,12 +846,16 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     expect(await triggers()).toMatchObject({
       code: 0,
-      stdout: [
-        'ID  WORKFLOW        SCHEDULE                  NEXT RUN           STATE',
-        '1   evening-review  0 21 * * * Europe/Berlin  not scheduled yet  enabled',
-        '2   evening-review  manual                    —                  enabled',
-        '',
-      ].join('\n'),
+      stdout: expect.stringMatching(
+        new RegExp(
+          [
+            'ID  WORKFLOW        SCHEDULE                  NEXT RUN          STATE',
+            '1   evening-review  0 21 \\* \\* \\* Europe/Berlin  \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d  enabled',
+            '2   evening-review  manual                    —                 enabled',
+            '',
+          ].join('\n'),
+        ),
+      ),
     });
     expect(await triggers('disable', '1')).toMatchObject({
       code: 0,
@@ -902,8 +908,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
         '',
         'Triggers',
-        '  ID  SCHEDULE                  NEXT RUN           STATE',
-        '  1   0 21 * * * Europe/Berlin  not scheduled yet  disabled',
+        '  ID  SCHEDULE                  NEXT RUN  STATE',
+        '  1   0 21 * * * Europe/Berlin  —         disabled',
         '',
       ].join('\n'),
     });
