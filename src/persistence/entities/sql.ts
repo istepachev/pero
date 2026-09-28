@@ -48,3 +48,18 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 export const CONCURRENCY_POLICIES = ['serial'] as const;
 
 export type ConcurrencyPolicy = (typeof CONCURRENCY_POLICIES)[number];
+
+/**
+ * Where a Workflow Run stands: `pending` until the executor claims it,
+ * `running` while its Agent works, then how it ended.
+ */
+export const RUN_STATUSES = [
+  'pending',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+] as const;
+
+export type RunStatus = (typeof RUN_STATUSES)[number];

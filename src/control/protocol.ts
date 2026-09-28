@@ -19,6 +19,7 @@ import {
   INTEGRATION_KINDS,
   MESSAGE_DIRECTIONS,
   MESSAGE_ORIGINS,
+  RUN_STATUSES,
   TRIGGER_KINDS,
 } from '../persistence/entities/sql.js';
 
@@ -329,6 +330,37 @@ export type WorkflowDetails = z.infer<typeof workflowDetailsSchema>;
 
 const triggerIdSchema = z.int().positive();
 
+/** Statuses a Workflow Run does not leave. */
+export const FINISHED_RUN_STATUSES = [
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+] as const satisfies readonly (typeof RUN_STATUSES)[number][];
+
+/** One execution of a Workflow. */
+export const runViewSchema = z.object({
+  id: z.int(),
+  /** The name of the Workflow it runs. */
+  workflow: z.string(),
+  /** The Trigger that started it; null once that Trigger is removed. */
+  triggerId: z.int().nullable(),
+  triggerKey: z.string(),
+  status: z.enum(RUN_STATUSES),
+  attempt: z.int(),
+  createdAt: z.iso.datetime(),
+  startedAt: z.iso.datetime().nullable(),
+  finishedAt: z.iso.datetime().nullable(),
+  /** What the Agent answered; null until it completes. */
+  result: z.string().nullable(),
+  /** Why it did not complete; null otherwise. */
+  error: z.string().nullable(),
+});
+
+export type RunView = z.infer<typeof runViewSchema>;
+
+const runIdSchema = z.int().positive();
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -430,6 +462,18 @@ export const CONTROL_OPERATIONS = {
       change: workflowEditSchema,
     }),
     result: workflowDetailsSchema,
+  },
+  /**
+   * Queues a run of a Workflow through its manual Trigger; the executor
+   * starts it once a slot is free.
+   */
+  'workflows.run': {
+    params: z.strictObject({ name: workflowReferenceSchema }),
+    result: runViewSchema,
+  },
+  'runs.get': {
+    params: z.strictObject({ id: runIdSchema }),
+    result: runViewSchema,
   },
   /** Every Trigger, or one Workflow's, by ID. */
   'triggers.list': {

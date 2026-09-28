@@ -29,6 +29,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { TriggersService } from '../triggers/triggers.service.js';
+import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
 import { WorkflowViews } from '../workflows/workflow-views.service.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
 import { ControlServer } from './control-server.js';
@@ -71,6 +72,7 @@ export class ControlService implements OnModuleDestroy {
     private readonly channelViews: ChannelViews,
     private readonly workflows: WorkflowsService,
     private readonly workflowViews: WorkflowViews,
+    private readonly workflowRuns: WorkflowRuns,
     private readonly triggers: TriggersService,
   ) {}
 
@@ -113,6 +115,8 @@ export class ControlService implements OnModuleDestroy {
         'workflows.get': ({ name }) => this.workflowViews.details(name),
         'workflows.create': (input) => this.createWorkflow(input),
         'workflows.edit': ({ name, change }) => this.editWorkflow(name, change),
+        'workflows.run': ({ name }) => this.workflowRuns.start(name),
+        'runs.get': ({ id }) => this.workflowRuns.get(id),
         'triggers.list': async ({ workflow }) => ({
           triggers: await this.triggers.list(workflow),
         }),

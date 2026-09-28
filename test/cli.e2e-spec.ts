@@ -916,6 +916,51 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
+  it("runs a Workflow by hand and prints the Agent's answer", async () => {
+    const run = await pero(withDataDir('run'), {
+      env: { PERO_FAKE_RUNTIME: 'echo' },
+    });
+    expect(run.code).toBe(0);
+    const vault = join(tmp, 'vault');
+    mkdirSync(vault);
+    await pero(
+      withDataDir('settings', 'set', 'default-working-directory', vault),
+    );
+    await pero(withDataDir('agents', 'create', 'coach'));
+    await pero(
+      withDataDir(
+        'workflows',
+        'create',
+        'brief',
+        '--agent',
+        'coach',
+        '--input',
+        'Summarize the day.',
+      ),
+    );
+    const workflows = (...args: string[]) =>
+      pero(withDataDir('workflows', ...args));
+
+    expect(await workflows('run', 'brief')).toMatchObject({
+      code: 1,
+      stdout: '',
+      stderr:
+        'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual\n',
+    });
+    await pero(withDataDir('triggers', 'add', 'brief', '--manual'));
+
+    expect(await workflows('run', 'brief')).toEqual({
+      code: 0,
+      stdout: 'echo: Summarize the day.\n',
+      stderr: 'Queued run 1 of Workflow brief…\n',
+    });
+    expect(await workflows('run', 'brief', '--no-wait')).toEqual({
+      code: 0,
+      stdout: 'Queued run 2 of Workflow brief; it runs in the background.\n',
+      stderr: '',
+    });
+  });
+
   it('takes the token from PERO_TELEGRAM_BOT_TOKEN in the daemon environment', async () => {
     const run = await pero(withDataDir('run'), {
       env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },

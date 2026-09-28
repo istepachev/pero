@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
+import { AgentsModule } from '../agents/agents.module.js';
+import { WorkflowExecutor } from './workflow-executor.js';
+import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowViews } from './workflow-views.service.js';
 import { WorkflowsService } from './workflows.service.js';
 
-/** Workflow definitions; runs and the runner arrive with execution. */
+/** Workflow definitions, their runs, and the executor that runs them. */
 @Module({
-  providers: [WorkflowsService, WorkflowViews],
-  exports: [WorkflowsService, WorkflowViews],
+  imports: [AgentsModule],
+  providers: [WorkflowsService, WorkflowViews, WorkflowRuns, WorkflowExecutor],
+  exports: [WorkflowsService, WorkflowViews, WorkflowRuns, WorkflowExecutor],
 })
 export class WorkflowsModule {}
