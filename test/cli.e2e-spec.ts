@@ -126,14 +126,17 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   }
 
-  /** `pero status` once it shows the bot connected to the fake Bot API. */
+  /**
+   * `pero status` once it shows the bot connected to the fake Bot API;
+   * degraded while no chat is allowed.
+   */
   async function connectedStatus(root = layout.root): Promise<Result> {
     let status: Result | undefined;
     await vi.waitFor(
       async () => {
         status = await pero(['--data-dir', root, 'status']);
         expect(status.stdout).toMatch(
-          /telegram +ok +Connected as @pero_test_bot\n/,
+          /telegram +(ok|degraded) +Connected as @pero_test_bot(\n|; no chat is allowed yet)/,
         );
       },
       { timeout: 10_000, interval: 200 },
@@ -236,6 +239,76 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       readFileSync(layout.daemonOutputFile, 'utf8'),
     ];
     for (const text of seen) expect(text).not.toContain(TOKEN.split(':')[1]);
+  });
+
+  it('allows, lists, and denies Telegram chats', async () => {
+    api.chats.set('-1001234567890', {
+      id: -1001234567890,
+      type: 'supergroup',
+      title: 'Household',
+      is_forum: true,
+    });
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
+      input: `${TOKEN}\n`,
+    });
+    const before = await connectedStatus();
+    expect(before.stdout).toMatch(
+      /telegram +degraded +Connected as @pero_test_bot; no chat is allowed yet: add the bot to a group or message it, then pero telegram allow <chat-id>\n/,
+    );
+    const run = await pero(withDataDir('run'));
+    expect(run.stdout).toContain(
+      '  Telegram: no chat is allowed yet — add the bot to a group as an administrator or message it, then pero telegram allow <chat-id>',
+    );
+    expect((await pero(withDataDir('telegram'))).stdout).toContain(
+      'No chat is allowed yet. To pair one:',
+    );
+
+    // A group's ID is negative, which must not pass for an option.
+    const allow = await pero(
+      withDataDir('telegram', 'allow', '-1001234567890'),
+    );
+    expect(allow).toMatchObject({ code: 0, stderr: '' });
+    expect(allow.stdout).toBe('Allowed: group "Household" (-1001234567890)\n');
+    const again = await pero([
+      'telegram',
+      'allow',
+      '-1001234567890',
+      '--data-dir',
+      layout.root,
+    ]);
+    expect(again.stdout).toBe(
+      'Already allowed: group "Household" (-1001234567890)\n',
+    );
+    const chats = await pero(withDataDir('telegram', 'chats'));
+    expect(chats).toMatchObject({ code: 0, stderr: '' });
+    expect(chats.stdout).toMatch(/^Bot: @pero_test_bot$/m);
+    expect(chats.stdout).toMatch(
+      /^ {2}-1001234567890 +group +Household +on +administrator$/m,
+    );
+    const status = await pero(withDataDir('status'));
+    expect(status.stdout).toMatch(
+      /telegram +ok +Connected as @pero_test_bot\n/,
+    );
+
+    const deny = await pero(withDataDir('telegram', 'deny', '-1001234567890'));
+    expect(deny).toMatchObject({
+      code: 0,
+      stdout:
+        'Denied: group "Household" (-1001234567890). Its Channels and Agents are kept and resume if you allow it again.\n',
+    });
+    const missing = await pero(
+      withDataDir('telegram', 'deny', '-1001234567890'),
+    );
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain(
+      'Telegram chat -1001234567890 is not allowed',
+    );
+    const invalid = await pero(withDataDir('telegram', 'allow', 'general'));
+    expect(invalid.code).toBe(1);
+    expect(invalid.stderr).toContain(
+      'chat-id: must be a Telegram chat ID, such as -1001234567890 or 123456789',
+    );
   });
 
   it('refuses a token as an argument, and one that is not valid, without echoing either', async () => {
@@ -348,7 +421,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },
     });
     expect(run.code).toBe(0);
-    expect(run.stdout).not.toContain('Telegram');
+    // The token is fine; only a chat to serve is missing.
+    expect(run.stdout).not.toMatch(/Telegram: .*(token|TOKEN)/);
 
     await connectedStatus();
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
@@ -388,6 +462,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
       input: TOKEN,
     });
+    await pero(withDataDir('telegram', 'allow', '1234'));
 
     const again = await pero(withDataDir('run'));
     expect(again).toMatchObject({
@@ -728,7 +803,14 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
-    for (const command of ['status', 'ping', 'logs', 'settings', 'stop']) {
+    for (const command of [
+      'status',
+      'ping',
+      'logs',
+      'settings',
+      'telegram',
+      'stop',
+    ]) {
       const result = await pero(withDataDir(command), { nodeArgs });
       expect(result, command).toMatchObject({ code: 0, stderr: '' });
     }

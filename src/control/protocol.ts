@@ -5,6 +5,7 @@ import {
   providerDefaultsSchema,
 } from '../config/provider-options.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
+import { CHAT_KINDS } from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -87,6 +88,60 @@ export const backupResultSchema = z.object({
 
 export type BackupResult = z.infer<typeof backupResultSchema>;
 
+/** A Telegram chat ID: negative for a group, the user's ID for a direct chat. */
+export const telegramChatIdSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^-?\d{1,20}$/,
+    'must be a Telegram chat ID, such as -1001234567890 or 123456789',
+  );
+
+export const BOT_MEMBERSHIPS = [
+  'administrator',
+  'member',
+  'left',
+  'unknown',
+] as const;
+
+/** A chat Pero serves, with the bot's standing there as last checked. */
+export const allowedChatSchema = z.object({
+  chatId: z.string(),
+  kind: z.enum(CHAT_KINDS),
+  title: z.string().nullable(),
+  /** The bot's membership in a group; null for a direct chat or unchecked. */
+  bot: z.enum(BOT_MEMBERSHIPS).nullable(),
+  /** Whether a group has topics; null for a direct chat or unknown. */
+  topics: z.boolean().nullable(),
+  /** Why the bot cannot see every message there; null when it can. */
+  problem: z.string().nullable(),
+  allowedAt: z.iso.datetime(),
+});
+
+export type AllowedChatView = z.infer<typeof allowedChatSchema>;
+
+/** A chat that is not allowed and has tried to reach Pero. */
+export const pairingRequestSchema = z.object({
+  chatId: z.string(),
+  kind: z.enum(CHAT_KINDS),
+  title: z.string().nullable(),
+  firstSeenAt: z.iso.datetime(),
+  lastSeenAt: z.iso.datetime(),
+});
+
+export type PairingRequestView = z.infer<typeof pairingRequestSchema>;
+
+export const telegramChatsSchema = z.object({
+  /** The bot's username while connected; null otherwise. */
+  bot: z.string().nullable(),
+  /** Oldest first. */
+  allowed: z.array(allowedChatSchema),
+  /** Chats that asked to pair since the daemon started, latest first. */
+  pairing: z.array(pairingRequestSchema),
+});
+
+export type TelegramChats = z.infer<typeof telegramChatsSchema>;
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -102,6 +157,20 @@ export const CONTROL_OPERATIONS = {
   },
   /** Checks each provider's sign-in again, then reports status. */
   'providers.check': { params: noParams, result: statusResultSchema },
+  /** Allowed Telegram chats and the chats that recently asked to pair. */
+  'telegram.chats': { params: noParams, result: telegramChatsSchema },
+  'telegram.allow': {
+    params: z.strictObject({ chatId: telegramChatIdSchema }),
+    result: z.object({
+      chat: allowedChatSchema,
+      alreadyAllowed: z.boolean(),
+    }),
+  },
+  /** Keeps the chat's Channels and Agents for when it is allowed again. */
+  'telegram.deny': {
+    params: z.strictObject({ chatId: telegramChatIdSchema }),
+    result: z.object({ chat: allowedChatSchema }),
+  },
   /** Writes a backup of the data directory to an absolute path. */
   'backup.create': {
     params: z.strictObject({ file: z.string().min(1) }),

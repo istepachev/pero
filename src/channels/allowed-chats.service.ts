@@ -48,6 +48,30 @@ export class AllowedChatsService {
     });
   }
 
+  /**
+   * Removes a chat from the allowlist and returns what it was; null when it
+   * was not allowed. Its Channels, Agents, Sessions, and history stay, so
+   * allowing it again picks up where it left off.
+   */
+  deny(
+    integrationKind: IntegrationKind,
+    chatKey: string,
+  ): Promise<AllowedChat | null> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const repo = manager.getRepository(AllowedChat);
+      const existing = await repo.findOneBy({ integrationKind, chatKey });
+      if (existing !== null) await repo.delete(existing.id);
+      return existing;
+    });
+  }
+
+  /** How many chats the integration serves. */
+  count(integrationKind: IntegrationKind): Promise<number> {
+    return this.dataSource
+      .getRepository(AllowedChat)
+      .countBy({ integrationKind });
+  }
+
   /** Records the chat's current name when it differs from the stored one. */
   async refreshTitle(chat: AllowedChat, title: string | null): Promise<void> {
     if (title === null || title === chat.title) return;

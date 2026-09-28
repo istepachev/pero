@@ -1,9 +1,18 @@
 /** The questions a command may ask on a terminal. */
 export interface Prompts {
-  /** A line of text; `initial` is prefilled for editing. */
-  input(options: { message: string; initial?: string }): Promise<string>;
+  /**
+   * A line of text; `initial` is prefilled for editing. Aborting `signal`
+   * closes the prompt with an error `isPromptAbort` recognizes.
+   */
+  input(options: {
+    message: string;
+    initial?: string;
+    signal?: AbortSignal;
+  }): Promise<string>;
   /** A line of text that is not shown as it is typed. */
   password(options: { message: string }): Promise<string>;
+  /** A yes or no question; `initial` is the answer Enter gives. */
+  confirm(options: { message: string; initial?: boolean }): Promise<boolean>;
 }
 
 /** Whether both ends are a terminal, so a command may ask questions. */
@@ -15,20 +24,33 @@ export function isInteractive(): boolean {
 export async function terminalPrompts(): Promise<Prompts> {
   const inquirer = await import('@inquirer/prompts');
   return {
-    input: ({ message, initial }) =>
-      inquirer.input({
-        message,
-        ...(initial === undefined
-          ? {}
-          : { default: initial, prefill: 'editable' as const }),
-      }),
+    input: ({ message, initial, signal }) =>
+      inquirer.input(
+        {
+          message,
+          ...(initial === undefined
+            ? {}
+            : { default: initial, prefill: 'editable' as const }),
+        },
+        signal === undefined ? {} : { signal },
+      ),
     password: ({ message }) => inquirer.password({ message }),
+    confirm: ({ message, initial }) =>
+      inquirer.confirm({
+        message,
+        ...(initial === undefined ? {} : { default: initial }),
+      }),
   };
 }
 
 /** The owner closed a prompt with Ctrl-C or Ctrl-D. */
 export function isPromptExit(error: unknown): boolean {
   return error instanceof Error && error.name === 'ExitPromptError';
+}
+
+/** A prompt closed because its `signal` was aborted, not by the owner. */
+export function isPromptAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortPromptError';
 }
 
 /** All of standard input, without its final line break. */

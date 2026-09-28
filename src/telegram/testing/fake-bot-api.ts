@@ -5,7 +5,7 @@ import {
   type ServerResponse,
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Update, UserFromGetMe } from 'grammy/types';
+import type { Chat, Update, UserFromGetMe } from 'grammy/types';
 
 /** One call the fake received. */
 export interface FakeBotApiCall {
@@ -58,6 +58,8 @@ export class FakeBotApi {
   readonly memberStatus = new Map<string, string>();
   /** Chats that became supergroups: sending there names the new ID. */
   readonly migrated = new Map<string, number>();
+  /** What `getChat` answers, by chat ID; any other chat is not found. */
+  readonly chats = new Map<string, Chat>();
 
   private server: Server | null = null;
   private readonly updates: Update[] = [];
@@ -163,6 +165,8 @@ export class FakeBotApi {
             this.memberStatus.get(String(payload.chat_id)) ?? 'administrator',
           user: this.me,
         });
+      case 'getChat':
+        return this.getChat(res, payload);
       case 'sendMessage':
         return this.sendMessage(res, payload);
       default:
@@ -171,6 +175,21 @@ export class FakeBotApi {
           description: `Not Found: method ${method} not faked`,
         });
     }
+  }
+
+  private getChat(res: ServerResponse, payload: Record<string, unknown>) {
+    const chat = this.chats.get(String(payload.chat_id));
+    if (chat === undefined) {
+      return this.fail(res, {
+        error_code: 400,
+        description: 'Bad Request: chat not found',
+      });
+    }
+    return this.ok(res, {
+      ...chat,
+      accent_color_id: 0,
+      max_reaction_count: 11,
+    });
   }
 
   private sendMessage(res: ServerResponse, payload: Record<string, unknown>) {

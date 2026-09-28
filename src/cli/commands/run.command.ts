@@ -5,7 +5,11 @@ import { ControlError } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
 import { isInteractive, isPromptExit, terminalPrompts } from '../prompts.js';
-import { formatPendingSetup, pendingSetup } from '../setup/pending-setup.js';
+import {
+  fetchTelegramChats,
+  formatPendingSetup,
+  pendingSetup,
+} from '../setup/pending-setup.js';
 import { startDetachedDaemon } from '../start-daemon.js';
 
 /** Provider CLIs may take a while to report their sign-in. */
@@ -62,7 +66,8 @@ export class RunCommand extends PeroCommand {
       return;
     }
 
-    const pending = pendingSetup(state.status, state.settings);
+    const chats = await fetchTelegramChats(client);
+    const pending = pendingSetup(state.status, state.settings, chats);
     if (pending.length === 0) return;
     if (!isInteractive()) {
       console.log(formatPendingSetup(pending));

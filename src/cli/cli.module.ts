@@ -12,6 +12,12 @@ import {
 } from './commands/settings.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
+import {
+  TelegramAllowCommand,
+  TelegramChatsCommand,
+  TelegramCommand,
+  TelegramDenyCommand,
+} from './commands/telegram.command.js';
 import { GlobalOptionsSetup } from './global-options.js';
 
 /**
@@ -29,6 +35,10 @@ import { GlobalOptionsSetup } from './global-options.js';
     SettingsShowCommand,
     SettingsSetCommand,
     SettingsUnsetCommand,
+    TelegramCommand,
+    TelegramChatsCommand,
+    TelegramAllowCommand,
+    TelegramDenyCommand,
     BackupCommand,
     RestoreCommand,
     PingCommand,

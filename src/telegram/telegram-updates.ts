@@ -5,6 +5,7 @@ import type {
   InboundChat,
   InboundMessage,
 } from '../channels/channel-adapter.js';
+import type { ChatKind } from '../persistence/entities/sql.js';
 
 /*
  * Telegram updates as the Channel contract's shapes. Pure, so every rule
@@ -148,18 +149,34 @@ function fromPerson(message: Message): boolean {
 /** The chat, or null for a Telegram channel, which Pero does not serve. */
 function toChat(chat: Chat): InboundChat | null {
   const key = String(chat.id);
-  const address = { chatId: key };
+  const described = describeChat(chat);
+  return described && { key, ...described, address: { chatId: key } };
+}
+
+/** The fields of a Telegram chat, or of `getChat`'s answer, Pero keeps. */
+interface ChatFields {
+  type: string;
+  title?: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+/**
+ * A chat's kind and title: a person's name for a direct chat. Null for a
+ * Telegram channel, which Pero does not serve.
+ */
+export function describeChat(
+  chat: ChatFields,
+): { kind: ChatKind; title: string | null } | null {
   switch (chat.type) {
     case 'private':
       return {
-        key,
         kind: 'private',
         title: [chat.first_name, chat.last_name].filter(Boolean).join(' '),
-        address,
       };
     case 'group':
     case 'supergroup':
-      return { key, kind: 'group', title: chat.title, address };
+      return { kind: 'group', title: chat.title ?? null };
     default:
       return null;
   }

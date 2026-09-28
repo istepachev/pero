@@ -1,6 +1,13 @@
 import { PROVIDERS } from '../../config/provider-options.js';
 import { TELEGRAM_TOKEN_ENV } from '../../config/settings-input.js';
-import type { SettingsView, StatusResult } from '../../control/protocol.js';
+import type { ControlClient } from '../../control/client.js';
+import {
+  ControlError,
+  type SettingsView,
+  type StatusResult,
+  type TelegramChats,
+} from '../../control/protocol.js';
+import { describe } from '../format-telegram-chats.js';
 
 /** Something the owner still has to set up, and how. */
 export interface PendingSetup {
@@ -11,12 +18,14 @@ export interface PendingSetup {
 
 /**
  * What stands between the daemon and a working installation: the default
- * working directory, the Telegram bot token, and sign-in for each provider
- * in use. Providers no Agent uses are left out.
+ * working directory, the Telegram bot token, a Telegram chat to serve, and
+ * sign-in for each provider in use. Providers no Agent uses are left out.
+ * Without `chats`, as from a daemon too old to list them, the chat is too.
  */
 export function pendingSetup(
   status: StatusResult,
   settings: SettingsView,
+  chats: TelegramChats | null = null,
 ): PendingSetup[] {
   const pending: PendingSetup[] = [];
   if (settings.defaultWorkingDirectory === null) {
@@ -43,6 +52,15 @@ export function pendingSetup(
           ? `Telegram: ${telegram.detail} — start Pero with a valid ${TELEGRAM_TOKEN_ENV}`
           : `Telegram: ${telegram.detail ?? 'not set up'} — pero settings set telegram-bot-token (reads it from stdin), or start Pero with ${TELEGRAM_TOKEN_ENV}`,
     });
+  } else if (telegram && chats !== null && chats.allowed.length === 0) {
+    const request = chats.pairing[0];
+    pending.push({
+      name: 'telegram-chat',
+      message:
+        request === undefined
+          ? 'Telegram: no chat is allowed yet — add the bot to a group as an administrator or message it, then pero telegram allow <chat-id>'
+          : `Telegram: no chat is allowed yet — pero telegram allow ${request.chatId} allows the ${describe(request)} that asked to pair`,
+    });
   }
 
   for (const provider of PROVIDERS) {
@@ -66,4 +84,18 @@ export function formatPendingSetup(
     ...pending.map((item) => `  ${item.message}`),
     hint,
   ].join('\n');
+}
+
+/** The daemon's Telegram chats; null when it is too old to list them. */
+export async function fetchTelegramChats(
+  client: ControlClient,
+): Promise<TelegramChats | null> {
+  try {
+    return await client.call('telegram.chats');
+  } catch (error) {
+    if (error instanceof ControlError && error.code === 'unknown_operation') {
+      return null;
+    }
+    throw error;
+  }
 }

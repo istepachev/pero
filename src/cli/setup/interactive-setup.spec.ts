@@ -13,9 +13,11 @@ import { settingsChangeSchema } from '../../config/settings-input.js';
 import { validateWorkingDirectory } from '../../config/working-directory.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
+  AllowedChatView,
   ComponentStatus,
   SettingsView,
   StatusResult,
+  TelegramChats,
 } from '../../control/protocol.js';
 import type { Prompts } from '../prompts.js';
 import { runInteractiveSetup, type SetupState } from './interactive-setup.js';
@@ -40,6 +42,14 @@ class FakeDaemon {
   };
   signedIn = new Set<string>();
   checks = 0;
+  telegram: TelegramChats = {
+    bot: 'pero_test_bot',
+    allowed: [allowedChat('1234', 'private', 'Ada')],
+    pairing: [],
+  };
+  /** Called before each answer to `telegram.chats`, with its count. */
+  onChatsPoll: (poll: number) => void = () => undefined;
+  private chatsPolls = 0;
 
   status(): StatusResult {
     const provider = (name: string, required: boolean): ComponentStatus => ({
@@ -85,6 +95,25 @@ class FakeDaemon {
         this.checks += 1;
         return this.status();
       }
+      if (op === 'telegram.chats') {
+        this.onChatsPoll(++this.chatsPolls);
+        return this.telegram;
+      }
+      if (op === 'telegram.allow') {
+        const { chatId } = params as { chatId: string };
+        const request = this.telegram.pairing.find((r) => r.chatId === chatId);
+        const chat = allowedChat(
+          chatId,
+          request?.kind ?? 'group',
+          request?.title ?? null,
+        );
+        this.telegram = {
+          ...this.telegram,
+          allowed: [...this.telegram.allowed, chat],
+          pairing: this.telegram.pairing.filter((r) => r.chatId !== chatId),
+        };
+        return { chat, alreadyAllowed: false };
+      }
       if (op !== 'settings.update') throw new Error(`unexpected ${op}`);
       const change = parseInput(settingsChangeSchema, params);
       if (change.defaultWorkingDirectory !== undefined) {
@@ -106,10 +135,33 @@ class FakeDaemon {
   } as unknown as ControlClient;
 }
 
+function allowedChat(
+  chatId: string,
+  kind: AllowedChatView['kind'],
+  title: string | null,
+): AllowedChatView {
+  return {
+    chatId,
+    kind,
+    title,
+    bot: kind === 'group' ? 'administrator' : null,
+    topics: kind === 'group' ? true : null,
+    problem: null,
+    allowedAt: since,
+  };
+}
+
+/** An answer that leaves the prompt open until its signal aborts it. */
+const WAIT = Symbol('wait');
+
 /** Answers prompts in order and records what was asked. */
-function scripted(answers: string[]) {
+function scripted(answers: (string | boolean | typeof WAIT)[]) {
   const asked: string[] = [];
-  const next = (message: string, initial?: string) => {
+  const next = <T>(
+    message: string,
+    initial?: string,
+    signal?: AbortSignal,
+  ): Promise<T> => {
     asked.push(initial === undefined ? message : `${message} [${initial}]`);
     const answer = answers.shift();
     if (answer === undefined) {
@@ -117,11 +169,22 @@ function scripted(answers: string[]) {
         Object.assign(new Error('closed'), { name: 'ExitPromptError' }),
       );
     }
-    return Promise.resolve(answer);
+    if (answer === WAIT) {
+      return new Promise((_, reject) => {
+        const abort = () =>
+          reject(
+            Object.assign(new Error('aborted'), { name: 'AbortPromptError' }),
+          );
+        if (signal?.aborted) abort();
+        signal?.addEventListener('abort', abort);
+      });
+    }
+    return Promise.resolve(answer as T);
   };
   const prompts: Prompts = {
-    input: ({ message, initial }) => next(message, initial),
+    input: ({ message, initial, signal }) => next(message, initial, signal),
     password: ({ message }) => next(`${message} (hidden)`),
+    confirm: ({ message }) => next(`${message} (y/n)`),
   };
   return { prompts, asked };
 }
@@ -144,7 +207,7 @@ describe('runInteractiveSetup', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  function run(answers: string[], cwd = home) {
+  function run(answers: (string | boolean | typeof WAIT)[], cwd = home) {
     const { prompts, asked } = scripted(answers);
     const done = runInteractiveSetup(
       {
@@ -153,6 +216,7 @@ describe('runInteractiveSetup', () => {
         cwd,
         home,
         print: (text) => printed.push(text),
+        pollIntervalMs: 5,
       },
       daemon.state(),
     );
@@ -260,5 +324,102 @@ describe('runInteractiveSetup', () => {
     expect(daemon.settings.defaultWorkingDirectory).toBe(
       join(home, 'workspace'),
     );
+  });
+
+  describe('pairing a Telegram chat', () => {
+    const WAITING = 'Waiting for a message to @pero_test_bot (Enter to skip)';
+
+    beforeEach(() => {
+      daemon.settings = {
+        ...daemon.settings,
+        defaultWorkingDirectory: home,
+        telegramBotToken: { set: true, source: 'secrets' },
+      };
+      daemon.signedIn.add('claude');
+      daemon.telegram = { bot: null, allowed: [], pairing: [] };
+    });
+
+    function askToPair(poll: number, chatId: string, title: string) {
+      daemon.onChatsPoll = (n) => {
+        if (n === 2)
+          daemon.telegram = { ...daemon.telegram, bot: 'pero_test_bot' };
+        if (n !== poll) return;
+        daemon.telegram = {
+          ...daemon.telegram,
+          pairing: [
+            {
+              chatId,
+              kind: chatId.startsWith('-') ? 'group' : 'private',
+              title,
+              firstSeenAt: since,
+              lastSeenAt: since,
+            },
+          ],
+        };
+      };
+    }
+
+    it('offers a chat that messages the bot during setup, and allows it', async () => {
+      askToPair(5, '1234', 'Ada');
+
+      const { done, asked } = run([WAIT, true]);
+      await done;
+
+      expect(asked).toEqual([WAITING, 'Allow direct chat "Ada" (1234)? (y/n)']);
+      expect(printed).toContain('Waiting for Telegram…');
+      expect(printed).toContain('Allowed: direct chat "Ada" (1234)');
+      expect(daemon.telegram.allowed.map((chat) => chat.chatId)).toEqual([
+        '1234',
+      ]);
+      expect(printed.at(-1)).toBe('Setup complete');
+    });
+
+    it('keeps waiting after a declined chat, and skips on Enter', async () => {
+      askToPair(3, '-100555', 'Strangers');
+
+      const { done, asked } = run([false, '']);
+      await done;
+
+      expect(asked).toEqual([
+        'Allow group "Strangers" (-100555)? (y/n)',
+        WAITING,
+      ]);
+      expect(daemon.telegram.allowed).toEqual([]);
+      expect(printed.join('\n')).toContain('Skipped; the bot tells a chat');
+      expect(printed.at(-1)).toContain('pero telegram allow -100555');
+    });
+
+    it('stops waiting when a chat is allowed some other way', async () => {
+      daemon.onChatsPoll = (n) => {
+        if (n === 2)
+          daemon.telegram = { ...daemon.telegram, bot: 'pero_test_bot' };
+        if (n === 4) {
+          daemon.telegram = {
+            ...daemon.telegram,
+            allowed: [allowedChat('-100777', 'group', 'Home')],
+          };
+        }
+      };
+
+      const { done, asked } = run([WAIT]);
+      await done;
+
+      expect(asked).toEqual([WAITING]);
+      expect(printed.at(-1)).toBe('Setup complete');
+    });
+
+    it('skips pairing while a chat is allowed', async () => {
+      daemon.telegram = {
+        bot: 'pero_test_bot',
+        allowed: [allowedChat('1234', 'private', 'Ada')],
+        pairing: [],
+      };
+
+      const { done, asked } = run([]);
+      await done;
+
+      expect(asked).toEqual([]);
+      expect(printed.at(-1)).toBe('Setup complete');
+    });
   });
 });
