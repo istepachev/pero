@@ -23,7 +23,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import type { AgentRuntime } from '../runtimes/agent-runtime.js';
+import { ComponentHealth } from '../health/component-health.js';
+import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { SettingsModule } from '../settings/settings.module.js';
@@ -211,7 +212,7 @@ describe('AgentManager', () => {
       instructions: 'Be kind.\n\nBe brief.',
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       workingDirectory: vault,
-      toolPolicy: {},
+      toolPolicy: { permissions: 'ask' },
     });
     expect(claude.requests[1]!.signal).toBeInstanceOf(AbortSignal);
   });
@@ -336,6 +337,46 @@ describe('AgentManager', () => {
     ]);
     // The session was reported before the failure, so it carries on.
     expect(claude.requests[1]!.providerSessionId).toBe('fake-claude-1');
+  });
+
+  it('reports the provider degraded when a turn is refused as signed out, and ok once one succeeds', async () => {
+    const health = moduleRef.get(ComponentHealth);
+    claude.failNext(
+      new RuntimeError('auth', 'Not logged in · Please run /login'),
+    );
+
+    await say(OWNER, 'Hello');
+
+    expect(sentTexts().at(-1)).toMatch(/the provider is signed out/);
+    expect(health.get('claude')).toMatchObject({
+      state: 'degraded',
+      detail: expect.stringContaining('claude auth login'),
+    });
+
+    await say(OWNER, 'Again');
+
+    expect(health.get('claude')).toMatchObject({
+      state: 'ok',
+      detail: 'Signed in',
+    });
+  });
+
+  it("passes the turn's approver to the runtime", async () => {
+    await say(OWNER, 'Hello');
+    const channel = await channelFor(OWNER.key);
+    const [message] = await allMessages();
+    const approve = vi.fn();
+
+    await moduleRef.get(AgentManager).runTurn({
+      channelId: channel.id,
+      agentId: channel.agentId,
+      messageId: message!.id,
+      input: 'Again',
+      approve,
+    });
+
+    expect(claude.requests[0]).not.toHaveProperty('approve');
+    expect(claude.requests[1]!.approve).toBe(approve);
   });
 
   it("tells the Channel when the Agent's provider has no runtime yet", async () => {

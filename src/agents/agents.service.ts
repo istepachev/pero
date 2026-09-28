@@ -21,6 +21,7 @@ import {
   type Provider,
   type ProviderOptions,
 } from '../config/provider-options.js';
+import type { ToolPolicy } from '../config/tool-policy.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import {
@@ -45,7 +46,7 @@ export interface ResolvedAgent {
   providerOptions: ProviderOptions;
   workingDirectory: string;
   instructions: string;
-  toolPolicy: Record<string, unknown>;
+  toolPolicy: ToolPolicy;
   enabled: boolean;
 }
 
@@ -65,9 +66,9 @@ export class AgentsService {
   }
 
   /**
-   * Creates an Agent. Provider and options not given are copied from the
-   * installation defaults; without a folder of its own, it follows the
-   * default working directory, which must then be set.
+   * Creates an Agent. Provider, options, and permissions not given are
+   * copied from the installation defaults; without a folder of its own, it
+   * follows the default working directory, which must then be set.
    */
   create(input: AgentCreate): Promise<Agent> {
     return inTransaction(this.dataSource, (manager) =>
@@ -112,7 +113,9 @@ export class AgentsService {
         workingDirectory,
         useSharedInstructions: fields.useSharedInstructions ?? true,
         codexSkipGitRepoCheck: fields.codexSkipGitRepoCheck ?? false,
-        toolPolicy: {},
+        toolPolicy: {
+          permissions: fields.permissions ?? settings.defaultPermissions,
+        },
       }),
     );
     return agents.findOneByOrFail({ id });
@@ -156,6 +159,14 @@ export class AgentsService {
       }
 
       await agents.update(agent.id, {
+        ...(patch.permissions === undefined
+          ? {}
+          : {
+              toolPolicy: {
+                ...agent.toolPolicy,
+                permissions: patch.permissions,
+              },
+            }),
         ...withoutUndefined({
           title: patch.title,
           instructions: patch.instructions,

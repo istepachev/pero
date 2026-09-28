@@ -13,8 +13,13 @@ import {
   type ProviderDefaults,
   providerDefaultsSchema,
 } from '../../config/provider-options.js';
+import {
+  PERMISSION_MODES,
+  type PermissionMode,
+} from '../../config/tool-policy.js';
 import { jsonTransformer } from '../json-transformer.js';
 import { Agent } from './agent.entity.js';
+import { oneOf } from './sql.js';
 
 /** The ID of the one settings row. */
 export const SETTINGS_ID = 1;
@@ -30,6 +35,10 @@ export const SETTINGS_ID = 1;
 @Check('CHK_settings_provider_defaults', `json_valid("provider_defaults")`)
 @Check('CHK_settings_max_concurrent_runs', `"max_concurrent_runs" >= 1`)
 @Check('CHK_settings_history_carryover', `"history_carryover" >= 0`)
+@Check(
+  'CHK_settings_default_permissions',
+  oneOf('default_permissions', PERMISSION_MODES),
+)
 export class Settings {
   @PrimaryColumn({ type: 'integer' })
   id: number;
@@ -77,6 +86,10 @@ export class Settings {
    */
   @Column({ name: 'history_carryover', type: 'integer', default: 50 })
   historyCarryover: number;
+
+  /** How new Agents' tools are approved; copied into each at creation. */
+  @Column({ name: 'default_permissions', type: 'text', default: 'ask' })
+  defaultPermissions: PermissionMode;
 
   /** IANA time zone. */
   @Column({ type: 'text' })

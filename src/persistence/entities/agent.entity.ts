@@ -14,7 +14,8 @@ import {
   type ProviderOptions,
   providerOptionsSchema,
 } from '../../config/provider-options.js';
-import { jsonObject, jsonTransformer } from '../json-transformer.js';
+import { type ToolPolicy, toolPolicySchema } from '../../config/tool-policy.js';
+import { jsonTransformer } from '../json-transformer.js';
 import { isSlug, oneOf } from './sql.js';
 
 /** A saved definition of behavior; not a running process. */
@@ -70,13 +71,13 @@ export class Agent {
   })
   codexSkipGitRepoCheck: boolean;
 
-  /** Tools the Agent may use. JSON text. */
+  /** Tools the Agent may use and how they are approved. JSON text. */
   @Column({
     name: 'tool_policy_json',
     type: 'text',
-    transformer: jsonTransformer(jsonObject),
+    transformer: jsonTransformer(toolPolicySchema),
   })
-  toolPolicy: Record<string, unknown>;
+  toolPolicy: ToolPolicy;
 
   @Column({ type: 'boolean', default: true })
   enabled: boolean;

@@ -99,7 +99,7 @@ describe('AgentsService', () => {
           workingDirectory: null,
           useSharedInstructions: true,
           codexSkipGitRepoCheck: false,
-          toolPolicy: {},
+          toolPolicy: { permissions: 'ask' },
           enabled: true,
         });
         expect(await agents.get('assistant')).toEqual(agent);
@@ -243,6 +243,20 @@ describe('AgentsService', () => {
       );
     });
 
+    it('copies the default permissions into new Agents only', async () => {
+      const before = await agents.create({ name: 'assistant' });
+      await settings.update({ defaultPermissions: 'bypass' });
+
+      expect(await agents.get('assistant')).toEqual(before);
+      expect((await agents.create({ name: 'health' })).toolPolicy).toEqual({
+        permissions: 'bypass',
+      });
+      expect(
+        (await agents.create({ name: 'finance', permissions: 'ask' }))
+          .toolPolicy,
+      ).toEqual({ permissions: 'ask' });
+    });
+
     describe('edit', () => {
       beforeEach(async () => {
         await agents.create({ name: 'assistant', instructions: 'Be brief.' });
@@ -261,6 +275,16 @@ describe('AgentsService', () => {
           instructions: 'Be thorough.',
           useSharedInstructions: false,
           codexSkipGitRepoCheck: true,
+        });
+      });
+
+      it('changes permissions, and keeps them when other fields change', async () => {
+        await agents.edit('assistant', { permissions: 'bypass' });
+        const agent = await agents.edit('assistant', { title: 'Assistant' });
+
+        expect(agent.toolPolicy).toEqual({ permissions: 'bypass' });
+        expect((await agents.resolve('assistant')).toolPolicy).toEqual({
+          permissions: 'bypass',
         });
       });
 
@@ -391,7 +415,7 @@ describe('AgentsService', () => {
           providerOptions: { model: 'gpt-5.5-codex', effort: 'minimal' },
           workingDirectory: vault,
           instructions: 'Answer in English.\n\nBe brief.',
-          toolPolicy: {},
+          toolPolicy: { permissions: 'ask' },
           enabled: true,
         });
         expect((await agents.resolve('coder')).instructions).toBe(

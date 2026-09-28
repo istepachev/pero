@@ -1,4 +1,7 @@
 import type { Provider, ProviderOptions } from '../config/provider-options.js';
+import type { ToolPolicy } from '../config/tool-policy.js';
+
+export type { ToolPolicy };
 
 /*
  * The contract between AgentManager and a provider SDK. Only adapters that
@@ -6,8 +9,23 @@ import type { Provider, ProviderOptions } from '../config/provider-options.js';
  * Provider session IDs are opaque strings.
  */
 
-/** Tools an Agent may use; each adapter maps it to its provider's controls. */
-export type ToolPolicy = Readonly<Record<string, unknown>>;
+/** A tool the Agent wants to use that its permissions don't cover. */
+export interface ToolApprovalRequest {
+  /** The provider's name for the tool, such as `Bash`. */
+  tool: string;
+  /** One line saying what the tool would do, for the owner to judge. */
+  summary: string;
+  /** Aborts when the turn no longer needs the answer. */
+  signal: AbortSignal;
+}
+
+/** The owner's answer; a denial's reason goes back to the Agent. */
+export type ToolApproval = { allow: true } | { allow: false; reason: string };
+
+/** Asks the owner whether the Agent may use a tool. */
+export type ToolApprover = (
+  request: ToolApprovalRequest,
+) => Promise<ToolApproval>;
 
 /** One turn of an Agent, with its settings already resolved. */
 export interface RuntimeRequest {
@@ -21,7 +39,13 @@ export interface RuntimeRequest {
   workingDirectory: string;
   /** The conversation to resume; absent to start a new one. */
   providerSessionId?: string;
+  /** Tools the Agent may use; the adapter maps it to its provider's controls. */
   toolPolicy: ToolPolicy;
+  /**
+   * Answers for tools the policy leaves to the owner; absent when no one
+   * can answer, so the adapter denies them.
+   */
+  approve?: ToolApprover;
   /** Aborts the turn; the adapter then stops promptly. */
   signal: AbortSignal;
 }

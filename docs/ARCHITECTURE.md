@@ -120,7 +120,8 @@ interface RuntimeRequest {
   providerOptions: ProviderOptions; // model, effort; null values are omitted
   workingDirectory: string; // effective folder, already resolved
   providerSessionId?: string; // absent for a new conversation
-  toolPolicy: ToolPolicy;
+  toolPolicy: ToolPolicy; // permissions: 'ask' | 'bypass'
+  approve?: ToolApprover; // asks the owner about a tool; absent means deny
   signal: AbortSignal; // cancels the turn
 }
 
@@ -166,8 +167,8 @@ Use relational columns for stable relationships and states. Use JSON only for ve
 
 | Table | Essential fields and constraints |
 |---|---|
-| `settings` | Singleton row for installation defaults (`default_provider`, `provider_defaults` JSON with each provider's options, `default_working_directory` nullable, `shared_instructions` nullable, `main_agent_id` nullable, the Agent primary Channels are assigned), `history_carryover` (messages a replacing Session starts with; 0 turns it off), `history_retention_days` (nullable; null keeps everything), timezone, and operational limits. Change through validated CLI commands. |
-| `agents` | `id`, `name` (slug), `title` (optional display name), `provider`, `instructions`, `provider_options` (JSON, validated for `provider`; null values mean the provider default), `working_directory` (resolved absolute path; null follows the default), `use_shared_instructions` (true by default), `codex_skip_git_repo_check` (false by default), `tool_policy_json`, `enabled`, timestamps. Unique name. |
+| `settings` | Singleton row for installation defaults (`default_provider`, `provider_defaults` JSON with each provider's options, `default_working_directory` nullable, `shared_instructions` nullable, `main_agent_id` nullable, the Agent primary Channels are assigned), `history_carryover` (messages a replacing Session starts with; 0 turns it off), `history_retention_days` (nullable; null keeps everything), `default_permissions` (`ask` or `bypass`, copied into new Agents' tool policy), timezone, and operational limits. Change through validated CLI commands. |
+| `agents` | `id`, `name` (slug), `title` (optional display name), `provider`, `instructions`, `provider_options` (JSON, validated for `provider`; null values mean the provider default), `working_directory` (resolved absolute path; null follows the default), `use_shared_instructions` (true by default), `codex_skip_git_repo_check` (false by default), `tool_policy_json` (`permissions`: `ask` or `bypass`, copied from `settings.default_permissions` at creation), `enabled`, timestamps. Unique name. |
 | `channels` | `id`, `integration_kind`, `external_key`, `address_json`, `title` (topic or chat name, for display), `agent_id`, `enabled`, timestamps. Unique `(integration_kind, external_key)`. For Telegram, the key is `<chat_id>:<message_thread_id>` for a topic and `<chat_id>` for a primary Channel; keep the structured IDs in `address_json`. |
 | `allowed_chats` | `id`, `integration_kind`, `chat_key`, `kind` (`private` or `group`), `title`, timestamps. Unique `(integration_kind, chat_key)`. Only these chats reach Channels. |
 | `messages` | `id`, `channel_id`, `agent_id` and `session_id` (nullable), `direction` (`in` or `out`), `origin` (`user`, `agent`, `pero`, or `workflow`), `external_message_id`, `sender_id`, `text`, `notification_id` (nullable), `created_at`. Index `(channel_id, created_at)` and `(created_at)`. Text only: no reasoning, tool activity, or provider transcript. |
@@ -195,7 +196,7 @@ For one process, claim and state changes can use short SQLite transactions. Do n
 
 Events are typed application facts with `type`, `occurredAt`, `source`, `correlationId`, and payload. Start with an in-process dispatcher. Persist business state and any delivery obligation first; publishing an in-memory event alone must never be the only record of a required Workflow Run or Notification. Add an outbox if more integrations need reliable asynchronous event delivery.
 
-Tools are capabilities granted by policy. An Agent definition lists permitted tools, and the Runtime adapter maps that list to provider controls. A working directory is the starting context, not a filesystem security boundary; use provider permissions and sandbox settings where file access must be constrained. Keep secrets in configuration/secret storage rather than prompts or database rows. Treat external text and tool output as untrusted input. Apply chat authorization before a Telegram message can reach an Agent or create one.
+Tools are capabilities granted by policy. An Agent definition lists permitted tools, and the Runtime adapter maps that list to provider controls. Pero runs headless, so an Agent's tool policy also says how tools are approved: `bypass` runs every tool without asking; `ask` lets the Agent read and edit in its folder and asks the owner about anything else through the turn's approver, which an interactive turn gets from its Channel (Telegram buttons) and a Workflow Run does not, so there such tools are refused. A working directory is the starting context, not a filesystem security boundary; use provider permissions and sandbox settings where file access must be constrained. Keep secrets in configuration/secret storage rather than prompts or database rows. Treat external text and tool output as untrusted input. Apply chat authorization before a Telegram message can reach an Agent or create one.
 
 Message history is private data kept on the owner's machine. It stores only the text people and Agents exchanged in allowed Channels, never messages from chats that are not allowed, and it is in the database and so in every backup. Logs still omit message text. Workflows may read it as input (for example, a daily review of the owner's chats); that input goes to the Workflow Agent's provider like any other prompt.
 

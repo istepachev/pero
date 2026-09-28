@@ -3,6 +3,7 @@ import { CreateDomainTables1790523956072 } from './1790523956072-CreateDomainTab
 import { ResumeSessionsByProviderAndFolder1790578903382 } from './1790578903382-ResumeSessionsByProviderAndFolder.js';
 import { AllowedChatsAndChannelTitles1790581676882 } from './1790581676882-AllowedChatsAndChannelTitles.js';
 import { CreateMessageHistory1790590513558 } from './1790590513558-CreateMessageHistory.js';
+import { DefaultPermissions1790602942841 } from './1790602942841-DefaultPermissions.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -14,4 +15,5 @@ export const MIGRATIONS = [
   ResumeSessionsByProviderAndFolder1790578903382,
   AllowedChatsAndChannelTitles1790581676882,
   CreateMessageHistory1790590513558,
+  DefaultPermissions1790602942841,
 ];

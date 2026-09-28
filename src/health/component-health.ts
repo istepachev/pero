@@ -40,6 +40,11 @@ export class ComponentHealth {
     }
   }
 
+  /** `name`'s current status; undefined when it is not registered. */
+  get(name: string): ComponentStatus | undefined {
+    return this.components.get(name);
+  }
+
   /** Every component, sorted by name. */
   list(): ComponentStatus[] {
     return [...this.components.values()].sort((a, b) =>

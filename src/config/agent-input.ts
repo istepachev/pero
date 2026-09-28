@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PROVIDERS, providerOptionsPatchSchema } from './provider-options.js';
 import { slugSchema, titleSchema } from './slug.js';
+import { permissionModeSchema } from './tool-policy.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -15,6 +16,8 @@ const agentFields = {
   workingDirectory: z.string().nullable().optional(),
   useSharedInstructions: z.boolean().optional(),
   codexSkipGitRepoCheck: z.boolean().optional(),
+  /** How the Agent's tools are approved; omitted on creation: the default. */
+  permissions: permissionModeSchema.optional(),
 };
 
 /** A new Agent; omitted fields come from the installation defaults. */

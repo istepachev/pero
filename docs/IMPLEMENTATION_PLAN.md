@@ -157,9 +157,15 @@ Add `pero telegram chats` (allowed chats with kind, title, the bot's administrat
 
 ### 2.7 Claude runtime adapter
 
-Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out. Optionally, name onboarded Agents with a one-shot model call behind `AgentNamer`, falling back to the slug of the title when the model fails or answers with anything but a slug.
+Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out. Give each Agent a permission mode in its tool policy, copied from a `default-permissions` setting: `bypass` runs every tool without asking; `ask` lets the Agent read and edit in its folder and sends other tools to an approver on the runtime request, refusing them while none is attached. Optionally, name onboarded Agents with a one-shot model call behind `AgentNamer`, falling back to the slug of the title when the model fails or answers with anything but a slug.
 
 **Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process with a different model and effort, and sees a file written in the working directory.
+
+### 2.7b Tool approvals in Telegram
+
+Answer the runtime request's approver from the Channel: post what the Agent wants to run with Allow and Deny buttons, which anyone in the allowed chat may press, and edit the message to show who answered. Extend the Channel contract with buttons, editing a sent message, and a handler for button presses, and have the Telegram adapter poll `callback_query`. A request not answered within 10 minutes, or whose turn is aborted or outlived by Pero, is denied, and a later press is told it expired. Workflow Runs have no approver.
+
+**Done when:** tests with the fake adapter and a mocked Bot API cover allow, deny, timeout, abort, a stale press, and a press from a chat that is not allowed, and a turn continues after an allow.
 
 ### 2.8 Codex runtime adapter
 

@@ -5,6 +5,7 @@ import {
   providerDefaultsSchema,
 } from '../config/provider-options.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
+import { PERMISSION_MODES } from '../config/tool-policy.js';
 import { CHAT_KINDS } from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -63,6 +64,7 @@ export const settingsViewSchema = z.object({
   defaultWorkingDirectory: z.string().nullable(),
   sharedInstructions: z.string().nullable(),
   historyCarryover: z.int(),
+  defaultPermissions: z.enum(PERMISSION_MODES),
   timezone: z.string(),
   maxConcurrentRuns: z.int(),
   telegramBotToken: z.object({
