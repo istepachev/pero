@@ -137,7 +137,7 @@ First-run setup obtains the Telegram token or reads it from the service environm
 
 When the owner creates an Agent, Pero copies the selected provider and that provider's default options from SQLite settings; changing those defaults affects future Agents only, so a default change never silently switches an existing Agent's provider, model, or effort. The working directory is different: every Agent uses the shared default working directory, filled during setup, unless the owner explicitly gives it its own absolute folder. A Session resumes only while its Agent keeps the provider and effective folder it began with, so changing the default gives the Agents that follow it a fresh Session on their next turn; a new model or effort applies to the next turn of the same Session. Capture the execution settings when a Workflow Run starts so later Agent edits do not alter that run midway.
 
-Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflowRunId`, `runtimeKind`, duration, and outcome. Redact tokens, prompts that may contain private data, and tool outputs by default. Expose basic counters for run states, queue depth, failure rates, and notification retries; add OpenTelemetry/Sentry later if operating experience calls for them.
+Log structured fields such as `correlationId`, `channelId`, `agentId`, `workflowRunId`, `runtimeKind`, duration, and outcome. Redact tokens, prompts that may contain private data, and tool outputs by default. Message text belongs in the Channel's history in SQLite, never in logs. Expose basic counters for run states, queue depth, failure rates, and notification retries; add OpenTelemetry/Sentry later if operating experience calls for them.
 
 ## 9. Version and compatibility checks
 

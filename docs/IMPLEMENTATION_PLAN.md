@@ -84,7 +84,7 @@ Installation from a packed npm artifact exposes `pero`; `pero run` starts a back
 
 ## Phase 2 — interactive path
 
-Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. The recommended Telegram setup is one private forum group: the owner creates a bot, creates a group, enables topics, adds the bot as an administrator, and allows the group's chat ID. Each topic in that group is a Channel, and creating a topic onboards a new Agent for it. The group's General topic and a direct chat with the bot are Channels too; neither has a topic ID. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session; different Agents may work in the same folder at the same time. Add the chat allowlist, pairing, and inbound deduplication.
+Implement the generic Channel router and Channel adapter contract, then add Telegram through grammY as the first integration. The recommended Telegram setup is one private forum group: the owner creates a bot, creates a group, enables topics, adds the bot as an administrator, and allows the group's chat ID. Each topic in that group is a Channel, and creating a topic onboards a new Agent for it. The group's General topic and a direct chat with the bot are Channels too; neither has a topic ID. Implement `AgentManager`, the agent execution runtime contract, and one provider adapter first; add the second through the same contract. Persist provider session IDs and serialize turns per Channel/Session; different Agents may work in the same folder at the same time. Add the chat allowlist, pairing, and inbound deduplication. Record the text each Channel sends and receives as its message history, so a fresh Session, such as one on another provider, can continue from the recent conversation.
 
 Telegram addressing, used throughout this phase:
 
@@ -115,55 +115,83 @@ Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runt
 
 **Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a changed provider or effective folder starting a fresh Session while a changed model or effort resumes the same one, provider session IDs persisted across a restart, and a General topic and a direct chat assigned to the same Agent keeping separate Sessions.
 
-### 2.4 Telegram adapter
+### 2.4 Message history and carry-over
+
+Add a `messages` table that records every message exchanged in a Channel. Each row holds:
+- the Channel, plus the Agent and Session it belongs to (null for Pero's own notices);
+- the direction: `in` or `out`;
+- the origin: `user`; `agent`; `pero` for Pero's own notices, such as the onboarding welcome and failure messages; or `workflow`, added in 4.2;
+- the external message and sender IDs, the text, and the time.
+
+Index it by Channel and time, and by time alone for windows across Channels.
+
+When messages are recorded:
+- A user message is recorded when the router hands it to its Channel's Agent, in the same transaction that claims its update, so a redelivered update is never recorded twice.
+- An Agent's reply is recorded once it has been sent. It is one row even when the adapter splits it into several messages.
+- The history holds only the text exchanged in the chat. It has no reasoning, tool activity, intermediate events, or provider transcripts.
+- Nothing is recorded for chats that are not allowed, pairing hints, or messages to a disabled Channel.
+
+Carry-over:
+- **When it applies:** a turn starts a fresh Session in a Channel that already has history, because the Agent's provider or effective folder changed or the Channel was reassigned.
+- **What it adds:** `AgentManager` places the Channel's most recent messages before that first turn's input, as a transcript marked as earlier conversation, so the new provider session picks up where the old one stopped.
+- **Limits:** the `history-carryover` setting caps the number of messages (default 50; 0 turns carry-over off). A fixed character budget then drops the oldest first.
+- **Resumed Sessions:** a resumed Session gets nothing extra, since its provider already has the context.
+
+**Done when:** tests show:
+- inbound and outbound messages are recorded once each, with their Channel, Agent, and Session;
+- nothing is recorded for a chat that is not allowed or a disabled Channel;
+- the first turn after a provider change carries the latest messages within the cap and budget, while a resumed turn carries none;
+- `history-carryover 0` turns carry-over off.
+
+### 2.5 Telegram adapter
 
 Add grammY long polling for `message` and `my_chat_member` updates, reading the token from the secret store. Normalize addresses as in the table above; map `forum_topic_created` and `forum_topic_edited` service messages to channel events, and `migrate_to_chat_id` to a chat-migrated event that moves the allowlist entry and Channel keys to the supergroup's new ID (enabling topics on a basic group changes its chat ID). Ignore messages from bots, which also stops loops. Reply in the same topic; in the General topic, a group without topics, or a direct chat, send without `message_thread_id`. On startup and on each membership change, check with `getChatMember` whether the bot is an administrator of each allowed group: without that (or privacy mode turned off in BotFather) Telegram delivers only commands, mentions, and replies to the bot, so the chat is reported degraded with the fix. A bad token or network failure marks Telegram degraded rather than stopping the daemon.
 
 **Done when:** tests against a mocked Bot API cover the four address kinds in both directions, reply-thread IDs ignored in a group without topics, topic created/renamed events, chat migration, bot-loop protection, the not-an-administrator warning, and degraded status for an invalid token; a manual check with a real bot in a forum group and a direct chat answers through the fake runtime and onboards a new topic.
 
-### 2.5 Telegram chats and pairing
+### 2.6 Telegram chats and pairing
 
 Add `pero telegram chats` (allowed chats with kind, title, the bot's administrator status and whether topics are on, followed by chats that recently asked to pair), `pero telegram allow <chat-id>`, and `pero telegram deny <chat-id>`, which removes the chat from the allowlist and keeps its Channels and Agents for when it is allowed again. Allowing happens only on the host, never from a Telegram message. `pero status` shows the bot's username and flags Telegram degraded while no chat is allowed or an allowed group lacks administrator rights. Extend first-run setup (1.10): once the token is valid and no chat is allowed, an interactive `pero run` prints the recommended steps (create a group, enable topics, add the bot as an administrator, or message the bot directly), waits for the first update from a new chat, and asks whether to allow it. Non-interactive runs list `pero telegram allow` among the missing settings.
 
 **Done when:** e2e tests cover allow, deny, and listing through a fake adapter; interactive setup allows a chat that sent its first message during setup; a denied chat's messages reach no runtime, and allowing it again resumes its Channels and Sessions.
 
-### 2.6 Claude runtime adapter
+### 2.7 Claude runtime adapter
 
 Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out.
 
 **Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process with a different model and effort, and sees a file written in the working directory.
 
-### 2.7 Codex runtime adapter
+### 2.8 Codex runtime adapter
 
 Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
 
-**Done when:** same coverage as 2.6, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
+**Done when:** same coverage as 2.7, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
 
-### 2.8 Agent management commands
+### 2.9 Agent management commands
 
 Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services, and the `main-agent` setting to `pero settings`. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` lists the Channels assigned to the Agent and says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
 
-**Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session, and after a model or effort edit it resumes the same one; an Agent created by onboarding can be edited like any other.
+**Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session that carries over the Channel's recent messages, and after a model or effort edit it resumes the same one; an Agent created by onboarding can be edited like any other.
 
-### 2.9 Channel management commands
+### 2.10 Channel management commands
 
-Add `pero channels ls|show|assign|disable`. Channels are created by onboarding, so there is no `enroll`; `assign` points a Channel at another Agent (for example, a new topic at an existing Agent instead of the one onboarding made) and closes the old Session. A disabled Channel ignores messages and is not onboarded again.
+Add `pero channels ls|show|assign|disable|history`. Channels are created by onboarding, so there is no `enroll`; `assign` points a Channel at another Agent (for example, a new topic at an existing Agent instead of the one onboarding made) and closes the old Session. A disabled Channel ignores messages and is not onboarded again. `history <channel>` prints the Channel's latest messages (`-n <count>`), with time, direction, and origin.
 
-**Done when:** e2e tests cover listing, reassignment, and disabling, and two Channels assigned to different Agents keep separate Sessions.
+**Done when:** e2e tests cover listing, reassignment (the new Agent's first turn carries over the Channel's history), disabling, and history, and two Channels assigned to different Agents keep separate Sessions.
 
-### 2.10 End-to-end verification and smoke-test docs
+### 2.11 End-to-end verification and smoke-test docs
 
-Add an e2e test through the fake adapter and fake runtime: a forum group is allowed, two topics are created and onboard two Agents, the General topic and a direct chat reach the main Agent, and every Channel continues its Session across a daemon restart. Document the recommended Telegram setup and how to run the Claude and Codex smoke tests under the service's OS account.
+Add an e2e test through the fake adapter and fake runtime: a forum group is allowed, two topics are created and onboard two Agents, the General topic and a direct chat reach the main Agent, and every Channel continues its Session across a daemon restart. Switching an Agent's provider then starts a fresh Session whose first turn carries the Channel's history. Document the recommended Telegram setup and how to run the Claude and Codex smoke tests under the service's OS account.
 
 **Done when:** the Phase 2 exit criteria are covered by automated or documented, repeatable tests.
 
 ### Phase 2 exit criteria
 
-In an allowed forum group, creating a topic onboards a new Agent that answers there; two topics keep separate contexts while working in the same shared folder, and an Agent with its own folder works there. The General topic and a direct chat with the bot, neither of which has a topic ID, reach the main Agent in separate Sessions. A follow-up resumes the right provider session after a process restart; editing the provider or folder starts a fresh Session, while a new model or effort continues the conversation. Messages from a chat that is not allowed never invoke a runtime or create an Agent and get only the pairing hint. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
+In an allowed forum group, creating a topic onboards a new Agent that answers there; two topics keep separate contexts while working in the same shared folder, and an Agent with its own folder works there. The General topic and a direct chat with the bot, neither of which has a topic ID, reach the main Agent in separate Sessions. A follow-up resumes the right provider session after a process restart; editing the provider or folder starts a fresh Session that carries over the Channel's recent messages, while a new model or effort continues the conversation. Each Channel's history holds the text sent and received there, and nothing else. Messages from a chat that is not allowed never invoke a runtime or create an Agent and get only the pairing hint. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
 
 ## Phase 3 — durable workflows
 
-Add manual Triggers, Workflow Runs, and the bounded executor. Add schedule Triggers with timezone-aware `next_run_at` calculation and a polling tick. Create pending runs and advance schedules transactionally. Define missed-run coalescing, retry policy, cancellation, and startup recovery.
+Add manual Triggers, Workflow Runs, and the bounded executor. Add schedule Triggers with timezone-aware `next_run_at` calculation and a polling tick. Create pending runs and advance schedules transactionally. Define missed-run coalescing, retry policy, cancellation, and startup recovery. Let a Workflow read Channel history as its input.
 
 ### 3.1 Workflow and Trigger definitions
 
@@ -195,9 +223,33 @@ On startup, re-queue `pending` runs and mark leftover `running` runs `interrupte
 
 **Done when:** tests show an interrupted run is visibly recorded and handled according to its policy, and cancellation reaches the runtime.
 
+### 3.6 Channel history as Workflow input
+
+A Workflow can read Channel history, so an Agent can review conversations on a schedule. For example, an `english-coach` Agent can read the day's chats every evening and suggest improvements.
+
+Add optional history input to Workflows as `history_json`, validated with Zod. It chooses:
+- **Channels:** all of them, or a list.
+- **Messages:** only the ones people wrote, or both directions.
+- **Window:** since the previous successful run (the default; a first run reads the last 24 hours), or a fixed number of hours.
+
+How a run reads its window:
+- **Fixed on claim:** when the executor claims a run, it fixes the end of the window and records the window in the run's snapshot.
+- **Retries and later runs:** a retry reads the same messages, and the next run starts where this one ended, with no gaps and no overlaps.
+- **Rendering:** the messages become a transcript: local time, Channel title, who spoke, and text. It goes into the input template's `{{history}}` placeholder, or after the input when there is none.
+- **Size limit:** a character budget drops the oldest messages first, and the transcript notes that it did.
+- **Empty windows:** a run whose window has no messages completes without invoking the Agent and records that it was skipped. A Workflow can opt out of this and run anyway.
+- **CLI:** `pero workflows create|edit` set and clear the history input.
+
+**Done when:** tests show:
+- consecutive runs cover adjacent windows;
+- a retry reads the same messages;
+- the Channel filter and direction filter hold;
+- the budget keeps the newest messages;
+- an empty window skips the Agent unless the Workflow opts out.
+
 ### Phase 3 exit criteria
 
-A missed scheduled run is found after restart; duplicate polls create one run per trigger occurrence; an interrupted run is visibly recorded and handled according to its policy.
+A missed scheduled run is found after restart; duplicate polls create one run per trigger occurrence; an interrupted run is visibly recorded and handled according to its policy. A scheduled Workflow reads each message in its Channel history window exactly once across runs.
 
 ## Phase 4 — notifications and operations
 
@@ -211,25 +263,25 @@ Add `pero workflows notify <workflow> <channel>` (and removal). When a run finis
 
 ### 4.2 Delivery worker
 
-Dispatch pending Notifications through the Channel adapter with bounded attempts and backoff, recording `provider_message_id`, attempts, and last error. Failed records stay visible.
+Dispatch pending Notifications through the Channel adapter with bounded attempts and backoff, recording `provider_message_id`, attempts, and last error. Failed records stay visible. Record each delivered Notification in its Channel's history with origin `workflow`, linked to the Notification. The next interactive turn in that Channel places the Notifications delivered since its Session's previous turn before the input, so the owner can reply to one, such as by asking about a suggestion in the English topic.
 
-**Done when:** a simulated Telegram outage leaves the Notification retrying and delivers it once Telegram recovers, without creating another Workflow Run.
+**Done when:** a simulated Telegram outage leaves the Notification retrying and delivers it once Telegram recovers, without creating another Workflow Run; a delivered Notification appears in the Channel's history once, and the next turn there receives its text.
 
 ### 4.3 Operations commands
 
-Add `pero runs ls|show|retry|cancel` and `pero notifications ls|show|retry` with delivery diagnostics.
+Add `pero runs ls|show|retry|cancel` and `pero notifications ls|show|retry` with delivery diagnostics. Add the `history-retention-days` setting: unset keeps all history, otherwise a daily task deletes older messages.
 
-**Done when:** e2e tests cover inspection and manual retry of both runs and Notifications.
+**Done when:** e2e tests cover inspection and manual retry of both runs and Notifications, and history older than the retention setting is deleted.
 
 ### 4.4 Operations documentation and restore drill
 
-Document install, provider and Telegram credentials, data layout, backup, and restore. Extend the 1.11 restore test to cover definitions and resumable Sessions, and document backing up the working folders.
+Document install, provider and Telegram credentials, data layout, message history (what is stored, retention, and that backups contain it), backup, and restore. Extend the 1.11 restore test to cover definitions and resumable Sessions, and document backing up the working folders.
 
 **Done when:** a documented backup/restore on a fresh machine brings back definitions and resumable Sessions, with working folders restored from the owner's own backup.
 
 ### Phase 4 exit criteria
 
-A Workflow can notify a configured topic; a temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs; restore brings back definitions and resumable sessions.
+A Workflow can notify a configured topic; a daily Workflow can review the previous day's chats and deliver suggestions to a chosen topic, where the owner can reply to them; a temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs; restore brings back definitions and resumable sessions.
 
 ## Cross-cutting decisions to settle during coding
 
@@ -244,7 +296,9 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 | Agent execution settings edit | A Session records its provider and effective working directory; a turn resumes it only while the Agent still has both, otherwise it closes that Session and starts a fresh one. A change to the default folder an Agent follows counts. Model and effort edits apply from the next turn of the same Session, like switching models inside the provider CLI. No version counter. |
 | Shared instructions | Prepended to each Agent's instructions unless it opts out; edits apply to the next turn of the same Session. Each runtime adapter verifies the SDK accepts updated instructions, model, and effort on a resumed session. |
 | Codex in a non-Git folder | Require an explicit Agent setting to skip the SDK Git repository check. |
-| Session history | Provider transcript is for provider context; the runtime database stores IDs and operational metadata. |
+| Session history | The provider's transcript (reasoning, tool activity, full context) stays in the provider's own storage. Pero stores provider IDs, operational metadata, and each Channel's message history: the text sent and received there. |
+| History carry-over | A fresh Session that replaces one in the same Channel starts with the Channel's latest messages (`history-carryover`, default 50, 0 off) within a character budget; resumed Sessions get nothing extra. |
+| History retention | Keep everything until the owner sets `history-retention-days`; messages from chats that are not allowed are never stored. |
 | Configuration storage | SQLite is authoritative for Agents, Channels, Workflows, and Triggers; CLI operations validate changes. JSON export/import may be added without live file synchronization. |
 | Background lifecycle | `pero run` survives terminal exit; automatic startup after reboot is a separate service-manager feature. |
 
