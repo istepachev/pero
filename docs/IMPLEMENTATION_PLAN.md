@@ -126,13 +126,13 @@ Add a `messages` table that records every message exchanged in a Channel. Each r
 Index it by Channel and time, and by time alone for windows across Channels.
 
 When messages are recorded:
-- A user message is recorded when the router hands it to its Channel's Agent, in the same transaction that claims its update, so a redelivered update is never recorded twice.
+- A user message is recorded when the router hands it to its Channel's Agent, in the same transaction that marks its claimed update processed, so a redelivered update is never recorded twice. The Channel may not exist until onboarding runs after the claim, so the claim itself is too early. The message gets its Session when its turn starts.
 - An Agent's reply is recorded once it has been sent. It is one row even when the adapter splits it into several messages.
 - The history holds only the text exchanged in the chat. It has no reasoning, tool activity, intermediate events, or provider transcripts.
 - Nothing is recorded for chats that are not allowed, pairing hints, or messages to a disabled Channel.
 
 Carry-over:
-- **When it applies:** a turn starts a fresh Session in a Channel that already has history, because the Agent's provider or effective folder changed or the Channel was reassigned.
+- **When it applies:** a turn runs in a Session with no provider session ID yet, in a Channel that already has history, because the Agent's provider or effective folder changed or the Channel was reassigned. A Session whose first turn failed before the provider reported an ID gets it again, since that provider has none of the conversation either. Pero's own notices are not carried over.
 - **What it adds:** `AgentManager` places the Channel's most recent messages before that first turn's input, as a transcript marked as earlier conversation, so the new provider session picks up where the old one stopped.
 - **Limits:** the `history-carryover` setting caps the number of messages (default 50; 0 turns carry-over off). A fixed character budget then drops the oldest first.
 - **Resumed Sessions:** a resumed Session gets nothing extra, since its provider already has the context.
@@ -233,7 +233,7 @@ Add optional history input to Workflows as `history_json`, validated with Zod. I
 - **Window:** since the previous successful run (the default; a first run reads the last 24 hours), or a fixed number of hours.
 
 How a run reads its window:
-- **Fixed on claim:** when the executor claims a run, it fixes the end of the window and records the window in the run's snapshot.
+- **Fixed on claim:** when the executor claims a run, it fixes the end of the window and records the window in the run's snapshot. Mark the window's end by message ID: `created_at` has whole seconds, so a time alone can split or repeat messages at the boundary.
 - **Retries and later runs:** a retry reads the same messages, and the next run starts where this one ended, with no gaps and no overlaps.
 - **Rendering:** the messages become a transcript: local time, Channel title, who spoke, and text. It goes into the input template's `{{history}}` placeholder, or after the input when there is none.
 - **Size limit:** a character budget drops the oldest messages first, and the transcript notes that it did.

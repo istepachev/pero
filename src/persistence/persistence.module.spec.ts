@@ -100,6 +100,7 @@ describe('PersistenceModule', () => {
         defaultWorkingDirectory: null,
         sharedInstructions: null,
         mainAgentId: null,
+        historyCarryover: 50,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         maxConcurrentRuns: 2,
         createdAt: expect.any(Date),

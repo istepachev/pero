@@ -1,4 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  type Author,
+  MessageHistory,
+} from '../history/message-history.service.js';
+import type { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import type {
   ChannelAdapter,
@@ -10,7 +15,10 @@ import type {
 /** The connected adapters, one per integration, and sending through them. */
 @Injectable()
 export class ChannelSender {
+  private readonly logger = new Logger('Channels');
   private readonly adapters = new Map<IntegrationKind, ChannelAdapter>();
+
+  constructor(private readonly history: MessageHistory) {}
 
   add(adapter: ChannelAdapter): void {
     if (this.adapters.has(adapter.kind)) {
@@ -33,5 +41,34 @@ export class ChannelSender {
       return Promise.reject(new Error(`No ${kind} adapter is connected`));
     }
     return adapter.send(address, message);
+  }
+
+  /**
+   * Sends `text` to `channel`, then records it in the Channel's history. A
+   * failed send throws and records nothing; a failed record is only logged,
+   * since the message is out by then.
+   */
+  async post(
+    channel: Pick<Channel, 'id' | 'integrationKind' | 'address'>,
+    text: string,
+    author: Author,
+  ): Promise<SentMessage> {
+    const sent = await this.send(channel.integrationKind, channel.address, {
+      text,
+    });
+    try {
+      await this.history.recordOutbound({
+        channelId: channel.id,
+        externalMessageId: sent.messageId,
+        text,
+        author,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to record a message sent in Channel ${channel.id}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return sent;
   }
 }

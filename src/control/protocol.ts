@@ -61,6 +61,7 @@ export const settingsViewSchema = z.object({
   providerDefaults: providerDefaultsSchema,
   defaultWorkingDirectory: z.string().nullable(),
   sharedInstructions: z.string().nullable(),
+  historyCarryover: z.int(),
   timezone: z.string(),
   maxConcurrentRuns: z.int(),
   telegramBotToken: z.object({

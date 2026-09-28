@@ -143,7 +143,12 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       this.logger.warn(
         `Could not onboard ${kind} Channel ${inbound.key}: ${error.message}`,
       );
-      await this.post(kind, inbound, setupHint(error.message));
+      // No Channel yet, so the hint has no history to join.
+      await this.notify(kind, inbound, () =>
+        this.sender.send(kind, inbound.address, {
+          text: setupHint(error.message),
+        }),
+      );
       return null;
     }
 
@@ -152,7 +157,9 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       this.logger.log(
         `Onboarded ${kind} Channel ${inbound.key} with Agent ${channel.agent.name}`,
       );
-      await this.post(kind, inbound, welcome);
+      await this.notify(kind, inbound, () =>
+        this.sender.post(channel, welcome, { origin: 'pero' }),
+      );
     }
     return channel;
   }
@@ -217,14 +224,14 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     }
   }
 
-  /** Sends Pero's own notice to the Channel; a failure is only logged. */
-  private async post(
+  /** Sends Pero's own notice with `send`; a failure is only logged. */
+  private async notify(
     kind: IntegrationKind,
     inbound: InboundChannel,
-    text: string,
+    send: () => Promise<unknown>,
   ): Promise<void> {
     try {
-      await this.sender.send(kind, inbound.address, { text });
+      await send();
     } catch (error) {
       this.logger.warn(
         `Failed to post in ${kind} Channel ${inbound.key}: ` +

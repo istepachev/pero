@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
@@ -34,8 +35,9 @@ export function pairingHint(kind: IntegrationKind, chatKey: string): string {
 
 /**
  * Takes every update from the connected adapters. Only allowed chats get
- * past it, each update only once; a message then goes to its Channel's
- * Agent, through onboarding first when its Channel is new.
+ * past it, each update only once; a message then joins its Channel's
+ * history and goes to the Channel's Agent, through onboarding first when
+ * its Channel is new.
  */
 @Injectable()
 export class ChannelRouter implements BeforeApplicationShutdown {
@@ -49,6 +51,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly pairing: PairingRequests,
     private readonly turns: ChannelTurns,
     private readonly onboarding: ChannelOnboarding,
+    private readonly history: MessageHistory,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -86,22 +89,27 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       if (!(await this.admit(kind, message.chat, message.channel.address))) {
         return;
       }
-      await this.once(kind, updateId, async () => {
-        const channel =
-          (await this.dataSource.getRepository(Channel).findOne({
-            where: { integrationKind: kind, externalKey: message.channel.key },
-            relations: { agent: true },
-          })) ?? (await this.onboarding.onUnknownChannel(message));
-        if (channel === null) return;
-        if (!channel.enabled || !channel.agent?.enabled) {
-          this.logger.debug(
-            `Ignored ${kind} update ${updateId}: Channel ${channel.id} or ` +
-              `its Agent is disabled`,
-          );
-        } else {
-          await this.turns.handle(channel as RoutedChannel, message);
-        }
-      });
+      if (!(await this.claim(kind, updateId))) return;
+      const channel = await this.route(message);
+      if (channel === null) {
+        await this.inboundUpdates.markProcessed(kind, updateId);
+        return;
+      }
+      // Recorded as its update is handed on, so a message the Agent gets is
+      // in the history, and a redelivered one never is twice.
+      const messageId = await this.inboundUpdates.markProcessed(
+        kind,
+        updateId,
+        (manager) =>
+          this.history.recordInboundWithin(manager, {
+            channelId: channel.id,
+            agentId: channel.agentId,
+            externalMessageId: message.messageId,
+            senderId: message.senderId,
+            text: message.content.text,
+          }),
+      );
+      await this.turns.handle(channel, message, messageId);
     } catch (error) {
       this.logger.error(
         `Failed to route ${kind} update ${updateId}: ${describe(error)}`,
@@ -147,18 +155,49 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     return true;
   }
 
+  /**
+   * The enabled Channel, with its enabled Agent, that `message` goes to,
+   * onboarding it when new; null when there is none.
+   */
+  private async route(message: InboundMessage): Promise<RoutedChannel | null> {
+    const { integrationKind: kind, updateId } = message;
+    const channel =
+      (await this.dataSource.getRepository(Channel).findOne({
+        where: { integrationKind: kind, externalKey: message.channel.key },
+        relations: { agent: true },
+      })) ?? (await this.onboarding.onUnknownChannel(message));
+    if (channel === null) return null;
+    if (!channel.enabled || !channel.agent?.enabled) {
+      this.logger.debug(
+        `Ignored ${kind} update ${updateId}: Channel ${channel.id} or ` +
+          `its Agent is disabled`,
+      );
+      return null;
+    }
+    return channel as RoutedChannel;
+  }
+
   /** Runs `work` for an update seen for the first time. */
   private async once(
     kind: IntegrationKind,
     updateId: string,
     work: () => Promise<void>,
   ): Promise<void> {
-    if (!(await this.inboundUpdates.claim(kind, updateId))) {
-      this.logger.debug(`Skipped duplicate ${kind} update ${updateId}`);
-      return;
-    }
+    if (!(await this.claim(kind, updateId))) return;
     await work();
     await this.inboundUpdates.markProcessed(kind, updateId);
+  }
+
+  /** Claims an update; false, after a note in the log, for a duplicate. */
+  private async claim(
+    kind: IntegrationKind,
+    updateId: string,
+  ): Promise<boolean> {
+    const claimed = await this.inboundUpdates.claim(kind, updateId);
+    if (!claimed) {
+      this.logger.debug(`Skipped duplicate ${kind} update ${updateId}`);
+    }
+    return claimed;
   }
 
   private async turnAway(

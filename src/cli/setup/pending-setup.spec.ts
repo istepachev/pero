@@ -37,6 +37,7 @@ const settings: SettingsView = {
   },
   defaultWorkingDirectory: null,
   sharedInstructions: null,
+  historyCarryover: 50,
   timezone: 'UTC',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },

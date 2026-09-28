@@ -11,6 +11,7 @@ import { AgentsService } from '../agents/agents.service.js';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
+import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -110,6 +111,10 @@ describe('ChannelRouter', () => {
     });
   }
 
+  function messageCount(): Promise<number> {
+    return ds.getRepository(Message).count();
+  }
+
   function reachedNextStage(): boolean {
     return (
       turns.handle.mock.calls.length +
@@ -127,6 +132,7 @@ describe('ChannelRouter', () => {
 
       expect(reachedNextStage()).toBe(false);
       expect(await ds.getRepository(InboundUpdate).count()).toBe(0);
+      expect(await messageCount()).toBe(0);
       expect(adapter.sent).toEqual([
         {
           address: message.channel.address,
@@ -209,6 +215,7 @@ describe('ChannelRouter', () => {
           agent: expect.objectContaining({ name: 'groceries' }),
         }),
         message,
+        expect.any(Number),
       );
       expect(turns.handle).toHaveBeenNthCalledWith(
         2,
@@ -217,6 +224,7 @@ describe('ChannelRouter', () => {
           agent: expect.objectContaining({ name: 'main' }),
         }),
         expect.anything(),
+        expect.any(Number),
       );
       expect(onboarding.onUnknownChannel).not.toHaveBeenCalled();
       expect(adapter.sent).toEqual([]);
@@ -245,7 +253,11 @@ describe('ChannelRouter', () => {
 
       await adapter.deliver(message);
 
-      expect(turns.handle).toHaveBeenCalledExactlyOnceWith(found, message);
+      expect(turns.handle).toHaveBeenCalledExactlyOnceWith(
+        found,
+        message,
+        expect.any(Number),
+      );
     });
 
     it('drops a message when onboarding returns a disabled Channel', async () => {
@@ -261,6 +273,16 @@ describe('ChannelRouter', () => {
       await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
 
       expect(turns.handle).not.toHaveBeenCalled();
+      expect(await messageCount()).toBe(0);
+    });
+
+    it('records nothing when onboarding sets up no Channel', async () => {
+      await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
+
+      expect(await messageCount()).toBe(0);
+      expect(await ds.getRepository(InboundUpdate).find()).toEqual([
+        expect.objectContaining({ status: 'processed' }),
+      ]);
     });
 
     it('passes a duplicate update on only once', async () => {
@@ -273,6 +295,7 @@ describe('ChannelRouter', () => {
 
       // The third shares the update ID, so it is a redelivery too.
       expect(turns.handle).toHaveBeenCalledOnce();
+      expect(await messageCount()).toBe(1);
       expect(onboarding.onUnknownChannel).not.toHaveBeenCalled();
       expect(await ds.getRepository(InboundUpdate).find()).toEqual([
         expect.objectContaining({
@@ -292,6 +315,33 @@ describe('ChannelRouter', () => {
       await adapter.deliver(inboundMessage(GROUP));
 
       expect(reachedNextStage()).toBe(false);
+      expect(await messageCount()).toBe(0);
+    });
+
+    it("records a message in its Channel's history as it hands it on", async () => {
+      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+      const message = inboundMessage(GROUP, { topic: '7', text: 'Milk' });
+
+      await adapter.deliver(message);
+
+      const recorded = await ds.getRepository(Message).find();
+      expect(recorded).toEqual([
+        expect.objectContaining({
+          channelId: topic.id,
+          agentId: topic.agentId,
+          sessionId: null,
+          direction: 'in',
+          origin: 'user',
+          externalMessageId: message.messageId,
+          senderId: message.senderId,
+          text: 'Milk',
+        }),
+      ]);
+      expect(turns.handle).toHaveBeenCalledWith(
+        expect.anything(),
+        message,
+        recorded[0]!.id,
+      );
     });
 
     it('forwards its events to onboarding, each once', async () => {

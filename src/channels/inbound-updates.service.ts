@@ -37,18 +37,33 @@ export class InboundUpdates {
     });
   }
 
-  async markProcessed(
+  /**
+   * Marks a claimed update handed on, together with `alongside` in the same
+   * transaction when given, such as recording the message it carried.
+   */
+  markProcessed(
     integrationKind: IntegrationKind,
     updateId: string,
-  ): Promise<void> {
-    await inTransaction(this.dataSource, (manager) =>
-      manager
+  ): Promise<void>;
+  markProcessed<T>(
+    integrationKind: IntegrationKind,
+    updateId: string,
+    alongside: (manager: EntityManager) => Promise<T>,
+  ): Promise<T>;
+  markProcessed<T>(
+    integrationKind: IntegrationKind,
+    updateId: string,
+    alongside?: (manager: EntityManager) => Promise<T>,
+  ): Promise<T | undefined> {
+    return inTransaction(this.dataSource, async (manager) => {
+      await manager
         .getRepository(InboundUpdate)
         .update(
           { integrationKind, externalUpdateId: updateId },
           { status: 'processed' },
-        ),
-    );
+        );
+      return alongside?.(manager);
+    });
   }
 
   private async pruneWhenDue(manager: EntityManager): Promise<void> {
