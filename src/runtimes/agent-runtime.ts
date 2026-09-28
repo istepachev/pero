@@ -37,6 +37,11 @@ export interface RuntimeRequest {
   providerOptions: ProviderOptions;
   /** The effective folder; the adapter passes it to the SDK explicitly. */
   workingDirectory: string;
+  /**
+   * Codex only: lets the Agent work in a folder that is not a Git
+   * repository. Absent means no; other providers ignore it.
+   */
+  skipGitRepoCheck?: boolean;
   /** The conversation to resume; absent to start a new one. */
   providerSessionId?: string;
   /** Tools the Agent may use; the adapter maps it to its provider's controls. */

@@ -276,6 +276,9 @@ describe('AgentsService', () => {
           useSharedInstructions: false,
           codexSkipGitRepoCheck: true,
         });
+        expect((await agents.resolve('assistant')).codexSkipGitRepoCheck).toBe(
+          true,
+        );
       });
 
       it('changes permissions, and keeps them when other fields change', async () => {
@@ -416,6 +419,7 @@ describe('AgentsService', () => {
           workingDirectory: vault,
           instructions: 'Answer in English.\n\nBe brief.',
           toolPolicy: { permissions: 'ask' },
+          codexSkipGitRepoCheck: false,
           enabled: true,
         });
         expect((await agents.resolve('coder')).instructions).toBe(

@@ -7,7 +7,7 @@ export const PROVIDERS = ['claude', 'codex'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 // Values the SDKs accept: `effort` in @anthropic-ai/claude-agent-sdk 0.3 and
-// `modelReasoningEffort` in @openai/codex-sdk 0.157.
+// `modelReasoningEffort` in @openai/codex-sdk 0.158.
 export const CLAUDE_EFFORTS = [
   'low',
   'medium',

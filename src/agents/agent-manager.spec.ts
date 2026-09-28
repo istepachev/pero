@@ -212,6 +212,7 @@ describe('AgentManager', () => {
       instructions: 'Be kind.\n\nBe brief.',
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       workingDirectory: vault,
+      skipGitRepoCheck: false,
       toolPolicy: { permissions: 'ask' },
     });
     expect(claude.requests[1]!.signal).toBeInstanceOf(AbortSignal);

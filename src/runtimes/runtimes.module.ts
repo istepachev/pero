@@ -3,6 +3,7 @@ import { PROVIDERS } from '../config/provider-options.js';
 import type { AgentRuntime } from './agent-runtime.js';
 import { AGENT_RUNTIMES, AgentRuntimes } from './agent-runtimes.js';
 import { ClaudeRuntime } from './claude/claude-runtime.js';
+import { CodexRuntime } from './codex/codex-runtime.js';
 import { FakeAgentRuntime } from './testing/fake-agent-runtime.js';
 
 /** Provided by `RuntimeOptionsModule`; absent means the defaults. */
@@ -13,13 +14,15 @@ export interface RuntimeOptions {
   fake?: 'echo';
 }
 
-/** The Agent runtimes; the Codex adapter joins the list later. */
+/** The Agent runtimes: Claude Code and Codex. */
 @Module({
   providers: [
     {
       provide: AGENT_RUNTIMES,
       useFactory: (options?: RuntimeOptions): AgentRuntime[] => {
-        if (options?.fake !== 'echo') return [new ClaudeRuntime()];
+        if (options?.fake !== 'echo') {
+          return [new ClaudeRuntime(), new CodexRuntime()];
+        }
         new Logger('Runtimes').warn(
           'PERO_FAKE_RUNTIME=echo: every Agent answers with an echo of its ' +
             'message instead of running a provider. For testing only.',

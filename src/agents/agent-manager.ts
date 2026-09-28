@@ -254,6 +254,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       instructions: agent.instructions,
       providerOptions: agent.providerOptions,
       workingDirectory: agent.workingDirectory,
+      skipGitRepoCheck: agent.codexSkipGitRepoCheck,
       ...(session.providerSessionId === null
         ? {}
         : { providerSessionId: session.providerSessionId }),
