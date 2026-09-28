@@ -4,6 +4,7 @@ import type {
   ChannelAddress,
   ChannelEvent,
   ChannelHandlers,
+  InboundChannel,
   InboundChat,
   InboundMessage,
   OutboundMessage,
@@ -84,26 +85,43 @@ export function privateChat(key: string): InboundChat {
 }
 
 /**
+ * Topic `topic` of `chat`, titled `title` (by default `Topic <topic>`), or
+ * the chat's primary Channel when `topic` is undefined.
+ */
+export function inboundChannel(
+  chat: InboundChat,
+  topic?: string,
+  title: string | null = `Topic ${topic}`,
+): InboundChannel {
+  return topic === undefined
+    ? { key: chat.key, title: chat.title, address: chat.address, topicId: null }
+    : {
+        key: `${chat.key}:${topic}`,
+        title,
+        address: { ...chat.address, messageThreadId: topic },
+        topicId: topic,
+      };
+}
+
+/**
  * A text message in `chat`, in topic `topic` when given, otherwise in the
  * chat's primary Channel. Each gets a fresh update ID unless one is given.
+ * A null `title` stands for a topic message without its topic's creation.
  */
 export function inboundMessage(
   chat: InboundChat,
-  options: { topic?: string; text?: string; updateId?: string } = {},
+  options: {
+    topic?: string;
+    title?: string | null;
+    text?: string;
+    updateId?: string;
+  } = {},
 ): InboundMessage {
-  const { topic } = options;
   return {
     integrationKind: 'telegram',
     updateId: options.updateId ?? String(nextUpdateId++),
     chat,
-    channel:
-      topic === undefined
-        ? { key: chat.key, title: chat.title, address: chat.address }
-        : {
-            key: `${chat.key}:${topic}`,
-            title: `Topic ${topic}`,
-            address: { ...chat.address, messageThreadId: topic },
-          },
+    channel: inboundChannel(chat, options.topic, options.title),
     messageId: String(nextMessageId++),
     senderId: '42',
     content: { text: options.text ?? 'Hello' },
@@ -124,21 +142,32 @@ export function membershipChanged(
   };
 }
 
-/** Topic `topic` created in `chat`. */
+/** Topic `topic` created in `chat`, titled `title`. */
 export function topicCreated(
   chat: InboundChat,
   topic: string,
-  updateId = String(nextUpdateId++),
+  options: { title?: string | null; updateId?: string } = {},
 ): ChannelEvent {
   return {
     type: 'topic-created',
     integrationKind: 'telegram',
-    updateId,
+    updateId: options.updateId ?? String(nextUpdateId++),
     chat,
-    channel: {
-      key: `${chat.key}:${topic}`,
-      title: `Topic ${topic}`,
-      address: { ...chat.address, messageThreadId: topic },
-    },
+    channel: inboundChannel(chat, topic, options.title),
+  };
+}
+
+/** Topic `topic` in `chat` renamed to `title`. */
+export function topicRenamed(
+  chat: InboundChat,
+  topic: string,
+  title: string,
+): ChannelEvent {
+  return {
+    type: 'topic-renamed',
+    integrationKind: 'telegram',
+    updateId: String(nextUpdateId++),
+    chat,
+    channel: inboundChannel(chat, topic, title),
   };
 }

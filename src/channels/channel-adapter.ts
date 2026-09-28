@@ -26,6 +26,11 @@ export interface InboundChannel {
   key: string;
   title: string | null;
   address: ChannelAddress;
+  /**
+   * The topic's ID within its chat; null for the chat's primary Channel,
+   * such as a General topic, a group without topics, or a direct chat.
+   */
+  topicId: string | null;
 }
 
 /** A message normalized by its adapter. */
