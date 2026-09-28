@@ -18,6 +18,7 @@ const view: SettingsView = {
   },
   defaultWorkingDirectory: null,
   sharedInstructions: null,
+  historyCarryover: 50,
   timezone: 'Europe/Berlin',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
@@ -41,6 +42,7 @@ describe('settings keys', () => {
       sharedInstructions: 'Be brief.\nBe kind.',
     });
     expect(set('timezone', 'utc')).toEqual({ timezone: 'utc' });
+    expect(set('history-carryover', '0')).toEqual({ historyCarryover: 0 });
     expect(set('max-concurrent-runs', '4')).toEqual({ maxConcurrentRuns: 4 });
     expect(set('telegram-bot-token', 'x')).toEqual({ telegramBotToken: 'x' });
   });
@@ -60,6 +62,7 @@ describe('settings keys', () => {
   it('refuses a count that is not a whole number', () => {
     for (const value of ['two', '1.5', '-1', '']) {
       expect(() => set('max-concurrent-runs', value)).toThrow(CliError);
+      expect(() => set('history-carryover', value)).toThrow(CliError);
     }
   });
 
@@ -113,6 +116,7 @@ describe('formatSettings', () => {
         'codex.effort               high',
         'default-working-directory  (not set)',
         'shared-instructions        (none)',
+        'history-carryover          50',
         'timezone                   Europe/Berlin',
         'max-concurrent-runs        2',
         'telegram-bot-token         not set',

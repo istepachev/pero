@@ -30,6 +30,14 @@ const PROVIDER_DEFAULT = '(provider default)';
 /** How much of the shared instructions `show` prints. */
 const INSTRUCTIONS_PREVIEW = 60;
 
+/** `value` as a count; a `CliError` names setting `name` otherwise. */
+function wholeNumber(name: string, value: string): number {
+  if (!/^\d+$/.test(value.trim())) {
+    throw new CliError(`${name} must be a whole number, not "${value}"`);
+  }
+  return Number(value);
+}
+
 function providerOption(
   provider: Provider,
   option: 'model' | 'effort',
@@ -70,6 +78,15 @@ export const SETTINGS_KEYS: readonly SettingsKey[] = [
     show: (view) => preview(view.sharedInstructions),
   },
   {
+    name: 'history-carryover',
+    set: (value) => ({
+      historyCarryover: wholeNumber('history-carryover', value),
+    }),
+    unset: 'history-carryover cannot be unset; set 0 to turn it off',
+    show: (view) =>
+      view.historyCarryover === 0 ? '0 (off)' : String(view.historyCarryover),
+  },
+  {
     name: 'timezone',
     set: (value) => ({ timezone: value }),
     unset: 'timezone cannot be unset; set an IANA time zone instead',
@@ -77,14 +94,9 @@ export const SETTINGS_KEYS: readonly SettingsKey[] = [
   },
   {
     name: 'max-concurrent-runs',
-    set: (value) => {
-      if (!/^\d+$/.test(value.trim())) {
-        throw new CliError(
-          `max-concurrent-runs must be a whole number, not "${value}"`,
-        );
-      }
-      return { maxConcurrentRuns: Number(value) };
-    },
+    set: (value) => ({
+      maxConcurrentRuns: wholeNumber('max-concurrent-runs', value),
+    }),
     unset: 'max-concurrent-runs cannot be unset; set a number instead',
     show: (view) => String(view.maxConcurrentRuns),
   },

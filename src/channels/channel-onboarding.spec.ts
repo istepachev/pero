@@ -10,6 +10,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { Message } from '../persistence/entities/message.entity.js';
 import {
   SETTINGS_ID,
   Settings,
@@ -112,6 +113,10 @@ describe('Channel onboarding', () => {
     ).mainAgentId;
   }
 
+  function allMessages(): Promise<Message[]> {
+    return ds.getRepository(Message).find({ order: { id: 'ASC' } });
+  }
+
   function sentTexts(): string[] {
     return adapter.sent.map((sent) => sent.message.text);
   }
@@ -157,6 +162,19 @@ describe('Channel onboarding', () => {
           message: { text: welcomeText(agent!, vault, 'topic') },
         },
       ]);
+      // The welcome is Pero's notice in the Channel's history.
+      expect(await allMessages()).toEqual([
+        expect.objectContaining({
+          channelId: (await channelFor(topic.key)).id,
+          agentId: null,
+          sessionId: null,
+          direction: 'out',
+          origin: 'pero',
+          externalMessageId: '1',
+          senderId: null,
+          text: welcomeText(agent!, vault, 'topic'),
+        }),
+      ]);
       expect(sentTexts()[0]).toBe(
         `This topic talks to Agent groceries-errands: codex, model ` +
           `gpt-5.5-codex, working in ${vault}. To change it, run on the ` +
@@ -201,6 +219,7 @@ describe('Channel onboarding', () => {
             agent: expect.objectContaining({ name: 'groceries' }),
           }),
           message,
+          expect.any(Number),
         );
       },
     );
@@ -346,6 +365,8 @@ describe('Channel onboarding', () => {
       expect(await allChannels()).toHaveLength(1);
       expect(turns.handle).toHaveBeenCalledOnce();
       expect(String(warn.mock.calls[0]![0])).toContain('Service unreachable');
+      // Only the message that was received; the welcome never went out.
+      expect((await allMessages()).map((m) => m.origin)).toEqual(['user']);
     });
 
     describe('a renamed topic', () => {
@@ -403,6 +424,7 @@ describe('Channel onboarding', () => {
         { address: OWNER.address, message: { text: hint } },
       ]);
       expect(hint).toContain('pero settings set default-working-directory');
+      expect(await allMessages()).toEqual([]);
 
       await settings.update({ defaultWorkingDirectory: vault });
       await adapter.deliver(inboundMessage(GROUP, { topic: '7' }));

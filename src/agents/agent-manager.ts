@@ -6,6 +6,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
+import { MessageHistory } from '../history/message-history.service.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { RuntimeError } from '../runtimes/agent-runtime.js';
@@ -17,12 +18,16 @@ import { AgentsService, type ResolvedAgent } from './agents.service.js';
 export interface TurnInput {
   channelId: number;
   agentId: number;
+  /** The message as recorded in the Channel's history. */
+  messageId: number;
   input: string;
 }
 
-/** What the Agent answered. */
+/** What the Agent answered, and the Session it answered in. */
 export interface TurnResult {
+  agentId: number;
   agentName: string;
+  sessionId: number;
   text: string;
 }
 
@@ -44,7 +49,8 @@ const STOPPING = 'Pero is stopping';
 /**
  * Runs Agents' turns: builds each request from the Agent record, runs it
  * in the Channel's Session, and persists the provider's session ID as soon
- * as the runtime reports it. Turns within a Session run one at a time in
+ * as the runtime reports it. A Session whose provider has none of the
+ * conversation yet starts from the Channel's latest messages. Turns within a Session run one at a time in
  * the order they were accepted; turns of other Sessions run alongside,
  * even in a shared folder.
  */
@@ -64,6 +70,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     private readonly agents: AgentsService,
     private readonly sessions: SessionService,
     private readonly runtimes: AgentRuntimes,
+    private readonly history: MessageHistory,
   ) {}
 
   /**
@@ -130,15 +137,38 @@ export class AgentManager implements BeforeApplicationShutdown {
     const startedAt = Date.now();
     let where = `Channel ${turn.channelId}, Agent ${turn.agentId}`;
     try {
-      // One snapshot of the Agent, settings, and Session as the turn starts.
-      const { agent, session } = await inTransaction(
+      // One snapshot of the Agent, settings, Session, and history as the
+      // turn starts.
+      const { agent, session, input, carried } = await inTransaction(
         this.dataSource,
         async (manager) => {
           const agent = await this.agents.resolveWithin(manager, turn.agentId);
-          const session = agent.enabled
-            ? await this.sessions.beginWithin(manager, turn.channelId, agent)
-            : null;
-          return { agent, session };
+          if (!agent.enabled) {
+            return { agent, session: null, input: turn.input, carried: 0 };
+          }
+          const session = await this.sessions.beginWithin(
+            manager,
+            turn.channelId,
+            agent,
+          );
+          await this.history.attachSessionWithin(
+            manager,
+            turn.messageId,
+            session.id,
+          );
+          // Without a provider session, the provider has none of the
+          // conversation: a changed provider or folder, a reassigned
+          // Channel, or a first turn that failed before it began.
+          const { input, carried } =
+            session.providerSessionId === null
+              ? await this.history.carryOverWithin(
+                  manager,
+                  turn.channelId,
+                  turn.messageId,
+                  turn.input,
+                )
+              : { input: turn.input, carried: 0 };
+          return { agent, session, input, carried };
         },
       );
       if (session === null) {
@@ -146,11 +176,19 @@ export class AgentManager implements BeforeApplicationShutdown {
         return null;
       }
       where += `, Session ${session.id} (${agent.provider})`;
-      const text = await this.run(agent, session, turn.input, controller);
+      if (carried > 0) {
+        this.logger.log(`Carried over ${carried} message(s) into ${where}`);
+      }
+      const text = await this.run(agent, session, input, controller);
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
       );
-      return { agentName: agent.name, text };
+      return {
+        agentId: agent.id,
+        agentName: agent.name,
+        sessionId: session.id,
+        text,
+      };
     } catch (error) {
       const failure = asTurnError(error, controller.signal.aborted);
       this.logger.warn(

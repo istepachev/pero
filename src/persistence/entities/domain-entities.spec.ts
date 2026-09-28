@@ -9,6 +9,7 @@ import { Agent } from './agent.entity.js';
 import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
+import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
 import { Session } from './session.entity.js';
 import { Settings } from './settings.entity.js';
@@ -22,6 +23,7 @@ const DOMAIN_TABLES = [
   'allowed_chats',
   'channels',
   'inbound_updates',
+  'messages',
   'notifications',
   'sessions',
   'triggers',
@@ -107,9 +109,20 @@ async function seed(ds: DataSource) {
     kind: 'group',
     title: 'Household',
   });
+  const message = await ds.getRepository(Message).save({
+    channelId: channel.id,
+    agentId: agent.id,
+    sessionId: session.id,
+    direction: 'out',
+    origin: 'agent',
+    externalMessageId: '9007199254740995',
+    senderId: null,
+    text: 'Added milk.',
+  });
   await ds.getRepository(Settings).update(1, { mainAgentId: agent.id });
   return {
     agent,
+    message,
     allowedChat,
     channel,
     session,
@@ -136,6 +149,7 @@ async function readAll(ds: DataSource) {
     targets: await ds.getRepository(WorkflowNotificationTarget).find(),
     notifications: await ds.getRepository(Notification).find(),
     updates: await ds.getRepository(InboundUpdate).find(),
+    messages: await ds.getRepository(Message).find(),
   };
 }
 
@@ -177,10 +191,11 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // The allowlist, the Session resume migration, then the domain tables.
-    await db.undoLastMigration({ transaction: 'each' });
-    await db.undoLastMigration({ transaction: 'each' });
-    await db.undoLastMigration({ transaction: 'each' });
+    // Message history, the allowlist, the Session resume migration, then
+    // the domain tables.
+    for (let i = 0; i < 4; i++) {
+      await db.undoLastMigration({ transaction: 'each' });
+    }
     expect(await tables(db)).toEqual([
       'migrations',
       'settings',
@@ -200,9 +215,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // The allowlist migration, then the Session resume migration.
-    await db.undoLastMigration({ transaction: 'each' });
-    await db.undoLastMigration({ transaction: 'each' });
+    // Message history, the allowlist, then the Session resume migration.
+    for (let i = 0; i < 3; i++) {
+      await db.undoLastMigration({ transaction: 'each' });
+    }
     expect(
       await db.query(
         `SELECT "agent_config_version", "provider_session_id" FROM "sessions"`,
@@ -242,6 +258,8 @@ describe('domain entities', () => {
     });
     await seed(db);
 
+    // Message history, then the allowlist.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('allowed_chats');
     expect(
@@ -266,6 +284,33 @@ describe('domain entities', () => {
     expect(await db.getRepository(Channel).find()).toEqual([
       expect.objectContaining({ title: null }),
     ]);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps the settings row through the message history migration and back', async () => {
+    const db = await open();
+    const { agent } = await seed(db);
+    await db.getRepository(Settings).update(1, {
+      sharedInstructions: 'Be kind.',
+      historyCarryover: 10,
+    });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).not.toContain('messages');
+    expect(
+      await db.query(
+        `SELECT "shared_instructions", "main_agent_id" FROM "settings"`,
+      ),
+    ).toEqual([{ shared_instructions: 'Be kind.', main_agent_id: agent.id }]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
+    ).toMatchObject({
+      sharedInstructions: 'Be kind.',
+      mainAgentId: agent.id,
+      historyCarryover: 50,
+    });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -537,6 +582,26 @@ describe('domain entities', () => {
           `"payload") VALUES (${MISSING}, ${s.channel.id}, '{}')`,
       ],
       [
+        'messages.channel_id',
+        () =>
+          `INSERT INTO "messages" ("channel_id", "direction", "origin", ` +
+          `"external_message_id", "text") VALUES (${MISSING}, 'out', 'pero', '1', 'x')`,
+      ],
+      [
+        'messages.agent_id',
+        (s) =>
+          `INSERT INTO "messages" ("channel_id", "agent_id", "direction", ` +
+          `"origin", "external_message_id", "text") ` +
+          `VALUES (${s.channel.id}, ${MISSING}, 'in', 'user', '1', 'x')`,
+      ],
+      [
+        'messages.session_id',
+        (s) =>
+          `INSERT INTO "messages" ("channel_id", "session_id", "direction", ` +
+          `"origin", "external_message_id", "text") ` +
+          `VALUES (${s.channel.id}, ${MISSING}, 'in', 'user', '1', 'x')`,
+      ],
+      [
         'notifications.channel_id',
         (s) =>
           `INSERT INTO "notifications" ("workflow_run_id", "channel_id", ` +
@@ -551,6 +616,9 @@ describe('domain entities', () => {
     it('keeps Agents, Channels, and Workflows that history refers to', async () => {
       // SQLite reports ON DELETE RESTRICT as SQLITE_CONSTRAINT_TRIGGER.
       const restricted = /FOREIGN KEY constraint failed/;
+      await expect(
+        db.getRepository(Session).delete(seeded.session.id),
+      ).rejects.toThrow(restricted);
       await expect(
         db.getRepository(Agent).delete(seeded.agent.id),
       ).rejects.toThrow(restricted);
@@ -608,6 +676,15 @@ describe('domain entities', () => {
       `UPDATE "workflow_runs" SET "result_json" = '{'`,
       `UPDATE "notifications" SET "status" = 'sent'`,
       `UPDATE "inbound_updates" SET "status" = 'ignored'`,
+      `UPDATE "settings" SET "history_carryover" = -1`,
+      `UPDATE "messages" SET "direction" = 'sideways'`,
+      `UPDATE "messages" SET "origin" = 'workflow'`,
+      // People write in; Agents and Pero write out.
+      `UPDATE "messages" SET "direction" = 'in'`,
+      `UPDATE "messages" SET "origin" = 'user'`,
+      // An Agent's reply names its Agent and Session.
+      `UPDATE "messages" SET "session_id" = NULL`,
+      `UPDATE "messages" SET "agent_id" = NULL`,
     ])('rejects %s', async (sql) => {
       await rejectsWith(db.query(sql), 'SQLITE_CONSTRAINT_CHECK');
     });

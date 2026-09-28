@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChannelTurns } from '../channels/agent-channel-turns.js';
 import type { InboundChat } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
@@ -19,6 +20,7 @@ import {
   topicCreated,
 } from '../channels/testing/fake-channel-adapter.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import type { AgentRuntime } from '../runtimes/agent-runtime.js';
@@ -95,6 +97,7 @@ describe('AgentManager', () => {
 
   afterEach(async () => {
     await moduleRef.close();
+    vi.restoreAllMocks();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -115,6 +118,10 @@ describe('AgentManager', () => {
 
   function sentTexts(): string[] {
     return adapter.sent.map((sent) => sent.message.text);
+  }
+
+  function allMessages(): Promise<Message[]> {
+    return ds.getRepository(Message).find({ order: { id: 'ASC' } });
   }
 
   function allSessions(): Promise<Session[]> {
@@ -230,12 +237,13 @@ describe('AgentManager', () => {
 
       await say(OWNER, 'Again');
 
-      const { session } = await expectFreshSession(codex);
+      const { request, session } = await expectFreshSession(codex);
       expect(session).toMatchObject({
         provider: 'codex',
         providerSessionId: 'fake-codex-1',
       });
-      expect(sentTexts().at(-1)).toBe('echo: Again');
+      expect(request.input).toMatch(/\n\nAgain$/);
+      expect(sentTexts().at(-1)).toBe(`echo: ${request.input}`);
     });
 
     it('starts a fresh Session when the default folder it follows changes', async () => {
@@ -271,6 +279,7 @@ describe('AgentManager', () => {
       expect(claude.requests[1]).toMatchObject({
         providerSessionId: 'fake-claude-1',
         providerOptions: { model: 'claude-sonnet-5', effort: 'low' },
+        input: 'Again',
       });
       expect(await allSessions()).toHaveLength(1);
     });
@@ -355,6 +364,155 @@ describe('AgentManager', () => {
       'one',
     ]);
     expect(sentTexts().at(-1)).toBe('echo: one');
+    // Received, so in the history, but never part of a Session.
+    expect(
+      (await allMessages()).find((message) => message.text === 'two'),
+    ).toMatchObject({ direction: 'in', sessionId: null });
+  });
+
+  describe('message history', () => {
+    /** The transcript lines of `input`, without their times. */
+    function transcript(input: string): string[] {
+      return input
+        .split('\n')
+        .map((line) => line.replace(/^\d{4}-\d\d-\d\d \d\d:\d\d /, ''));
+    }
+
+    it('records each message and reply once, with its Channel, Agent, and Session', async () => {
+      await say(OWNER, 'Hello');
+
+      const direct = await channelFor(OWNER.key);
+      const [session] = await allSessions();
+      const entry = {
+        channelId: direct.id,
+        agentId: direct.agentId,
+        sessionId: session!.id,
+      };
+      expect(await allMessages()).toEqual([
+        expect.objectContaining({
+          channelId: direct.id,
+          agentId: null,
+          sessionId: null,
+          origin: 'pero',
+          text: expect.stringMatching(/^This chat talks to Agent main/),
+        }),
+        expect.objectContaining({
+          ...entry,
+          direction: 'in',
+          origin: 'user',
+          senderId: '42',
+          text: 'Hello',
+        }),
+        expect.objectContaining({
+          ...entry,
+          direction: 'out',
+          origin: 'agent',
+          externalMessageId: '2',
+          senderId: null,
+          text: 'echo: Hello',
+        }),
+      ]);
+    });
+
+    it("records a failure notice as Pero's", async () => {
+      claude.failNext();
+
+      await say(OWNER, 'Hello');
+
+      expect((await allMessages()).at(-1)).toMatchObject({
+        direction: 'out',
+        origin: 'pero',
+        agentId: null,
+        sessionId: null,
+        text: "Agent main couldn't answer: The model is overloaded.",
+      });
+    });
+
+    it('records nothing that could not be sent', async () => {
+      await say(OWNER, 'Hello');
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      adapter.failSends = true;
+
+      await say(OWNER, 'Again');
+
+      expect((await allMessages()).map((message) => message.text)).toEqual([
+        expect.stringMatching(/^This chat talks to Agent main/),
+        'Hello',
+        'echo: Hello',
+        'Again',
+      ]);
+    });
+
+    it("starts a new Channel's first Session with nothing carried over", async () => {
+      await say(OWNER, 'Hello');
+
+      expect(claude.requests[0]!.input).toBe('Hello');
+    });
+
+    it('carries the latest messages into the first turn after a provider change, and none after', async () => {
+      await settings.update({ historyCarryover: 3 });
+      await say(OWNER, 'one');
+      await say(OWNER, 'two');
+      await agents.edit('main', { provider: 'codex' });
+
+      await say(OWNER, 'three');
+      await say(OWNER, 'four');
+
+      expect(transcript(codex.requests[0]!.input)).toEqual([
+        '[Earlier conversation in this chat, from a previous session]',
+        'main: echo: one',
+        'User: two',
+        'main: echo: two',
+        '[End of earlier conversation]',
+        '',
+        'three',
+      ]);
+      expect(codex.requests[1]!.input).toBe('four');
+      // The history keeps what was said, not what the provider was sent.
+      expect((await allMessages()).map((message) => message.text)).toContain(
+        'three',
+      );
+    });
+
+    it('carries over when the Agent moves to another folder', async () => {
+      await say(OWNER, 'one');
+      const own = join(tmp, 'own');
+      mkdirSync(own);
+      await agents.edit('main', { workingDirectory: own });
+
+      await say(OWNER, 'two');
+
+      expect(transcript(claude.requests[1]!.input)).toEqual([
+        '[Earlier conversation in this chat, from a previous session]',
+        'User: one',
+        'main: echo: one',
+        '[End of earlier conversation]',
+        '',
+        'two',
+      ]);
+    });
+
+    it("carries only the Channel's own messages", async () => {
+      await say(GROUP, 'In the group');
+      await say(OWNER, 'In the chat');
+      await agents.edit('main', { provider: 'codex' });
+
+      await say(OWNER, 'Again');
+
+      const lines = transcript(codex.requests[0]!.input);
+      expect(lines).toContain('User: In the chat');
+      expect(lines.join('\n')).not.toContain('In the group');
+    });
+
+    it('carries nothing when history-carryover is 0', async () => {
+      await say(OWNER, 'one');
+      await settings.update({ historyCarryover: 0 });
+      await agents.edit('main', { provider: 'codex' });
+
+      await say(OWNER, 'two');
+
+      expect(codex.requests[0]!.input).toBe('two');
+    });
   });
 
   describe('on shutdown', () => {

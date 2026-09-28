@@ -29,6 +29,7 @@ export const SETTINGS_ID = 1;
 )
 @Check('CHK_settings_provider_defaults', `json_valid("provider_defaults")`)
 @Check('CHK_settings_max_concurrent_runs', `"max_concurrent_runs" >= 1`)
+@Check('CHK_settings_history_carryover', `"history_carryover" >= 0`)
 export class Settings {
   @PrimaryColumn({ type: 'integer' })
   id: number;
@@ -69,6 +70,13 @@ export class Settings {
     foreignKeyConstraintName: 'FK_settings_main_agent_id',
   })
   mainAgent?: Agent;
+
+  /**
+   * How many of a Channel's latest messages a fresh Session that replaces
+   * another starts with; 0 turns carry-over off.
+   */
+  @Column({ name: 'history_carryover', type: 'integer', default: 50 })
+  historyCarryover: number;
 
   /** IANA time zone. */
   @Column({ type: 'text' })

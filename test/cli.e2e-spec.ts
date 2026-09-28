@@ -292,6 +292,18 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(instructions.stdout).toBe(
       'shared-instructions is now Be brief. (2 lines)\n',
     );
+    expect(await settings('set', 'history-carryover', '10')).toMatchObject({
+      code: 0,
+      stdout: 'history-carryover is now 10\n',
+    });
+    expect(await settings('set', 'history-carryover', 'all')).toMatchObject({
+      code: 1,
+      stderr: 'history-carryover must be a whole number, not "all"\n',
+    });
+    expect(await settings('set', 'history-carryover', '0')).toMatchObject({
+      code: 0,
+      stdout: 'history-carryover is now 0 (off)\n',
+    });
 
     const show = await settings();
     expect(show.code).toBe(0);
@@ -299,6 +311,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       new RegExp(`^default-working-directory +${join(cwd, 'vault')}$`, 'm'),
     );
     expect(show.stdout).toMatch(/^claude\.model +\(provider default\)$/m);
+    expect(show.stdout).toMatch(/^history-carryover +0 \(off\)$/m);
     expect(show.stdout).toMatch(/^telegram-bot-token +not set$/m);
   });
 
@@ -590,6 +603,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       ['default-working-directory', vault],
       ['timezone', 'Europe/Lisbon'],
       ['claude.model', 'claude-opus-5-5'],
+      ['history-carryover', '20'],
     ];
     for (const [key, value] of settings) {
       expect(

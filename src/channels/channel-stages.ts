@@ -14,12 +14,14 @@ export type RoutedChannel = Channel & { agent: Agent };
 /** Runs a turn of a known Channel's Agent. */
 export abstract class ChannelTurns {
   /**
-   * Accepts `message` as the Channel's next turn. Resolves once the turn is
-   * accepted, not when it finishes, so intake never waits on an Agent.
+   * Accepts `message`, recorded in the Channel's history as `messageId`, as
+   * the Channel's next turn. Resolves once the turn is accepted, not when
+   * it finishes, so intake never waits on an Agent.
    */
   abstract handle(
     channel: RoutedChannel,
     message: InboundMessage,
+    messageId: number,
   ): Promise<void>;
 
   /**

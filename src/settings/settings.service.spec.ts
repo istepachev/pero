@@ -44,6 +44,7 @@ describe('SettingsService', () => {
       defaultProvider: 'claude',
       defaultWorkingDirectory: null,
       sharedInstructions: null,
+      historyCarryover: 50,
       maxConcurrentRuns: 2,
     });
   });
@@ -53,6 +54,7 @@ describe('SettingsService', () => {
       defaultProvider: 'codex',
       defaultWorkingDirectory: `${vault}/`,
       sharedInstructions: 'Answer in English.',
+      historyCarryover: 0,
       timezone: 'europe/berlin',
       maxConcurrentRuns: 4,
     });
@@ -61,6 +63,7 @@ describe('SettingsService', () => {
       defaultProvider: 'codex',
       defaultWorkingDirectory: vault,
       sharedInstructions: 'Answer in English.',
+      historyCarryover: 0,
       timezone: 'Europe/Berlin',
       maxConcurrentRuns: 4,
     });
@@ -123,6 +126,7 @@ describe('SettingsService', () => {
     ['a fixed offset', { timezone: '+05:00' }, /timezone: must be an IANA/],
     ['no concurrent runs', { maxConcurrentRuns: 0 }, /maxConcurrentRuns/],
     ['a fractional limit', { maxConcurrentRuns: 1.5 }, /maxConcurrentRuns/],
+    ['a negative carry-over', { historyCarryover: -1 }, /historyCarryover/],
     [
       'a relative folder',
       { defaultWorkingDirectory: 'vault' },

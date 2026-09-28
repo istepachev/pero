@@ -143,7 +143,7 @@ The adapter returns a newly created or resumed provider session ID in a normaliz
 2. Resolve the Channel from `integration_kind='telegram'` and an external key: `<chat_id>:<message_thread_id>` for a topic message (`is_topic_message`), otherwise `<chat_id>`. If unknown, onboard it: a topic gets a new Agent, a primary Channel gets the main Agent. Never route an unknown key to an existing Channel's Agent.
 3. Load the Channel's assigned Agent and active Session. A fresh Session that replaces an earlier one starts with the Channel's recent messages. Serialize turns within that Session to preserve conversation order; turns for other Sessions and Agents may run at the same time, even in the same folder.
 4. `AgentManager` invokes the selected Runtime with the Session's provider ID and the Agent's provider options, effective working directory, composed instructions, and tool policy.
-5. Persist the returned provider session ID and turn outcome. Send the reply back to the same chat and topic, without `message_thread_id` for a primary Channel, and record it in the Channel's history. The user's message was recorded when its update was claimed.
+5. Persist the returned provider session ID and turn outcome. Send the reply back to the same chat and topic, without `message_thread_id` for a primary Channel, and record it in the Channel's history. The user's message was recorded when its update was handed on, and linked to the Session when its turn started.
 6. Record errors and send a concise failure message when appropriate. A direct reply is not a Notification record unless durable delivery is required.
 
 ### Background Workflow

@@ -4,6 +4,7 @@ import {
   TurnError,
   type TurnResult,
 } from '../agents/agent-manager.js';
+import type { Author } from '../history/message-history.service.js';
 import type { InboundMessage } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelTurns, type RoutedChannel } from './channel-stages.js';
@@ -24,8 +25,8 @@ export function failureText(agentName: string, error: unknown): string {
 }
 
 /**
- * Hands each routed message to the Agent manager and sends the answer, or
- * a short failure notice, back to the Channel.
+ * Hands each routed message to the Agent manager and posts the answer, or
+ * a short failure notice, back to the Channel and its history.
  */
 @Injectable()
 export class AgentChannelTurns extends ChannelTurns {
@@ -40,10 +41,15 @@ export class AgentChannelTurns extends ChannelTurns {
     super();
   }
 
-  handle(channel: RoutedChannel, message: InboundMessage): Promise<void> {
+  handle(
+    channel: RoutedChannel,
+    message: InboundMessage,
+    messageId: number,
+  ): Promise<void> {
     const turn = this.agents.runTurn({
       channelId: channel.id,
       agentId: channel.agentId,
+      messageId,
       input: message.content.text,
     });
     const task = this.reply(channel, turn);
@@ -62,22 +68,28 @@ export class AgentChannelTurns extends ChannelTurns {
     await this.idle();
   }
 
-  /** Sends what `turn` produced to `channel`; never throws. */
+  /** Posts what `turn` produced to `channel`; never throws. */
   private async reply(
     channel: RoutedChannel,
     turn: Promise<TurnResult | null>,
   ): Promise<void> {
-    let text: string | null;
+    let text: string;
+    let author: Author;
     try {
-      text = (await turn)?.text || null;
+      const result = await turn;
+      if (!result?.text) return;
+      text = result.text;
+      author = {
+        origin: 'agent',
+        agentId: result.agentId,
+        sessionId: result.sessionId,
+      };
     } catch (error) {
       text = failureText(channel.agent.name, error);
+      author = { origin: 'pero' };
     }
-    if (text === null) return;
     try {
-      await this.sender.send(channel.integrationKind, channel.address, {
-        text,
-      });
+      await this.sender.post(channel, text, author);
     } catch (error) {
       this.logger.warn(
         `Failed to reply in ${channel.integrationKind} Channel ${channel.id}: ` +

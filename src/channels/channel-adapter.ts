@@ -79,7 +79,10 @@ export interface OutboundMessage {
   text: string;
 }
 
-/** The integration's ID for a message it sent. */
+/**
+ * The integration's ID for a message it sent; the first part's ID when it
+ * had to split the message into several.
+ */
 export interface SentMessage {
   messageId: string;
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AgentsModule } from '../agents/agents.module.js';
+import { HistoryModule } from '../history/history.module.js';
 import { AgentChannelTurns } from './agent-channel-turns.js';
 import { AgentNamer, SlugAgentNamer } from './agent-namer.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
@@ -15,7 +16,7 @@ import { PairingRequests } from './pairing-requests.js';
  * Agents; adapters connect to it.
  */
 @Module({
-  imports: [AgentsModule],
+  imports: [AgentsModule, HistoryModule],
   providers: [
     ChannelRouter,
     ChannelSender,

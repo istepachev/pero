@@ -40,6 +40,8 @@ export const settingsUpdateSchema = z.strictObject({
     })
     .optional(),
   sharedInstructions: z.string().nullable().optional(),
+  /** Messages a replacing Session starts with; 0 turns carry-over off. */
+  historyCarryover: z.int().min(0).optional(),
   timezone: timeZoneSchema.optional(),
   maxConcurrentRuns: z.int().min(1).optional(),
 });
