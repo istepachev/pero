@@ -1,6 +1,14 @@
-import type { Chat, ChatMember, Message, Update } from 'grammy/types';
+import type {
+  CallbackQuery,
+  Chat,
+  ChatMember,
+  Message,
+  Update,
+  User,
+} from 'grammy/types';
 import type {
   ChannelEvent,
+  InboundAction,
   InboundChannel,
   InboundChat,
   InboundMessage,
@@ -44,14 +52,14 @@ export interface BotIdentity {
 }
 
 /**
- * `update` as a message for an Agent or an event about a chat, or null when
- * Pero ignores it: another bot's message, a channel post, a service message
- * with no meaning here, or a message without text.
+ * `update` as a message for an Agent, an event about a chat, or a pressed
+ * button, or null when Pero ignores it: another bot's message, a channel
+ * post, a service message with no meaning here, or a message without text.
  */
 export function toInbound(
   update: Update,
   me: BotIdentity,
-): InboundMessage | ChannelEvent | null {
+): InboundMessage | ChannelEvent | InboundAction | null {
   // Update IDs count per bot, so a new token must not look like redelivery.
   const updateId = `${me.id}:${update.update_id}`;
   if (update.my_chat_member) {
@@ -67,7 +75,40 @@ export function toInbound(
     };
   }
   if (update.message) return fromMessage(update.message, updateId);
+  if (update.callback_query) {
+    return fromCallback(update.callback_query, updateId);
+  }
   return null;
+}
+
+/** A press of one of the bot's inline buttons. */
+function fromCallback(
+  query: CallbackQuery,
+  updateId: string,
+): InboundAction | null {
+  const { message, data } = query;
+  // A button of an inline-mode message, or a game's, is none of Pero's.
+  if (message === undefined || data === undefined) return null;
+  const chat = toChat(message.chat);
+  if (chat === null) return null;
+  return {
+    integrationKind: 'telegram',
+    updateId,
+    chat,
+    // Telegram keeps only the chat and ID of a message too old to show.
+    channel: message.date === 0 ? channelOf(chat) : channelOf(chat, message),
+    actionId: data,
+    messageId: String(message.message_id),
+    senderId: String(query.from.id),
+    senderName: displayName(query.from),
+  };
+}
+
+/** How the chat knows `user`: `@username`, otherwise their name. */
+function displayName(user: User): string | null {
+  if (user.username) return `@${user.username}`;
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+  return name === '' ? null : name;
 }
 
 function fromMessage(
@@ -187,8 +228,8 @@ export function describeChat(
  * in a group without topics it is a reply thread, which never splits a
  * Channel.
  */
-function channelOf(chat: InboundChat, message: Message): InboundChannel {
-  if (message.is_topic_message && message.message_thread_id !== undefined) {
+function channelOf(chat: InboundChat, message?: Message): InboundChannel {
+  if (message?.is_topic_message && message.message_thread_id !== undefined) {
     // Telegram attaches the topic's creation to messages in it when it can.
     const title = message.reply_to_message?.forum_topic_created?.name ?? null;
     return topicChannel(chat, message, title);

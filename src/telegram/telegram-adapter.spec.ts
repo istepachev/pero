@@ -170,7 +170,7 @@ describe('TelegramAdapter', () => {
       expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
       await vi.waitFor(() =>
         expect(api.callsOf('getUpdates')[0]?.payload).toMatchObject({
-          allowed_updates: ['message', 'my_chat_member'],
+          allowed_updates: ['message', 'my_chat_member', 'callback_query'],
         }),
       );
     });
@@ -534,6 +534,85 @@ describe('TelegramAdapter', () => {
         expect(telegram()?.detail).toContain(
           "the bot isn't in Household (-1001234567890)",
         ),
+      );
+    });
+  });
+
+  describe('buttons', () => {
+    it('sends buttons as an inline keyboard and edits them away', async () => {
+      await start();
+      await connected();
+      const adapter = get(TelegramAdapter);
+
+      const sent = await adapter.send(
+        { chatId: '1234' },
+        {
+          text: 'Allow?',
+          buttons: [
+            { id: 'abc:allow', label: 'Allow' },
+            { id: 'abc:deny', label: 'Deny' },
+          ],
+        },
+      );
+      await adapter.edit({ chatId: '1234' }, sent.messageId, {
+        text: 'Allow?\n\n✅ Allowed by @ada',
+      });
+
+      expect(api.sent().at(-1)).toMatchObject({
+        text: 'Allow?',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: 'Allow', callback_data: 'abc:allow' },
+              { text: 'Deny', callback_data: 'abc:deny' },
+            ],
+          ],
+        },
+      });
+      expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
+        chat_id: '1234',
+        message_id: Number(sent.messageId),
+        text: 'Allow?\n\n✅ Allowed by @ada',
+        reply_markup: { inline_keyboard: [] },
+      });
+    });
+
+    it('refuses a button ID Telegram cannot carry', async () => {
+      await start();
+      await connected();
+
+      await expect(
+        get(TelegramAdapter).send(
+          { chatId: '1234' },
+          { text: 'Hi', buttons: [{ id: 'x'.repeat(65), label: 'Go' }] },
+        ),
+      ).rejects.toThrow(/longer than 64 bytes/);
+    });
+
+    it("answers a press, showing the presser Pero's notice", async () => {
+      await start();
+      await connected();
+
+      api.push({
+        callback_query: {
+          id: 'query-7',
+          from: OWNER,
+          chat_instance: 'instance',
+          data: 'gone:allow',
+          message: {
+            message_id: 5,
+            date: 1,
+            chat: DIRECT,
+            text: 'Allow?',
+          } as never,
+        },
+      });
+
+      await vi.waitFor(() =>
+        expect(api.callsOf('answerCallbackQuery')[0]?.payload).toEqual({
+          callback_query_id: 'query-7',
+          text: 'This request has expired',
+        }),
       );
     });
   });

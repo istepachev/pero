@@ -8,6 +8,7 @@ import type { Author } from '../history/message-history.service.js';
 import type { InboundMessage } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelTurns, type RoutedChannel } from './channel-stages.js';
+import { ToolApprovals } from './tool-approvals.js';
 
 /** Posted instead of an answer when a turn fails. */
 export function failureText(agentName: string, error: unknown): string {
@@ -37,6 +38,7 @@ export class AgentChannelTurns extends ChannelTurns {
   constructor(
     private readonly agents: AgentManager,
     private readonly sender: ChannelSender,
+    private readonly approvals: ToolApprovals,
   ) {
     super();
   }
@@ -51,6 +53,7 @@ export class AgentChannelTurns extends ChannelTurns {
       agentId: channel.agentId,
       messageId,
       input: message.content.text,
+      approve: this.approvals.approverFor(channel),
     });
     const task = this.reply(channel, turn);
     this.active.add(task);

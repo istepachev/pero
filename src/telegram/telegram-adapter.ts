@@ -5,16 +5,18 @@ import {
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { Bot, GrammyError, HttpError } from 'grammy';
-import type { Update, UserFromGetMe } from 'grammy/types';
+import type { InlineKeyboardMarkup, Update, UserFromGetMe } from 'grammy/types';
 import type { ChatKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
-import type {
-  ChannelAdapter,
-  ChannelAddress,
-  ChannelEvent,
-  ChannelHandlers,
-  OutboundMessage,
-  SentMessage,
+import {
+  type ChannelAdapter,
+  type ChannelAddress,
+  type ChannelEvent,
+  type ChannelHandlers,
+  MAX_BUTTON_ID_BYTES,
+  type OutboundButton,
+  type OutboundMessage,
+  type SentMessage,
 } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
 import { splitText } from './split-text.js';
@@ -42,8 +44,15 @@ export interface ChatLookup {
 /** The Bot API server Pero talks to unless told otherwise. */
 export const DEFAULT_TELEGRAM_API_ROOT = 'https://api.telegram.org';
 
-/** The updates Pero asks for; forum topic service messages are messages. */
-const ALLOWED_UPDATES = ['message', 'my_chat_member'] as const;
+/**
+ * The updates Pero asks for; forum topic service messages are messages, and
+ * callback queries are presses of Pero's buttons.
+ */
+const ALLOWED_UPDATES = [
+  'message',
+  'my_chat_member',
+  'callback_query',
+] as const;
 
 /** Calls whose failure means Telegram can't be reached. */
 const CONNECTION_METHODS = new Set(['getMe', 'deleteWebhook', 'getUpdates']);
@@ -120,7 +129,7 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
 
   /**
    * Sends `message`, split into as many messages as Telegram needs, and
-   * returns the first one's ID.
+   * returns the first one's ID. Buttons go under the last part.
    */
   async send(
     address: ChannelAddress,
@@ -129,13 +138,18 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
     const bot = this.connection?.bot;
     if (!bot) throw new Error('Telegram bot token is not set');
     const target = parseAddress(address);
-    const options =
+    const thread =
       target.messageThreadId === undefined
         ? {}
         : { message_thread_id: Number(target.messageThreadId) };
+    const parts = splitText(message.text);
     let chatId = target.chatId;
     let first: string | null = null;
-    for (const part of splitText(message.text)) {
+    for (const [index, part] of parts.entries()) {
+      const options =
+        index === parts.length - 1 && message.buttons?.length
+          ? { ...thread, reply_markup: keyboard(message.buttons) }
+          : thread;
       const sent = await this.withRetries(chatId, (id) => {
         chatId = id;
         return bot.api.sendMessage(id, part, options);
@@ -143,6 +157,32 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       first ??= String(sent.message_id);
     }
     return { messageId: first! };
+  }
+
+  async edit(
+    address: ChannelAddress,
+    messageId: string,
+    message: OutboundMessage,
+  ): Promise<void> {
+    const bot = this.connection?.bot;
+    if (!bot) throw new Error('Telegram bot token is not set');
+    const { chatId } = parseAddress(address);
+    try {
+      await this.withRetries(chatId, (id) =>
+        bot.api.editMessageText(id, Number(messageId), message.text, {
+          reply_markup: keyboard(message.buttons ?? []),
+        }),
+      );
+    } catch (error) {
+      // Editing a message into what it already says is no failure.
+      if (
+        error instanceof GrammyError &&
+        error.description.includes('message is not modified')
+      ) {
+        return;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -338,12 +378,39 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
     const handlers = this.handlers;
     const inbound = toInbound(update, me);
     if (handlers === null || inbound === null) return;
+    if ('actionId' in inbound) {
+      const { notice } = await handlers.onAction(inbound);
+      await this.answerPress(bot, update.callback_query!.id, notice);
+      return;
+    }
     if (!('type' in inbound)) {
       await handlers.onMessage(inbound);
       return;
     }
     await handlers.onEvent(inbound);
     await this.follow(bot, inbound, me);
+  }
+
+  /**
+   * Stops Telegram's progress indicator on a pressed button, showing the
+   * presser `notice` when there is one. Failures are only logged: a press
+   * Telegram has given up on cannot be answered.
+   */
+  private async answerPress(
+    bot: Bot,
+    queryId: string,
+    notice: string | null,
+  ): Promise<void> {
+    try {
+      await bot.api.answerCallbackQuery(
+        queryId,
+        notice === null ? {} : { text: notice },
+      );
+    } catch (error) {
+      this.logger.debug(
+        `Failed to answer a Telegram button press: ${this.describe(error)}`,
+      );
+    }
   }
 
   /** Keeps the administrator check current as the bot's chats change. */
@@ -470,6 +537,28 @@ function access(
     problem = `couldn't check the bot's rights in ${name}: ${reason}`;
   }
   return { chatKey, title, status, topics, problem, checkedAt: new Date() };
+}
+
+/** `buttons` in one row; none removes a message's keyboard. */
+function keyboard(buttons: readonly OutboundButton[]): InlineKeyboardMarkup {
+  for (const button of buttons) {
+    if (Buffer.byteLength(button.id) > MAX_BUTTON_ID_BYTES) {
+      throw new Error(
+        `Button ID ${button.id} is longer than ${MAX_BUTTON_ID_BYTES} bytes`,
+      );
+    }
+  }
+  return {
+    inline_keyboard:
+      buttons.length === 0
+        ? []
+        : [
+            buttons.map(({ id, label }) => ({
+              text: label,
+              callback_data: id,
+            })),
+          ],
+  };
 }
 
 /** Waits `ms`; an abort ends the wait early without an error. */

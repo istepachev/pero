@@ -10,6 +10,11 @@ import { ChannelSender } from './channel-sender.js';
 import { ChannelOnboarding, ChannelTurns } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
+import {
+  DEFAULT_APPROVAL_TIMEOUT_MS,
+  TOOL_APPROVAL_TIMEOUT_MS,
+  ToolApprovals,
+} from './tool-approvals.js';
 
 /**
  * The Channel router, the chat allowlist, onboarding, and the hand-off to
@@ -23,6 +28,11 @@ import { PairingRequests } from './pairing-requests.js';
     AllowedChatsService,
     InboundUpdates,
     PairingRequests,
+    ToolApprovals,
+    {
+      provide: TOOL_APPROVAL_TIMEOUT_MS,
+      useValue: DEFAULT_APPROVAL_TIMEOUT_MS,
+    },
     { provide: ChannelTurns, useClass: AgentChannelTurns },
     { provide: ChannelOnboarding, useClass: ChannelOnboardingService },
     { provide: AgentNamer, useClass: SlugAgentNamer },

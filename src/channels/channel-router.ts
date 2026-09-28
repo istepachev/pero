@@ -10,9 +10,11 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
+  ActionResult,
   ChannelAdapter,
   ChannelAddress,
   ChannelEvent,
+  InboundAction,
   InboundChat,
   InboundMessage,
 } from './channel-adapter.js';
@@ -24,6 +26,7 @@ import {
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
+import { ToolApprovals } from './tool-approvals.js';
 
 /** The reply a chat that is not allowed gets, at most once an hour. */
 export function pairingHint(kind: IntegrationKind, chatKey: string): string {
@@ -52,6 +55,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly turns: ChannelTurns,
     private readonly onboarding: ChannelOnboarding,
     private readonly history: MessageHistory,
+    private readonly approvals: ToolApprovals,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -60,12 +64,14 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     await adapter.start({
       onMessage: (message) => this.handleMessage(message),
       onEvent: (event) => this.handleEvent(event),
+      onAction: (action) => this.handleAction(action),
     });
   }
 
   /**
    * Stops intake, then lets accepted turns finish or ends them, all before
-   * the database closes.
+   * the database closes. Tool requests are denied at once, since no answer
+   * can arrive any more.
    */
   async beforeApplicationShutdown(): Promise<void> {
     await Promise.all(
@@ -79,6 +85,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         }
       }),
     );
+    this.approvals.closeAll();
     await this.turns.drain();
   }
 
@@ -133,6 +140,25 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       this.logger.error(
         `Failed to route ${kind} ${event.type} update ${updateId}: ${describe(error)}`,
       );
+    }
+  }
+
+  /**
+   * Answers a pressed button. Only an allowed chat's presses count; they
+   * need no deduplication, since a second press finds nothing to answer.
+   */
+  async handleAction(action: InboundAction): Promise<ActionResult> {
+    const { integrationKind: kind, updateId } = action;
+    try {
+      if (!(await this.admit(kind, action.chat, null))) {
+        return { notice: "This chat isn't allowed to use Pero" };
+      }
+      return await this.approvals.onAction(action);
+    } catch (error) {
+      this.logger.error(
+        `Failed to route ${kind} button press ${updateId}: ${describe(error)}`,
+      );
+      return { notice: null };
     }
   }
 

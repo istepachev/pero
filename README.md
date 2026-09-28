@@ -85,7 +85,7 @@ Claude Agents run Claude Code through the Claude Agent SDK, signed in with the C
 
 Each Agent's tools run under one of two permission modes, copied from `default-permissions` when it is created:
 
-- `ask` (the default): reading and editing files in the Agent's folder runs freely; any other tool that needs permission, such as a shell command or a web fetch, asks the owner. Until asking in Telegram arrives, such tools are refused and the Agent says why.
+- `ask` (the default): reading and editing files in the Agent's folder runs freely; any other tool that needs permission, such as a shell command or a web fetch, asks in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
 
 The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that an `ask` Agent's command is refused, and aborts a turn.

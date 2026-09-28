@@ -42,7 +42,84 @@ function update(message: Partial<Message> & { chat: Chat }): Update {
   };
 }
 
+/** A press of button `data` under the bot's message `messageId`. */
+function press(
+  chat: Chat,
+  message: Partial<Message> = {},
+  from: User = { ...OWNER, username: 'ada' },
+): Update {
+  return {
+    update_id: nextId++,
+    callback_query: {
+      id: 'query-1',
+      from,
+      chat_instance: 'instance',
+      data: 'abc:allow',
+      message: {
+        message_id: 77,
+        date: 1,
+        chat,
+        from: { id: ME.id, is_bot: true, first_name: 'Pero' },
+        text: 'Agent main wants to use a tool',
+        ...message,
+      } as never,
+    },
+  };
+}
+
 describe('toInbound', () => {
+  describe('button presses', () => {
+    it('reports which button was pressed, where, and by whom', () => {
+      expect(
+        toInbound(
+          press(FORUM, { message_thread_id: 42, is_topic_message: true }),
+          ME,
+        ),
+      ).toEqual({
+        integrationKind: 'telegram',
+        updateId: expect.stringMatching(/^7000001:/),
+        chat: {
+          key: '-1001234567890',
+          kind: 'group',
+          title: 'Household',
+          address: { chatId: '-1001234567890' },
+        },
+        channel: {
+          key: '-1001234567890:42',
+          title: null,
+          address: { chatId: '-1001234567890', messageThreadId: '42' },
+          topicId: '42',
+        },
+        actionId: 'abc:allow',
+        messageId: '77',
+        senderId: '1234',
+        senderName: '@ada',
+      });
+    });
+
+    it("names a sender without a username by name, and places a message too old to show in the chat's primary Channel", () => {
+      expect(
+        toInbound(
+          press(DIRECT, { date: 0 }, { ...OWNER, last_name: 'Lovelace' }),
+          ME,
+        ),
+      ).toMatchObject({
+        channel: { key: '1234', topicId: null },
+        senderName: 'Ada Lovelace',
+      });
+    });
+
+    it("ignores a press without data, or on a message that isn't the bot's own chat message", () => {
+      const noData = press(DIRECT);
+      delete (noData.callback_query as { data?: string }).data;
+      const inline = press(DIRECT);
+      delete (inline.callback_query as { message?: unknown }).message;
+
+      expect(toInbound(noData, ME)).toBeNull();
+      expect(toInbound(inline, ME)).toBeNull();
+    });
+  });
+
   it('scopes update IDs to the bot, so a new token never looks like redelivery', () => {
     const inbound = toInbound(
       { ...update({ chat: DIRECT, text: 'Hi' }), update_id: 55 },
