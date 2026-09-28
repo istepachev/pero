@@ -1,3 +1,5 @@
+import { localTime, newestWithin } from './transcript.js';
+
 /**
  * The most transcript text a fresh Session starts with; the oldest
  * messages are left out first to stay within it.
@@ -26,35 +28,13 @@ export function withEarlierConversation(
   timeZone: string,
   budget = CARRY_OVER_BUDGET,
 ): string {
-  const lines: string[] = [];
-  let used = 0;
-  for (const message of [...messages].reverse()) {
-    const line = `${localTime(message.createdAt, timeZone)} ${message.speaker}: ${message.text}`;
-    if (used + line.length > budget) {
-      if (lines.length === 0) lines.push(`${line.slice(0, budget - 1)}…`);
-      break;
-    }
-    lines.push(line);
-    used += line.length + 1;
-  }
-  if (lines.length === 0) return input;
-  return [OPENING, ...lines.reverse(), CLOSING, '', input].join('\n');
-}
-
-/** `2026-09-28 14:03` in `timeZone`. */
-function localTime(date: Date, timeZone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
-      .formatToParts(date)
-      .map((part) => [part.type, part.value]),
+  const lines = newestWithin(
+    messages.map(
+      (message) =>
+        `${localTime(message.createdAt, timeZone)} ${message.speaker}: ${message.text}`,
+    ),
+    budget,
   );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  if (lines.length === 0) return input;
+  return [OPENING, ...lines, CLOSING, '', input].join('\n');
 }

@@ -5,6 +5,37 @@ import {
   providerOptionsSchema,
 } from '../config/provider-options.js';
 import { toolPolicySchema } from '../config/tool-policy.js';
+import { HISTORY_MESSAGES } from '../config/workflow-input.js';
+
+/**
+ * The window of Channel history a run reads, fixed when the executor
+ * claims it, and what it reads there. A retry reads the same window; the
+ * Workflow's next run starts after `untilId`. Messages are bounded by ID,
+ * since `created_at` has whole seconds.
+ */
+export const historyWindowSchema = z.object({
+  channels: z.union([z.literal('all'), z.array(z.int())]),
+  messages: z.enum(HISTORY_MESSAGES),
+  runWhenEmpty: z.boolean(),
+  /** The last message of the previous window; null for a first window. */
+  afterId: z.int().nullable(),
+  /** Where a first or fixed window starts; null after an earlier window. */
+  since: z.iso.datetime().nullable(),
+  /** The latest message when the run was claimed. */
+  untilId: z.int(),
+});
+
+export type HistoryWindowSnapshot = z.infer<typeof historyWindowSchema>;
+
+/** A history window with how many of its messages the input carried. */
+export const historyReadSchema = historyWindowSchema.extend({
+  /** How many messages the window holds. */
+  count: z.int().nonnegative(),
+  /** How many of the oldest the input left out to fit its budget. */
+  dropped: z.int().nonnegative(),
+});
+
+export type HistoryRead = z.infer<typeof historyReadSchema>;
 
 /**
  * What a Workflow Run executes with, captured when the executor claims it:
@@ -22,16 +53,19 @@ export const executionSnapshotSchema = z.object({
   instructions: z.string(),
   toolPolicy: toolPolicySchema,
   codexSkipGitRepoCheck: z.boolean(),
-  /** What the run sends the Agent. */
+  /** What the run sends the Agent, with any history already rendered. */
   input: z.string(),
+  /** The Channel history the input carries; absent when it reads none. */
+  history: historyReadSchema.optional(),
 });
 
 export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
 
-/** The snapshot of `agent`'s settings with `input`. */
+/** The snapshot of `agent`'s settings with `input` and its `history`. */
 export function executionSnapshot(
   agent: ResolvedAgent,
   input: string,
+  history?: HistoryRead,
 ): ExecutionSnapshot {
   return {
     agentId: agent.id,
@@ -43,5 +77,6 @@ export function executionSnapshot(
     toolPolicy: agent.toolPolicy,
     codexSkipGitRepoCheck: agent.codexSkipGitRepoCheck,
     input,
+    ...(history === undefined ? {} : { history }),
   };
 }

@@ -342,6 +342,69 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     });
   });
 
+  it('keeps the history input a Workflow reads, and completes a run with none to read without its Agent', async () => {
+    await start();
+    await client.call('settings.update', { defaultWorkingDirectory: vault });
+    await client.call('agents.create', { name: 'coach' });
+    await client.call('workflows.create', {
+      name: 'english',
+      agent: 'coach',
+      inputTemplate: 'Suggest improvements:\n{{history}}',
+      history: { messages: 'people' },
+    });
+    await client.call('triggers.add', { workflow: 'english', kind: 'manual' });
+    await expect(
+      client.call('workflows.edit', {
+        name: 'english',
+        change: { history: { channels: [42] } },
+      }),
+    ).rejects.toThrow(
+      new InvalidInputError(
+        'history.channels: no Channel with ID 42; pero channels ls lists them',
+      ),
+    );
+
+    const queued = await client.call('workflows.run', { name: 'english' });
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+        status: 'completed',
+        skipped: true,
+        result: null,
+      });
+    });
+    expect(claude().requests).toHaveLength(0);
+
+    await restart();
+    expect(
+      (await client.call('workflows.get', { name: 'english' })).history,
+    ).toEqual({
+      channels: 'all',
+      messages: 'people',
+      hours: null,
+      runWhenEmpty: false,
+    });
+    await client.call('workflows.edit', {
+      name: 'english',
+      change: { history: { runWhenEmpty: true } },
+    });
+    const ran = await client.call('workflows.run', { name: 'english' });
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: ran.id })).toMatchObject({
+        status: 'completed',
+        skipped: false,
+        result: 'echo: Suggest improvements:\n[No messages in this window]',
+      });
+    });
+
+    await client.call('workflows.edit', {
+      name: 'english',
+      change: { history: null },
+    });
+    expect(
+      (await client.call('workflows.get', { name: 'english' })).history,
+    ).toBeNull();
+  });
+
   it('starts one catch-up run for the times a schedule missed while Pero was down', async () => {
     const HOUR_MS = 60 * 60 * 1000;
     await start();

@@ -110,6 +110,7 @@ A Workflow is work an Agent does on its own: the Agent, and the input each run s
 
 A run Pero stops before it finishes, by crashing or through `pero stop` once the shutdown timeout has passed, is recorded `interrupted` when Pero starts again. Its Agent may already have changed files, so it is not started again unless the Workflow allows more than one attempt (`--max-attempts <n>`, at most 10); then it is queued again as a new run with the next attempt number, until it has started that often. `pero runs cancel <id>` cancels a run: one waiting to start never does, and a running one has its Agent's turn stopped.
 
+A Workflow can read Channel history as its input, so an Agent can review your chats on a schedule. With `--history`, each run puts a transcript of what people wrote in every Channel since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `--history-channels 3,5` reads only those Channels, `--history-messages all` adds the Agents' replies, and `--history-hours <n>` reads a fixed window instead. A run with no messages to read completes without its Agent unless `--run-when-empty` is given. The longest transcripts keep their newest messages and say how many older ones they left out.
 
 ```sh
 npm run cli -- workflows create evening-review --agent coach --input "Review today's chats" --data-dir .pero
@@ -120,6 +121,8 @@ npm run cli -- workflows run evening-review --data-dir .pero                    
 npm run cli -- workflows edit evening-review --max-attempts 2 --data-dir .pero     # start a run Pero stopped once more
 npm run cli -- runs cancel 7 --data-dir .pero                                      # cancel run 7
 npm run cli -- workflows disable evening-review --data-dir .pero                   # keep it, and its Triggers, without running
+npm run cli -- workflows create english --agent english-coach --history --input "Suggest better English for: {{history}}" --data-dir .pero
+npm run cli -- triggers add english --cron "0 21 * * *" --data-dir .pero           # review the day's chats every evening
 ```
 
 ### Claude Agents

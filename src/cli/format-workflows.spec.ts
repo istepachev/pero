@@ -24,6 +24,7 @@ const review: WorkflowView = {
   enabled: true,
   concurrencyPolicy: 'serial',
   maxAttempts: 1,
+  history: null,
   triggerCount: 2,
   createdAt: '2026-09-28T09:00:00.000Z',
   updatedAt: '2026-09-28T09:00:00.000Z',
@@ -99,6 +100,7 @@ describe('Workflow formatting', () => {
         "  input     Review today's chats. (2 lines)",
         '  runs      one at a time',
         '  attempts  1 (a run Pero stops is not started again)',
+        '  history   none',
         '  state     enabled',
         '',
         'Triggers',
@@ -117,6 +119,12 @@ describe('Workflow formatting', () => {
         title: null,
         agentEnabled: false,
         maxAttempts: 3,
+        history: {
+          channels: [3, 5],
+          messages: 'all',
+          hours: 12,
+          runWhenEmpty: true,
+        },
         triggerCount: 0,
         triggers: [],
       }),
@@ -127,6 +135,7 @@ describe('Workflow formatting', () => {
         "  input     Review today's chats. (2 lines)",
         '  runs      one at a time',
         '  attempts  up to 3 (a run Pero stops starts again when Pero does)',
+        '  history   all messages in Channels 3, 5 from the last 12 hours; runs even when there are none',
         '  state     enabled',
         '',
         'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
@@ -182,9 +191,14 @@ describe('Workflow formatting', () => {
       startedAt: '2026-09-28T19:00:01.000Z',
       finishedAt: '2026-09-28T19:00:09.000Z',
       result: 'Two suggestions.',
+      skipped: false,
       error: null,
     };
     expect(runOutcome(run)).toEqual({ ok: true, text: 'Two suggestions.' });
+    expect(runOutcome({ ...run, result: null, skipped: true })).toEqual({
+      ok: true,
+      text: 'Run 7 of Workflow evening-review skipped: no messages in its history window',
+    });
     expect(
       runOutcome({
         ...run,

@@ -150,6 +150,7 @@ export function runView(
     startedAt: run.startedAt?.toISOString() ?? null,
     finishedAt: run.finishedAt?.toISOString() ?? null,
     result: typeof text === 'string' ? text : null,
+    skipped: run.result?.skipped === true,
     error: run.errorText,
   };
 }

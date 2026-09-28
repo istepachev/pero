@@ -191,9 +191,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Attempts, skipped counts, default permissions, message history, the
-    // allowlist, the Session resume migration, then the domain tables.
-    for (let i = 0; i < 7; i++) {
+    // History, attempts, skipped counts, default permissions, message
+    // history, the allowlist, the Session resume migration, then the domain
+    // tables.
+    for (let i = 0; i < 8; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -215,9 +216,9 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Attempts, skipped counts, default permissions, message history, the
-    // allowlist, then the Session resume migration.
-    for (let i = 0; i < 6; i++) {
+    // Workflow history, attempts, skipped counts, default permissions,
+    // message history, the allowlist, then the Session resume migration.
+    for (let i = 0; i < 7; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -259,9 +260,9 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Attempts, skipped counts, default permissions, message history, then
-    // the allowlist.
-    for (let i = 0; i < 5; i++) {
+    // Workflow history, attempts, skipped counts, default permissions,
+    // message history, then the allowlist.
+    for (let i = 0; i < 6; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -298,8 +299,9 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Attempts, skipped counts, default permissions, then message history.
-    for (let i = 0; i < 4; i++) {
+    // Workflow history, attempts, skipped counts, default permissions, then
+    // message history.
+    for (let i = 0; i < 5; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -329,8 +331,8 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // Attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 3; i++) {
+    // History, attempts, skipped counts, then default permissions.
+    for (let i = 0; i < 4; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -367,7 +369,8 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Attempts, then skipped counts.
+    // History, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
@@ -397,6 +400,8 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
+    // History, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
       `SELECT "name" FROM pragma_table_info('workflows')`,
@@ -416,6 +421,47 @@ describe('domain entities', () => {
     expect(
       await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
     ).toMatchObject({ name: workflow.name, maxAttempts: 1 });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps Workflows and their runs through the history migration and back', async () => {
+    const db = await open();
+    const { workflow, run } = await seed(db);
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({ history: null });
+    await db.getRepository(Workflow).update(workflow.id, {
+      history: {
+        channels: [3, 1],
+        messages: 'all',
+        hours: 24,
+        runWhenEmpty: true,
+      },
+    });
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({
+      history: {
+        channels: [1, 3],
+        messages: 'all',
+        hours: 24,
+        runWhenEmpty: true,
+      },
+    });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('workflows')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain('history_json');
+    expect(await db.query(`SELECT "id" FROM "workflow_runs"`)).toEqual([
+      { id: run.id },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({ name: workflow.name, history: null });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 

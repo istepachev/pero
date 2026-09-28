@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CliError } from './errors.js';
 import {
+  parseHistoryChannels,
   renameWorkflowFields,
   triggerKind,
   workflowChange,
@@ -42,6 +43,52 @@ describe('workflowChange', () => {
     });
   });
 
+  it('turns history on with --history, and with any history option', async () => {
+    expect(await workflowChange({ history: true }, context)).toEqual({
+      history: {},
+    });
+    expect(
+      await workflowChange(
+        {
+          historyChannels: [3, 5],
+          historyMessages: 'all',
+          historyHours: 12,
+          runWhenEmpty: false,
+        },
+        context,
+      ),
+    ).toEqual({
+      history: {
+        channels: [3, 5],
+        messages: 'all',
+        hours: 12,
+        runWhenEmpty: false,
+      },
+    });
+    expect(
+      await workflowChange({ historySinceLastRun: true }, context),
+    ).toEqual({ history: { hours: null } });
+  });
+
+  it('stops reading history with --no-history, alone', async () => {
+    expect(await workflowChange({ history: false }, context)).toEqual({
+      history: null,
+    });
+    await expect(
+      workflowChange({ history: false, historyHours: 3 }, context),
+    ).rejects.toThrow(
+      '--no-history stops runs reading history; give it without the other history options',
+    );
+  });
+
+  it('refuses a fixed window and since-last-run together', async () => {
+    await expect(
+      workflowChange({ historyHours: 3, historySinceLastRun: true }, context),
+    ).rejects.toThrow(
+      'Give either --history-hours or --history-since-last-run, not both',
+    );
+  });
+
   it('refuses a blank input', async () => {
     await expect(
       workflowChange({ input: '-' }, { stdin: () => Promise.resolve('\n') }),
@@ -81,6 +128,20 @@ describe('triggerKind', () => {
   });
 });
 
+describe('parseHistoryChannels', () => {
+  it('takes all, or Channel IDs separated by commas', () => {
+    expect(parseHistoryChannels('all')).toBe('all');
+    expect(parseHistoryChannels(' ALL ')).toBe('all');
+    expect(parseHistoryChannels('3, 5')).toEqual([3, 5]);
+  });
+
+  it.each(['', '3,', 'three', '0', '-1', '3;5'])('refuses %j', (value) => {
+    expect(() => parseHistoryChannels(value)).toThrow(
+      `--history-channels must be all or Channel IDs separated by commas, such as 3,5, not "${value}"`,
+    );
+  });
+});
+
 describe('renameWorkflowFields', () => {
   it('names the options instead of the fields', () => {
     expect(
@@ -97,6 +158,13 @@ describe('renameWorkflowFields', () => {
     );
     expect(renameWorkflowFields('change.maxAttempts: must be at most 10')).toBe(
       '--max-attempts: must be at most 10',
+    );
+    expect(
+      renameWorkflowFields(
+        'change.history.channels: no Channel with ID 9; history.hours: must be at most 720',
+      ),
+    ).toBe(
+      '--history-channels: no Channel with ID 9; --history-hours: must be at most 720',
     );
   });
 

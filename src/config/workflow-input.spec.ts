@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { InvalidInputError, parseInput } from '../common/errors.js';
 import {
   cronSchema,
+  DEFAULT_WORKFLOW_HISTORY,
+  patchHistory,
   triggerAddSchema,
   workflowCreateSchema,
   workflowEditSchema,
+  workflowHistoryPatchSchema,
+  workflowHistorySchema,
 } from './workflow-input.js';
 
 describe('cronSchema', () => {
@@ -149,5 +153,77 @@ describe('triggerAddSchema', () => {
     expect(() =>
       parseInput(triggerAddSchema, { workflow: 'review', kind: 'webhook' }),
     ).toThrow(InvalidInputError);
+  });
+});
+
+describe('workflowHistorySchema', () => {
+  it('takes all Channels or a list, sorted without repeats', () => {
+    expect(workflowHistorySchema.parse(DEFAULT_WORKFLOW_HISTORY)).toEqual(
+      DEFAULT_WORKFLOW_HISTORY,
+    );
+    expect(
+      workflowHistorySchema.parse({
+        channels: [5, 3, 5],
+        messages: 'all',
+        hours: 720,
+        runWhenEmpty: true,
+      }),
+    ).toEqual({
+      channels: [3, 5],
+      messages: 'all',
+      hours: 720,
+      runWhenEmpty: true,
+    });
+  });
+
+  it('refuses no Channels, windows out of range, and unknown fields', () => {
+    expect(() =>
+      parseInput(workflowHistoryPatchSchema, { channels: [] }),
+    ).toThrow('channels: must be all, or the IDs of one or more Channels');
+    expect(() => parseInput(workflowHistoryPatchSchema, { hours: 0 })).toThrow(
+      'hours: must be at least 1',
+    );
+    expect(() =>
+      parseInput(workflowHistoryPatchSchema, { hours: 721 }),
+    ).toThrow('hours: must be at most 720');
+    expect(() =>
+      parseInput(workflowHistoryPatchSchema, { messages: 'agents' }),
+    ).toThrow(InvalidInputError);
+    expect(() =>
+      parseInput(workflowHistoryPatchSchema, { direction: 'in' }),
+    ).toThrow(InvalidInputError);
+  });
+
+  it('patches the defaults, or the current history input', () => {
+    expect(patchHistory(null, {})).toEqual(DEFAULT_WORKFLOW_HISTORY);
+    expect(patchHistory(null, { hours: 12 })).toEqual({
+      ...DEFAULT_WORKFLOW_HISTORY,
+      hours: 12,
+    });
+    expect(
+      patchHistory(
+        { channels: [3], messages: 'all', hours: 12, runWhenEmpty: true },
+        { hours: null, runWhenEmpty: undefined },
+      ),
+    ).toEqual({
+      channels: [3],
+      messages: 'all',
+      hours: null,
+      runWhenEmpty: true,
+    });
+  });
+
+  it('is optional on create, and cleared with null on edit', () => {
+    expect(
+      workflowCreateSchema.parse({
+        name: 'coach',
+        agent: 'coach',
+        inputTemplate: 'Review {{history}}',
+        history: { messages: 'people' },
+      }).history,
+    ).toEqual({ messages: 'people' });
+    expect(workflowEditSchema.parse({ history: null })).toEqual({
+      history: null,
+    });
   });
 });

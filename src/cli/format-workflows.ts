@@ -36,6 +36,7 @@ export function formatWorkflowDetails(workflow: WorkflowDetails): string {
       ['input', preview(workflow.inputTemplate)],
       ['runs', 'one at a time'],
       ['attempts', attempts(workflow.maxAttempts)],
+      ['history', history(workflow.history)],
       ['state', state(workflow.enabled)],
     ]).map((row) => `  ${row}`),
   ];
@@ -87,7 +88,14 @@ export function describeScheduledTrigger(trigger: TriggerView): string {
  * is none.
  */
 export function runOutcome(run: RunView): { ok: boolean; text: string } {
-  if (run.status === 'completed') return { ok: true, text: run.result ?? '' };
+  if (run.status === 'completed') {
+    return {
+      ok: true,
+      text: run.skipped
+        ? `Run ${run.id} of Workflow ${run.workflow} skipped: no messages in its history window`
+        : (run.result ?? ''),
+    };
+  }
   return {
     ok: false,
     text:
@@ -101,6 +109,28 @@ function attempts(maxAttempts: number): string {
   return maxAttempts === 1
     ? '1 (a run Pero stops is not started again)'
     : `up to ${maxAttempts} (a run Pero stops starts again when Pero does)`;
+}
+
+/**
+ * The Channel history a Workflow's runs read, such as `people's messages
+ * in Channels 3, 5 since the previous run; skipped when there are none`.
+ */
+function history(config: WorkflowView['history']): string {
+  if (config === null) return 'none';
+  const messages =
+    config.messages === 'people' ? "people's messages" : 'all messages';
+  const channels =
+    config.channels === 'all'
+      ? 'all Channels'
+      : `${config.channels.length === 1 ? 'Channel' : 'Channels'} ${config.channels.join(', ')}`;
+  const window =
+    config.hours === null
+      ? 'since the previous run'
+      : `from the last ${config.hours === 1 ? 'hour' : `${config.hours} hours`}`;
+  const empty = config.runWhenEmpty
+    ? 'runs even when there are none'
+    : 'skipped when there are none';
+  return `${messages} in ${channels} ${window}; ${empty}`;
 }
 
 /** Why the Workflow cannot run; null when it can. */

@@ -904,6 +904,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         "  input     Review today's chats.",
         '  runs      one at a time',
         '  attempts  1 (a run Pero stops is not started again)',
+        '  history   none',
         '  state     enabled',
         '',
         'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
@@ -998,6 +999,106 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     ).toMatchObject({ code: 0 });
     expect((await workflows('show', 'brief')).stdout).toContain(
       '  attempts  up to 3 (a run Pero stops starts again when Pero does)\n',
+    );
+  });
+
+  it('sets the Channel history a Workflow reads, and skips a run with none', async () => {
+    const run = await pero(withDataDir('run'), {
+      env: { PERO_FAKE_RUNTIME: 'echo' },
+    });
+    expect(run.code).toBe(0);
+    const vault = join(tmp, 'vault');
+    mkdirSync(vault);
+    await pero(
+      withDataDir('settings', 'set', 'default-working-directory', vault),
+    );
+    await pero(withDataDir('agents', 'create', 'coach'));
+    const workflows = (...args: string[]) =>
+      pero(withDataDir('workflows', ...args));
+
+    expect(
+      await workflows(
+        'create',
+        'english',
+        '--agent',
+        'coach',
+        '--input',
+        'Suggest improvements: {{history}}',
+        '--history-channels',
+        '7',
+      ),
+    ).toMatchObject({
+      code: 1,
+      stderr:
+        '--history-channels: no Channel with ID 7; pero channels ls lists them\n',
+    });
+    expect(
+      await workflows(
+        'create',
+        'english',
+        '--agent',
+        'coach',
+        '--input',
+        'Suggest improvements: {{history}}',
+        '--history',
+      ),
+    ).toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining(
+        'Created Workflow english: runs Agent coach, reads Channel history, 0 Triggers\n',
+      ),
+    });
+    expect((await workflows('show', 'english')).stdout).toContain(
+      "  history   people's messages in all Channels since the previous run; skipped when there are none\n",
+    );
+    expect(
+      await workflows(
+        'edit',
+        'english',
+        '--history-messages',
+        'all',
+        '--history-hours',
+        '24',
+        '--run-when-empty',
+      ),
+    ).toMatchObject({ code: 0 });
+    expect((await workflows('show', 'english')).stdout).toContain(
+      '  history   all messages in all Channels from the last 24 hours; runs even when there are none\n',
+    );
+    expect(
+      await workflows('edit', 'english', '--history-messages', 'agents'),
+    ).toMatchObject({
+      code: 1,
+      stderr: '--history-messages must be people or all, not "agents"\n',
+    });
+    expect(
+      await workflows(
+        'edit',
+        'english',
+        '--no-history',
+        '--history-hours',
+        '3',
+      ),
+    ).toMatchObject({
+      code: 1,
+      stderr:
+        '--no-history stops runs reading history; give it without the other history options\n',
+    });
+
+    await workflows('edit', 'english', '--no-run-when-empty');
+    await pero(withDataDir('triggers', 'add', 'english', '--manual'));
+    expect(await workflows('run', 'english')).toMatchObject({
+      code: 0,
+      stdout:
+        'Run 1 of Workflow english skipped: no messages in its history window\n',
+    });
+
+    expect(await workflows('edit', 'english', '--no-history')).toMatchObject({
+      code: 0,
+      stdout: 'Changed Workflow english: runs Agent coach, 1 Trigger\n',
+    });
+    expect((await workflows('show', 'english')).stdout).toContain(
+      '  history   none\n',
     );
   });
 

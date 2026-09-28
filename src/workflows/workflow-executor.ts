@@ -9,6 +9,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
 import { AgentsService } from '../agents/agents.service.js';
+import { MessageHistory } from '../history/message-history.service.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import {
   SETTINGS_ID,
@@ -23,7 +24,9 @@ import { inTransaction } from '../persistence/transaction.js';
 import {
   type ExecutionSnapshot,
   executionSnapshot,
+  historyWindowSchema,
 } from './execution-snapshot.js';
+import { readHistoryWindow } from './history-window.js';
 
 /** A run the executor has claimed and marked `running`. */
 interface ClaimedRun {
@@ -47,6 +50,9 @@ export const INTERRUPTED = 'Pero stopped before the run finished';
 
 /** Why a run the owner cancelled did not finish. */
 export const CANCELLED = 'Cancelled with pero runs cancel';
+
+/** Why a run completed without its Agent. */
+export const SKIPPED = 'no messages in its history window';
 
 /**
  * The bounded in-process executor for Workflow Runs. SQLite holds the work:
@@ -82,6 +88,7 @@ export class WorkflowExecutor
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly agents: AgentsService,
     private readonly agentManager: AgentManager,
+    private readonly history: MessageHistory,
   ) {}
 
   /**
@@ -115,7 +122,8 @@ export class WorkflowExecutor
    * Marks each run left `running` `interrupted`, since nothing runs it any
    * more, and queues a retry when its Workflow allows another attempt and
    * it and its Agent are enabled. Each retry is a new run keyed by the one
-   * it retries, so recovering twice queues it once.
+   * it retries, so recovering twice queues it once, and it reads the same
+   * history window.
    */
   async recover(): Promise<void> {
     const left = await this.dataSource.getRepository(WorkflowRun).find({
@@ -160,6 +168,9 @@ export class WorkflowExecutor
       outcome = `not retried: Agent ${agent.name} is disabled`;
     } else {
       const triggerKey = `retry:${run.id}`;
+      const window = historyWindowSchema.safeParse(
+        run.executionConfig?.history,
+      );
       await runs
         .createQueryBuilder()
         .insert()
@@ -169,6 +180,8 @@ export class WorkflowExecutor
           triggerKey,
           status: 'pending',
           attempt: run.attempt + 1,
+          // Taken up when the retry is claimed.
+          executionConfig: window.success ? { history: window.data } : null,
         })
         .orIgnore()
         .execute();
@@ -248,14 +261,17 @@ export class WorkflowExecutor
 
   /**
    * Claims the oldest pending run of a Workflow with none running, if a
-   * slot is free, and snapshots what it executes with. A run whose Workflow
-   * or Agent was disabled since it was queued fails instead.
+   * slot is free, and snapshots what it executes with, fixing its history
+   * window. Retries go first, so a run queued before one reads after its
+   * window. A run whose Workflow or Agent was disabled since it was queued
+   * fails instead, and one whose window has no messages completes without
+   * its Agent unless the Workflow asks to run anyway.
    */
   private async claimWithin(
     manager: EntityManager,
   ): Promise<ClaimedRun | null> {
     // Read on every claim, so a changed limit applies without a restart.
-    const { maxConcurrentRuns } = await manager
+    const { maxConcurrentRuns, timezone } = await manager
       .getRepository(Settings)
       .findOneByOrFail({ id: SETTINGS_ID });
     if (this.stopping || this.active.size >= maxConcurrentRuns) return null;
@@ -271,7 +287,8 @@ export class WorkflowExecutor
         });
       }
       const run = await query
-        .orderBy('run.createdAt', 'ASC')
+        .orderBy('run.attempt', 'DESC')
+        .addOrderBy('run.createdAt', 'ASC')
         .addOrderBy('run.id', 'ASC')
         .getOne();
       if (run === null) return null;
@@ -295,10 +312,41 @@ export class WorkflowExecutor
         );
         continue;
       }
-      const snapshot = executionSnapshot(agent, workflow.inputTemplate);
+      const now = new Date();
+      const history = await readHistoryWindow(manager, this.history, {
+        workflowId: workflow.id,
+        config: workflow.history,
+        inherited: run.executionConfig?.history,
+        template: workflow.inputTemplate,
+        now,
+        timeZone: timezone,
+      });
+      const snapshot = executionSnapshot(
+        agent,
+        history?.input ?? workflow.inputTemplate,
+        history?.read,
+      );
+      if (
+        history !== null &&
+        history.read.count === 0 &&
+        !history.read.runWhenEmpty
+      ) {
+        // Completed all the same, so the next run reads after its window.
+        await runs.update(run.id, {
+          status: 'completed',
+          startedAt: now,
+          finishedAt: now,
+          executionConfig: snapshot,
+          result: { skipped: true },
+        });
+        this.logger.log(
+          `Run ${run.id} of Workflow ${workflow.name} skipped: ${SKIPPED}`,
+        );
+        continue;
+      }
       await runs.update(run.id, {
         status: 'running',
-        startedAt: new Date(),
+        startedAt: now,
         executionConfig: snapshot,
       });
       return {

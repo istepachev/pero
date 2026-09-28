@@ -14,6 +14,7 @@ import { ChannelTurns } from '../channels/channel-stages.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import {
   FakeChannelAdapter,
+  groupChat,
   inboundMessage,
   privateChat,
 } from '../channels/testing/fake-channel-adapter.js';
@@ -22,6 +23,8 @@ import {
   InvalidInputError,
   NotFoundError,
 } from '../common/errors.js';
+import type { WorkflowHistoryPatch } from '../config/workflow-input.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
@@ -35,12 +38,14 @@ import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
+import type { HistoryRead } from './execution-snapshot.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
 
 const OWNER = privateChat('1234');
+const HOME = groupChat('-100777', 'Home');
 
 describe('Workflow Runs and the executor', () => {
   let tmp: string;
@@ -654,6 +659,287 @@ describe('Workflow Runs and the executor', () => {
     await executor.idle();
 
     expect((await run(id)).status).toBe('completed');
+  });
+
+  describe('history input', () => {
+    let adapter: FakeChannelAdapter;
+
+    beforeEach(async () => {
+      await settings.update({ timezone: 'UTC' });
+      for (const chat of [OWNER, HOME]) {
+        await moduleRef.get(AllowedChatsService).allow({
+          integrationKind: 'telegram',
+          chatKey: chat.key,
+          kind: chat.kind,
+          title: chat.title,
+        });
+      }
+      adapter = new FakeChannelAdapter();
+      await moduleRef.get(ChannelRouter).connect(adapter);
+    });
+
+    /** A message in the English topic, or `topic` of HOME, and its reply. */
+    async function say(text: string, topic = '7'): Promise<void> {
+      const title = topic === '7' ? 'English' : `Topic ${topic}`;
+      await adapter.deliver(inboundMessage(HOME, { topic, title, text }));
+      await (moduleRef.get(ChannelTurns) as AgentChannelTurns).idle();
+    }
+
+    async function channelId(key: string): Promise<number> {
+      return (
+        await ds.getRepository(Channel).findOneByOrFail({ externalKey: key })
+      ).id;
+    }
+
+    /** `review`, which reads history with `history`, run by hand. */
+    async function historyWorkflow(
+      history: WorkflowHistoryPatch = {},
+    ): Promise<void> {
+      await workflows.create({
+        name: 'review',
+        agent: 'coach',
+        inputTemplate: 'Review:\n{{history}}',
+        history,
+      });
+      await triggers.add({ workflow: 'review', kind: 'manual' });
+    }
+
+    /**
+     * Runs `review` once: the run, the input its Agent got (undefined when
+     * it was not asked), and the window it read.
+     */
+    async function runReview(): Promise<{
+      view: RunView;
+      input: string | undefined;
+      window: HistoryRead;
+    }> {
+      const asked = claude.requests.length;
+      const { id } = await runs.start('review');
+      await executor.idle();
+      return {
+        view: await run(id),
+        input:
+          claude.requests.length > asked
+            ? claude.requests.at(-1)!.input
+            : undefined,
+        window: await windowOf(id),
+      };
+    }
+
+    async function windowOf(id: number): Promise<HistoryRead> {
+      const { executionConfig } = await ds
+        .getRepository(WorkflowRun)
+        .findOneByOrFail({ id });
+      return executionConfig!.history as HistoryRead;
+    }
+
+    it('reads each message once across consecutive runs, in adjacent windows', async () => {
+      await say('I goed home');
+      await say('She have two cats');
+      await historyWorkflow();
+
+      const first = await runReview();
+      expect(first.view.status).toBe('completed');
+      const lines = first.input!.split('\n');
+      expect(lines[0]).toBe('Review:');
+      expect(lines[1]).toBe('[Chat history]');
+      expect(lines[2]).toMatch(
+        /^\d{4}-\d\d-\d\d \d\d:\d\d \[English\] User: I goed home$/,
+      );
+      expect(lines[3]).toMatch(/ \[English\] User: She have two cats$/);
+      expect(lines[4]).toBe('[End of chat history]');
+      expect(lines).toHaveLength(5);
+      expect(first.window).toMatchObject({
+        channels: 'all',
+        messages: 'people',
+        afterId: null,
+        count: 2,
+        dropped: 0,
+      });
+      expect(first.window.since).not.toBeNull();
+
+      await say('We was late');
+      const second = await runReview();
+      expect(second.input).toContain('User: We was late');
+      expect(second.input).not.toContain('goed');
+      expect(second.input).not.toContain('two cats');
+      expect(second.window).toMatchObject({
+        afterId: first.window.untilId,
+        since: null,
+        count: 1,
+      });
+    });
+
+    it('reads the last 24 hours on its first run', async () => {
+      await say('Yesterday morning');
+      await say('Just now');
+      const messages = ds.getRepository(Message);
+      const old = await messages.findOneByOrFail({ text: 'Yesterday morning' });
+      await messages.update(old.id, {
+        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      });
+      await historyWorkflow();
+
+      const { input } = await runReview();
+
+      expect(input).toContain('User: Just now');
+      expect(input).not.toContain('Yesterday morning');
+    });
+
+    it('reads a fixed window of hours on every run', async () => {
+      await say('Once');
+      await historyWorkflow({ hours: 1 });
+
+      expect((await runReview()).input).toContain('User: Once');
+      const second = await runReview();
+      expect(second.input).toContain('User: Once');
+      expect(second.window).toMatchObject({ afterId: null, count: 1 });
+    });
+
+    it("keeps to the Channels it names, and adds the Agents' replies when asked", async () => {
+      await say('In English');
+      await say('Buy milk', '8');
+      const english = await channelId(`${HOME.key}:7`);
+      await historyWorkflow({ channels: [english], messages: 'all' });
+
+      const { input, window } = await runReview();
+
+      expect(input).toContain('[English] User: In English');
+      expect(input).toContain('[English] english: echo: In English');
+      expect(input).not.toContain('Buy milk');
+      // Pero's own notices, such as the welcome, are left out.
+      expect(input).not.toContain('pero agents edit');
+      expect(window).toMatchObject({ channels: [english], messages: 'all' });
+      expect(window.count).toBe(2);
+    });
+
+    it('keeps the newest messages within the budget', async () => {
+      await say(`first ${'a'.repeat(30_000)}`);
+      await say(`second ${'b'.repeat(30_000)}`);
+      await historyWorkflow();
+
+      const { input, window } = await runReview();
+
+      expect(input).toContain('[1 earlier message left out to fit]');
+      expect(input).toContain('User: second');
+      expect(input).not.toContain('User: first');
+      expect(window).toMatchObject({ count: 2, dropped: 1 });
+    });
+
+    it('completes a run with an empty window without its Agent, and reads after it next time', async () => {
+      await say('Before the Workflow');
+      await historyWorkflow({ hours: null });
+      // The first window is taken, so the next is empty.
+      await runReview();
+
+      const empty = await runReview();
+      expect(empty.view).toMatchObject({
+        status: 'completed',
+        skipped: true,
+        result: null,
+        error: null,
+      });
+      expect(empty.input).toBeUndefined();
+      expect(empty.window.count).toBe(0);
+
+      await say('After it');
+      const next = await runReview();
+      expect(next.input).toContain('User: After it');
+      expect(next.input).not.toContain('Before the Workflow');
+      expect(next.window.afterId).toBe(empty.window.untilId);
+    });
+
+    it('runs the Agent on an empty window when the Workflow asks to', async () => {
+      await historyWorkflow({ runWhenEmpty: true });
+
+      const { view, input } = await runReview();
+
+      expect(view).toMatchObject({ status: 'completed', skipped: false });
+      expect(input).toBe('Review:\n[No messages in this window]');
+    });
+
+    it('reads again the messages of a run that failed', async () => {
+      await say('One');
+      await historyWorkflow();
+      claude.failNext();
+      expect((await runReview()).view.status).toBe('failed');
+
+      await say('Two');
+      const { input } = await runReview();
+      expect(input).toContain('User: One');
+      expect(input).toContain('User: Two');
+    });
+
+    it('gives a retry the window of the run it retries, ahead of runs queued before it', async () => {
+      await say('Before the crash');
+      await historyWorkflow();
+      await workflows.edit('review', { maxAttempts: 2 });
+      const workflow = await workflows.get('review');
+      const messages = ds.getRepository(Message);
+      const crashedUntil = (
+        await messages.findOneByOrFail({ text: 'Before the crash' })
+      ).id;
+      await say('After the crash');
+      const repo = ds.getRepository(WorkflowRun);
+      // Queued first, so only the retry's attempt puts that ahead of it.
+      const queued = await repo.save(
+        repo.create({
+          workflowId: workflow.id,
+          triggerId: null,
+          triggerKey: 'manual:queued',
+          status: 'pending',
+          attempt: 1,
+        }),
+      );
+      const crashed = await repo.save(
+        repo.create({
+          workflowId: workflow.id,
+          triggerId: null,
+          triggerKey: 'manual:crashed',
+          status: 'running',
+          attempt: 1,
+          startedAt: new Date(),
+          executionConfig: {
+            history: {
+              channels: 'all',
+              messages: 'people',
+              runWhenEmpty: false,
+              afterId: null,
+              since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+              untilId: crashedUntil,
+              count: 1,
+              dropped: 0,
+            },
+          },
+        }),
+      );
+      const asked = claude.requests.length;
+
+      await moduleRef.close();
+      await boot();
+      await executor.idle();
+
+      const retry = await ds.getRepository(WorkflowRun).findOneByOrFail({
+        triggerKey: `retry:${crashed.id}`,
+      });
+      expect(retry.status).toBe('completed');
+      const retryWindow = await windowOf(retry.id);
+      expect(retryWindow).toMatchObject({
+        afterId: null,
+        untilId: crashedUntil,
+        count: 1,
+      });
+      const [retryInput, queuedInput] = claude.requests
+        .slice(asked)
+        .map((request) => request.input);
+      expect(retryInput).toContain('User: Before the crash');
+      expect(retryInput).not.toContain('After the crash');
+      expect(queuedInput).toContain('User: After the crash');
+      expect(queuedInput).not.toContain('Before the crash');
+      expect(await windowOf(queued.id)).toMatchObject({
+        afterId: crashedUntil,
+      });
+    });
   });
 
   describe('starting a run by hand', () => {

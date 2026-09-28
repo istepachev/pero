@@ -13,6 +13,7 @@ import {
   NotFoundError,
 } from '../common/errors.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -184,6 +185,80 @@ describe('WorkflowsService and WorkflowViews', () => {
       new InvalidInputError('maxAttempts: must be a whole number'),
     );
     expect((await views.details('review')).maxAttempts).toBe(1);
+  });
+
+  it('sets, changes, and clears the Channel history its runs read', async () => {
+    const agent = await ds.getRepository(Agent).findOneByOrFail({
+      name: 'coach',
+    });
+    const channels = ds.getRepository(Channel);
+    const { id: channel } = await channels.save(
+      channels.create({
+        integrationKind: 'telegram',
+        externalKey: '1234',
+        address: { chatId: '1234' },
+        title: null,
+        agentId: agent.id,
+      }),
+    );
+    await workflows.create({
+      name: 'plain',
+      agent: 'coach',
+      inputTemplate: 'Go',
+    });
+    expect((await views.details('plain')).history).toBeNull();
+
+    await workflows.create({
+      name: 'review',
+      agent: 'coach',
+      inputTemplate: 'Review {{history}}',
+      history: {},
+    });
+    expect((await views.details('review')).history).toEqual({
+      channels: 'all',
+      messages: 'people',
+      hours: null,
+      runWhenEmpty: false,
+    });
+
+    // Fields left out keep their value.
+    await workflows.edit('review', {
+      history: { channels: [channel], hours: 12 },
+    });
+    await workflows.edit('review', { history: { runWhenEmpty: true } });
+    expect((await views.details('review')).history).toEqual({
+      channels: [channel],
+      messages: 'people',
+      hours: 12,
+      runWhenEmpty: true,
+    });
+
+    await expect(
+      workflows.edit('review', { history: { channels: [channel, 99] } }),
+    ).rejects.toThrow(
+      new InvalidInputError(
+        'history.channels: no Channel with ID 99; pero channels ls lists them',
+      ),
+    );
+    await expect(
+      workflows.create({
+        name: 'other',
+        agent: 'coach',
+        inputTemplate: 'Go',
+        history: { channels: [98] },
+      }),
+    ).rejects.toThrow(InvalidInputError);
+
+    await workflows.edit('review', { history: null });
+    expect((await views.details('review')).history).toBeNull();
+    // Without any history, edits start from the defaults.
+    await workflows.edit('review', { history: { messages: 'all' } });
+    expect((await views.details('review')).history).toEqual({
+      channels: 'all',
+      messages: 'all',
+      hours: null,
+      runWhenEmpty: false,
+    });
   });
 
   it('disables and enables a Workflow, even while its Agent is disabled', async () => {
