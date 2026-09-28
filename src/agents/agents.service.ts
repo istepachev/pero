@@ -67,42 +67,53 @@ export class AgentsService {
    * installation defaults; without a folder of its own, it follows the
    * default working directory, which must then be set.
    */
-  async create(input: AgentCreate): Promise<Agent> {
-    const fields = parseInput(agentCreateSchema, input);
-    return inTransaction(this.dataSource, async (manager) => {
-      const agents = manager.getRepository(Agent);
-      if (await agents.existsBy({ name: fields.name })) {
-        throw new ConflictError(`An Agent named ${fields.name} already exists`);
-      }
-      const settings = await getSettings(manager);
-      const provider = fields.provider ?? settings.defaultProvider;
-      const workingDirectory = await ownFolder(fields.workingDirectory);
-      if (workingDirectory === null) {
-        // The default may have gone missing since it was set.
-        await validateWorkingDirectory(
-          followable({ workingDirectory }, settings),
-        );
-      }
+  create(input: AgentCreate): Promise<Agent> {
+    return inTransaction(this.dataSource, (manager) =>
+      this.createWithin(manager, input),
+    );
+  }
 
-      const { id } = await agents.save(
-        agents.create({
-          name: fields.name,
-          title: fields.title ?? null,
-          provider,
-          providerOptions: optionsFor(
-            provider,
-            settings.providerDefaults[provider],
-            fields.providerOptions,
-          ),
-          instructions: fields.instructions ?? null,
-          workingDirectory,
-          useSharedInstructions: fields.useSharedInstructions ?? true,
-          codexSkipGitRepoCheck: fields.codexSkipGitRepoCheck ?? false,
-          toolPolicy: {},
-        }),
+  /**
+   * `create` inside the caller's transaction, so the Agent commits or rolls
+   * back with whatever else the caller writes there.
+   */
+  async createWithin(
+    manager: EntityManager,
+    input: AgentCreate,
+  ): Promise<Agent> {
+    const fields = parseInput(agentCreateSchema, input);
+    const agents = manager.getRepository(Agent);
+    if (await agents.existsBy({ name: fields.name })) {
+      throw new ConflictError(`An Agent named ${fields.name} already exists`);
+    }
+    const settings = await getSettings(manager);
+    const provider = fields.provider ?? settings.defaultProvider;
+    const workingDirectory = await ownFolder(fields.workingDirectory);
+    if (workingDirectory === null) {
+      // The default may have gone missing since it was set.
+      await validateWorkingDirectory(
+        followable({ workingDirectory }, settings),
       );
-      return agents.findOneByOrFail({ id });
-    });
+    }
+
+    const { id } = await agents.save(
+      agents.create({
+        name: fields.name,
+        title: fields.title ?? null,
+        provider,
+        providerOptions: optionsFor(
+          provider,
+          settings.providerDefaults[provider],
+          fields.providerOptions,
+        ),
+        instructions: fields.instructions ?? null,
+        workingDirectory,
+        useSharedInstructions: fields.useSharedInstructions ?? true,
+        codexSkipGitRepoCheck: fields.codexSkipGitRepoCheck ?? false,
+        toolPolicy: {},
+      }),
+    );
+    return agents.findOneByOrFail({ id });
   }
 
   /**

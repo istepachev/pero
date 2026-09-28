@@ -26,8 +26,14 @@ export abstract class ChannelTurns {
 
 /** Creates Channels and follows chat changes in allowed chats. */
 export abstract class ChannelOnboarding {
-  /** A message in an allowed chat for a Channel key Pero does not know. */
-  abstract onUnknownChannel(message: InboundMessage): Promise<void>;
+  /**
+   * A message in an allowed chat for a Channel key Pero does not know.
+   * Resolves to the Channel it now has, which the message goes on to, or
+   * null when none could be set up yet.
+   */
+  abstract onUnknownChannel(
+    message: InboundMessage,
+  ): Promise<RoutedChannel | null>;
 
   /** Any event from an allowed chat. */
   abstract onEvent(event: ChannelEvent): Promise<void>;
@@ -41,28 +47,6 @@ export class UnwiredChannelTurns extends ChannelTurns {
   handle(channel: RoutedChannel): Promise<void> {
     this.logger.warn(
       `Agents cannot answer yet; dropped a message for Channel ${channel.id}`,
-    );
-    return Promise.resolve();
-  }
-}
-
-/** Stands in until Channel onboarding exists. */
-@Injectable()
-export class UnwiredChannelOnboarding extends ChannelOnboarding {
-  private readonly logger = new Logger('Channels');
-
-  onUnknownChannel(message: InboundMessage): Promise<void> {
-    this.logger.warn(
-      `Onboarding is not available yet; dropped a message for new ` +
-        `${message.integrationKind} Channel ${message.channel.key}`,
-    );
-    return Promise.resolve();
-  }
-
-  onEvent(event: ChannelEvent): Promise<void> {
-    this.logger.warn(
-      `Onboarding is not available yet; ignored ${event.type} in ` +
-        `${event.integrationKind} chat ${event.chat.key}`,
     );
     return Promise.resolve();
   }

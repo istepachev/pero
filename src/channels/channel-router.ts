@@ -14,9 +14,8 @@ import type {
   ChannelEvent,
   InboundChat,
   InboundMessage,
-  OutboundMessage,
-  SentMessage,
 } from './channel-adapter.js';
+import { ChannelSender } from './channel-sender.js';
 import {
   ChannelOnboarding,
   ChannelTurns,
@@ -36,15 +35,15 @@ export function pairingHint(kind: IntegrationKind, chatKey: string): string {
 /**
  * Takes every update from the connected adapters. Only allowed chats get
  * past it, each update only once; a message then goes to its Channel's
- * Agent, or to onboarding when its Channel is new.
+ * Agent, through onboarding first when its Channel is new.
  */
 @Injectable()
 export class ChannelRouter implements BeforeApplicationShutdown {
   private readonly logger = new Logger('Channels');
-  private readonly adapters = new Map<IntegrationKind, ChannelAdapter>();
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly sender: ChannelSender,
     private readonly allowedChats: AllowedChatsService,
     private readonly inboundUpdates: InboundUpdates,
     private readonly pairing: PairingRequests,
@@ -54,10 +53,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
 
   /** Starts `adapter`'s intake into this router and sends through it. */
   async connect(adapter: ChannelAdapter): Promise<void> {
-    if (this.adapters.has(adapter.kind)) {
-      throw new Error(`A ${adapter.kind} adapter is already connected`);
-    }
-    this.adapters.set(adapter.kind, adapter);
+    this.sender.add(adapter);
     await adapter.start({
       onMessage: (message) => this.handleMessage(message),
       onEvent: (event) => this.handleEvent(event),
@@ -67,7 +63,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
   /** Stops intake before active work drains and the database closes. */
   async beforeApplicationShutdown(): Promise<void> {
     await Promise.all(
-      [...this.adapters.values()].map(async (adapter) => {
+      this.sender.all().map(async (adapter) => {
         try {
           await adapter.stop();
         } catch (error) {
@@ -79,18 +75,6 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     );
   }
 
-  send(
-    kind: IntegrationKind,
-    address: ChannelAddress,
-    message: OutboundMessage,
-  ): Promise<SentMessage> {
-    const adapter = this.adapters.get(kind);
-    if (!adapter) {
-      return Promise.reject(new Error(`No ${kind} adapter is connected`));
-    }
-    return adapter.send(address, message);
-  }
-
   /** Routes one message; failures are logged, never thrown at the adapter. */
   async handleMessage(message: InboundMessage): Promise<void> {
     const { integrationKind: kind, updateId } = message;
@@ -99,13 +83,13 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         return;
       }
       await this.once(kind, updateId, async () => {
-        const channel = await this.dataSource.getRepository(Channel).findOne({
-          where: { integrationKind: kind, externalKey: message.channel.key },
-          relations: { agent: true },
-        });
-        if (channel === null) {
-          await this.onboarding.onUnknownChannel(message);
-        } else if (!channel.enabled || !channel.agent?.enabled) {
+        const channel =
+          (await this.dataSource.getRepository(Channel).findOne({
+            where: { integrationKind: kind, externalKey: message.channel.key },
+            relations: { agent: true },
+          })) ?? (await this.onboarding.onUnknownChannel(message));
+        if (channel === null) return;
+        if (!channel.enabled || !channel.agent?.enabled) {
           this.logger.debug(
             `Ignored ${kind} update ${updateId}: Channel ${channel.id} or ` +
               `its Agent is disabled`,
@@ -184,7 +168,9 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       `A ${kind} chat that is not allowed asked to pair: ${chat.key}`,
     );
     try {
-      await this.send(kind, replyTo, { text: pairingHint(kind, chat.key) });
+      await this.sender.send(kind, replyTo, {
+        text: pairingHint(kind, chat.key),
+      });
     } catch (error) {
       this.logger.warn(
         `Failed to send the pairing hint to ${kind} chat ${chat.key}: ${describe(error)}`,

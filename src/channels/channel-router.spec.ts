@@ -44,7 +44,9 @@ describe('ChannelRouter', () => {
   let adapter: FakeChannelAdapter;
   const turns = { handle: vi.fn(() => Promise.resolve()) };
   const onboarding = {
-    onUnknownChannel: vi.fn(() => Promise.resolve()),
+    onUnknownChannel: vi.fn((): Promise<Channel | null> =>
+      Promise.resolve(null),
+    ),
     onEvent: vi.fn(() => Promise.resolve()),
   };
 
@@ -229,6 +231,35 @@ describe('ChannelRouter', () => {
       expect(turns.handle).not.toHaveBeenCalled();
     });
 
+    it('passes a message on to the Channel onboarding returns', async () => {
+      const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
+      const found = await ds.getRepository(Channel).findOneOrFail({
+        where: { id: onboarded.id },
+        relations: { agent: true },
+      });
+      onboarding.onUnknownChannel.mockResolvedValueOnce(found);
+      const message = inboundMessage(GROUP, { topic: '9' });
+
+      await adapter.deliver(message);
+
+      expect(turns.handle).toHaveBeenCalledExactlyOnceWith(found, message);
+    });
+
+    it('drops a message when onboarding returns a disabled Channel', async () => {
+      const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
+      await ds.getRepository(Channel).update(onboarded.id, { enabled: false });
+      onboarding.onUnknownChannel.mockResolvedValueOnce(
+        await ds.getRepository(Channel).findOneOrFail({
+          where: { id: onboarded.id },
+          relations: { agent: true },
+        }),
+      );
+
+      await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
+
+      expect(turns.handle).not.toHaveBeenCalled();
+    });
+
     it('passes a duplicate update on only once', async () => {
       await channel(OWNER.key, 'main');
       const message = inboundMessage(OWNER, { updateId: '100' });
@@ -261,7 +292,7 @@ describe('ChannelRouter', () => {
     });
 
     it('forwards its events to onboarding, each once', async () => {
-      const event = topicCreated(GROUP, '9', '200');
+      const event = topicCreated(GROUP, '9', { updateId: '200' });
 
       await adapter.emit(event);
       await adapter.emit(event);

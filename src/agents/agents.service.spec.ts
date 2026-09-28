@@ -2,6 +2,8 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ConflictError,
@@ -10,6 +12,7 @@ import {
 } from '../common/errors.js';
 import type { AgentCreate } from '../config/agent-input.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
+import { inTransaction } from '../persistence/transaction.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AgentsModule } from './agents.module.js';
@@ -204,6 +207,25 @@ describe('AgentsService', () => {
           ConflictError,
         );
         expect(await agents.list()).toHaveLength(1);
+      });
+
+      it("commits or rolls back with the caller's transaction", async () => {
+        const ds = moduleRef.get<DataSource>(getDataSourceToken());
+
+        await expect(
+          inTransaction(ds, async (manager) => {
+            await agents.createWithin(manager, { name: 'draft' });
+            throw new Error('Caller failed');
+          }),
+        ).rejects.toThrow('Caller failed');
+        expect(await agents.list()).toEqual([]);
+
+        await inTransaction(ds, (manager) =>
+          agents.createWithin(manager, { name: 'kept' }),
+        );
+        expect((await agents.list()).map((agent) => agent.name)).toEqual([
+          'kept',
+        ]);
       });
     });
 
