@@ -6,6 +6,7 @@ These documents turn the agreed design for Pero into a starting point for implem
 2. [Tech stack](./TECH_STACK.md) — chosen technologies, deployment shape, configuration, and operational rules.
 3. [CLI and service lifecycle](./CLI.md) — installation, first run, commands, background process, and local files.
 4. [Implementation plan](./IMPLEMENTATION_PLAN.md) — build order, split into pull requests, with acceptance criteria for an initial release.
+5. [Testing](./TESTING.md) — test layers, provider smoke tests under the service's account, a manual check with a real bot, and where each phase's exit criteria are verified.
 
 ## Decision snapshot
 
