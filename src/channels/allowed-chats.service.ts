@@ -26,6 +26,13 @@ export class AllowedChatsService {
       .findOneBy({ integrationKind, chatKey });
   }
 
+  /** The integration's allowed chats, oldest first. */
+  list(integrationKind: IntegrationKind): Promise<AllowedChat[]> {
+    return this.dataSource
+      .getRepository(AllowedChat)
+      .find({ where: { integrationKind }, order: { id: 'ASC' } });
+  }
+
   /** Allows a chat; allowing one again updates its kind and title. */
   allow(chat: ChatToAllow): Promise<AllowedChat> {
     return inTransaction(this.dataSource, async (manager) => {

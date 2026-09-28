@@ -29,8 +29,13 @@ export function pendingSetup(
 
   const component = (name: string) =>
     status.components.find((candidate) => candidate.name === name);
+  // Only a missing or rejected token needs setup; a connection that is
+  // still starting or failing for a while shows in `pero status`.
   const telegram = component('telegram');
-  if (telegram && telegram.state !== 'ok') {
+  if (
+    telegram &&
+    (!settings.telegramBotToken.set || telegram.state === 'unconfigured')
+  ) {
     pending.push({
       name: 'telegram',
       message:

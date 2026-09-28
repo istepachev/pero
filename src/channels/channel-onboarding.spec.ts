@@ -28,6 +28,7 @@ import { ChannelRouter } from './channel-router.js';
 import { ChannelTurns } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
 import {
+  chatMigrated,
   FakeChannelAdapter,
   groupChat,
   inboundChannel,
@@ -400,6 +401,103 @@ describe('Channel onboarding', () => {
 
         expect(await allChannels()).toHaveLength(1);
         expect(await allAgents()).toHaveLength(1);
+      });
+    });
+
+    describe('a migrated chat', () => {
+      const BASIC = groupChat('-4567', 'Family');
+      const SUPERGROUP_KEY = '-1009876543210';
+
+      beforeEach(async () => {
+        await moduleRef.get(AllowedChatsService).allow({
+          integrationKind: 'telegram',
+          chatKey: BASIC.key,
+          kind: 'group',
+          title: BASIC.title,
+        });
+        await adapter.deliver(inboundMessage(BASIC));
+      });
+
+      async function allowedKeys(): Promise<string[]> {
+        return (await moduleRef.get(AllowedChatsService).list('telegram')).map(
+          (chat) => chat.chatKey,
+        );
+      }
+
+      it('moves its allowlist entry and primary Channel to the new ID', async () => {
+        const before = await channelFor(BASIC.key);
+
+        await adapter.emit(chatMigrated(BASIC, SUPERGROUP_KEY));
+
+        expect(await allowedKeys()).toEqual([
+          GROUP.key,
+          OWNER.key,
+          SUPERGROUP_KEY,
+        ]);
+        expect(await channelFor(SUPERGROUP_KEY)).toMatchObject({
+          id: before.id,
+          address: { chatId: SUPERGROUP_KEY },
+          agentId: before.agentId,
+        });
+        // Messages from the new ID reach the same Channel.
+        await adapter.deliver(
+          inboundMessage(groupChat(SUPERGROUP_KEY, 'Family')),
+        );
+        expect(turns.handle).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: before.id }),
+          expect.anything(),
+          expect.any(Number),
+        );
+      });
+
+      it('does the move once when both halves of it arrive', async () => {
+        await adapter.emit(chatMigrated(BASIC, SUPERGROUP_KEY));
+        await adapter.emit(chatMigrated(BASIC, SUPERGROUP_KEY));
+
+        expect(await allowedKeys()).toContain(SUPERGROUP_KEY);
+        expect(await allChannels()).toHaveLength(1);
+      });
+
+      it('drops the old entry when the new ID is already allowed', async () => {
+        await moduleRef.get(AllowedChatsService).allow({
+          integrationKind: 'telegram',
+          chatKey: SUPERGROUP_KEY,
+          kind: 'group',
+          title: 'Family',
+        });
+
+        await adapter.emit(chatMigrated(BASIC, SUPERGROUP_KEY));
+
+        expect(await allowedKeys()).toEqual([
+          GROUP.key,
+          OWNER.key,
+          SUPERGROUP_KEY,
+        ]);
+        expect((await channelFor(SUPERGROUP_KEY)).externalKey).toBe(
+          SUPERGROUP_KEY,
+        );
+      });
+
+      it('keeps a Channel whose new key is taken', async () => {
+        await moduleRef.get(AllowedChatsService).allow({
+          integrationKind: 'telegram',
+          chatKey: SUPERGROUP_KEY,
+          kind: 'group',
+          title: 'Family',
+        });
+        await adapter.deliver(
+          inboundMessage(groupChat(SUPERGROUP_KEY, 'Family')),
+        );
+        const warn = vi.spyOn(Logger.prototype, 'warn');
+
+        await adapter.emit(chatMigrated(BASIC, SUPERGROUP_KEY));
+
+        expect(
+          (await allChannels()).map((channel) => channel.externalKey),
+        ).toEqual([BASIC.key, SUPERGROUP_KEY]);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('already exists'),
+        );
       });
     });
   });

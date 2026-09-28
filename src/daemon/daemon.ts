@@ -22,6 +22,8 @@ export interface DaemonOptions {
   config: BootstrapConfig;
   /** Attached to a terminal or supervisor: also log to stdout. */
   foreground: boolean;
+  /** The environment settings come from; by default the process's own. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** A running daemon. */
@@ -82,7 +84,10 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
 
   try {
     const app = await NestFactory.createApplicationContext(
-      AppModule.forRoot({ layout }),
+      AppModule.forRoot({
+        layout,
+        ...(options.env ? { env: options.env } : {}),
+      }),
       { logger: new PinoLoggerService(logger), abortOnError: false },
     );
     const lifecycle = new DaemonLifecycle({

@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataDirLayout, type DataDirLayout } from '../src/config/data-dir.js';
 import { PACKAGE_VERSION } from '../src/common/package-version.js';
 import { createControlClient } from '../src/control/client.js';
+import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 import {
   findRunningDaemon,
   readDaemonMetadata,
@@ -51,9 +52,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   let restored: DataDirLayout;
   /** Where the fake provider CLIs look for their sign-in. */
   let authDir: string;
+  let api: FakeBotApi;
   const children: ChildProcess[] = [];
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    api = new FakeBotApi();
+    await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
     tmp = mkdtempSync(join(tmpdir(), 'pero-'));
     layout = dataDirLayout(join(tmp, 'pero'));
@@ -75,13 +79,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         await vi.waitFor(() => expect(isAlive(metadata.pid)).toBe(false));
       }
     }
+    await api.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
   /**
    * Runs `pero` to completion with `input` on stdin; the environment
-   * carries no PERO_HOME or Telegram token, and the fake provider CLIs
-   * that the daemon inherits read their sign-in from `authDir`.
+   * carries no PERO_HOME or Telegram token, the fake provider CLIs that
+   * the daemon inherits read their sign-in from `authDir`, and Telegram is
+   * the fake Bot API.
    */
   function pero(
     args: string[],
@@ -102,7 +108,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         process.execPath,
         [...(options.nodeArgs ?? []), PERO, ...args],
         {
-          env: { ...env, PERO_FAKE_AUTH_DIR: authDir, ...options.env },
+          env: {
+            ...env,
+            PERO_FAKE_AUTH_DIR: authDir,
+            // The daemon inherits it, so Telegram is always the fake.
+            PERO_TELEGRAM_API_ROOT: api.url,
+            ...options.env,
+          },
           ...(options.cwd ? { cwd: options.cwd } : {}),
         },
         (error, stdout, stderr) => {
@@ -112,6 +124,21 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       );
       child.stdin!.end(options.input ?? '');
     });
+  }
+
+  /** `pero status` once it shows the bot connected to the fake Bot API. */
+  async function connectedStatus(root = layout.root): Promise<Result> {
+    let status: Result | undefined;
+    await vi.waitFor(
+      async () => {
+        status = await pero(['--data-dir', root, 'status']);
+        expect(status.stdout).toMatch(
+          /telegram +ok +Connected as @pero_test_bot\n/,
+        );
+      },
+      { timeout: 10_000, interval: 200 },
+    );
+    return status!;
   }
 
   const withDataDir = (...args: string[]) => [
@@ -186,9 +213,10 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: '',
     });
 
-    const status = await pero(withDataDir('status'));
+    // Connecting happens in the background, without a restart.
+    const status = await connectedStatus();
     expect(status.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
-    expect(status.stdout).toMatch(/telegram +ok +Bot token is set\n/);
+    expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
     const show = await pero(withDataDir('settings', 'show'));
     expect(show.code).toBe(0);
     expect(show.stdout).toMatch(/^telegram-bot-token +set \(secrets\)$/m);
@@ -322,10 +350,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(run.code).toBe(0);
     expect(run.stdout).not.toContain('Telegram');
 
-    const status = await pero(withDataDir('status'));
-    expect(status.stdout).toMatch(
-      /telegram +ok +Bot token is set \(from PERO_TELEGRAM_BOT_TOKEN\)/,
-    );
+    await connectedStatus();
+    expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
     const set = await pero(
       withDataDir('settings', 'set', 'telegram-bot-token'),
       {
@@ -657,8 +683,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(run.code).toBe(0);
     const after = await pero(['--data-dir', restored.root, 'settings']);
     expect(after).toEqual(before);
-    const status = await pero(['--data-dir', restored.root, 'status']);
-    expect(status.stdout).toMatch(/telegram +ok +Bot token is set\n/);
+    // The restored token connects the bot.
+    await connectedStatus(restored.root);
     expect((await pero(['--data-dir', restored.root, 'stop'])).code).toBe(0);
 
     expect(dumpTables(restored.database)).toEqual(dumpTables(layout.database));

@@ -10,6 +10,7 @@ import {
 } from '../config/settings-input.js';
 import type { TokenSource } from '../control/protocol.js';
 import { ComponentHealth } from '../health/component-health.js';
+import { CONNECTING_DETAIL } from './telegram-status.js';
 
 export const TELEGRAM_OPTIONS = Symbol('TELEGRAM_OPTIONS');
 
@@ -21,17 +22,22 @@ export interface TelegramOptions {
   secretsDir: string;
   /** The daemon's environment, which may carry the token. */
   env: NodeJS.ProcessEnv;
+  /** The Bot API server; Telegram's own unless set. */
+  apiRoot?: string;
 }
 
 /**
  * The Telegram bot token: from the environment when it is set there,
- * otherwise from `secrets/`. Never logged and never sent to the CLI.
+ * otherwise from `secrets/`. Never logged and never sent to the CLI. It
+ * reports the Telegram component while there is no valid token; with one,
+ * it reports connecting until the adapter says how the connection stands.
  */
 @Injectable()
 export class TelegramCredentials implements OnModuleInit {
   private readonly logger = new Logger('Telegram');
   private current: string | null = null;
   private currentSource: TokenSource | null = null;
+  private readonly listeners = new Set<(token: string | null) => void>();
 
   constructor(
     @Inject(TELEGRAM_OPTIONS) private readonly options: TelegramOptions,
@@ -53,6 +59,15 @@ export class TelegramCredentials implements OnModuleInit {
   }
 
   /**
+   * Calls `listener` with the token in use each time it may have changed;
+   * returns a function that stops the calls.
+   */
+  onChange(listener: (token: string | null) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /**
    * Stores `token`, or removes the stored one when null, and takes it into
    * use at once. A token in the environment still wins over the stored one.
    */
@@ -69,6 +84,7 @@ export class TelegramCredentials implements OnModuleInit {
       this.logger.log('Bot token stored');
     }
     this.resolve();
+    for (const listener of this.listeners) listener(this.current);
   }
 
   private resolve(): void {
@@ -78,11 +94,7 @@ export class TelegramCredentials implements OnModuleInit {
       const parsed = telegramBotTokenSchema.safeParse(fromEnv);
       this.current = parsed.success ? parsed.data : null;
       if (parsed.success) {
-        this.health.report(
-          'telegram',
-          'ok',
-          `Bot token is set (from ${TELEGRAM_TOKEN_ENV})`,
-        );
+        this.health.report('telegram', 'degraded', CONNECTING_DETAIL);
       } else {
         this.health.report(
           'telegram',
@@ -100,7 +112,7 @@ export class TelegramCredentials implements OnModuleInit {
     if (!parsed) {
       this.health.report('telegram', 'unconfigured', 'Bot token is not set');
     } else if (parsed.success) {
-      this.health.report('telegram', 'ok', 'Bot token is set');
+      this.health.report('telegram', 'degraded', CONNECTING_DETAIL);
     } else {
       this.health.report(
         'telegram',

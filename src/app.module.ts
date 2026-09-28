@@ -2,16 +2,21 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { AgentsModule } from './agents/agents.module.js';
 import { ChannelsModule } from './channels/channels.module.js';
 import type { DataDirLayout } from './config/data-dir.js';
+import { resolveDaemonEnv } from './config/daemon-env.js';
 import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
+import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 
 export interface AppOptions {
   layout: DataDirLayout;
-  /** Where settings such as the Telegram bot token may come from. */
+  /**
+   * Where settings such as the Telegram bot token may come from; by default
+   * the process's own environment.
+   */
   env?: NodeJS.ProcessEnv;
 }
 
@@ -19,17 +24,26 @@ export interface AppOptions {
 @Module({})
 export class AppModule {
   static forRoot(options: AppOptions): DynamicModule {
+    const env = options.env ?? process.env;
+    // Invalid values fail startup, before anything opens.
+    const daemonEnv = resolveDaemonEnv(env);
     return {
       module: AppModule,
       imports: [
         HealthModule,
+        RuntimeOptionsModule.forRoot(
+          daemonEnv.fakeRuntime ? { fake: daemonEnv.fakeRuntime } : {},
+        ),
         PersistenceModule.forRoot({ database: options.layout.database }),
         SettingsModule,
         AgentsModule,
         ChannelsModule,
         TelegramModule.forRoot({
           secretsDir: options.layout.secrets,
-          env: options.env ?? process.env,
+          env,
+          ...(daemonEnv.telegramApiRoot
+            ? { apiRoot: daemonEnv.telegramApiRoot }
+            : {}),
         }),
         ProvidersModule,
         ControlModule.forRoot({ layout: options.layout }),

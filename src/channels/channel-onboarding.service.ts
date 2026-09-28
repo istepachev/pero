@@ -6,6 +6,7 @@ import { AgentsService } from '../agents/agents.service.js';
 import { InvalidInputError } from '../common/errors.js';
 import { SLUG_MAX_LENGTH } from '../config/slug.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import {
   SETTINGS_ID,
@@ -82,8 +83,11 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       case 'topic-renamed':
         await this.rename(event.integrationKind, event.channel);
         return;
+      case 'chat-migrated':
+        await this.migrate(event);
+        return;
       default:
-        // The adapter handles chat migration and membership itself.
+        // The adapter follows the bot's membership itself.
         this.logger.debug(
           `Onboarding ignored ${event.type} in ${event.integrationKind} ` +
             `chat ${event.chat.key}`,
@@ -220,6 +224,56 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       this.logger.debug(
         `Ignored the rename of unknown ${kind} Channel ${inbound.key}; ` +
           `its next message onboards it`,
+      );
+    }
+  }
+
+  /**
+   * Moves a chat that now lives under a new ID, as when a group gains
+   * topics: its allowlist entry, and its primary Channel, whose key is the
+   * chat's. A chat that migrates has no topics yet, so no other Channel has
+   * its key. Sessions and history follow the Channel's ID.
+   */
+  private async migrate(
+    event: Extract<ChannelEvent, { type: 'chat-migrated' }>,
+  ): Promise<void> {
+    const { integrationKind, chat, newChatKey, newAddress } = event;
+    const moved = await inTransaction(this.dataSource, async (manager) => {
+      const allowed = manager.getRepository(AllowedChat);
+      const entry = await allowed.findOneBy({
+        integrationKind,
+        chatKey: chat.key,
+      });
+      if (entry === null) return false;
+      if (await allowed.existsBy({ integrationKind, chatKey: newChatKey })) {
+        await allowed.delete(entry.id);
+      } else {
+        await allowed.update(entry.id, { chatKey: newChatKey });
+      }
+
+      const channels = manager.getRepository(Channel);
+      const channel = await channels.findOneBy({
+        integrationKind,
+        externalKey: chat.key,
+      });
+      if (channel === null) return true;
+      if (
+        await channels.existsBy({ integrationKind, externalKey: newChatKey })
+      ) {
+        this.logger.warn(
+          `Kept ${integrationKind} Channel ${channel.id} under ${chat.key}: ` +
+            `a Channel for the migrated chat ${newChatKey} already exists`,
+        );
+        return true;
+      }
+      channel.externalKey = newChatKey;
+      channel.address = { ...newAddress };
+      await channels.save(channel);
+      return true;
+    });
+    if (moved) {
+      this.logger.log(
+        `Followed ${integrationKind} chat ${chat.key} to its new ID ${newChatKey}`,
       );
     }
   }

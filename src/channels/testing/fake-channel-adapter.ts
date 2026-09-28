@@ -171,3 +171,15 @@ export function topicRenamed(
     channel: inboundChannel(chat, topic, title),
   };
 }
+
+/** `chat` moved to the new ID `newKey`, as when a group gains topics. */
+export function chatMigrated(chat: InboundChat, newKey: string): ChannelEvent {
+  return {
+    type: 'chat-migrated',
+    integrationKind: 'telegram',
+    updateId: String(nextUpdateId++),
+    chat,
+    newChatKey: newKey,
+    newAddress: { chatId: newKey },
+  };
+}

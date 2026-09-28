@@ -75,11 +75,53 @@ describe('pendingSetup', () => {
         status([
           component('claude', 'ok', 'Signed in'),
           component('codex', 'degraded', 'Timed out', false),
-          component('telegram', 'ok', 'Bot token is set'),
+          component('telegram', 'ok', 'Connected as @pero_bot'),
         ]),
-        { ...settings, defaultWorkingDirectory: '/home/owner/notes' },
+        {
+          ...settings,
+          defaultWorkingDirectory: '/home/owner/notes',
+          telegramBotToken: { set: true, source: 'secrets' },
+        },
       ),
     ).toEqual([]);
+  });
+
+  it('leaves out a Telegram connection that is starting or failing', () => {
+    expect(
+      pendingSetup(
+        status([
+          component('claude', 'ok', 'Signed in'),
+          component('telegram', 'degraded', 'Connecting to Telegram'),
+        ]),
+        {
+          ...settings,
+          defaultWorkingDirectory: '/home/owner/notes',
+          telegramBotToken: { set: true, source: 'secrets' },
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('asks for another token once Telegram rejects the one set', () => {
+    const [item] = pendingSetup(
+      status([
+        component('claude', 'ok', 'Signed in'),
+        component(
+          'telegram',
+          'unconfigured',
+          'Telegram rejected the bot token',
+        ),
+      ]),
+      {
+        ...settings,
+        defaultWorkingDirectory: '/home/owner/notes',
+        telegramBotToken: { set: true, source: 'secrets' },
+      },
+    );
+
+    expect(item?.message).toBe(
+      'Telegram: Telegram rejected the bot token — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
+    );
   });
 
   it('points at the environment when its token is not valid', () => {
