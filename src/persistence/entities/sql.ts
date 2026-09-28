@@ -20,3 +20,8 @@ export function isSlug(column: string, maxLength: number): string {
 export const INTEGRATION_KINDS = ['telegram'] as const;
 
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
+
+/** Whether a chat is one person's direct chat with the bot or a group. */
+export const CHAT_KINDS = ['private', 'group'] as const;
+
+export type ChatKind = (typeof CHAT_KINDS)[number];

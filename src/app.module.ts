@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { AgentsModule } from './agents/agents.module.js';
+import { ChannelsModule } from './channels/channels.module.js';
 import type { DataDirLayout } from './config/data-dir.js';
 import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -25,6 +26,7 @@ export class AppModule {
         PersistenceModule.forRoot({ database: options.layout.database }),
         SettingsModule,
         AgentsModule,
+        ChannelsModule,
         TelegramModule.forRoot({
           secretsDir: options.layout.secrets,
           env: options.env ?? process.env,

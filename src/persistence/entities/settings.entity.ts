@@ -3,6 +3,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -12,6 +14,7 @@ import {
   providerDefaultsSchema,
 } from '../../config/provider-options.js';
 import { jsonTransformer } from '../json-transformer.js';
+import { Agent } from './agent.entity.js';
 
 /** The ID of the one settings row. */
 export const SETTINGS_ID = 1;
@@ -52,6 +55,20 @@ export class Settings {
   /** Text placed before each opted-in Agent's instructions; null means none. */
   @Column({ name: 'shared_instructions', type: 'text', nullable: true })
   sharedInstructions: string | null;
+
+  /**
+   * The Agent primary Channels (a General topic, a group without topics, or
+   * a direct chat) are assigned; null until the first one creates `main`.
+   */
+  @Column({ name: 'main_agent_id', type: 'integer', nullable: true })
+  mainAgentId: number | null;
+
+  @ManyToOne(() => Agent, { onDelete: 'RESTRICT' })
+  @JoinColumn({
+    name: 'main_agent_id',
+    foreignKeyConstraintName: 'FK_settings_main_agent_id',
+  })
+  mainAgent?: Agent;
 
   /** IANA time zone. */
   @Column({ type: 'text' })

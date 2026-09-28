@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataSourceOptions } from '../data-source-options.js';
 import { openDatabase } from '../open-database.js';
 import { Agent } from './agent.entity.js';
+import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
 import { Notification } from './notification.entity.js';
@@ -18,6 +19,7 @@ import { Workflow } from './workflow.entity.js';
 
 const DOMAIN_TABLES = [
   'agents',
+  'allowed_chats',
   'channels',
   'inbound_updates',
   'notifications',
@@ -47,8 +49,9 @@ async function seed(ds: DataSource) {
   });
   const channel = await ds.getRepository(Channel).save({
     integrationKind: 'telegram',
-    externalKey: `${CHAT_ID}/7`,
+    externalKey: `${CHAT_ID}:7`,
     address: { chatId: CHAT_ID, messageThreadId: '7' },
+    title: 'Groceries',
     agentId: agent.id,
   });
   const session = await ds.getRepository(Session).save({
@@ -98,8 +101,16 @@ async function seed(ds: DataSource) {
     integrationKind: 'telegram',
     externalUpdateId: UPDATE_ID,
   });
+  const allowedChat = await ds.getRepository(AllowedChat).save({
+    integrationKind: 'telegram',
+    chatKey: CHAT_ID,
+    kind: 'group',
+    title: 'Household',
+  });
+  await ds.getRepository(Settings).update(1, { mainAgentId: agent.id });
   return {
     agent,
+    allowedChat,
     channel,
     session,
     workflow,
@@ -114,7 +125,9 @@ async function seed(ds: DataSource) {
 /** Every domain row, read back through the entities. */
 async function readAll(ds: DataSource) {
   return {
+    settings: await ds.getRepository(Settings).find(),
     agents: await ds.getRepository(Agent).find(),
+    allowedChats: await ds.getRepository(AllowedChat).find(),
     channels: await ds.getRepository(Channel).find(),
     sessions: await ds.getRepository(Session).find(),
     workflows: await ds.getRepository(Workflow).find(),
@@ -164,7 +177,8 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // The Session resume migration, then the domain tables.
+    // The allowlist, the Session resume migration, then the domain tables.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).toEqual([
@@ -186,6 +200,8 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
+    // The allowlist migration, then the Session resume migration.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(
       await db.query(
@@ -215,6 +231,41 @@ describe('domain entities', () => {
       status: 'active',
     });
     expect(await db.getRepository(Channel).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps the settings row through the allowlist migration and back', async () => {
+    const db = await open();
+    await db.getRepository(Settings).update(1, {
+      defaultWorkingDirectory: '/home/owner/vault',
+      sharedInstructions: 'Be kind.',
+    });
+    await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).not.toContain('allowed_chats');
+    expect(
+      await db.query(
+        `SELECT "default_working_directory", "shared_instructions" FROM "settings"`,
+      ),
+    ).toEqual([
+      {
+        default_working_directory: '/home/owner/vault',
+        shared_instructions: 'Be kind.',
+      },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
+    ).toMatchObject({
+      defaultWorkingDirectory: '/home/owner/vault',
+      sharedInstructions: 'Be kind.',
+      mainAgentId: null,
+    });
+    expect(await db.getRepository(Channel).find()).toEqual([
+      expect.objectContaining({ title: null }),
+    ]);
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -334,6 +385,17 @@ describe('domain entities', () => {
       );
     });
 
+    it('allows each chat once per integration', async () => {
+      await rejectsWith(
+        db.getRepository(AllowedChat).insert({
+          integrationKind: 'telegram',
+          chatKey: seeded.allowedChat.chatKey,
+          kind: 'private',
+        }),
+        'SQLITE_CONSTRAINT_UNIQUE',
+      );
+    });
+
     it('allows one run per Workflow and trigger key', async () => {
       const runs = db.getRepository(WorkflowRun);
       await rejectsWith(
@@ -415,6 +477,10 @@ describe('domain entities', () => {
         () =>
           `INSERT INTO "channels" ("integration_kind", "external_key", ` +
           `"address_json", "agent_id") VALUES ('telegram', 'x', '{}', ${MISSING})`,
+      ],
+      [
+        'settings.main_agent_id',
+        () => `UPDATE "settings" SET "main_agent_id" = ${MISSING}`,
       ],
       [
         'sessions.agent_id',
@@ -531,6 +597,8 @@ describe('domain entities', () => {
       `UPDATE "agents" SET "provider" = 'gpt'`,
       `UPDATE "agents" SET "tool_policy_json" = '['`,
       `UPDATE "channels" SET "integration_kind" = 'slack'`,
+      `UPDATE "allowed_chats" SET "integration_kind" = 'slack'`,
+      `UPDATE "allowed_chats" SET "kind" = 'channel'`,
       `UPDATE "sessions" SET "status" = 'paused'`,
       `UPDATE "sessions" SET "provider" = 'gpt'`,
       `UPDATE "workflows" SET "concurrency_policy" = 'parallel'`,

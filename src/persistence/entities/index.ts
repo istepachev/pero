@@ -1,4 +1,5 @@
 import { Agent } from './agent.entity.js';
+import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
 import { Notification } from './notification.entity.js';
@@ -21,4 +22,5 @@ export const ENTITIES = [
   WorkflowNotificationTarget,
   Notification,
   InboundUpdate,
+  AllowedChat,
 ];

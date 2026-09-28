@@ -47,7 +47,8 @@ export class SettingsService {
     return inTransaction(this.dataSource, async (manager) => {
       const repo = manager.getRepository(Settings);
       const current = await repo.findOneByOrFail({ id: SETTINGS_ID });
-      const changes: Partial<Settings> = withoutUndefined(rest);
+      const changes: Partial<Omit<Settings, 'mainAgent'>> =
+        withoutUndefined(rest);
       if (providerDefaults !== undefined) {
         changes.providerDefaults = providerDefaultsSchema.parse({
           claude: mergeOptions(
