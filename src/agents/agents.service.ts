@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
@@ -46,7 +45,6 @@ export interface ResolvedAgent {
   providerOptions: ProviderOptions;
   workingDirectory: string;
   instructions: string;
-  executionConfigVersion: number;
 }
 
 /** Creates, edits, and resolves Agent definitions. */
@@ -109,8 +107,8 @@ export class AgentsService {
 
   /**
    * Changes an Agent. A new provider takes that provider's default options
-   * unless options are given. The execution config version increases only
-   * when the provider, its options, or the effective folder actually change.
+   * unless options are given. Active Sessions are not touched here: the next
+   * turn starts a fresh one when the provider or effective folder differs.
    */
   async edit(name: string, input: AgentEdit): Promise<Agent> {
     const patch = parseInput(agentEditSchema, input);
@@ -144,11 +142,6 @@ export class AgentsService {
         await validateWorkingDirectory(folder);
       }
 
-      const executionChanged =
-        providerChanged ||
-        !isDeepStrictEqual(providerOptions, agent.providerOptions) ||
-        folder !== effectiveWorkingDirectory(agent, settings);
-
       await agents.update(agent.id, {
         ...withoutUndefined({
           title: patch.title,
@@ -160,8 +153,6 @@ export class AgentsService {
         providerOptions,
         workingDirectory,
         enabled,
-        executionConfigVersion:
-          agent.executionConfigVersion + (executionChanged ? 1 : 0),
       });
       return agents.findOneByOrFail({ id: agent.id });
     });
@@ -180,7 +171,6 @@ export class AgentsService {
         providerOptions: agent.providerOptions,
         workingDirectory: effectiveWorkingDirectory(agent, settings),
         instructions: composeInstructions(agent, settings),
-        executionConfigVersion: agent.executionConfigVersion,
       };
     });
   }

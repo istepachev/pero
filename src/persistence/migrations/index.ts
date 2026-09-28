@@ -1,5 +1,6 @@
 import { CreateSettings1790521767275 } from './1790521767275-CreateSettings.js';
 import { CreateDomainTables1790523956072 } from './1790523956072-CreateDomainTables.js';
+import { ResumeSessionsByProviderAndFolder1790578903382 } from './1790578903382-ResumeSessionsByProviderAndFolder.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -8,4 +9,5 @@ import { CreateDomainTables1790523956072 } from './1790523956072-CreateDomainTab
 export const MIGRATIONS = [
   CreateSettings1790521767275,
   CreateDomainTables1790523956072,
+  ResumeSessionsByProviderAndFolder1790578903382,
 ];

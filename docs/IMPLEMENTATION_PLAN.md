@@ -38,9 +38,9 @@ Add the remaining tables from [Architecture §7](./ARCHITECTURE.md#7-persistence
 
 ### 1.5 Settings and Agent services
 
-Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's options. Its working directory follows the default unless an explicit absolute folder is given; creation without a folder is rejected while no default is set; add the resolver for the effective folder (own folder, otherwise the default) and for composed instructions (shared instructions unless the Agent opts out, then its own). Editing provider, provider options, or folder increments `execution_config_version`; changing the default working directory increments it for every Agent that follows the default, in one transaction. No CLI surface yet; these are the services the control endpoint will call.
+Add `SettingsService` (read and validated update of defaults) and an Agent creation/edit service. Creating an Agent copies the default provider and that provider's options. Its working directory follows the default unless an explicit absolute folder is given; creation without a folder is rejected while no default is set; add the resolver for the effective folder (own folder, otherwise the default) and for composed instructions (shared instructions unless the Agent opts out, then its own). Changing the default working directory moves every Agent that follows it, because the folder is resolved when it is used. No CLI surface yet; these are the services the control endpoint will call.
 
-**Done when:** tests show a new Agent receives the default provider and its options, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move and have their version bumped, changing the default provider or provider options leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, an Agent cannot be created without a folder while the default is unset, and shared instructions are composed unless an Agent opts out.
+**Done when:** tests show a new Agent receives the default provider and its options, several Agents resolve to the same default folder, an Agent with its own folder keeps it when the default changes while following Agents move, changing the default provider or provider options leaves existing Agents unchanged, an invalid or inaccessible folder is rejected, an Agent cannot be created without a folder while the default is unset, and shared instructions are composed unless an Agent opts out.
 
 ### 1.6 Control endpoint and component status
 
@@ -94,9 +94,9 @@ Define the normalized inbound message and the adapter contract (`start(onMessage
 
 ### 2.2 Runtime contract, `AgentManager`, and Sessions
 
-Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runtime-contract), `SessionService` (one active Session per Channel/Agent; resume only when `agent_config_version` matches), and `AgentManager`, which builds the request from the Agent record, persists the returned provider session ID before the next turn, and serializes turns per Session. Turns of different Agents run in parallel, even in a shared folder. Wire router → `AgentManager` → adapter reply. Test with a fake runtime.
+Add the `AgentRuntime` contract from [Architecture §5](./ARCHITECTURE.md#5-runtime-contract), `SessionService` (one active Session per Channel/Agent; resume only while the Agent's provider and effective working directory match the ones the Session recorded, otherwise close it and start fresh), and `AgentManager`, which builds the request from the Agent record, persists the returned provider session ID before the next turn, and serializes turns per Session. Turns of different Agents run in parallel, even in a shared folder. Wire router → `AgentManager` → adapter reply. Test with a fake runtime.
 
-**Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a stale config version starting a fresh Session, and provider session IDs persisted across a restart.
+**Done when:** tests show ordered turns within a Session, parallel turns for different Agents in the same folder, the request carrying the effective folder and composed instructions, a changed provider or effective folder starting a fresh Session while a changed model or effort resumes the same one, and provider session IDs persisted across a restart.
 
 ### 2.3 Telegram adapter
 
@@ -108,19 +108,19 @@ Add grammY long polling: derive the Channel key from `chat_id` and normalized `m
 
 Implement `ClaudeRuntime` on `@anthropic-ai/claude-agent-sdk`: pass `model` and `effort` (each omitted when null) and `cwd` explicitly, create and resume sessions, normalize events, support cancellation, and classify errors. Report the provider as degraded when signed out.
 
-**Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process, and sees a file written in the working directory.
+**Done when:** unit tests cover event normalization; a credential-gated smoke test creates a session, resumes it in a new process with a different model and effort, and sees a file written in the working directory.
 
 ### 2.5 Codex runtime adapter
 
 Implement `CodexRuntime` on `@openai/codex-sdk` through the same contract, mapping `model`, `effort` (as `modelReasoningEffort`), and `workingDirectory`, and honoring the Agent's explicit `codex_skip_git_repo_check` setting for non-Git folders.
 
-**Done when:** same coverage as 2.4, plus a test that a non-Git folder is refused unless the Agent opts out.
+**Done when:** same coverage as 2.4, including resuming a thread with a different model and effort, plus a test that a non-Git folder is refused unless the Agent opts out.
 
 ### 2.6 Agent management commands
 
-Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. Editing provider, provider options, or folder closes the Agent's active Sessions. Validate that folders exist and are accessible before enabling an Agent.
+Add `pero agents ls|show|create|edit|disable` through the control endpoint, using the 1.5 services. `create` and `edit` accept an explicit folder or a return to following the default, and can opt the Agent out of shared instructions. `show` says when a Channel's next turn will start a fresh Session because the provider or effective folder changed. Validate that folders exist and are accessible before enabling an Agent.
 
-**Done when:** e2e tests cover each command, and an execution-setting edit makes the next turn start a fresh Session.
+**Done when:** e2e tests cover each command; after a provider or folder edit the next turn starts a fresh Session, and after a model or effort edit it resumes the same one.
 
 ### 2.7 Channel management commands
 
@@ -136,7 +136,7 @@ Add an e2e test with two topics routed to different Agents through the fake runt
 
 ### Phase 2 exit criteria
 
-Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing provider, provider options, or folder starts a fresh Session; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
+Two Telegram topics assigned to different Agents retain separate contexts while working in the same shared folder, and an Agent with its own folder works there; a follow-up resumes the right provider session after a process restart; editing the provider or folder starts a fresh Session, while a new model or effort continues the conversation; unauthorized messages do not invoke a runtime. Codex and Claude subscription sign-ins each have a documented SDK smoke test under the OS account running the service.
 
 ## Phase 3 — durable workflows
 
@@ -217,8 +217,8 @@ A Workflow can notify a configured topic; a temporary Telegram delivery failure 
 | Workflow concurrency | One active run per Workflow; different Agents and Workflows may share a folder concurrently (last write wins). |
 | Interrupted execution | Mark `interrupted`; manual retry by default when side effects may have occurred. |
 | Notification retry | Bounded attempts with backoff; retain failed records for inspection. |
-| Agent execution settings edit | Close active interactive Sessions when provider, provider options (model, effort), or effective working directory changes, including a change to the default an Agent follows; start a new provider context on the next turn. |
-| Shared instructions | Prepended to each Agent's instructions unless it opts out; edits apply to the next turn without rotating Sessions. Each runtime adapter verifies the SDK accepts updated instructions on a resumed session. |
+| Agent execution settings edit | A Session records its provider and effective working directory; a turn resumes it only while the Agent still has both, otherwise it closes that Session and starts a fresh one. A change to the default folder an Agent follows counts. Model and effort edits apply from the next turn of the same Session, like switching models inside the provider CLI. No version counter. |
+| Shared instructions | Prepended to each Agent's instructions unless it opts out; edits apply to the next turn of the same Session. Each runtime adapter verifies the SDK accepts updated instructions, model, and effort on a resumed session. |
 | Codex in a non-Git folder | Require an explicit Agent setting to skip the SDK Git repository check. |
 | Session history | Provider transcript is for provider context; the runtime database stores IDs and operational metadata. |
 | Configuration storage | SQLite is authoritative for Agents, Channels, Workflows, and Triggers; CLI operations validate changes. JSON export/import may be added without live file synchronization. |

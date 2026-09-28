@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { PROVIDERS, type Provider } from '../../config/provider-options.js';
 import { Agent } from './agent.entity.js';
 import { Channel } from './channel.entity.js';
 import { oneOf } from './sql.js';
@@ -26,6 +27,7 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 })
 @Index('IDX_sessions_agent_id', ['agentId'])
 @Check('CHK_sessions_status', oneOf('status', SESSION_STATUSES))
+@Check('CHK_sessions_provider', oneOf('provider', PROVIDERS))
 export class Session {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
@@ -54,9 +56,20 @@ export class Session {
   @Column({ name: 'provider_session_id', type: 'text', nullable: true })
   providerSessionId: string | null;
 
-  /** The Agent's execution config version when the Session began. */
-  @Column({ name: 'agent_config_version', type: 'integer' })
-  agentConfigVersion: number;
+  /*
+   * A Session resumes only while the Agent still has the provider and the
+   * effective working directory it began with: another provider cannot read
+   * the session ID, and a provider session belongs to its folder. Model,
+   * effort, and instructions may change within a Session.
+   */
+
+  /** The provider the Session runs on. */
+  @Column({ type: 'text' })
+  provider: Provider;
+
+  /** The absolute folder the Session runs in. */
+  @Column({ name: 'working_directory', type: 'text' })
+  workingDirectory: string;
 
   @Column({ type: 'text', default: 'active' })
   status: SessionStatus;
