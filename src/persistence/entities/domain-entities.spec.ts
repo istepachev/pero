@@ -47,7 +47,7 @@ async function seed(ds: DataSource) {
     instructions: 'Be brief.',
     providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
     workingDirectory: null,
-    toolPolicy: { allow: ['Read'] },
+    toolPolicy: { permissions: 'bypass' },
   });
   const channel = await ds.getRepository(Channel).save({
     integrationKind: 'telegram',
@@ -191,9 +191,9 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Message history, the allowlist, the Session resume migration, then
-    // the domain tables.
-    for (let i = 0; i < 4; i++) {
+    // Default permissions, message history, the allowlist, the Session
+    // resume migration, then the domain tables.
+    for (let i = 0; i < 5; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -215,8 +215,9 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Message history, the allowlist, then the Session resume migration.
-    for (let i = 0; i < 3; i++) {
+    // Default permissions, message history, the allowlist, then the
+    // Session resume migration.
+    for (let i = 0; i < 4; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -258,9 +259,10 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Message history, then the allowlist.
-    await db.undoLastMigration({ transaction: 'each' });
-    await db.undoLastMigration({ transaction: 'each' });
+    // Default permissions, message history, then the allowlist.
+    for (let i = 0; i < 3; i++) {
+      await db.undoLastMigration({ transaction: 'each' });
+    }
     expect(await tables(db)).not.toContain('allowed_chats');
     expect(
       await db.query(
@@ -295,6 +297,8 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
+    // Default permissions, then message history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('messages');
     expect(
@@ -314,6 +318,45 @@ describe('domain entities', () => {
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
+  it('keeps the settings row through the default permissions migration and back', async () => {
+    const db = await open();
+    const { agent } = await seed(db);
+    await db.getRepository(Settings).update(1, {
+      sharedInstructions: 'Be kind.',
+      historyCarryover: 10,
+      defaultPermissions: 'bypass',
+    });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('settings')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain(
+      'default_permissions',
+    );
+    expect(
+      await db.query(
+        `SELECT "shared_instructions", "main_agent_id", "history_carryover" FROM "settings"`,
+      ),
+    ).toEqual([
+      {
+        shared_instructions: 'Be kind.',
+        main_agent_id: agent.id,
+        history_carryover: 10,
+      },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
+    ).toMatchObject({
+      sharedInstructions: 'Be kind.',
+      historyCarryover: 10,
+      defaultPermissions: 'ask',
+    });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
   it('keeps every record across closing and reopening the database', async () => {
     let db = await open();
     await seed(db);
@@ -328,7 +371,7 @@ describe('domain entities', () => {
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       useSharedInstructions: true,
       codexSkipGitRepoCheck: false,
-      toolPolicy: { allow: ['Read'] },
+      toolPolicy: { permissions: 'bypass' },
       enabled: true,
     });
     expect(before.triggers[0]!.nextRunAt).toEqual(
@@ -677,6 +720,7 @@ describe('domain entities', () => {
       `UPDATE "notifications" SET "status" = 'sent'`,
       `UPDATE "inbound_updates" SET "status" = 'ignored'`,
       `UPDATE "settings" SET "history_carryover" = -1`,
+      `UPDATE "settings" SET "default_permissions" = 'always'`,
       `UPDATE "messages" SET "direction" = 'sideways'`,
       `UPDATE "messages" SET "origin" = 'workflow'`,
       // People write in; Agents and Pero write out.
@@ -706,6 +750,21 @@ describe('domain entities', () => {
         );
       }
       await db.query(`UPDATE "agents" SET "name" = ?`, ['a'.repeat(64)]);
+    });
+
+    it('reads a tool policy without permissions as ask, and refuses unknown fields', async () => {
+      const repo = db.getRepository(Agent);
+      await db.query(`UPDATE "agents" SET "tool_policy_json" = '{}'`);
+      expect(
+        (await repo.findOneByOrFail({ id: seeded.agent.id })).toolPolicy,
+      ).toEqual({ permissions: 'ask' });
+
+      await db.query(
+        `UPDATE "agents" SET "tool_policy_json" = '{"allow":["Read"]}'`,
+      );
+      await expect(
+        repo.findOneByOrFail({ id: seeded.agent.id }),
+      ).rejects.toThrow(/allow/);
     });
 
     it('validates Agent provider options on write and read', async () => {

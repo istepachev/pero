@@ -1,5 +1,6 @@
 import { resolvePath } from '../config/bootstrap-config.js';
 import type { Provider } from '../config/provider-options.js';
+import type { PermissionMode } from '../config/tool-policy.js';
 import {
   type SettingsChange,
   TELEGRAM_TOKEN_ENV,
@@ -85,6 +86,12 @@ export const SETTINGS_KEYS: readonly SettingsKey[] = [
     unset: 'history-carryover cannot be unset; set 0 to turn it off',
     show: (view) =>
       view.historyCarryover === 0 ? '0 (off)' : String(view.historyCarryover),
+  },
+  {
+    name: 'default-permissions',
+    set: (value) => ({ defaultPermissions: value as PermissionMode }),
+    unset: 'default-permissions cannot be unset; choose ask or bypass',
+    show: (view) => view.defaultPermissions,
   },
   {
     name: 'timezone',

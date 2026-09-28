@@ -2,6 +2,7 @@ import { type DynamicModule, Logger, Module } from '@nestjs/common';
 import { PROVIDERS } from '../config/provider-options.js';
 import type { AgentRuntime } from './agent-runtime.js';
 import { AGENT_RUNTIMES, AgentRuntimes } from './agent-runtimes.js';
+import { ClaudeRuntime } from './claude/claude-runtime.js';
 import { FakeAgentRuntime } from './testing/fake-agent-runtime.js';
 
 /** Provided by `RuntimeOptionsModule`; absent means the defaults. */
@@ -12,13 +13,13 @@ export interface RuntimeOptions {
   fake?: 'echo';
 }
 
-/** The Agent runtimes; the Claude and Codex adapters join the list later. */
+/** The Agent runtimes; the Codex adapter joins the list later. */
 @Module({
   providers: [
     {
       provide: AGENT_RUNTIMES,
       useFactory: (options?: RuntimeOptions): AgentRuntime[] => {
-        if (options?.fake !== 'echo') return [];
+        if (options?.fake !== 'echo') return [new ClaudeRuntime()];
         new Logger('Runtimes').warn(
           'PERO_FAKE_RUNTIME=echo: every Agent answers with an echo of its ' +
             'message instead of running a provider. For testing only.',

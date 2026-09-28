@@ -40,15 +40,18 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:smoke": "vitest run --config ./vitest.config.smoke.ts",
     "migration:create": "typeorm migration:create",
     "migration:generate": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:generate -d dist/persistence/data-source.js",
     "migration:run": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:run -d dist/persistence/data-source.js",
     "migration:show": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:show -d dist/persistence/data-source.js",
     "migration:revert": "npm run build && PERO_HOME=${PERO_HOME:-.pero} typeorm migration:revert -d dist/persistence/data-source.js",
     "prepack": "npm run build",
-    "pretest:e2e": "npm run build"
+    "pretest:e2e": "npm run build",
+    "pretest:smoke": "npm run build"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.283",
     "@inquirer/prompts": "8.7.2",
     "@nestjs/common": "12.1.0",
     "@nestjs/core": "12.1.0",

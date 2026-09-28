@@ -19,6 +19,7 @@ const view: SettingsView = {
   defaultWorkingDirectory: null,
   sharedInstructions: null,
   historyCarryover: 50,
+  defaultPermissions: 'ask',
   timezone: 'Europe/Berlin',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
@@ -43,6 +44,9 @@ describe('settings keys', () => {
     });
     expect(set('timezone', 'utc')).toEqual({ timezone: 'utc' });
     expect(set('history-carryover', '0')).toEqual({ historyCarryover: 0 });
+    expect(set('default-permissions', 'bypass')).toEqual({
+      defaultPermissions: 'bypass',
+    });
     expect(set('max-concurrent-runs', '4')).toEqual({ maxConcurrentRuns: 4 });
     expect(set('telegram-bot-token', 'x')).toEqual({ telegramBotToken: 'x' });
   });
@@ -117,6 +121,7 @@ describe('formatSettings', () => {
         'default-working-directory  (not set)',
         'shared-instructions        (none)',
         'history-carryover          50',
+        'default-permissions        ask',
         'timezone                   Europe/Berlin',
         'max-concurrent-runs        2',
         'telegram-bot-token         not set',

@@ -6,10 +6,13 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
+import type { Provider } from '../config/provider-options.js';
+import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { RuntimeError } from '../runtimes/agent-runtime.js';
+import { signInHint } from '../providers/provider-auth.js';
+import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import { SessionService } from '../sessions/session.service.js';
 import { AgentsService, type ResolvedAgent } from './agents.service.js';
@@ -21,6 +24,8 @@ export interface TurnInput {
   /** The message as recorded in the Channel's history. */
   messageId: number;
   input: string;
+  /** Asks the owner about tools the Agent's permissions leave open. */
+  approve?: ToolApprover;
 }
 
 /** What the Agent answered, and the Session it answered in. */
@@ -71,6 +76,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     private readonly sessions: SessionService,
     private readonly runtimes: AgentRuntimes,
     private readonly history: MessageHistory,
+    private readonly health: ComponentHealth,
   ) {}
 
   /**
@@ -136,6 +142,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     this.running.add(controller);
     const startedAt = Date.now();
     let where = `Channel ${turn.channelId}, Agent ${turn.agentId}`;
+    let provider: Provider | null = null;
     try {
       // One snapshot of the Agent, settings, Session, and history as the
       // turn starts.
@@ -175,14 +182,22 @@ export class AgentManager implements BeforeApplicationShutdown {
         this.logger.debug(`Skipped a turn in ${where}: the Agent is disabled`);
         return null;
       }
+      provider = agent.provider;
       where += `, Session ${session.id} (${agent.provider})`;
       if (carried > 0) {
         this.logger.log(`Carried over ${carried} message(s) into ${where}`);
       }
-      const text = await this.run(agent, session, input, controller);
+      const text = await this.run(
+        agent,
+        session,
+        input,
+        turn.approve,
+        controller,
+      );
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
       );
+      this.signedIn(agent.provider);
       return {
         agentId: agent.id,
         agentName: agent.name,
@@ -191,6 +206,17 @@ export class AgentManager implements BeforeApplicationShutdown {
       };
     } catch (error) {
       const failure = asTurnError(error, controller.signal.aborted);
+      if (
+        provider !== null &&
+        error instanceof RuntimeError &&
+        error.kind === 'auth'
+      ) {
+        this.health.report(
+          provider,
+          'degraded',
+          `A turn was refused as signed out — run ${signInHint(provider)}`,
+        );
+      }
       this.logger.warn(
         `Turn failed in ${where} after ${Date.now() - startedAt} ms: ` +
           `${error instanceof Error ? error.message : String(error)}`,
@@ -201,11 +227,19 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
   }
 
+  /** A turn succeeded, so a provider reported signed out no longer is. */
+  private signedIn(provider: Provider): void {
+    if (this.health.get(provider)?.state === 'degraded') {
+      this.health.report(provider, 'ok', 'Signed in');
+    }
+  }
+
   /** Runs the turn on the Agent's runtime; resolves to the reply text. */
   private async run(
     agent: ResolvedAgent,
     session: Session,
     input: string,
+    approve: ToolApprover | undefined,
     controller: AbortController,
   ): Promise<string> {
     const runtime = this.runtimes.get(agent.provider);
@@ -224,6 +258,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         ? {}
         : { providerSessionId: session.providerSessionId }),
       toolPolicy: agent.toolPolicy,
+      ...(approve ? { approve } : {}),
       signal: controller.signal,
     })) {
       switch (event.type) {

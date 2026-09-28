@@ -2,16 +2,19 @@ import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentRuntimes } from './agent-runtimes.js';
+import { ClaudeRuntime } from './claude/claude-runtime.js';
 import { RuntimeOptionsModule, RuntimesModule } from './runtimes.module.js';
 import { FakeAgentRuntime } from './testing/fake-agent-runtime.js';
 
 describe('RuntimesModule', () => {
-  it('has no runtimes of its own yet', async () => {
+  it('runs Claude Agents on Claude Code; Codex has no runtime yet', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [RuntimesModule],
     }).compile();
 
-    expect(moduleRef.get(AgentRuntimes).get('claude')).toBeNull();
+    const runtimes = moduleRef.get(AgentRuntimes);
+    expect(runtimes.get('claude')).toBeInstanceOf(ClaudeRuntime);
+    expect(runtimes.get('codex')).toBeNull();
   });
 
   it('answers with an echo for every provider when asked to, with a warning', async () => {

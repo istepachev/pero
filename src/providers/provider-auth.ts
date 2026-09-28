@@ -87,6 +87,11 @@ const CLIS: Record<Provider, ProviderCli> = {
   },
 };
 
+/** The command that signs `provider`'s CLI in. */
+export function signInHint(provider: Provider): string {
+  return CLIS[provider].signIn;
+}
+
 /**
  * Asks `provider`'s CLI whether it is signed in, as the account running
  * this process. Never reports who is signed in, only how.

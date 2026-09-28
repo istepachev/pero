@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PROVIDERS, providerDefaultsPatchSchema } from './provider-options.js';
+import { permissionModeSchema } from './tool-policy.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -42,6 +43,8 @@ export const settingsUpdateSchema = z.strictObject({
   sharedInstructions: z.string().nullable().optional(),
   /** Messages a replacing Session starts with; 0 turns carry-over off. */
   historyCarryover: z.int().min(0).optional(),
+  /** How new Agents' tools are approved; existing Agents keep theirs. */
+  defaultPermissions: permissionModeSchema.optional(),
   timezone: timeZoneSchema.optional(),
   maxConcurrentRuns: z.int().min(1).optional(),
 });
