@@ -140,6 +140,8 @@ function origin(message: HistoryMessage): string {
       return `agent ${message.agent ?? '?'}`;
     case 'pero':
       return 'pero';
+    case 'workflow':
+      return `workflow ${message.workflow ?? '?'}`;
   }
 }
 

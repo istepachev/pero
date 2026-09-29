@@ -63,6 +63,10 @@ export class FakeChannelAdapter implements ChannelAdapter {
     return Promise.resolve({ messageId: String(this.nextMessageId++) });
   }
 
+  chatKey(address: ChannelAddress): string {
+    return String(address.chatId);
+  }
+
   edit(
     address: ChannelAddress,
     messageId: string,

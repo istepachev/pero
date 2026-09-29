@@ -636,6 +636,32 @@ describe('TelegramAdapter', () => {
       expect(sent.messageId).toBe('1');
     });
 
+    it('says why Telegram could not be reached, without the token', async () => {
+      await start();
+      await connected();
+      api.down();
+
+      const failure = await get(TelegramAdapter)
+        .send({ chatId: '1234' }, { text: 'Hi' })
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toMatch(
+        /^Telegram is unreachable: \S/,
+      );
+      expect((failure as Error).message).not.toContain(TOKEN);
+      api.up();
+    });
+
+    it("names the chat of a topic's and a chat's address", async () => {
+      await start();
+      const adapter = get(TelegramAdapter);
+      expect(
+        adapter.chatKey({ chatId: '-1001234567890', messageThreadId: '7' }),
+      ).toBe('-1001234567890');
+      expect(adapter.chatKey({ chatId: '1234' })).toBe('1234');
+    });
+
     it('splits a long reply and records it once', async () => {
       await start({ allow: [DIRECT] });
       const long = Array.from({ length: 1000 }, () => 'word').join(' ');

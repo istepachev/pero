@@ -8,7 +8,10 @@ import type {
   ChannelView,
   HistoryMessage,
 } from '../control/protocol.js';
-import { MessageHistory } from '../history/message-history.service.js';
+import {
+  MessageHistory,
+  workflowOf,
+} from '../history/message-history.service.js';
 import type { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
@@ -96,6 +99,7 @@ export class ChannelViews {
           direction: message.direction,
           origin: message.origin,
           agent: message.agent?.name ?? null,
+          workflow: workflowOf(message),
           senderId: message.senderId,
           text: message.text,
         })),

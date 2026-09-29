@@ -6,6 +6,7 @@ import type { DataDirLayout } from './config/data-dir.js';
 import { resolveDaemonEnv } from './config/daemon-env.js';
 import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
@@ -46,6 +47,7 @@ export class AppModule {
         TriggersModule,
         ScheduleModule.forRoot(),
         SchedulerModule,
+        NotificationsModule,
         TelegramModule.forRoot({
           secretsDir: options.layout.secrets,
           env,

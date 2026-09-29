@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Agent } from './agent.entity.js';
 import { Channel } from './channel.entity.js';
+import { Notification } from './notification.entity.js';
 import { Session } from './session.entity.js';
 import {
   MESSAGE_DIRECTIONS,
@@ -34,6 +35,8 @@ export {
 @Entity('messages')
 @Index('IDX_messages_channel_created_at', ['channelId', 'createdAt'])
 @Index('IDX_messages_created_at', ['createdAt'])
+// A delivered Notification is recorded once.
+@Index('UQ_messages_notification_id', ['notificationId'], { unique: true })
 @Check('CHK_messages_direction', oneOf('direction', MESSAGE_DIRECTIONS))
 @Check('CHK_messages_origin', oneOf('origin', MESSAGE_ORIGINS))
 // People write in; Agents and Pero write out.
@@ -44,6 +47,11 @@ export {
 @Check(
   'CHK_messages_agent_reply',
   `"origin" <> 'agent' OR ("agent_id" IS NOT NULL AND "session_id" IS NOT NULL)`,
+)
+// A Workflow's message is its delivered Notification, and only that.
+@Check(
+  'CHK_messages_workflow',
+  `("origin" = 'workflow') = ("notification_id" IS NOT NULL)`,
 )
 export class Message {
   @PrimaryGeneratedColumn({ type: 'integer' })
@@ -59,7 +67,10 @@ export class Message {
   })
   channel?: Channel;
 
-  /** The Agent the message was to or from; null for Pero's own notices. */
+  /**
+   * The Agent the message was to or from; null for Pero's own notices and
+   * a Workflow's.
+   */
   @Column({ name: 'agent_id', type: 'integer', nullable: true })
   agentId: number | null;
 
@@ -103,6 +114,17 @@ export class Message {
 
   @Column({ type: 'text' })
   text: string;
+
+  /** The Notification this message delivered; set only for a Workflow's. */
+  @Column({ name: 'notification_id', type: 'integer', nullable: true })
+  notificationId: number | null;
+
+  @ManyToOne(() => Notification, { onDelete: 'RESTRICT' })
+  @JoinColumn({
+    name: 'notification_id',
+    foreignKeyConstraintName: 'FK_messages_notification_id',
+  })
+  notification?: Notification | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

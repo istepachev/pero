@@ -274,7 +274,13 @@ Every place a run ends goes through one path. Notifications are created in a sav
 
 ### 4.2 Delivery worker
 
-Dispatch pending Notifications through the Channel adapter with bounded attempts and backoff, recording `provider_message_id`, attempts, and last error. Failed records stay visible. Record each delivered Notification in its Channel's history with origin `workflow`, linked to the Notification. The next interactive turn in that Channel places the Notifications delivered since its Session's previous turn before the input, so the owner can reply to one, such as by asking about a suggestion in the English topic.
+A delivery tick every 5 seconds dispatches due `pending` Notifications through the Channel adapter, one at a time:
+- **Attempts:** each attempt records the attempt count and, when it fails, `last_error`. Failed attempts retry after 30 s, 2 min, 10 min, 30 min, 1 h, 2 h, 4 h, 8 h, and 8 h. After ten attempts, about a day, the Notification is `failed` and stays visible.
+- **Lease:** claiming an attempt sets the next attempt time first, so a Pero that stops mid-send tries again only after the backoff. Delivery is at least once.
+- **Allowlist:** a Notification to a chat that is no longer allowed fails at once without sending. A disabled Channel still receives Notifications.
+- **History:** a delivered Notification records `provider_message_id` and, in the same transaction, a Channel history message with origin `workflow`, linked to the Notification. A unique index records each Notification once.
+- **Next turn:** the next interactive turn in that Channel places the Workflow messages posted since the Channel's previous person's message before its input, so the owner can reply to one, such as by asking about a suggestion in the English topic.
+- **Carry-over:** a fresh Session's carry-over includes `workflow` messages. Workflow history windows (3.6) leave them out, so a Workflow never reads its own answers back.
 
 **Done when:** a simulated Telegram outage leaves the Notification retrying and delivers it once Telegram recovers, without creating another Workflow Run; a delivered Notification appears in the Channel's history once, and the next turn there receives its text.
 

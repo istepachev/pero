@@ -269,8 +269,10 @@ export const historyMessageSchema = z.object({
   createdAt: z.iso.datetime(),
   direction: z.enum(MESSAGE_DIRECTIONS),
   origin: z.enum(MESSAGE_ORIGINS),
-  /** The Agent it was to or from; null for Pero's own notices. */
+  /** The Agent it was to or from; null for Pero's and Workflows' messages. */
   agent: z.string().nullable(),
+  /** The Workflow whose Notification it delivered; null for other messages. */
+  workflow: z.string().nullable(),
   /** The integration's ID for who wrote it; null for what Pero sent. */
   senderId: z.string().nullable(),
   text: z.string(),

@@ -133,6 +133,11 @@ export interface ChannelAdapter {
   stop(): Promise<void>;
   send(address: ChannelAddress, message: OutboundMessage): Promise<SentMessage>;
   /**
+   * The key of the chat `address` belongs to, as `InboundChat.key` gives
+   * it, so the allowlist can be checked before sending unprompted.
+   */
+  chatKey(address: ChannelAddress): string;
+  /**
    * Replaces a sent message's text and buttons; a message without buttons
    * removes them. The text must fit in one message.
    */

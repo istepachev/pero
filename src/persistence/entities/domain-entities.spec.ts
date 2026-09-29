@@ -191,10 +191,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // History, attempts, skipped counts, default permissions, message
-    // history, the allowlist, the Session resume migration, then the domain
-    // tables.
-    for (let i = 0; i < 8; i++) {
+    // Notification delivery, history, attempts, skipped counts, default
+    // permissions, message history, the allowlist, the Session resume
+    // migration, then the domain tables.
+    for (let i = 0; i < 9; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -216,9 +216,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Workflow history, attempts, skipped counts, default permissions,
-    // message history, the allowlist, then the Session resume migration.
-    for (let i = 0; i < 7; i++) {
+    // Notification delivery, Workflow history, attempts, skipped counts,
+    // default permissions, message history, the allowlist, then the Session
+    // resume migration.
+    for (let i = 0; i < 8; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -260,9 +261,9 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Workflow history, attempts, skipped counts, default permissions,
-    // message history, then the allowlist.
-    for (let i = 0; i < 6; i++) {
+    // Notification delivery, Workflow history, attempts, skipped counts,
+    // default permissions, message history, then the allowlist.
+    for (let i = 0; i < 7; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -299,9 +300,9 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Workflow history, attempts, skipped counts, default permissions, then
-    // message history.
-    for (let i = 0; i < 5; i++) {
+    // Notification delivery, Workflow history, attempts, skipped counts,
+    // default permissions, then message history.
+    for (let i = 0; i < 6; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -331,8 +332,9 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // History, attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 4; i++) {
+    // Notification delivery, history, attempts, skipped counts, then
+    // default permissions.
+    for (let i = 0; i < 5; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -369,7 +371,8 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // History, attempts, then skipped counts.
+    // Notification delivery, history, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -400,7 +403,8 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // History, then attempts.
+    // Notification delivery, history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
@@ -449,6 +453,8 @@ describe('domain entities', () => {
       },
     });
 
+    // Notification delivery, then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
       `SELECT "name" FROM pragma_table_info('workflows')`,
@@ -462,6 +468,57 @@ describe('domain entities', () => {
     expect(
       await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
     ).toMatchObject({ name: workflow.name, history: null });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps messages and Notifications through the delivery migration and back', async () => {
+    const db = await open();
+    const { message, notification } = await seed(db);
+    await db
+      .getRepository(Notification)
+      .update(notification.id, { lastError: 'Telegram is unreachable' });
+    const delivered = await db.getRepository(Message).save({
+      channelId: message.channelId,
+      agentId: null,
+      sessionId: null,
+      direction: 'out',
+      origin: 'workflow',
+      externalMessageId: '12',
+      senderId: null,
+      text: 'Done.',
+      notificationId: notification.id,
+    });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = async (table: string) =>
+      (
+        await db.query<{ name: string }[]>(
+          `SELECT "name" FROM pragma_table_info('${table}')`,
+        )
+      ).map((column) => column.name);
+    expect(await columns('notifications')).not.toContain('last_error');
+    expect(await columns('messages')).not.toContain('notification_id');
+    // A Workflow's message cannot be kept without its origin.
+    expect(await db.query(`SELECT "id" FROM "messages"`)).toEqual([
+      { id: message.id },
+    ]);
+    await rejectsWith(
+      db.query(`UPDATE "messages" SET "origin" = 'workflow'`),
+      'SQLITE_CONSTRAINT_CHECK',
+    );
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Message).findOneByOrFail({ id: message.id }),
+    ).toMatchObject({ text: 'Added milk.', notificationId: null });
+    expect(
+      await db.getRepository(Message).findOneBy({ id: delivered.id }),
+    ).toBeNull();
+    expect(
+      await db
+        .getRepository(Notification)
+        .findOneByOrFail({ id: notification.id }),
+    ).toMatchObject({ lastError: null });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -638,6 +695,23 @@ describe('domain entities', () => {
       expect(await sessions.countBy({ status: 'active' })).toBe(1);
     });
 
+    it('records a delivered Notification in history once', async () => {
+      const messages = db.getRepository(Message);
+      const delivered = (externalMessageId: string) => ({
+        channelId: seeded.channel.id,
+        direction: 'out' as const,
+        origin: 'workflow' as const,
+        externalMessageId,
+        text: 'Done.',
+        notificationId: seeded.notification.id,
+      });
+      await messages.insert(delivered('12'));
+      await rejectsWith(
+        messages.insert(delivered('13')),
+        'SQLITE_CONSTRAINT_UNIQUE',
+      );
+    });
+
     it('allows one Notification and one target per Workflow and Channel', async () => {
       await rejectsWith(
         db.getRepository(Notification).insert({
@@ -753,6 +827,13 @@ describe('domain entities', () => {
           `VALUES (${s.channel.id}, ${MISSING}, 'in', 'user', '1', 'x')`,
       ],
       [
+        'messages.notification_id',
+        (s) =>
+          `INSERT INTO "messages" ("channel_id", "direction", "origin", ` +
+          `"external_message_id", "text", "notification_id") ` +
+          `VALUES (${s.channel.id}, 'out', 'workflow', '1', 'x', ${MISSING})`,
+      ],
+      [
         'notifications.channel_id',
         (s) =>
           `INSERT INTO "notifications" ("workflow_run_id", "channel_id", ` +
@@ -830,8 +911,10 @@ describe('domain entities', () => {
       `UPDATE "settings" SET "history_carryover" = -1`,
       `UPDATE "settings" SET "default_permissions" = 'always'`,
       `UPDATE "messages" SET "direction" = 'sideways'`,
-      `UPDATE "messages" SET "origin" = 'workflow'`,
-      // People write in; Agents and Pero write out.
+      // A Workflow's message is its delivered Notification, and only that.
+      `UPDATE "messages" SET "origin" = 'workflow', "agent_id" = NULL, "session_id" = NULL`,
+      `UPDATE "messages" SET "notification_id" = (SELECT "id" FROM "notifications")`,
+      // People write in; Agents, Pero, and Workflows write out.
       `UPDATE "messages" SET "direction" = 'in'`,
       `UPDATE "messages" SET "origin" = 'user'`,
       // An Agent's reply names its Agent and Session.

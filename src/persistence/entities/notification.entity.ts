@@ -75,6 +75,10 @@ export class Notification {
   @Column({ name: 'provider_message_id', type: 'text', nullable: true })
   providerMessageId: string | null;
 
+  /** Why the latest attempt failed; null once delivered or before trying. */
+  @Column({ name: 'last_error', type: 'text', nullable: true })
+  lastError: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

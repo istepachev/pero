@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import Database from 'better-sqlite3';
+import type { Chat, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,8 +21,21 @@ import { AgentManager } from '../src/agents/agent-manager.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
+import { NotificationDelivery } from '../src/notifications/notification-delivery.js';
+import { Notification } from '../src/persistence/entities/notification.entity.js';
+import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js';
 import { Agent } from '../src/persistence/entities/agent.entity.js';
 import { Channel } from '../src/persistence/entities/channel.entity.js';
+
+const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
+
+const FORUM: Chat.SupergroupChat = {
+  id: -1001234567890,
+  type: 'supergroup',
+  title: 'Household',
+  is_forum: true,
+};
+const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('Workflow and Trigger definitions (e2e)', () => {
   let tmp: string;
@@ -542,7 +556,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     });
   });
 
-  it('notifies the Channels a Workflow names of each finished run, keeping the Notifications pending', async () => {
+  it('notifies the Channels a Workflow names of each finished run, keeping the Notifications across a restart', async () => {
     await start();
     await manualBrief();
     const dataSource = daemon!.app.get<DataSource>(getDataSourceToken());
@@ -612,15 +626,13 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       expect(
         db
           .prepare(
-            'SELECT workflow_run_id, channel_id, status, attempt, payload FROM notifications',
+            'SELECT workflow_run_id, channel_id, payload FROM notifications',
           )
           .all(),
       ).toEqual([
         {
           workflow_run_id: queued.id,
           channel_id: channel,
-          status: 'pending',
-          attempt: 0,
           payload: JSON.stringify({
             text: 'Workflow brief\n\necho: Summarize the day.',
           }),
@@ -641,4 +653,110 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       }),
     ).toMatchObject({ changed: true, workflow: { targets: [] } });
   });
+
+  it(
+    'delivers a Notification once Telegram is back, where the next turn receives it',
+    { timeout: 60_000 },
+    async () => {
+      const topic = { message_thread_id: 7, is_topic_message: true };
+      let nextMessageId = 1;
+      const say = (text: string) =>
+        api.push({
+          message: {
+            message_id: nextMessageId++,
+            date: 0,
+            chat: FORUM,
+            from: OWNER,
+            text,
+            ...topic,
+          } as never,
+        });
+      const texts = () => api.sent().map((payload) => String(payload.text));
+
+      api.chats.set(String(FORUM.id), FORUM);
+      await start();
+      await manualBrief();
+      await client.call('settings.update', { telegramBotToken: TOKEN });
+      await vi.waitFor(async () =>
+        expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
+      );
+      await client.call('telegram.allow', { chatId: String(FORUM.id) });
+      // The topic onboards its Agent, which answers.
+      say('Hello');
+      await vi.waitFor(() => expect(texts()).toContain('echo: Hello'));
+      const channel = (await client.call('channels.list')).channels.find(
+        ({ key }) => key === `${FORUM.id}:7`,
+      )!;
+      await client.call('workflows.notify', {
+        name: 'brief',
+        channel: channel.id,
+        notify: true,
+      });
+      const delivery = daemon!.app.get(NotificationDelivery);
+      const notification = () =>
+        daemon!.app
+          .get<DataSource>(getDataSourceToken())
+          .getRepository(Notification)
+          .findOneByOrFail({ channelId: channel.id });
+
+      api.down();
+      const queued = await client.call('workflows.run', { name: 'brief' });
+      await vi.waitFor(async () => {
+        expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+          status: 'completed',
+        });
+      });
+      await delivery.tick(new Date(Date.now() + 1_000));
+      expect(await notification()).toMatchObject({
+        status: 'pending',
+        providerMessageId: null,
+        lastError: expect.stringMatching(/^Telegram is unreachable: /),
+      });
+      expect((await notification()).attempt).toBeGreaterThanOrEqual(1);
+
+      api.up();
+      await delivery.tick(new Date(Date.now() + 24 * 60 * 60_000));
+      expect(await notification()).toMatchObject({
+        status: 'delivered',
+        lastError: null,
+      });
+      const suggestion = 'Workflow brief\n\necho: Summarize the day.';
+      expect(
+        api.sent().filter((payload) => payload.text === suggestion),
+      ).toEqual([expect.objectContaining({ message_thread_id: 7 })]);
+      expect(
+        await daemon!.app
+          .get<DataSource>(getDataSourceToken())
+          .getRepository(WorkflowRun)
+          .count(),
+      ).toBe(1);
+      const { messages } = await client.call('channels.history', {
+        id: channel.id,
+      });
+      expect(
+        messages.filter((message) => message.origin === 'workflow'),
+      ).toEqual([
+        expect.objectContaining({
+          direction: 'out',
+          workflow: 'brief',
+          agent: null,
+          text: suggestion,
+        }),
+      ]);
+
+      // Telegram polls again after a pause; the next message there gets it.
+      say('Tell me more');
+      await vi.waitFor(() => expect(texts().at(-1)).toMatch(/Tell me more$/), {
+        timeout: 30_000,
+      });
+      const reply = texts().at(-1)!;
+      expect(reply).toMatch(
+        /^echo: \[Posted in this chat by Workflows since the last message here\]\n/,
+      );
+      expect(reply).toContain(`Workflow brief: ${suggestion}`);
+
+      say('Thanks');
+      await vi.waitFor(() => expect(texts().at(-1)).toBe('echo: Thanks'));
+    },
+  );
 });

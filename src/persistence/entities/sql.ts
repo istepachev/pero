@@ -32,10 +32,11 @@ export const MESSAGE_DIRECTIONS = ['in', 'out'] as const;
 export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 
 /**
- * Who wrote a message: a person in the chat, the Channel's Agent, or Pero
- * itself, such as a welcome or a failure notice.
+ * Who wrote a message: a person in the chat, the Channel's Agent, Pero
+ * itself, such as a welcome or a failure notice, or a Workflow, whose
+ * delivered Notification it is.
  */
-export const MESSAGE_ORIGINS = ['user', 'agent', 'pero'] as const;
+export const MESSAGE_ORIGINS = ['user', 'agent', 'pero', 'workflow'] as const;
 
 export type MessageOrigin = (typeof MESSAGE_ORIGINS)[number];
 
