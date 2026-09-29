@@ -18,6 +18,7 @@ import {
   ChannelsListCommand,
   ChannelsShowCommand,
 } from './commands/channels.command.js';
+import { InitCommand } from './commands/init.command.js';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
@@ -77,6 +78,7 @@ import { GlobalOptionsSetup } from './global-options.js';
 @Module({
   providers: [
     GlobalOptionsSetup,
+    InitCommand,
     RunCommand,
     StopCommand,
     StatusCommand,

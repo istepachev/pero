@@ -1710,6 +1710,61 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(existsSync(layout.database)).toBe(false);
   });
 
+  it('makes a workspace with init, and points to it when there is none', async () => {
+    const home = join(realpathSync(tmp), 'home');
+    mkdirSync(home);
+    const env = { HOME: home };
+    const workspace = join(home, 'workspace');
+    const hint = `No Pero workspace found in this folder or above it, or in ~/workspace. Create one with: pero init ${workspace}\n`;
+
+    expect(await pero(['status'], { env, cwd: home })).toMatchObject({
+      code: 3,
+      stderr: hint,
+    });
+    expect(await pero(['run'], { env, cwd: home })).toMatchObject({
+      code: 1,
+      stderr: hint,
+    });
+    expect(existsSync(workspace)).toBe(false);
+
+    // Without the daemon, and without loading what the daemon needs.
+    const init = await pero(['init', workspace], {
+      env,
+      nodeArgs: ['--import', DENY_DAEMON_DEPS],
+    });
+    expect(init).toMatchObject({ code: 0, stderr: '' });
+    expect(init.stdout).toBe(
+      [
+        `Pero workspace ${workspace}:`,
+        '  created  .gitignore',
+        '  created  .pero/.gitignore',
+        '  created  .pero/config.yaml',
+        '  created  data/Settings/Pero.md',
+        '  created  data/Settings/Agents/Main.md',
+        '  created  data/Settings/Agents/_Template.md',
+        '  created  data/Settings/Workflows/',
+        '',
+        `Start Pero there with: cd ${workspace} && pero run`,
+        '',
+      ].join('\n'),
+    );
+    const again = await pero(['init'], { env, cwd: workspace });
+    expect(again.stdout).toContain(
+      `Pero workspace ${workspace} has everything already:\n  kept  .gitignore\n`,
+    );
+
+    // From home, ~/workspace is found now, with its data folder set up.
+    others.push(dataDirLayout(join(workspace, '.pero'), workspace));
+    const run = await pero(['run'], { env, cwd: home });
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain(`, workspace ${workspace})\n`);
+    expect(run.stdout).not.toContain('working directory');
+    expect(await pero(['stop'], { env, cwd: home })).toMatchObject({
+      code: 0,
+      stdout: 'Pero stopped\n',
+    });
+  });
+
   it('marks a data directory as legacy', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const status = await pero(withDataDir('status'));

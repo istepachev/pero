@@ -57,6 +57,21 @@ export class ConfigError extends Error {
   override name = 'ConfigError';
 }
 
+/**
+ * Nothing names a workspace, none is found, and there is no legacy
+ * `~/.pero`: Pero has nothing to work on until `pero init` makes one.
+ */
+export class NoWorkspaceError extends ConfigError {
+  override name = 'NoWorkspaceError';
+
+  /** `dir`: where `pero init` would suit, the current folder or `~/workspace`. */
+  constructor(readonly suggested: string) {
+    super(
+      `No Pero workspace found in this folder or above it, or in ~/workspace. Create one with: pero init ${suggested}`,
+    );
+  }
+}
+
 const nodeFs: DiscoveryFs = {
   isDirectory: (path) => {
     try {
@@ -100,7 +115,8 @@ const sources = z
  * `PERO_HOME`. Otherwise the workspace is the nearest folder holding
  * `.pero/`, from `cwd` upward (the home folder itself never counts: its
  * `.pero` is the legacy data directory), then `~/workspace` when it holds
- * `.pero/`, and finally the legacy data directory `~/.pero`.
+ * `.pero/`, and finally the legacy data directory `~/.pero` when it
+ * exists. With none of them, it throws `NoWorkspaceError`.
  *
  * A leading `~` is expanded and relative paths resolve against `cwd`. A
  * workspace is identified by its real path, so a symlinked folder is the
@@ -155,7 +171,34 @@ export function resolveBootstrapConfig(
   if (fs.isDirectory(join(fallback, STATE_DIR_NAME))) {
     return inWorkspace(fallback);
   }
-  return legacy(join(home, STATE_DIR_NAME));
+  if (fs.isDirectory(join(home, STATE_DIR_NAME))) {
+    return legacy(join(home, STATE_DIR_NAME));
+  }
+  throw new NoWorkspaceError(suggestedWorkspace(cwd, home, fs));
+}
+
+/**
+ * Where to suggest a new workspace: the current folder, or `~/workspace`
+ * from the home folder, which can't be one.
+ */
+export function suggestedWorkspace(
+  cwd: string,
+  home: string,
+  fs: DiscoveryFs = nodeFs,
+): string {
+  const here = canonical(resolve(cwd), fs);
+  return here === canonical(resolve(home), fs)
+    ? join(home, DEFAULT_WORKSPACE_NAME)
+    : here;
+}
+
+/** Whether `dir` is the home folder, which is never a workspace. */
+export function isHomeFolder(
+  dir: string,
+  home: string = homedir(),
+  fs: DiscoveryFs = nodeFs,
+): boolean {
+  return canonical(resolve(dir), fs) === canonical(resolve(home), fs);
 }
 
 /**

@@ -10,13 +10,12 @@ prefix="$work/prefix"
 export HOME="$work/home"
 export npm_config_prefix="$prefix"
 export PATH="$prefix/bin:$PATH"
-unset PERO_HOME PERO_TELEGRAM_BOT_TOKEN
+unset PERO_HOME PERO_WORKSPACE PERO_TELEGRAM_BOT_TOKEN
 mkdir -p "$HOME" "$prefix"
 
 cleanup() {
-  for dir in "$HOME/.pero" "$HOME/restored"; do
-    [ -d "$dir" ] && pero stop --data-dir "$dir" >/dev/null 2>&1 || true
-  done
+  [ -d "$HOME/workspace" ] && pero stop -w "$HOME/workspace" >/dev/null 2>&1 || true
+  [ -d "$HOME/restored" ] && pero stop --data-dir "$HOME/restored" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -46,6 +45,18 @@ node --input-type=module -e "
 cd "$HOME"
 step 'pero --version'
 pero --version
+
+step 'pero run without a workspace (not interactive)'
+code=0
+pero run </dev/null || code=$?
+if [ "$code" -ne 1 ]; then
+  echo "Expected exit status 1 without a workspace, got $code" >&2
+  exit 1
+fi
+
+step 'pero init ~/workspace'
+pero init "$HOME/workspace"
+cd "$HOME/workspace"
 
 step 'pero run (not interactive)'
 pero run </dev/null

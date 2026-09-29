@@ -16,11 +16,11 @@ pero run --foreground   # attached; logs to stdout
 
 `pero logs` prints the last 50 entries of `logs/pero.log` as readable lines in local time (`-n <count>` for more or fewer); `--follow` keeps streaming new entries, waiting for the file if Pero has not written it yet, and `--json` prints the raw lines for `jq`. It reads files only, so it works whether or not Pero is running. It does not stream `logs/daemon.out`, but it names that file on stderr when it has content.
 
-Every command works on the workspace found from the current folder (the nearest folder holding `.pero/`), or takes `--workspace <dir>` (`-w`) to name one; without a workspace, Pero uses the legacy data directory `~/.pero`, or the one `--data-dir <dir>` names. See [Configuration](./OPERATIONS.md#configuration).
+Every command works on the workspace found from the current folder (the nearest folder holding `.pero/`), or takes `--workspace <dir>` (`-w`) to name one. `pero init [dir]` makes a workspace; it only fills in what's missing, so it also completes a cloned one. Without a workspace, Pero uses the legacy data directory `~/.pero` when it exists, or the one `--data-dir <dir>` names; with neither, commands say which `pero init` to run. See [Configuration](./OPERATIONS.md#configuration).
 
 ## First-run setup and settings
 
-Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the default working directory all Agents share, the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). On a terminal it asks for each one: the folder is prefilled with the current folder (`~/workspace` when started from home) and created if missing, the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
+Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, sign-in for the providers in use (the default provider, plus any provider an Agent uses), and, in a legacy data directory only, the default working directory all Agents share (a workspace has its `data/` folder). On a terminal it asks for each one: the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
 
 ```sh
 pero settings                                           # show everything

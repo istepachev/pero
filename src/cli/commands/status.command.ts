@@ -1,5 +1,6 @@
 import { Command } from 'nest-commander';
 import { PACKAGE_VERSION } from '../../common/package-version.js';
+import { NoWorkspaceError } from '../../config/bootstrap-config.js';
 import { describeLocation } from '../../config/data-dir.js';
 import { gitEnvFileProblem } from '../../config/env-file.js';
 import { DaemonNotRunningError } from '../../control/client.js';
@@ -16,7 +17,14 @@ const NOT_RUNNING_EXIT_CODE = 3;
 })
 export class StatusCommand extends PeroCommand {
   async run(): Promise<void> {
-    const layout = this.layout();
+    let layout;
+    try {
+      layout = this.layout();
+    } catch (error) {
+      // Nothing to run yet counts as not running.
+      if (!(error instanceof NoWorkspaceError)) throw error;
+      throw new CliError(error.message, NOT_RUNNING_EXIT_CODE);
+    }
     // Checked here, not by the daemon, so it holds whether Pero runs or not.
     const problem =
       layout.workspace === null

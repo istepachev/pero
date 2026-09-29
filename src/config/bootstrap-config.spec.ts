@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ConfigError,
   type DiscoveryFs,
+  NoWorkspaceError,
   resolveBootstrapConfig,
   type BootstrapConfigInput,
 } from './bootstrap-config.js';
@@ -27,12 +28,13 @@ function fakeFs(...dirs: string[]): DiscoveryFs {
   };
 }
 
+/** Resolves on a machine where only the legacy `~/.pero` exists. */
 function resolve(input: BootstrapConfigInput = {}) {
   return resolveBootstrapConfig({
     env: {},
     cwd,
     homeDir: home,
-    fs: fakeFs(),
+    fs: fakeFs('/home/owner/.pero'),
     ...input,
   });
 }
@@ -44,6 +46,24 @@ describe('resolveBootstrapConfig', () => {
       workspace: null,
       logLevel: 'info',
     });
+  });
+
+  it('asks for pero init when there is no workspace and no ~/.pero', () => {
+    const none = (dir: string) => () => resolve({ cwd: dir, fs: fakeFs() });
+
+    expect(none('/work/notes')).toThrow(NoWorkspaceError);
+    expect(none('/work/notes')).toThrow(
+      'No Pero workspace found in this folder or above it, or in ~/workspace. Create one with: pero init /work/notes',
+    );
+    // The home folder can't be one, so ~/workspace is suggested there.
+    try {
+      none(home)();
+    } catch (error) {
+      expect((error as NoWorkspaceError).suggested).toBe(
+        '/home/owner/workspace',
+      );
+    }
+    expect.assertions(3);
   });
 
   it('uses --workspace, keeping state in its .pero', () => {

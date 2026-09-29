@@ -5,6 +5,7 @@ import { ControlError } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
 import { isInteractive, isPromptExit, terminalPrompts } from '../prompts.js';
+import { configOrNewWorkspace } from '../setup/first-run.js';
 import {
   fetchTelegramChats,
   formatPendingSetup,
@@ -25,7 +26,12 @@ interface RunOptions {
 })
 export class RunCommand extends PeroCommand {
   async run(_params: string[], options: RunOptions): Promise<void> {
-    const config = this.config();
+    const config = await configOrNewWorkspace({
+      config: () => this.config(),
+      interactive: isInteractive(),
+      prompts: terminalPrompts,
+      print: (text) => console.log(text),
+    });
     if (options.foreground) {
       // Loaded only here: the daemon brings Nest, TypeORM, and SQLite.
       const { runDaemonProcess } = await import('../../daemon/process.js');
