@@ -1,0 +1,87 @@
+name: Release
+
+# Publishes @perokit/pero after CI passes on a push to main, but only when
+# package.json holds a version that is not on npm yet: bump the version in a
+# PR and merging it releases. Then tags vX.Y.Z and writes a GitHub Release.
+# See docs/DEVELOPMENT.md#releasing for the one-time setup.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write # tag and GitHub Release
+      id-token: write # npm trusted publishing and provenance
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Read version
+        id: meta
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-*) tag=next prerelease=true ;;
+            *) tag=latest prerelease=false ;;
+          esac
+          published="$(npm view "$name@$version" version 2>/dev/null || true)"
+          if [ -n "$published" ]; then
+            publish=false
+            echo "$name@$version is already on npm; not publishing." >> "$GITHUB_STEP_SUMMARY"
+          else
+            publish=true
+            echo "Publishing $name@$version with dist-tag \`$tag\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+      - if: steps.meta.outputs.publish == 'true'
+        run: npm ci
+      # Trusted publishing (OIDC) takes precedence when configured on npm;
+      # NPM_TOKEN is only for the very first publish, before the package exists.
+      - if: steps.meta.outputs.publish == 'true'
+        run: npm publish --tag "$TAG"
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Runs even when npm already has the version, so re-running the workflow
+      # completes a release whose GitHub Release step failed.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists."
+            exit 0
+          fi
+          flags=()
+          [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          gh release create "v$VERSION" --target "$SHA" --title "v$VERSION" --generate-notes "${flags[@]}"
