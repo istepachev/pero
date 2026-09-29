@@ -1,6 +1,10 @@
 import { homedir } from 'node:os';
 import { Command, Option } from 'nest-commander';
-import { checkWorkspace } from '../../settings-files/check.js';
+import { ControlError } from '../../control/protocol.js';
+import {
+  checkWorkspace,
+  type WorkspaceCheck,
+} from '../../settings-files/check.js';
 import { CliError } from '../errors.js';
 import { formatCheck } from '../format-check.js';
 import { PeroCommand } from '../pero-command.js';
@@ -22,11 +26,13 @@ export class CheckCommand extends PeroCommand {
         `${dataDir} is a legacy data directory: its Agents and Workflows are in its database, and there are no notes to check`,
       );
     }
-    const result = await checkWorkspace({
-      workspace,
-      homeDir: homedir(),
-      hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    });
+    const result =
+      (await this.checkThroughDaemon()) ??
+      (await checkWorkspace({
+        workspace,
+        homeDir: homedir(),
+        hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }));
     console.log(
       options.json
         ? JSON.stringify(
@@ -37,6 +43,23 @@ export class CheckCommand extends PeroCommand {
         : formatCheck(result),
     );
     if (result.problems.length > 0) process.exitCode = 1;
+  }
+
+  /**
+   * The running daemon's check, which also knows the topics Pero has
+   * seen; null when Pero is stopped, or too old to check.
+   */
+  private async checkThroughDaemon(): Promise<WorkspaceCheck | null> {
+    const daemon = await this.runningDaemon();
+    if (daemon === null) return null;
+    try {
+      return await daemon.call('check');
+    } catch (error) {
+      if (error instanceof ControlError && error.code === 'unknown_operation') {
+        return null;
+      }
+      throw error;
+    }
   }
 
   @Option({
