@@ -1,4 +1,16 @@
-# Pero implementation docs
+# Pero docs
+
+For people using Pero:
+
+- [User guide](./USER_GUIDE.md) — first-run setup, settings, Telegram, Agents and permissions, and Workflows.
+- [Operating Pero](./OPERATIONS.md) — install and upgrade, configuration, credentials, data layout, message history, backup, and restoring on a fresh machine.
+- [CLI reference](./CLI.md) — every command and what it does.
+
+For people working on Pero:
+
+- [Development](./DEVELOPMENT.md) — building, running from a checkout, tests, and daemon internals.
+
+## Design docs
 
 These documents turn the agreed design for Pero into a starting point for implementation.
 
