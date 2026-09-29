@@ -30,7 +30,7 @@ describe('formatStatus', () => {
         'Pero is running',
         '  PID             4242',
         '  Version         1.2.0',
-        '  Data directory  /home/owner/.pero',
+        '  Data directory  /home/owner/.pero (legacy)',
         '  Uptime          3m 12s',
         '  Health          degraded',
         '',
@@ -39,6 +39,16 @@ describe('formatStatus', () => {
         '  telegram  unconfigured  Bot token is not set',
       ].join('\n'),
     );
+  });
+
+  it('shows a workspace instead of a data directory', () => {
+    const text = formatStatus(
+      { ...status, dataDir: '/srv/ws/.pero', workspace: '/srv/ws' },
+      '1.2.0',
+    );
+
+    expect(text).toContain('  Workspace  /srv/ws\n');
+    expect(text).not.toContain('Data directory');
   });
 
   it('marks a component health does not depend on', () => {

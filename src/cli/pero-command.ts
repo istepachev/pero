@@ -9,6 +9,7 @@ import {
   type ControlClientOptions,
   createControlClient,
 } from '../control/client.js';
+import { readDaemonMetadata } from '../control/daemon-metadata.js';
 import type { StatusResult } from '../control/protocol.js';
 import type { GlobalOptions } from './global-options.js';
 
@@ -18,21 +19,33 @@ export interface DaemonConnection {
   status: StatusResult;
 }
 
-/** Base for `pero` commands: resolves the data directory and the daemon. */
+/** Base for `pero` commands: resolves the workspace and the daemon. */
 export abstract class PeroCommand extends CommandRunner {
-  /** Bootstrap configuration from `--data-dir`, the environment, or defaults. */
+  /**
+   * Bootstrap configuration from `--workspace` or `--data-dir`, the
+   * environment, or the workspace found from the current folder.
+   */
   protected config(): BootstrapConfig {
-    const { dataDir } = this.command.optsWithGlobals<GlobalOptions>();
-    return resolveBootstrapConfig({ dataDir });
+    const { workspace, dataDir } =
+      this.command.optsWithGlobals<GlobalOptions>();
+    return resolveBootstrapConfig({ workspace, dataDir });
   }
 
-  /** The data directory's paths; nothing is created. */
+  /** The state directory's paths; nothing is created. */
   protected layout(): DataDirLayout {
-    return dataDirLayout(this.config().dataDir);
+    const { dataDir, workspace } = this.config();
+    return dataDirLayout(dataDir, workspace);
   }
 
+  /**
+   * A client for the daemon's control socket: where the running daemon
+   * recorded it, or else where it would be.
+   */
   protected client(options?: ControlClientOptions): ControlClient {
-    return createControlClient(this.layout().controlSocket, options);
+    const layout = this.layout();
+    const socket =
+      readDaemonMetadata(layout.metadataFile)?.socket ?? layout.controlSocket;
+    return createControlClient(socket, options);
   }
 
   /**

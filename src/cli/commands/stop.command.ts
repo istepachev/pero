@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Command } from 'nest-commander';
 import { STOP_DEADLINE_MS } from '../../common/shutdown.js';
+import { describeLocation } from '../../config/data-dir.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
@@ -21,7 +22,7 @@ export class StopCommand extends PeroCommand {
       ({ pid } = await client.status());
     } catch (error) {
       if (!(error instanceof DaemonNotRunningError)) throw error;
-      console.log(`Pero isn't running (data directory ${layout.root})`);
+      console.log(`Pero isn't running (${describeLocation(layout)})`);
       return;
     }
 

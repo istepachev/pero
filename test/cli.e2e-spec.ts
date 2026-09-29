@@ -15,7 +15,12 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import type { Chat } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataDirLayout, type DataDirLayout } from '../src/config/data-dir.js';
+import {
+  dataDirLayout,
+  type DataDirLayout,
+  MAX_SOCKET_PATH_BYTES,
+  STATE_GITIGNORE,
+} from '../src/config/data-dir.js';
 import { PACKAGE_VERSION } from '../src/common/package-version.js';
 import { createControlClient } from '../src/control/client.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
@@ -59,6 +64,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   let restored: DataDirLayout;
   /** Where the fake provider CLIs look for their sign-in. */
   let authDir: string;
+  /** Other state directories a test started a daemon in. */
+  const others: DataDirLayout[] = [];
   let api: FakeBotApi;
   const children: ChildProcess[] = [];
 
@@ -79,7 +86,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         child.kill('SIGKILL');
       }
     }
-    for (const { metadataFile } of [layout, restored]) {
+    for (const { metadataFile } of [layout, restored, ...others.splice(0)]) {
       const metadata = readDaemonMetadata(metadataFile);
       if (metadata) {
         kill(metadata.pid, 'SIGKILL');
@@ -91,8 +98,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   /**
-   * Runs `pero` to completion with `input` on stdin; the environment
-   * carries no PERO_HOME or Telegram token, the fake provider CLIs that
+   * Runs `pero` to completion with `input` on stdin, from `tmp` unless
+   * `cwd` says otherwise; the environment carries no PERO_HOME,
+   * PERO_WORKSPACE, or Telegram token, the fake provider CLIs that
    * the daemon inherits read their sign-in from `authDir`, and Telegram is
    * the fake Bot API.
    */
@@ -107,6 +115,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   ): Promise<Result> {
     const {
       PERO_HOME: _home,
+      PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env
     } = process.env;
@@ -122,7 +131,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
             PERO_TELEGRAM_API_ROOT: api.url,
             ...options.env,
           },
-          ...(options.cwd ? { cwd: options.cwd } : {}),
+          cwd: options.cwd ?? tmp,
         },
         (error, stdout, stderr) => {
           const code = error ? (error.code as number | null) : 0;
@@ -1510,6 +1519,87 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     }
   });
 
+  it('finds a workspace from options, PERO_WORKSPACE, or the current folder', async () => {
+    const workspace = join(realpathSync(tmp), 'ws');
+    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    others.push(state);
+
+    const run = await pero(['run', '-w', workspace]);
+    expect(run.code).toBe(0);
+    const pid = readDaemonMetadata(state.metadataFile)?.pid;
+    expect(run.stdout).toContain(
+      `Pero is running (pid ${pid}, workspace ${workspace})`,
+    );
+    expect(readFileSync(join(workspace, '.pero', '.gitignore'), 'utf8')).toBe(
+      STATE_GITIGNORE,
+    );
+    expect(statSync(state.database).isFile()).toBe(true);
+
+    mkdirSync(join(workspace, 'data', 'Notes'), { recursive: true });
+    for (const result of [
+      await pero(['--workspace', workspace, 'status']),
+      await pero(['status'], { env: { PERO_WORKSPACE: workspace } }),
+      await pero(['status'], { cwd: join(workspace, 'data', 'Notes') }),
+    ]) {
+      expect(result.code).toBe(0);
+      expect(result.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
+      expect(result.stdout).toContain(`  Workspace  ${workspace}\n`);
+    }
+
+    expect(await pero(['stop'], { cwd: workspace })).toMatchObject({
+      code: 0,
+      stdout: 'Pero stopped\n',
+    });
+    expect(await pero(['status', '-w', workspace])).toMatchObject({
+      code: 3,
+      stderr: `Pero isn't running (workspace ${workspace})\n`,
+    });
+    expect(
+      await pero(['status', '-w', workspace, '--data-dir', layout.root]),
+    ).toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining(
+        '--workspace: cannot be combined with --data-dir',
+      ),
+    });
+  });
+
+  it('marks a data directory as legacy', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const status = await pero(withDataDir('status'));
+    expect(status.stdout).toContain(
+      `  Data directory  ${layout.root} (legacy)\n`,
+    );
+    expect(existsSync(join(layout.root, '.gitignore'))).toBe(false);
+  });
+
+  it('reaches a workspace whose path is too long for a socket in it', async () => {
+    const workspace = join(
+      realpathSync(tmp),
+      'w'.repeat(MAX_SOCKET_PATH_BYTES),
+    );
+    const runtime = join(tmp, 'runtime');
+    mkdirSync(runtime);
+    const env = { XDG_RUNTIME_DIR: runtime };
+    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    others.push(state);
+
+    expect((await pero(['run', '-w', workspace], { env })).code).toBe(0);
+    const socket = readDaemonMetadata(state.metadataFile)?.socket;
+    expect(socket?.startsWith(`${runtime}/pero-`)).toBe(true);
+    expect(statSync(socket!).isSocket()).toBe(true);
+
+    // The metadata says where the socket is, whatever the environment.
+    const status = await pero(['status', '-w', workspace]);
+    expect(status.code).toBe(0);
+    expect(status.stdout).toContain(`  Workspace  ${workspace}\n`);
+    expect(await pero(['stop', '-w', workspace])).toMatchObject({
+      code: 0,
+      stdout: 'Pero stopped\n',
+    });
+    expect(existsSync(socket!)).toBe(false);
+  });
+
   it('shows recent logs readably whether or not the daemon runs', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const running = await pero(withDataDir('logs'));
@@ -1676,7 +1766,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await pero(withDataDir('restore', file))).toMatchObject({
       code: 1,
       stdout: '',
-      stderr: `Pero is running for ${layout.root} — stop it with pero stop before restoring\n`,
+      stderr: `Pero is running for data directory ${layout.root} — stop it with pero stop before restoring\n`,
     });
     expect((await pero(withDataDir('stop'))).code).toBe(0);
     expect(await pero(withDataDir('restore', file))).toMatchObject({

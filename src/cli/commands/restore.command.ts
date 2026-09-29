@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { Command } from 'nest-commander';
+import { describeLocation } from '../../config/data-dir.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { ControlError } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
@@ -16,15 +17,20 @@ import { restoreBackup } from '../restore.js';
 export class RestoreCommand extends PeroCommand {
   async run([file]: string[]): Promise<void> {
     const layout = this.layout();
-    await this.refuseRunningDaemon(layout.root);
+    await this.refuseRunningDaemon(describeLocation(layout));
 
     const { dataDir, manifest, missing } = await restoreBackup(
       resolve(process.cwd(), file!),
       layout.root,
+      layout.workspace,
     );
+    const start =
+      layout.workspace === null
+        ? `pero run --data-dir ${dataDir}`
+        : `pero run --workspace ${layout.workspace}`;
     console.log(
       `Restored the backup from ${manifest.createdAt} (Pero ${manifest.peroVersion}) into ${dataDir}. ` +
-        `Start it with pero run --data-dir ${dataDir}`,
+        `Start it with ${start}`,
     );
     for (const folder of missing) {
       const owner =
@@ -41,7 +47,7 @@ export class RestoreCommand extends PeroCommand {
    * A friendly early check only: restoring into a missing or empty folder is
    * what guarantees that no daemon uses it.
    */
-  private async refuseRunningDaemon(root: string): Promise<void> {
+  private async refuseRunningDaemon(where: string): Promise<void> {
     try {
       await this.client().status();
     } catch (error) {
@@ -51,7 +57,7 @@ export class RestoreCommand extends PeroCommand {
       throw error;
     }
     throw new CliError(
-      `Pero is running for ${root} — stop it with pero stop before restoring`,
+      `Pero is running for ${where} — stop it with pero stop before restoring`,
     );
   }
 }

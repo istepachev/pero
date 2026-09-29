@@ -1,8 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
+import { STATE_GITIGNORE } from '../src/config/data-dir.js';
 import { createControlClient } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 
@@ -56,6 +63,28 @@ describe('Daemon startup (e2e)', () => {
       pid: process.pid,
       dataDir,
       socket: join(dataDir, 'run', 'pero.sock'),
+    });
+  });
+
+  it('keeps its state in the .pero folder of a workspace', async () => {
+    const workspace = join(realpathSync(tmp), 'ws');
+    daemon = await startDaemon({
+      config: resolveBootstrapConfig({ workspace, env: {} }),
+      foreground: false,
+    });
+    const state = join(workspace, '.pero');
+
+    for (const dir of ['logs', 'run']) {
+      expect(statSync(join(state, dir)).isDirectory()).toBe(true);
+    }
+    expect(statSync(join(state, 'pero.sqlite')).isFile()).toBe(true);
+    expect(readFileSync(join(state, '.gitignore'), 'utf8')).toBe(
+      STATE_GITIGNORE,
+    );
+    const client = createControlClient(join(state, 'run', 'pero.sock'));
+    await expect(client.status()).resolves.toMatchObject({
+      dataDir: state,
+      workspace,
     });
   });
 
