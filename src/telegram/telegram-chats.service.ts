@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import {
   type AllowedChatEntry,
   AllowedChatsService,
@@ -10,6 +10,10 @@ import type {
   TelegramChats as TelegramChatsView,
 } from '../control/protocol.js';
 import { chatKindOf } from '../config/host-config.js';
+import {
+  type AllowedChatsChange,
+  HostConfigService,
+} from '../host-config/host-config.service.js';
 import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramStatus } from './telegram-status.js';
 
@@ -22,7 +26,7 @@ const CHECK_WAIT_MS = 2_000;
  * the control endpoint on the host, never from a Telegram message.
  */
 @Injectable()
-export class TelegramChats {
+export class TelegramChats implements OnModuleInit {
   private readonly logger = new Logger('Telegram');
 
   constructor(
@@ -30,7 +34,12 @@ export class TelegramChats {
     private readonly pairing: PairingRequests,
     private readonly adapter: TelegramAdapter,
     private readonly status: TelegramStatus,
+    private readonly hostConfig: HostConfigService,
   ) {}
+
+  onModuleInit(): void {
+    this.hostConfig.onChatsChange((change) => void this.follow(change));
+  }
 
   async list(): Promise<TelegramChatsView> {
     const connection = this.status.current();
@@ -103,6 +112,22 @@ export class TelegramChats {
     this.status.forgetAccess(chatKey);
     await this.countAllowed();
     return { chat: view };
+  }
+
+  /**
+   * Catches up with chats added to or removed from `config.yaml` by hand:
+   * the count, and the bot's standing in each group added.
+   */
+  private async follow({ added, removed }: AllowedChatsChange): Promise<void> {
+    for (const chatKey of removed) this.status.forgetAccess(chatKey);
+    await this.countAllowed();
+    for (const chatKey of added) {
+      await this.adapter.checkChat(chatKey).catch((error: unknown) => {
+        this.logger.warn(
+          `Failed to check Telegram chat ${chatKey}: ${String(error)}`,
+        );
+      });
+    }
   }
 
   private async countAllowed(): Promise<void> {

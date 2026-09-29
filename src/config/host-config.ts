@@ -188,6 +188,8 @@ export function denyChat(document: Document, chatKey: string): boolean {
   chats.items = chats.items.filter(
     (item) => !(isMap(item) && idOf(item) === chatKey),
   );
+  // An empty block list would print as a lone `[]` on the next line.
+  if (chats.items.length === 0) chats.flow = true;
   return chats.items.length !== before;
 }
 

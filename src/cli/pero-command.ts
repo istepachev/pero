@@ -8,6 +8,7 @@ import {
   type ControlClient,
   type ControlClientOptions,
   createControlClient,
+  DaemonNotRunningError,
 } from '../control/client.js';
 import { readDaemonMetadata } from '../control/daemon-metadata.js';
 import type { StatusResult } from '../control/protocol.js';
@@ -46,6 +47,21 @@ export abstract class PeroCommand extends CommandRunner {
     const socket =
       readDaemonMetadata(layout.metadataFile)?.socket ?? layout.controlSocket;
     return createControlClient(socket, options);
+  }
+
+  /**
+   * A client for the running daemon; null when it is stopped, for commands
+   * that can do their work without it.
+   */
+  protected async runningDaemon(): Promise<ControlClient | null> {
+    const client = this.client();
+    try {
+      await client.status();
+      return client;
+    } catch (error) {
+      if (error instanceof DaemonNotRunningError) return null;
+      throw error;
+    }
   }
 
   /**

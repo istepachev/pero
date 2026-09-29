@@ -105,7 +105,9 @@ telegram:
 
 - **Created on first start.** A workspace gets `data: data` (the folder is created when missing); an existing installation gets its default working directory, relative to the workspace when it is inside it. The allowed chats move from the database into the file once, keeping their titles.
 - **Edited with comments kept.** `pero telegram allow` and `deny`, a chat's new ID when a group turns on topics, and `pero settings set default-working-directory` change only their own lines, read the file again right before, and replace it in one step.
-- **Read at startup.** An invalid file stops Pero with the file, line, key, and reason. In a workspace, a `data` folder that doesn't exist stops it too; a legacy data directory only warns. For now, edit the file by hand only while Pero is stopped: Pero rereads it on its own from [plan step 5.3b](./vision/IMPLEMENTATION_PLAN.md#53b-live-reload-and-allowdeny-without-the-daemon).
+- **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason. In a workspace, a `data` folder that doesn't exist stops it too; a legacy data directory only warns.
+- **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
+- **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
 
 The database holds:
 - **Settings:** the installation defaults, including shared instructions, and the default working directory, which follows `data` in `config.yaml`.

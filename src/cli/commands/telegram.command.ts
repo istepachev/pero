@@ -1,5 +1,7 @@
 import { Command, CommandRunner, SubCommand } from 'nest-commander';
 import { InvalidInputError } from '../../common/errors.js';
+import type { AllowedChatView } from '../../control/protocol.js';
+import { allowInFile, denyInFile } from '../allowlist-file.js';
 import {
   describe,
   formatAllowed,
@@ -35,7 +37,12 @@ export class TelegramChatsCommand extends PeroCommand {
 })
 export class TelegramAllowCommand extends PeroCommand {
   async run([chatId]: string[]): Promise<void> {
-    const { client } = await this.requireDaemon();
+    const client = await this.runningDaemon();
+    if (client === null) {
+      const { chat, alreadyAllowed } = allowInFile(this.layout(), chatId!);
+      console.log(`${describeAllowed(chat, alreadyAllowed)}\n${NOT_RUNNING}`);
+      return;
+    }
     const { chat, alreadyAllowed } = await withChatId(() =>
       client.call('telegram.allow', { chatId: chatId! }),
     );
@@ -53,12 +60,16 @@ export class TelegramAllowCommand extends PeroCommand {
 })
 export class TelegramDenyCommand extends PeroCommand {
   async run([chatId]: string[]): Promise<void> {
-    const { client } = await this.requireDaemon();
-    const { chat } = await withChatId(() =>
-      client.call('telegram.deny', { chatId: chatId! }),
-    );
+    const client = await this.runningDaemon();
+    const { chat } =
+      client === null
+        ? denyInFile(this.layout(), chatId!)
+        : await withChatId(() =>
+            client.call('telegram.deny', { chatId: chatId! }),
+          );
     console.log(
-      `Denied: ${describe(chat)}. Its Channels and Agents are kept and resume if you allow it again.`,
+      `Denied: ${describe(chat)}. Its Channels and Agents are kept and resume if you allow it again.` +
+        (client === null ? `\n${NOT_RUNNING}` : ''),
     );
   }
 }
@@ -77,6 +88,14 @@ export class TelegramCommand extends CommandRunner {
   async run(): Promise<void> {
     this.command.help();
   }
+}
+
+/** Said when `allow` or `deny` edited `config.yaml` itself. */
+const NOT_RUNNING =
+  "Pero isn't running; the change is in config.yaml and applies when it starts.";
+
+function describeAllowed(chat: AllowedChatView, alreadyAllowed: boolean) {
+  return `${alreadyAllowed ? 'Already allowed' : 'Allowed'}: ${describe(chat)}`;
 }
 
 /** Runs `call`, naming the chat ID as the command's argument does. */
