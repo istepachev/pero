@@ -1,28 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
-import { effectiveWorkingDirectory } from '../agents/agent-resolution.js';
 import { NotFoundError } from '../common/errors.js';
 import type {
   ChannelDetails,
   ChannelView,
   HistoryMessage,
 } from '../control/protocol.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import {
+  type AgentDefinition,
+  Definitions,
+} from '../definitions/definitions.js';
 import {
   MessageHistory,
   workflowOf,
 } from '../history/message-history.service.js';
-import type { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-
-type ChannelWithAgent = Channel & { agent: Agent };
+import { routedChannel } from './channel-stages.js';
 
 /**
  * Channels as the CLI shows them: their Agent, what the next turn there
@@ -33,24 +31,30 @@ export class ChannelViews {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly messages: MessageHistory,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /** Every Channel, by ID. */
   async list(): Promise<ChannelView[]> {
-    const channels = await this.dataSource.getRepository(Channel).find({
-      relations: { agent: true },
-      order: { id: 'ASC' },
-    });
-    return (channels as ChannelWithAgent[]).map(channelView);
+    const channels = await this.dataSource
+      .getRepository(Channel)
+      .find({ order: { id: 'ASC' } });
+    const names = await this.ids.agentNames();
+    const agents = new Map(
+      (await this.definitions.agents()).map((agent) => [agent.name, agent]),
+    );
+    return channels.map((channel) =>
+      // The foreign key guarantees the Agent.
+      channelView(channel, agents.get(names.get(channel.agentId)!)!),
+    );
   }
 
   /** The Channel with ID `id`; `NotFoundError` if none. */
-  details(id: number): Promise<ChannelDetails> {
+  async details(id: number): Promise<ChannelDetails> {
+    const { historyCarryover } = await this.definitions.defaults();
     return inTransaction(this.dataSource, async (manager) => {
-      const channel = await findChannel(manager, id);
-      const settings = await manager
-        .getRepository(Settings)
-        .findOneByOrFail({ id: SETTINGS_ID });
+      const channel = await this.withAgent(await findChannel(manager, id));
       const active = await manager.getRepository(Session).findOneBy({
         channelId: id,
         agentId: channel.agentId,
@@ -62,21 +66,11 @@ export class ChannelViews {
       );
       const { count, lastAt } = await this.messages.statsWithin(manager, id);
       return {
-        ...channelView(channel),
-        nextTurn: nextTurn(
-          active,
-          {
-            provider: channel.agent.provider,
-            workingDirectory: effectiveWorkingDirectory(
-              channel.agent,
-              settings,
-            ),
-          },
-          {
-            hasHistory: withHistory.has(id),
-            carryover: settings.historyCarryover,
-          },
-        ),
+        ...channelView(channel, channel.agent),
+        nextTurn: nextTurn(active, channel.agent, {
+          hasHistory: withHistory.has(id),
+          carryover: historyCarryover,
+        }),
         messages: count,
         lastMessageAt: lastAt?.toISOString() ?? null,
       };
@@ -89,10 +83,10 @@ export class ChannelViews {
     limit: number,
   ): Promise<{ channel: ChannelView; messages: HistoryMessage[] }> {
     return inTransaction(this.dataSource, async (manager) => {
-      const channel = await findChannel(manager, id);
+      const channel = await this.withAgent(await findChannel(manager, id));
       const messages = await this.messages.latestWithin(manager, id, limit);
       return {
-        channel: channelView(channel),
+        channel: channelView(channel, channel.agent),
         messages: messages.map((message) => ({
           id: message.id,
           createdAt: message.createdAt.toISOString(),
@@ -106,30 +100,36 @@ export class ChannelViews {
       };
     });
   }
+
+  private withAgent(channel: Channel) {
+    return routedChannel(channel, this.definitions, this.ids);
+  }
 }
 
-/** The Channel with ID `id` and its Agent; `NotFoundError` if none. */
+/** The Channel with ID `id`; `NotFoundError` if none. */
 export async function findChannel(
   manager: EntityManager,
   id: number,
-): Promise<ChannelWithAgent> {
-  const channel = await manager.getRepository(Channel).findOne({
-    where: { id },
-    relations: { agent: true },
-  });
+): Promise<Channel> {
+  const channel = await manager.getRepository(Channel).findOneBy({ id });
   if (channel === null) throw new NotFoundError(`No Channel with ID ${id}`);
-  // The foreign key guarantees the Agent.
-  return channel as ChannelWithAgent;
+  return channel;
 }
 
-function channelView(channel: ChannelWithAgent): ChannelView {
+function channelView(
+  channel: Pick<
+    Channel,
+    'id' | 'integrationKind' | 'externalKey' | 'title' | 'enabled' | 'createdAt'
+  >,
+  agent: Pick<AgentDefinition, 'name' | 'enabled'>,
+): ChannelView {
   return {
     id: channel.id,
     integrationKind: channel.integrationKind,
     key: channel.externalKey,
     title: channel.title,
-    agent: channel.agent.name,
-    agentEnabled: channel.agent.enabled,
+    agent: agent.name,
+    agentEnabled: agent.enabled,
     enabled: channel.enabled,
     createdAt: channel.createdAt.toISOString(),
   };

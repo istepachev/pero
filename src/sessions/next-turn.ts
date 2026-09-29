@@ -1,4 +1,4 @@
-import type { ResolvedAgent } from '../agents/agents.service.js';
+import type { ResolvedAgent } from '../agents/agent-resolution.js';
 import type { NextTurn } from '../control/protocol.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { resumes } from './session.service.js';

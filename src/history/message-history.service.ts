@@ -6,10 +6,7 @@ import {
   Message,
   type MessageOrigin,
 } from '../persistence/entities/message.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+import { Definitions } from '../definitions/definitions.js';
 import { inTransaction } from '../persistence/transaction.js';
 import {
   type CarriedMessage,
@@ -82,7 +79,10 @@ export interface HistoryWindow {
  */
 @Injectable()
 export class MessageHistory {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: Definitions,
+  ) {}
 
   /**
    * Records a person's message inside the caller's transaction; resolves
@@ -265,9 +265,7 @@ export class MessageHistory {
     input: string,
     { carryOver }: { carryOver: boolean },
   ): Promise<{ input: string; posted: number; carried: number }> {
-    const { historyCarryover, timezone } = await manager
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
+    const { historyCarryover, timezone } = await this.definitions.defaults();
     const posted = await this.postedBeforeWithin(manager, channelId, messageId);
     let text = withPostedMessages(input, posted.map(carried), timezone);
     if (!carryOver || historyCarryover === 0) {

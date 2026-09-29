@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ResolvedAgent } from '../agents/agents.service.js';
+import type { ResolvedAgent } from '../agents/agent-resolution.js';
 import {
   PROVIDERS,
   providerOptionsSchema,

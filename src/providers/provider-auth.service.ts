@@ -4,15 +4,9 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
 import { type Provider, PROVIDERS } from '../config/provider-options.js';
+import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { checkProviderAuth, type Exec } from './provider-auth.js';
 
 /** How provider CLIs are run; tests replace it. */
@@ -31,7 +25,7 @@ export class ProviderAuthService
   private running: Promise<void> | undefined;
 
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: Definitions,
     private readonly health: ComponentHealth,
     @Inject(PROVIDER_AUTH_EXEC) private readonly exec: Exec,
   ) {}
@@ -48,18 +42,11 @@ export class ProviderAuthService
 
   /** The providers health depends on, in `PROVIDERS` order. */
   async inUse(): Promise<Provider[]> {
-    const settings = await this.dataSource
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
-    const rows = await this.dataSource
-      .getRepository(Agent)
-      .createQueryBuilder('agent')
-      .select('DISTINCT agent.provider', 'provider')
-      .where('agent.enabled = :enabled', { enabled: true })
-      .getRawMany<{ provider: Provider }>();
+    const { provider } = await this.definitions.defaults();
+    const agents = await this.definitions.agents();
     const used = new Set([
-      settings.defaultProvider,
-      ...rows.map((row) => row.provider),
+      provider,
+      ...agents.filter((agent) => agent.enabled).map((agent) => agent.provider),
     ]);
     return PROVIDERS.filter((provider) => used.has(provider));
   }

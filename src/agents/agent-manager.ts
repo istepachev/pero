@@ -7,6 +7,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import { Definitions, requireAgent } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -16,7 +18,7 @@ import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import { SessionService } from '../sessions/session.service.js';
-import { AgentsService, type ResolvedAgent } from './agents.service.js';
+import { type ResolvedAgent, resolveAgent } from './agent-resolution.js';
 
 /** One message for the Agent assigned to a Channel. */
 export interface TurnInput {
@@ -99,7 +101,8 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly agents: AgentsService,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
     private readonly sessions: SessionService,
     private readonly runtimes: AgentRuntimes,
     private readonly history: MessageHistory,
@@ -189,14 +192,14 @@ export class AgentManager implements BeforeApplicationShutdown {
     let where = base;
     let provider: Provider | null = null;
     try {
-      // One snapshot of the Agent, settings, Session, and history as the
-      // turn starts.
-      const first = await inTransaction(this.dataSource, async (manager) => {
-        const agent = await this.agents.resolveWithin(manager, turn.agentId);
-        return this.prepareWithin(manager, turn, agent, (agent) =>
+      // The Agent as the turn starts, then one snapshot of its Session and
+      // the history.
+      const resolved = await this.resolve(turn.agentId);
+      const first = await inTransaction(this.dataSource, (manager) =>
+        this.prepareWithin(manager, turn, resolved, (agent) =>
           this.sessions.beginWithin(manager, turn.channelId, agent),
-        );
-      });
+        ),
+      );
       if (first.session === null) {
         this.logger.debug(`Skipped a turn in ${where}: ${first.skipped}`);
         return null;
@@ -246,6 +249,15 @@ export class AgentManager implements BeforeApplicationShutdown {
     } finally {
       this.running.delete(controller);
     }
+  }
+
+  /** The Agent with row ID `id`, resolved against the defaults. */
+  private async resolve(id: number): Promise<ResolvedAgent> {
+    const agent = await requireAgent(
+      this.definitions,
+      await this.ids.agentName(id),
+    );
+    return resolveAgent(id, agent, await this.definitions.defaults());
   }
 
   /**

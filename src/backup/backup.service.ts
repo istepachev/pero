@@ -24,10 +24,7 @@ import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import type { BackupResult } from '../control/protocol.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+import { Definitions } from '../definitions/definitions.js';
 import {
   BACKUP_FORMAT,
   type BackupManifest,
@@ -52,6 +49,7 @@ export class BackupService implements BeforeApplicationShutdown {
   constructor(
     @Inject(BACKUP_LAYOUT) private readonly layout: DataDirLayout,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: Definitions,
   ) {}
 
   /**
@@ -190,9 +188,7 @@ export class BackupService implements BeforeApplicationShutdown {
 
   /** The data folder, which a workspace always has. */
   private async dataFolder(): Promise<string> {
-    const { defaultWorkingDirectory: folder } = await this.dataSource
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
+    const { dataFolder: folder } = await this.definitions.defaults();
     if (folder === null) {
       throw new InvalidInputError(
         'There is no data folder to include; set one with pero settings set default-working-directory <folder>',

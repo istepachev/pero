@@ -22,8 +22,6 @@ const notes: AgentView = {
   codexSkipGitRepoCheck: false,
   enabled: true,
   main: true,
-  createdAt: '2026-09-28T00:00:00.000Z',
-  updatedAt: '2026-09-28T00:00:00.000Z',
 };
 
 const coder: AgentView = {

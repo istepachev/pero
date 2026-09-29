@@ -25,7 +25,7 @@ The switch touches almost every module that reads an Agent, a Workflow, or a set
 ```text
 5.1 ─ 5.2 ─ 5.3a ┬─ 5.3b ─ 5.4 ─ 5.5 ─┐
                  │                    │
-6.1 ─ 6.1b ─ 6.2 ┴─ 6.3 ─ 6.4 ─ 6.3b ─┴─ 7.1 ─ 7.2 ─ 7.3 ─ 7.4 ─ 8.1 … 8.5 ─ 9.1 … 9.4 ─ 10.1 ─ 10.2 ─ 10.3
+6.1 ─ 6.1b ─ 6.2 ┴─ 6.3 ─ 6.4 ─ 6.3b ─┴─ 7.1a ─ 7.1b ─ 7.2 ─ 7.3 ─ 7.4 ─ 8.1 … 8.5 ─ 9.1 … 9.4 ─ 10.1 ─ 10.2 ─ 10.3
 ```
 
 ## Phase 5 — workspace
@@ -244,32 +244,45 @@ With Pero running, `pero check` asks the daemon through a new `check` control re
 
 Make the switch small: consumers stop reading definition tables directly, and state stops pointing at definition rows by ID.
 
-### 7.1 The `Definitions` interface
+### 7.1a The `Definitions` interface: Agents and defaults
 
-Define `Definitions` in `src/definitions/`, a read-only interface:
+Define `Definitions` in `src/definitions/`, a read-only interface. It is an abstract class, the injection token, and its methods are async so either store can serve them:
 
-- `defaults()`
+- `defaults()`, including the data folder and the shared instructions
 - `agent(name)`, `agents()`
 - `mainAgent()`
-- `agentForTopic(title)`
-- `workflow(name)`, `workflows()`
 - `onChange(listener)`
 
-Its first implementation, `SqliteDefinitions`, reads today's tables. Route every consumer through it:
+Its types name no store: no row IDs and no timestamps. Its first implementation, `SqliteDefinitions`, reads today's tables afresh on each call. The create and edit services still write them, and tell `onChange` listeners once their writes commit.
+
+State still points at definition rows by ID until 7.2 (and a Channel's Agent until 8.2). `DefinitionIds` maps those IDs to names and back, so `Definitions` itself knows names only.
+
+Route every Agent and defaults consumer through it:
 
 - `AgentManager` and `agent-resolution.ts`
-- the Channel router stages and onboarding
-- `WorkflowExecutor`, `WorkflowRunsService`, and `ScheduleTick`
-- run notifications
+- the Channel router stages and onboarding, whose Agent writes move into `AgentsService`
 - `ProviderAuthService`, which lists the providers in use
 - the history services
-- the views
+- the Agent and Channel views, which drop the Agents' `createdAt` and `updatedAt`, since notes have none
+- `config.yaml`'s data folder and backups
 
-Create and edit services still write the tables.
+Joins from state rows that only turn an ID into a name for display, such as a message's Agent, stay until 7.2 replaces the IDs.
 
 **Done when:**
-- No module outside `src/definitions/`, the create/edit services, and migrations imports the `Agent`, `Workflow`, `Trigger`, or `Settings` entities.
-- The full test suite passes unchanged.
+- A test checks that no module outside `src/definitions/`, `src/persistence/`, and the create/edit services imports the `Agent` or `Settings` entities, apart from the Workflow side 7.1b routes.
+- The full test suite passes unchanged, apart from wiring and view fixtures.
+
+### 7.1b The `Definitions` interface: Workflows
+
+Add `workflow(name)` and `workflows()`. A Workflow's definition names its Agent and holds its input, history input, notification targets, attempts, and whether it's enabled; schedules come in 7.3. `TriggersService` keeps the `triggers` rows, which are state as much as definitions, until 7.3 replaces them. Route the rest through `Definitions`:
+
+- `WorkflowExecutor`, `WorkflowRuns`, and `ScheduleTick`
+- run notifications
+- the Workflow views, which drop `createdAt` and `updatedAt`
+
+**Done when:**
+- No module outside `src/definitions/`, `src/persistence/`, and the create/edit services imports the `Agent`, `Workflow`, `Trigger`, `WorkflowNotificationTarget`, or `Settings` entities.
+- The full test suite passes unchanged, apart from wiring and view fixtures.
 
 ### 7.2 Names instead of IDs in state
 
@@ -348,7 +361,7 @@ Add `FileDefinitions` for Agents and defaults, backed by the 6.4 snapshot, and m
 
 ### 8.2 Topic routing by `topics`
 
-The router chooses the Agent from the snapshot on each message:
+The router chooses the Agent from the snapshot on each message, through a new `Definitions.agentForTopic(title)`:
 
 - **A primary Channel** gets the main Agent.
 - **A topic** gets the Agent whose `topics` claims its title.

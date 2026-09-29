@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import { Definitions } from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
@@ -23,6 +25,7 @@ import {
   ChannelOnboarding,
   ChannelTurns,
   type RoutedChannel,
+  routedChannel,
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
@@ -56,6 +59,8 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly onboarding: ChannelOnboarding,
     private readonly history: MessageHistory,
     private readonly approvals: ToolApprovals,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -187,20 +192,23 @@ export class ChannelRouter implements BeforeApplicationShutdown {
    */
   private async route(message: InboundMessage): Promise<RoutedChannel | null> {
     const { integrationKind: kind, updateId } = message;
+    const known = await this.dataSource.getRepository(Channel).findOneBy({
+      integrationKind: kind,
+      externalKey: message.channel.key,
+    });
     const channel =
-      (await this.dataSource.getRepository(Channel).findOne({
-        where: { integrationKind: kind, externalKey: message.channel.key },
-        relations: { agent: true },
-      })) ?? (await this.onboarding.onUnknownChannel(message));
+      known === null
+        ? await this.onboarding.onUnknownChannel(message)
+        : await routedChannel(known, this.definitions, this.ids);
     if (channel === null) return null;
-    if (!channel.enabled || !channel.agent?.enabled) {
+    if (!channel.enabled || !channel.agent.enabled) {
       this.logger.debug(
         `Ignored ${kind} update ${updateId}: Channel ${channel.id} or ` +
           `its Agent is disabled`,
       );
       return null;
     }
-    return channel as RoutedChannel;
+    return channel;
   }
 
   /** Runs `work` for an update seen for the first time. */

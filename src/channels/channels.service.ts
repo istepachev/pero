@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { findAgent } from '../agents/agents.service.js';
 import { InvalidInputError } from '../common/errors.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { SessionService } from '../sessions/session.service.js';
@@ -27,6 +28,7 @@ export class ChannelsService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly sessions: SessionService,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /**
@@ -38,7 +40,7 @@ export class ChannelsService {
     return inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, id);
       const agent = await findAgent(manager, agentName);
-      const from = channel.agent.name;
+      const from = await this.ids.agentName(channel.agentId);
       if (agent.id === channel.agentId) {
         return { from, to: agent.name, alreadyAssigned: true };
       }

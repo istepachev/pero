@@ -1,16 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
-import { effectiveWorkingDirectory } from '../agents/agent-resolution.js';
-import { AgentsService } from '../agents/agents.service.js';
+import { AgentsService, MAIN_AGENT_NAME } from '../agents/agents.service.js';
 import { InvalidInputError } from '../common/errors.js';
-import { SLUG_MAX_LENGTH } from '../config/slug.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
-import { Channel } from '../persistence/entities/channel.entity.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
 import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+  type AgentDefinition,
+  Definitions,
+} from '../definitions/definitions.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { AgentNamer } from './agent-namer.js';
@@ -21,14 +19,17 @@ import type {
   InboundMessage,
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
-import { ChannelOnboarding, type RoutedChannel } from './channel-stages.js';
+import {
+  ChannelOnboarding,
+  type RoutedChannel,
+  routedChannel,
+} from './channel-stages.js';
 
-/** The Agent primary Channels get while the `main-agent` setting is unset. */
-export const MAIN_AGENT_NAME = 'main';
+export { MAIN_AGENT_NAME };
 
 /** Posted in a new Channel: who answers there and how to change it. */
 export function welcomeText(
-  agent: Pick<Agent, 'name' | 'provider' | 'providerOptions'>,
+  agent: Pick<AgentDefinition, 'name' | 'provider' | 'providerOptions'>,
   folder: string,
   where: 'topic' | 'chat',
 ): string {
@@ -50,8 +51,6 @@ export function setupHint(reason: string): string {
   );
 }
 
-const NO_DEFAULT_FOLDER = 'No default working directory is set';
-
 /**
  * Gives each new Channel in an allowed chat its Agent: a topic gets a new
  * one named after it, and a chat's primary Channel gets the main Agent.
@@ -68,6 +67,8 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     private readonly namer: AgentNamer,
     private readonly sender: ChannelSender,
     private readonly allowedChats: AllowedChatsService,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
   ) {
     super();
   }
@@ -110,18 +111,17 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     const name =
       inbound.topicId === null ? null : await this.namer.suggest(inbound);
 
-    let result: { channel: RoutedChannel; welcome: string | null };
+    let result: { channel: Channel; created: boolean };
     try {
       result = await inTransaction(this.dataSource, async (manager) => {
         const existing = await findChannel(manager, kind, inbound.key);
-        if (existing !== null) return { channel: existing, welcome: null };
+        if (existing !== null) return { channel: existing, created: false };
 
-        const settings = await getSettings(manager);
         const agent =
           name === null
-            ? await this.mainAgent(manager, settings)
-            : await this.newAgent(manager, settings, {
-                name: await uniqueName(manager, name),
+            ? await this.agents.mainAgentWithin(manager)
+            : await this.agents.createForTopicWithin(manager, {
+                base: name,
                 title: inbound.title,
               });
         const channels = manager.getRepository(Channel);
@@ -136,11 +136,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
         );
         return {
           channel: (await findChannel(manager, kind, inbound.key))!,
-          welcome: welcomeText(
-            agent,
-            effectiveWorkingDirectory(agent, settings),
-            name === null ? 'chat' : 'topic',
-          ),
+          created: true,
         };
       });
     } catch (error) {
@@ -157,47 +153,26 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       return null;
     }
 
-    const { channel, welcome } = result;
-    if (welcome !== null) {
+    if (result.created) this.agents.committed();
+    const channel = await routedChannel(
+      result.channel,
+      this.definitions,
+      this.ids,
+    );
+    if (result.created) {
       this.logger.log(
         `Onboarded ${kind} Channel ${inbound.key} with Agent ${channel.agent.name}`,
+      );
+      const welcome = welcomeText(
+        channel.agent,
+        channel.agent.workingDirectory,
+        inbound.topicId === null ? 'chat' : 'topic',
       );
       await this.notify(kind, inbound, () =>
         this.sender.post(channel, welcome, { origin: 'pero' }),
       );
     }
     return channel;
-  }
-
-  /** The Agent that `settings.mainAgentId` names, recording `main` first. */
-  private async mainAgent(
-    manager: EntityManager,
-    settings: Settings,
-  ): Promise<Agent> {
-    const agents = manager.getRepository(Agent);
-    if (settings.mainAgentId !== null) {
-      return agents.findOneByOrFail({ id: settings.mainAgentId });
-    }
-    // An Agent the owner already named `main` becomes the main Agent.
-    const agent =
-      (await agents.findOneBy({ name: MAIN_AGENT_NAME })) ??
-      (await this.newAgent(manager, settings, { name: MAIN_AGENT_NAME }));
-    await manager
-      .getRepository(Settings)
-      .update(SETTINGS_ID, { mainAgentId: agent.id });
-    return agent;
-  }
-
-  /** An Agent with the installation defaults, following the default folder. */
-  private newAgent(
-    manager: EntityManager,
-    settings: Settings,
-    fields: { name: string; title?: string | null },
-  ): Promise<Agent> {
-    if (settings.defaultWorkingDirectory === null) {
-      throw new InvalidInputError(NO_DEFAULT_FOLDER);
-    }
-    return this.agents.createWithin(manager, fields);
   }
 
   /**
@@ -211,16 +186,20 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     const found = await inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, kind, inbound.key);
       if (channel === null) return false;
-      if (inbound.topicId !== null && channel.agent.title === channel.title) {
-        await manager
-          .getRepository(Agent)
-          .update(channel.agentId, { title: inbound.title });
+      if (inbound.topicId !== null) {
+        await this.agents.retitleWithin(
+          manager,
+          channel.agentId,
+          channel.title,
+          inbound.title,
+        );
       }
       await manager
         .getRepository(Channel)
         .update(channel.id, { title: inbound.title });
       return true;
     });
+    if (found && inbound.topicId !== null) this.agents.committed();
     if (!found) {
       this.logger.debug(
         `Ignored the rename of unknown ${kind} Channel ${inbound.key}; ` +
@@ -294,35 +273,12 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 }
 
-async function findChannel(
+function findChannel(
   manager: EntityManager,
   integrationKind: IntegrationKind,
   externalKey: string,
-): Promise<RoutedChannel | null> {
-  const channel = await manager.getRepository(Channel).findOne({
-    where: { integrationKind, externalKey },
-    relations: { agent: true },
-  });
-  // The foreign key guarantees the Agent.
-  return channel as RoutedChannel | null;
-}
-
-function getSettings(manager: EntityManager): Promise<Settings> {
-  return manager.getRepository(Settings).findOneByOrFail({ id: SETTINGS_ID });
-}
-
-/** `base`, or `base-2`, `base-3`, … when taken, cut to fit a slug. */
-async function uniqueName(
-  manager: EntityManager,
-  base: string,
-): Promise<string> {
-  const agents = manager.getRepository(Agent);
-  for (let n = 1; ; n++) {
-    const suffix = n === 1 ? '' : `-${n}`;
-    const stem = base
-      .slice(0, SLUG_MAX_LENGTH - suffix.length)
-      .replace(/-$/, '');
-    const name = stem + suffix;
-    if (!(await agents.existsBy({ name }))) return name;
-  }
+): Promise<Channel | null> {
+  return manager
+    .getRepository(Channel)
+    .findOneBy({ integrationKind, externalKey });
 }
