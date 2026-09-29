@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import Database from 'better-sqlite3';
+import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ConflictError,
@@ -18,6 +20,8 @@ import { AgentManager } from '../src/agents/agent-manager.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
+import { Agent } from '../src/persistence/entities/agent.entity.js';
+import { Channel } from '../src/persistence/entities/channel.entity.js';
 
 describe('Workflow and Trigger definitions (e2e)', () => {
   let tmp: string;
@@ -536,5 +540,105 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     expect(await client.call('runs.get', { id: running.id })).toMatchObject({
       status: 'cancelled',
     });
+  });
+
+  it('notifies the Channels a Workflow names of each finished run, keeping the Notifications pending', async () => {
+    await start();
+    await manualBrief();
+    const dataSource = daemon!.app.get<DataSource>(getDataSourceToken());
+    const coach = await dataSource
+      .getRepository(Agent)
+      .findOneByOrFail({ name: 'coach' });
+    const channels = dataSource.getRepository(Channel);
+    const { id: channel } = await channels.save(
+      channels.create({
+        integrationKind: 'telegram',
+        externalKey: '-1001234567890:7',
+        address: { chatId: '-1001234567890', topicId: '7' },
+        title: 'English',
+        agentId: coach.id,
+      }),
+    );
+
+    expect(
+      await client.call('workflows.notify', {
+        name: 'brief',
+        channel,
+        notify: true,
+      }),
+    ).toMatchObject({
+      changed: true,
+      workflow: {
+        targets: [
+          {
+            id: channel,
+            integrationKind: 'telegram',
+            key: '-1001234567890:7',
+            title: 'English',
+            enabled: true,
+          },
+        ],
+      },
+    });
+    expect(
+      (
+        await client.call('workflows.notify', {
+          name: 'brief',
+          channel,
+          notify: true,
+        })
+      ).changed,
+    ).toBe(false);
+    await expect(
+      client.call('workflows.notify', {
+        name: 'brief',
+        channel: 42,
+        notify: true,
+      }),
+    ).rejects.toThrow(
+      new NotFoundError('No Channel with ID 42; pero channels ls lists them'),
+    );
+
+    const queued = await client.call('workflows.run', { name: 'brief' });
+    await vi.waitFor(async () => {
+      expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
+        status: 'completed',
+      });
+    });
+
+    await restart();
+    const db = new Database(join(dataDir, 'pero.sqlite'), { readonly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            'SELECT workflow_run_id, channel_id, status, attempt, payload FROM notifications',
+          )
+          .all(),
+      ).toEqual([
+        {
+          workflow_run_id: queued.id,
+          channel_id: channel,
+          status: 'pending',
+          attempt: 0,
+          payload: JSON.stringify({
+            text: 'Workflow brief\n\necho: Summarize the day.',
+          }),
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+    expect(
+      (await client.call('workflows.get', { name: 'brief' })).targets,
+    ).toHaveLength(1);
+
+    expect(
+      await client.call('workflows.notify', {
+        name: 'brief',
+        channel,
+        notify: false,
+      }),
+    ).toMatchObject({ changed: true, workflow: { targets: [] } });
   });
 });

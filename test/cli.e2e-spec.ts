@@ -713,6 +713,54 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 1,
       stderr: 'No Agent named nobody\n',
     });
+
+    // A Workflow posts its runs to the Channel.
+    await pero(
+      withDataDir(
+        'workflows',
+        'create',
+        'brief',
+        '--agent',
+        'chef',
+        '--input',
+        'Go',
+      ),
+    );
+    const workflows = (...args: string[]) =>
+      pero(withDataDir('workflows', ...args));
+    expect(await workflows('notify', 'brief', '1')).toEqual({
+      code: 0,
+      stdout: `Workflow brief now notifies ${described}: each answer, and each run that fails, is posted there.\n`,
+      stderr: '',
+    });
+    expect(await workflows('notify', 'brief', '1')).toMatchObject({
+      code: 0,
+      stdout: `Workflow brief already notifies ${described}.\n`,
+    });
+    expect((await workflows('show', 'brief')).stdout).toContain(
+      [
+        'Notifies',
+        '  ID  CHANNEL                     TITLE      STATE',
+        '  1   telegram -1001234567890:42  Groceries  enabled',
+      ].join('\n'),
+    );
+    expect(await workflows('notify', 'brief', '1', '--remove')).toMatchObject({
+      code: 0,
+      stdout: 'Workflow brief no longer notifies Channel 1.\n',
+    });
+    expect(await workflows('notify', 'brief', '1', '--remove')).toMatchObject({
+      code: 0,
+      stdout: 'Workflow brief did not notify Channel 1.\n',
+    });
+    expect(await workflows('notify', 'brief', 'groceries')).toMatchObject({
+      code: 1,
+      stderr:
+        'channel must be a Channel ID, as pero channels ls lists it, not "groceries"\n',
+    });
+    expect(await workflows('notify', 'brief', '9')).toMatchObject({
+      code: 1,
+      stderr: 'No Channel with ID 9; pero channels ls lists them\n',
+    });
   });
 
   it('lists, shows, creates, edits, disables, and enables Workflows and their Triggers', async () => {
@@ -912,6 +960,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'Triggers',
         '  ID  SCHEDULE                  NEXT RUN  STATE',
         '  1   0 21 * * * Europe/Berlin  —         disabled',
+        '',
+        'Notifies no Channel: pero workflows notify evening-review <channel> posts its answers there.',
         '',
       ].join('\n'),
     });

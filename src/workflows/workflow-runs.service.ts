@@ -13,6 +13,7 @@ import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { findWorkflow } from './workflows.service.js';
 
@@ -95,9 +96,8 @@ export class WorkflowRuns {
       const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
       if (run.status === 'pending') {
-        await runs.update(id, {
+        await finishRun(manager, id, {
           status: 'cancelled',
-          finishedAt: new Date(),
           errorText: CANCELLED,
         });
       } else if (run.status !== 'running') {

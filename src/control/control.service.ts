@@ -115,6 +115,8 @@ export class ControlService implements OnModuleDestroy {
         'workflows.get': ({ name }) => this.workflowViews.details(name),
         'workflows.create': (input) => this.createWorkflow(input),
         'workflows.edit': ({ name, change }) => this.editWorkflow(name, change),
+        'workflows.notify': ({ name, channel, notify }) =>
+          this.notifyChannel(name, channel, notify),
         'workflows.run': ({ name }) => this.workflowRuns.start(name),
         'runs.get': ({ id }) => this.workflowRuns.get(id),
         'runs.cancel': ({ id }) => this.workflowRuns.cancel(id),
@@ -251,6 +253,25 @@ export class ControlService implements OnModuleDestroy {
       `Workflow ${workflow.name} changed: ${changed.join(', ') || 'nothing'}`,
     );
     return this.workflowViews.details(workflow.name);
+  }
+
+  async notifyChannel(
+    name: string,
+    channelId: number,
+    notify: boolean,
+  ): Promise<ControlResult<'workflows.notify'>> {
+    const { workflow, changed } = notify
+      ? await this.workflows.notify(name, channelId)
+      : await this.workflows.stopNotifying(name, channelId);
+    if (changed) {
+      this.logger.log(
+        `Workflow ${workflow.name} ${notify ? 'now notifies' : 'no longer notifies'} Channel ${channelId}`,
+      );
+    }
+    return {
+      workflow: await this.workflowViews.details(workflow.name),
+      changed,
+    };
   }
 
   async addTrigger(input: TriggerAdd): Promise<TriggerView> {

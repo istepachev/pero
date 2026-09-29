@@ -2,12 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import type {
+  NotificationTargetView,
   TriggerView,
   WorkflowDetails,
   WorkflowView,
 } from '../control/protocol.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import type { Channel } from '../persistence/entities/channel.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
+import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { findWorkflow } from './workflows.service.js';
@@ -32,7 +35,10 @@ export class WorkflowViews {
     });
   }
 
-  /** The Workflow named `name` with its Triggers; `NotFoundError` if none. */
+  /**
+   * The Workflow named `name` with its Triggers and the Channels it
+   * notifies; `NotFoundError` if none.
+   */
   details(name: string): Promise<WorkflowDetails> {
     return inTransaction(this.dataSource, async (manager) => {
       const workflow = await findWorkflow(manager, name);
@@ -42,9 +48,18 @@ export class WorkflowViews {
       const triggers = await manager
         .getRepository(Trigger)
         .find({ where: { workflowId: workflow.id }, order: { id: 'ASC' } });
+      const targets = await manager
+        .getRepository(WorkflowNotificationTarget)
+        .find({
+          where: { workflowId: workflow.id },
+          relations: { channel: true },
+          order: { channelId: 'ASC' },
+        });
       return {
         ...workflowView(workflow, agent, triggers.length),
         triggers: triggers.map((trigger) => triggerView(trigger, workflow)),
+        // The foreign key guarantees each Channel.
+        targets: targets.map(({ channel }) => targetView(channel!)),
       };
     });
   }
@@ -65,6 +80,16 @@ export function triggerView(
     nextRunAt: trigger.nextRunAt?.toISOString() ?? null,
     lastRunAt: trigger.lastRunAt?.toISOString() ?? null,
     enabled: trigger.enabled,
+  };
+}
+
+function targetView(channel: Channel): NotificationTargetView {
+  return {
+    id: channel.id,
+    integrationKind: channel.integrationKind,
+    key: channel.externalKey,
+    title: channel.title,
+    enabled: channel.enabled,
   };
 }
 

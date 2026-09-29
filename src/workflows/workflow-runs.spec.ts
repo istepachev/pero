@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { AgentChannelTurns } from '../channels/agent-channel-turns.js';
@@ -26,10 +27,12 @@ import {
 import type { WorkflowHistoryPatch } from '../config/workflow-input.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
+import { Notification } from '../persistence/entities/notification.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
+import { inTransaction } from '../persistence/transaction.js';
 import type { RunView } from '../control/protocol.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import type { RuntimeRequest } from '../runtimes/agent-runtime.js';
@@ -39,6 +42,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
 import type { HistoryRead } from './execution-snapshot.js';
+import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
@@ -659,6 +663,237 @@ describe('Workflow Runs and the executor', () => {
     await executor.idle();
 
     expect((await run(id)).status).toBe('completed');
+  });
+
+  describe('notifications', () => {
+    /** A Channel `workflow` notifies. */
+    async function target(workflow: string, key = '1234'): Promise<number> {
+      const coach = await agents.get('coach');
+      const channels = ds.getRepository(Channel);
+      const { id } = await channels.save(
+        channels.create({
+          integrationKind: 'telegram',
+          externalKey: key,
+          address: { chatId: key },
+          title: null,
+          agentId: coach.id,
+        }),
+      );
+      await workflows.notify(workflow, id);
+      return id;
+    }
+
+    function notificationsOf(runId: number): Promise<Notification[]> {
+      return ds
+        .getRepository(Notification)
+        .find({ where: { workflowRunId: runId }, order: { channelId: 'ASC' } });
+    }
+
+    function texts(notifications: Notification[]): unknown[] {
+      return notifications.map(({ payload }) => payload.text);
+    }
+
+    it("creates a pending Notification of a completed run's answer for each Channel it notifies", async () => {
+      await manualWorkflow('brief', 'Summarize the day.');
+      await manualWorkflow('quiet');
+      const first = await target('brief', '1234');
+      const second = await target('brief', '-100777');
+
+      const { id } = await runs.start('brief');
+      const other = await runs.start('quiet');
+      await executor.idle();
+
+      const done = await ds.getRepository(WorkflowRun).findOneByOrFail({ id });
+      const notifications = await notificationsOf(id);
+      expect(notifications).toEqual([
+        expect.objectContaining({
+          channelId: first,
+          status: 'pending',
+          attempt: 0,
+          providerMessageId: null,
+          payload: { text: 'Workflow brief\n\necho: Summarize the day.' },
+        }),
+        expect.objectContaining({ channelId: second, status: 'pending' }),
+      ]);
+      // Due at once.
+      expect(notifications[0]!.nextAttemptAt).toEqual(done.finishedAt);
+      expect(await notificationsOf(other.id)).toEqual([]);
+    });
+
+    it('commits the final status and the Notifications together', async () => {
+      await manualWorkflow('brief');
+      await target('brief');
+      const workflow = await workflows.get('brief');
+      const repo = ds.getRepository(WorkflowRun);
+      const { id } = await repo.save(
+        repo.create({
+          workflowId: workflow.id,
+          triggerId: null,
+          triggerKey: 'manual:together',
+          status: 'running',
+          attempt: 1,
+        }),
+      );
+
+      await expect(
+        inTransaction(ds, async (manager) => {
+          await finishRun(manager, id, {
+            status: 'completed',
+            result: { text: 'Done' },
+          });
+          expect(await manager.getRepository(Notification).count()).toBe(1);
+          throw new Error('The transaction fails later');
+        }),
+      ).rejects.toThrow('The transaction fails later');
+
+      expect((await run(id)).status).toBe('running');
+      expect(await notificationsOf(id)).toEqual([]);
+    });
+
+    it('posts why a run failed, including one refused before it started', async () => {
+      await settings.update({ maxConcurrentRuns: 1 });
+      await manualWorkflow('a');
+      await manualWorkflow('b');
+      await target('a');
+      await target('b', '-100777');
+      claude.failNext();
+      const a = await runs.start('a');
+      await executor.idle();
+      const held = claude.hold();
+      await runs.start('a');
+      const b = await runs.start('b');
+      await held.started;
+      await workflows.edit('b', { enabled: false });
+      held.release();
+      await executor.idle();
+
+      expect(texts(await notificationsOf(a.id))).toEqual([
+        `Run ${a.id} of Workflow a failed: The model is overloaded`,
+      ]);
+      expect(texts(await notificationsOf(b.id))).toEqual([
+        `Run ${b.id} of Workflow b failed: Workflow b was disabled before the run started`,
+      ]);
+    });
+
+    it('posts an interrupted run only when it is not retried, and its retry when that finishes', async () => {
+      await manualWorkflow('once');
+      await manualWorkflow('twice');
+      await workflows.edit('twice', { maxAttempts: 2 });
+      await target('once');
+      await target('twice', '-100777');
+      const repo = ds.getRepository(WorkflowRun);
+      const left = async (workflow: string) =>
+        (
+          await repo.save(
+            repo.create({
+              workflowId: (await workflows.get(workflow)).id,
+              triggerId: null,
+              triggerKey: 'manual:crashed',
+              status: 'running',
+              attempt: 1,
+              startedAt: new Date(),
+            }),
+          )
+        ).id;
+      const once = await left('once');
+      const twice = await left('twice');
+
+      await moduleRef.close();
+      await boot();
+      await executor.idle();
+
+      expect(texts(await notificationsOf(once))).toEqual([
+        `Run ${once} of Workflow once interrupted: Pero stopped before the run finished; not retried: Workflow once allows 1 attempt`,
+      ]);
+      expect(await notificationsOf(twice)).toEqual([]);
+      const retry = await ds.getRepository(WorkflowRun).findOneByOrFail({
+        triggerKey: `retry:${twice}`,
+      });
+      expect(retry.status).toBe('completed');
+      expect(texts(await notificationsOf(retry.id))).toEqual([
+        'Workflow twice\n\necho: Run twice.',
+      ]);
+    });
+
+    it('posts nothing for a cancelled or skipped run', async () => {
+      await manualWorkflow('brief');
+      await target('brief');
+      await workflows.create({
+        name: 'review',
+        agent: 'coach',
+        inputTemplate: 'Review {{history}}',
+        history: {},
+      });
+      await triggers.add({ workflow: 'review', kind: 'manual' });
+      await workflows.notify('review', await target('brief', '-100777'));
+      const held = claude.hold();
+      const running = await runs.start('brief');
+      const pending = await runs.start('brief');
+      await held.started;
+
+      await runs.cancel(pending.id);
+      await runs.cancel(running.id);
+      const skipped = await runs.start('review');
+      await executor.idle();
+
+      expect(await run(running.id)).toMatchObject({ status: 'cancelled' });
+      expect(await run(skipped.id)).toMatchObject({
+        status: 'completed',
+        skipped: true,
+      });
+      expect(await ds.getRepository(Notification).count()).toBe(0);
+    });
+
+    it('reads the Channels to notify when the run finishes', async () => {
+      await manualWorkflow('brief');
+      const held = claude.hold();
+      const { id } = await runs.start('brief');
+      await held.started;
+
+      const channel = await target('brief');
+      held.release();
+      await executor.idle();
+
+      expect(
+        (await notificationsOf(id)).map(({ channelId }) => channelId),
+      ).toEqual([channel]);
+    });
+
+    it('records a run without its Notifications when they cannot be created, rather than leave it running', async () => {
+      await manualWorkflow('brief');
+      await target('brief');
+      await ds.query(
+        `CREATE TRIGGER "fail_notifications" BEFORE INSERT ON "notifications" ` +
+          `BEGIN SELECT RAISE(ABORT, 'Notifications are broken'); END`,
+      );
+      const errors = vi
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const first = await runs.start('brief');
+      await executor.idle();
+
+      expect(await run(first.id)).toMatchObject({
+        status: 'completed',
+        result: 'echo: Run brief.',
+      });
+      expect(await notificationsOf(first.id)).toEqual([]);
+      expect(errors).toHaveBeenCalledWith(
+        expect.stringMatching(
+          new RegExp(
+            `^Could not create the Notifications of run ${first.id}; it is recorded completed without them: .*Notifications are broken`,
+          ),
+        ),
+      );
+      errors.mockRestore();
+
+      // The Workflow's next run starts, and notifies once they can be created.
+      await ds.query(`DROP TRIGGER "fail_notifications"`);
+      const second = await runs.start('brief');
+      await executor.idle();
+      expect(await run(second.id)).toMatchObject({ status: 'completed' });
+      expect(await notificationsOf(second.id)).toHaveLength(1);
+    });
   });
 
   describe('history input', () => {

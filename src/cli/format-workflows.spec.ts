@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
+  NotificationTargetView,
   RunView,
   TriggerView,
   WorkflowDetails,
@@ -9,6 +10,7 @@ import {
   agentWarning,
   describeScheduledTrigger,
   describeTrigger,
+  formatNotify,
   formatTriggerList,
   formatWorkflowDetails,
   formatWorkflowList,
@@ -50,6 +52,14 @@ const manual: TriggerView = {
   enabled: false,
 };
 
+const english: NotificationTargetView = {
+  id: 5,
+  integrationKind: 'telegram',
+  key: '-100777:7',
+  title: 'English',
+  enabled: true,
+};
+
 describe('Workflow formatting', () => {
   const zone = process.env.TZ;
 
@@ -83,7 +93,7 @@ describe('Workflow formatting', () => {
     );
   });
 
-  it('shows a Workflow with its Triggers', () => {
+  it('shows a Workflow with its Triggers and the Channels it notifies', () => {
     const details: WorkflowDetails = {
       ...review,
       triggers: [
@@ -91,6 +101,7 @@ describe('Workflow formatting', () => {
         { ...schedule, id: 5, enabled: false },
         manual,
       ],
+      targets: [english, { ...english, id: 9, key: '1234', title: null }],
     };
 
     expect(formatWorkflowDetails(details)).toBe(
@@ -108,6 +119,11 @@ describe('Workflow formatting', () => {
         '  3   0 21 * * * Europe/Berlin  2026-09-29 00:00  enabled',
         '  5   0 21 * * * Europe/Berlin  —                 disabled',
         '  4   manual                    —                 disabled',
+        '',
+        'Notifies',
+        '  ID  CHANNEL             TITLE    STATE',
+        '  5   telegram -100777:7  English  enabled',
+        '  9   telegram 1234       —        enabled',
       ].join('\n'),
     );
   });
@@ -127,6 +143,7 @@ describe('Workflow formatting', () => {
         },
         triggerCount: 0,
         triggers: [],
+        targets: [],
       }),
     ).toBe(
       [
@@ -141,9 +158,43 @@ describe('Workflow formatting', () => {
         'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
         '',
         'No Trigger yet: pero triggers add evening-review --cron "<expression>" or --manual.',
+        '',
+        'Notifies no Channel: pero workflows notify evening-review <channel> posts its answers there.',
       ].join('\n'),
     );
     expect(agentWarning(review)).toBeNull();
+  });
+
+  it('says what notify changed', () => {
+    const notifying: WorkflowDetails = {
+      ...review,
+      triggers: [],
+      targets: [english],
+    };
+    const none: WorkflowDetails = { ...notifying, targets: [] };
+
+    expect(formatNotify(notifying, 5, true, true)).toBe(
+      'Workflow evening-review now notifies Channel 5 (telegram -100777:7 "English"): each answer, and each run that fails, is posted there.',
+    );
+    expect(formatNotify(notifying, 5, true, false)).toBe(
+      'Workflow evening-review already notifies Channel 5 (telegram -100777:7 "English").',
+    );
+    expect(
+      formatNotify(
+        { ...notifying, targets: [{ ...english, enabled: false }] },
+        5,
+        true,
+        true,
+      ).split('\n')[1],
+    ).toBe(
+      'Note: Channel 5 (telegram -100777:7 "English") is disabled, so its Agent does not answer there; pero channels enable 5 turns it back on.',
+    );
+    expect(formatNotify(none, 5, false, true)).toBe(
+      'Workflow evening-review no longer notifies Channel 5.',
+    );
+    expect(formatNotify(none, 5, false, false)).toBe(
+      'Workflow evening-review did not notify Channel 5.',
+    );
   });
 
   it('lists Triggers with their Workflow', () => {

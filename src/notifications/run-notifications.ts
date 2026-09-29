@@ -1,0 +1,83 @@
+import type { EntityManager } from 'typeorm';
+import { z } from 'zod';
+import { Notification } from '../persistence/entities/notification.entity.js';
+import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
+import type { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import type { Workflow } from '../persistence/entities/workflow.entity.js';
+
+/** What a Notification delivers: the rendered message. */
+export const notificationPayloadSchema = z.object({ text: z.string().min(1) });
+
+export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;
+
+/**
+ * What a finished run tells the Channels its Workflow notifies: the
+ * Agent's answer, headed by the Workflow's title or name, or why the run
+ * failed. Null for a run that tells them nothing: one the owner cancelled,
+ * one skipped for an empty history window, and an interrupted one that is
+ * retried, whose retry tells them instead.
+ */
+export function notificationText(
+  run: Pick<WorkflowRun, 'id' | 'status' | 'result' | 'errorText'>,
+  workflow: Pick<Workflow, 'name' | 'title'>,
+  retried: boolean,
+): string | null {
+  const label = `Run ${run.id} of Workflow ${workflow.name}`;
+  switch (run.status) {
+    case 'completed': {
+      if (run.result?.skipped === true) return null;
+      const text = run.result?.text;
+      if (typeof text !== 'string' || text.trim() === '') {
+        return `${label} completed without an answer`;
+      }
+      return `${workflow.title ?? `Workflow ${workflow.name}`}\n\n${text}`;
+    }
+    case 'failed':
+      return `${label} failed: ${run.errorText ?? 'no reason was recorded'}`;
+    case 'interrupted':
+      return retried
+        ? null
+        : `${label} interrupted: ${run.errorText ?? 'no reason was recorded'}`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Creates the Notifications of `run`, which has just finished, one
+ * `pending` per Channel its Workflow notifies now, due at once. Runs in the
+ * caller's transaction, so they commit with the run's final status. Returns
+ * how many it created.
+ */
+export async function createRunNotifications(
+  manager: EntityManager,
+  run: WorkflowRun,
+  workflow: Pick<Workflow, 'id' | 'name' | 'title'>,
+  retried: boolean,
+): Promise<number> {
+  const text = notificationText(run, workflow, retried);
+  if (text === null) return 0;
+  const targets = await manager
+    .getRepository(WorkflowNotificationTarget)
+    .find({ where: { workflowId: workflow.id }, order: { channelId: 'ASC' } });
+  if (targets.length === 0) return 0;
+  const payload: NotificationPayload = { text };
+  await manager
+    .getRepository(Notification)
+    .createQueryBuilder()
+    .insert()
+    .values(
+      targets.map(({ channelId }) => ({
+        workflowRunId: run.id,
+        channelId,
+        status: 'pending' as const,
+        payload,
+        attempt: 0,
+        nextAttemptAt: run.finishedAt ?? new Date(),
+      })),
+    )
+    // One per run and Channel, however often the run is finished.
+    .orIgnore()
+    .execute();
+  return targets.length;
+}
