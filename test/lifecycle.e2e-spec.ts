@@ -116,7 +116,7 @@ describe('Daemon lifecycle (e2e)', { timeout: 30_000 }, () => {
 
     await expect(second.exited).resolves.toEqual({ code: 1, signal: null });
     expect(second.stderr().trim()).toBe(
-      `Pero is already running for ${layout.root} (pid ${process.pid})`,
+      `Pero is already running for data directory ${layout.root} (pid ${process.pid})`,
     );
     const client = createControlClient(layout.controlSocket);
     await expect(client.status()).resolves.toMatchObject({

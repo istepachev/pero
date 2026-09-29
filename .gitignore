@@ -18,8 +18,9 @@ logs/
 npm-debug.log*
 *.pid
 
-# Local Pero data (dev runs with a data-directory override)
+# Local Pero workspace (dev runs use the repository as the workspace)
 /.pero/
+/data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

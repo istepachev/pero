@@ -52,11 +52,14 @@ Almost everything is configured with `pero settings` while Pero runs (see the [u
 
 | Setting | Source | Default |
 |---|---|---|
-| Data directory | `--data-dir` (any `pero` command, before or after its name), then `PERO_HOME` | `~/.pero` |
+| Workspace | `--workspace`/`-w` (any `pero` command, before or after its name), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/` | none |
+| Legacy data directory | `--data-dir`, then `PERO_HOME`; used when no workspace is given or found | `~/.pero` |
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then `secrets/telegram-bot-token` | none |
 | Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
 | Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every Agent answers `echo: <message>` instead of running Claude or Codex | unset |
+
+A workspace keeps Pero's state in its `.pero/` folder, which is laid out like a data directory; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace, or the data directory marked `(legacy)`. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.
 
 Pero creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting. `pero run` passes its own environment to the daemon it starts.
 
@@ -75,7 +78,7 @@ The Telegram bot token is Pero's one secret. It comes from `PERO_TELEGRAM_BOT_TO
 
 ## Data layout
 
-Everything Pero owns is in its data directory, `~/.pero` unless `--data-dir` or `PERO_HOME` names another:
+Everything Pero owns is in its data directory: a workspace's `.pero/`, or `~/.pero` unless `--data-dir` or `PERO_HOME` names another:
 
 ```text
 ~/.pero/                 # owner-only

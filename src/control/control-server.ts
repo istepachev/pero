@@ -1,6 +1,7 @@
 import { chmodSync, rmSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import type { LoggerService } from '@nestjs/common';
+import { MAX_SOCKET_PATH_BYTES } from '../config/data-dir.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -25,9 +26,6 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 /** How long closing waits for replies that are still being written. */
 const CLOSE_GRACE_MS = 2000;
-
-// sun_path is 104 bytes on macOS and the BSDs and 108 on Linux, NUL included.
-const MAX_SOCKET_PATH_BYTES = process.platform === 'linux' ? 107 : 103;
 
 /** One function per operation, receiving validated parameters. */
 export type ControlHandlers = {

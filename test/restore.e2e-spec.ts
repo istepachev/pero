@@ -227,16 +227,24 @@ describe('Restore drill (e2e)', () => {
     };
   }
 
-  /** Runs the built `pero` CLI without PERO_HOME or a token in its environment. */
+  /**
+   * Runs the built `pero` CLI from `tmp`, without PERO_HOME,
+   * PERO_WORKSPACE, or a token in its environment.
+   */
   function pero(args: string[]): Promise<{ code: number; stderr: string }> {
     const {
       PERO_HOME: _home,
+      PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env
     } = process.env;
     return new Promise((resolve) => {
-      execFile(process.execPath, [PERO, ...args], { env }, (error, _, stderr) =>
-        resolve({ code: error ? Number(error.code) : 0, stderr }),
+      execFile(
+        process.execPath,
+        [PERO, ...args],
+        { env, cwd: tmp },
+        (error, _, stderr) =>
+          resolve({ code: error ? Number(error.code) : 0, stderr }),
       );
     });
   }

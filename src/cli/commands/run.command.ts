@@ -32,11 +32,15 @@ export class RunCommand extends PeroCommand {
       await runDaemonProcess({ config, foreground: true });
     }
 
-    const layout = ensureDataDir(config.dataDir);
+    const layout = ensureDataDir(config.dataDir, config.workspace);
     const { started, status } = await startDetachedDaemon(layout);
+    const where =
+      typeof status.workspace === 'string'
+        ? `workspace ${status.workspace}`
+        : `data directory ${status.dataDir}`;
     console.log(
       `Pero is ${started ? 'running' : 'already running'} ` +
-        `(pid ${status.pid}, data directory ${status.dataDir})`,
+        `(pid ${status.pid}, ${where})`,
     );
     await this.setUp(status.version);
   }

@@ -30,16 +30,16 @@ bash scripts/check-packed-install.sh  # install the npm pack artifact globally a
 
 ## Running from a checkout
 
-`npm run cli --` runs the built `pero` CLI. Keep a development installation apart from a real one with `--data-dir .pero` (or `PERO_HOME`):
+`npm run cli --` runs the built `pero` CLI. Keep a development installation apart from a real one by using the checkout itself as the workspace, with `-w .` (or `PERO_WORKSPACE`); its `.pero/` and `data/` are Git-ignored:
 
 ```sh
 npm run build
-npm run cli -- run --data-dir .pero               # start in the background; waits until ready
-npm run cli -- status --data-dir .pero            # process, health, and components
-npm run cli -- logs -f --data-dir .pero           # recent log entries, then new ones
-npm run cli -- stop --data-dir .pero              # graceful stop; waits until it exits
-npm run cli -- run --foreground --data-dir .pero  # attached; logs to stdout
-PERO_FAKE_RUNTIME=echo npm run cli -- run --data-dir .pero   # Agents echo instead of calling a provider
+npm run cli -- run -w .                # start in the background; waits until ready
+npm run cli -- status -w .             # process, health, and components
+npm run cli -- logs -f -w .            # recent log entries, then new ones
+npm run cli -- stop -w .               # graceful stop; waits until it exits
+npm run cli -- run --foreground -w .   # attached; logs to stdout
+PERO_FAKE_RUNTIME=echo npm run cli -- run -w .   # Agents echo instead of calling a provider
 ```
 
 Every command from the [user guide](./USER_GUIDE.md) works the same way. The environment variables Pero reads at startup are listed under [Configuration](./OPERATIONS.md#configuration).

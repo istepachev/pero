@@ -4,6 +4,7 @@ import { InjectCommander } from 'nest-commander';
 
 /** Options every command accepts, before or after the command name. */
 export interface GlobalOptions {
+  workspace?: string;
   dataDir?: string;
 }
 
@@ -14,8 +15,12 @@ export class GlobalOptionsSetup {
     program
       .name('pero')
       .option(
+        '-w, --workspace <dir>',
+        'workspace (default: $PERO_WORKSPACE, then the nearest folder with .pero/ from here upward, then ~/workspace)',
+      )
+      .option(
         '--data-dir <path>',
-        'data directory (default: $PERO_HOME, then ~/.pero)',
+        'legacy data directory, instead of a workspace (default when no workspace is found: $PERO_HOME, then ~/.pero)',
       );
   }
 }

@@ -159,6 +159,7 @@ export class ControlService implements OnModuleDestroy {
       pid: process.pid,
       version: PACKAGE_VERSION,
       dataDir: this.layout.root,
+      workspace: this.layout.workspace,
       startedAt: this.startedAt.toISOString(),
       uptimeMs: Math.max(0, Date.now() - this.startedAt.getTime()),
       health: this.health.overall(),

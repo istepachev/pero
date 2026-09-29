@@ -3,7 +3,7 @@ import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module.js';
 import type { BootstrapConfig } from '../config/bootstrap-config.js';
-import { ensureDataDir } from '../config/data-dir.js';
+import { describeLocation, ensureDataDir } from '../config/data-dir.js';
 import { ControlService } from '../control/control.service.js';
 import {
   findRunningDaemon,
@@ -51,7 +51,7 @@ export class DaemonAlreadyRunningError extends Error {
  */
 export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const { config } = options;
-  const layout = ensureDataDir(config.dataDir);
+  const layout = ensureDataDir(config.dataDir, config.workspace);
 
   // Before logging, so a refused daemon never writes to the other one's log.
   const lock = acquireDaemonLock(layout.lockFile);
@@ -61,7 +61,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     });
     const pid = running ? ` (pid ${running.metadata.pid})` : '';
     throw new DaemonAlreadyRunningError(
-      `Pero is already running for ${layout.root}${pid}`,
+      `Pero is already running for ${describeLocation(layout)}${pid}`,
     );
   }
   const cleanup = () => {
@@ -105,6 +105,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         pid,
         version,
         dataDir: layout.root,
+        workspace: layout.workspace,
         socket: layout.controlSocket,
         startedAt,
       });
@@ -113,7 +114,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       throw error;
     }
     logger.info(
-      { dataDir: layout.root, socket: layout.controlSocket },
+      {
+        dataDir: layout.root,
+        workspace: layout.workspace,
+        socket: layout.controlSocket,
+      },
       'Pero daemon started',
     );
     return {
