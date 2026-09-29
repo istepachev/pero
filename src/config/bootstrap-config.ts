@@ -1,5 +1,6 @@
+import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { z } from 'zod';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -15,27 +16,57 @@ export const LOG_LEVELS = [
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-export const DEFAULT_DATA_DIR_NAME = '.pero';
+/** Pero's own folder inside a workspace, and the legacy data directory's name. */
+export const STATE_DIR_NAME = '.pero';
 
-/** Settings the process needs before it can open the data directory. */
+/** The workspace tried when none is found from the current folder. */
+export const DEFAULT_WORKSPACE_NAME = 'workspace';
+
+/** Settings the process needs before it can open its state directory. */
 export interface BootstrapConfig {
-  /** Absolute path of the data directory. */
+  /**
+   * Absolute path of the state directory: `<workspace>/.pero`, or a legacy
+   * data directory.
+   */
   dataDir: string;
+  /** Absolute path of the workspace; null for a legacy data directory. */
+  workspace: string | null;
   logLevel: LogLevel;
 }
 
+/** The file system questions discovery asks; replaceable in tests. */
+export interface DiscoveryFs {
+  isDirectory(path: string): boolean;
+  /** `path` with symbolic links resolved; it exists. */
+  realpath(path: string): string;
+}
+
 export interface BootstrapConfigInput {
+  /** Value of the `--workspace` option, if given. */
+  workspace?: string;
   /** Value of the `--data-dir` option, if given. */
   dataDir?: string;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   homeDir?: string;
+  fs?: DiscoveryFs;
 }
 
 /** Raised for invalid bootstrap values; the message names each offending source. */
 export class ConfigError extends Error {
   override name = 'ConfigError';
 }
+
+const nodeFs: DiscoveryFs = {
+  isDirectory: (path) => {
+    try {
+      return statSync(path).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  realpath: (path) => realpathSync(path),
+};
 
 const path = z
   .string()
@@ -44,18 +75,36 @@ const path = z
   .refine((value) => !value.includes('\0'), 'must not contain a NUL byte');
 
 // Keys are the names the owner typed, so issues can be reported verbatim.
-const sources = z.object({
-  '--data-dir': path.optional(),
-  PERO_HOME: path.optional(),
-  PERO_LOG_LEVEL: z
-    .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
-    .optional(),
-});
+const sources = z
+  .object({
+    '--workspace': path.optional(),
+    '--data-dir': path.optional(),
+    PERO_WORKSPACE: path.optional(),
+    PERO_HOME: path.optional(),
+    PERO_LOG_LEVEL: z
+      .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
+      .optional(),
+  })
+  .refine(
+    (values) =>
+      values['--workspace'] === undefined || values['--data-dir'] === undefined,
+    {
+      path: ['--workspace'],
+      message: 'cannot be combined with --data-dir; give one of them',
+    },
+  );
 
 /**
- * Resolves bootstrap configuration. The data directory comes from the
- * `--data-dir` option, then `PERO_HOME`, then `~/.pero`; a leading `~` is
- * expanded and relative paths resolve against `cwd`.
+ * Resolves bootstrap configuration. Explicit choices come first: the
+ * `--workspace` or `--data-dir` option, then `PERO_WORKSPACE`, then
+ * `PERO_HOME`. Otherwise the workspace is the nearest folder holding
+ * `.pero/`, from `cwd` upward (the home folder itself never counts: its
+ * `.pero` is the legacy data directory), then `~/workspace` when it holds
+ * `.pero/`, and finally the legacy data directory `~/.pero`.
+ *
+ * A leading `~` is expanded and relative paths resolve against `cwd`. A
+ * workspace is identified by its real path, so a symlinked folder is the
+ * same workspace.
  */
 export function resolveBootstrapConfig(
   input: BootstrapConfigInput = {},
@@ -63,9 +112,12 @@ export function resolveBootstrapConfig(
   const env = input.env ?? process.env;
   const cwd = input.cwd ?? process.cwd();
   const home = input.homeDir ?? homedir();
+  const fs = input.fs ?? nodeFs;
 
   const parsed = sources.safeParse({
+    '--workspace': input.workspace,
     '--data-dir': input.dataDir,
+    PERO_WORKSPACE: env.PERO_WORKSPACE,
     PERO_HOME: env.PERO_HOME,
     PERO_LOG_LEVEL: env.PERO_LOG_LEVEL,
   });
@@ -77,15 +129,67 @@ export function resolveBootstrapConfig(
   }
 
   const values = parsed.data;
-  const dataDir =
-    values['--data-dir'] ??
-    values.PERO_HOME ??
-    join(home, DEFAULT_DATA_DIR_NAME);
-
-  return {
-    dataDir: resolvePath(dataDir, cwd, home),
-    logLevel: values.PERO_LOG_LEVEL ?? 'info',
+  const logLevel = values.PERO_LOG_LEVEL ?? 'info';
+  const inWorkspace = (dir: string): BootstrapConfig => {
+    const workspace = canonical(resolvePath(dir, cwd, home), fs);
+    return { dataDir: join(workspace, STATE_DIR_NAME), workspace, logLevel };
   };
+  const legacy = (dir: string): BootstrapConfig => ({
+    dataDir: resolvePath(dir, cwd, home),
+    workspace: null,
+    logLevel,
+  });
+
+  if (values['--workspace'] !== undefined) {
+    return inWorkspace(values['--workspace']);
+  }
+  if (values['--data-dir'] !== undefined) return legacy(values['--data-dir']);
+  if (values.PERO_WORKSPACE !== undefined) {
+    return inWorkspace(values.PERO_WORKSPACE);
+  }
+  if (values.PERO_HOME !== undefined) return legacy(values.PERO_HOME);
+
+  const found = findWorkspace(resolve(cwd), home, fs);
+  if (found !== null) return inWorkspace(found);
+  const fallback = join(home, DEFAULT_WORKSPACE_NAME);
+  if (fs.isDirectory(join(fallback, STATE_DIR_NAME))) {
+    return inWorkspace(fallback);
+  }
+  return legacy(join(home, STATE_DIR_NAME));
+}
+
+/**
+ * The nearest folder from `start` upward that holds `.pero/`, the way Git
+ * finds a repository; null when there is none. The home folder is skipped.
+ */
+export function findWorkspace(
+  start: string,
+  home: string,
+  fs: DiscoveryFs = nodeFs,
+): string | null {
+  const homes = new Set([resolve(home), canonical(resolve(home), fs)]);
+  for (let dir = start; ; dir = dirname(dir)) {
+    if (!homes.has(dir) && fs.isDirectory(join(dir, STATE_DIR_NAME))) {
+      return dir;
+    }
+    if (dirname(dir) === dir) return null;
+  }
+}
+
+/**
+ * `path` with symbolic links resolved. A path that does not exist yet keeps
+ * its missing part below the nearest folder that does.
+ */
+function canonical(path: string, fs: DiscoveryFs): string {
+  const missing: string[] = [];
+  for (let dir = path; ; dir = dirname(dir)) {
+    try {
+      return join(fs.realpath(dir), ...missing);
+    } catch {
+      if (dirname(dir) === dir) return path;
+      missing.unshift(basename(dir));
+    }
+  }
 }
 
 /**

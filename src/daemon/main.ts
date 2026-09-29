@@ -7,12 +7,16 @@ let options;
 try {
   const { values } = parseArgs({
     options: {
+      workspace: { type: 'string' },
       'data-dir': { type: 'string' },
       foreground: { type: 'boolean', default: false },
     },
   });
   options = {
-    config: resolveBootstrapConfig({ dataDir: values['data-dir'] }),
+    config: resolveBootstrapConfig({
+      workspace: values.workspace,
+      dataDir: values['data-dir'],
+    }),
     foreground: values.foreground,
   };
 } catch (error) {

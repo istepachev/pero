@@ -36,17 +36,20 @@ Replace the data directory with the workspace layout from the [overview](./READM
 
 Add workspace resolution to the bootstrap configuration (`src/config/bootstrap-config.ts`), tried in this order:
 
-1. `--workspace`/`-w` on any command.
-2. `PERO_WORKSPACE`.
-3. The nearest folder containing `.pero/`, from the current folder upward.
+1. `--workspace`/`-w` on any command, or the legacy `--data-dir` (not both).
+2. `PERO_WORKSPACE`, then the legacy `PERO_HOME`.
+3. The nearest folder containing `.pero/`, from the current folder upward. The home folder itself never counts: its `.pero` is the legacy data directory.
 4. `~/workspace` if it contains `.pero/`.
+5. The legacy data directory `~/.pero`.
 
-`dataDirLayout` becomes a workspace layout: `.pero/pero.sqlite`, `.pero/logs/`, `.pero/run/`. Startup writes `.pero/.gitignore`, which ignores everything in `.pero/` except `config.yaml` and `.gitignore`. When the socket path would exceed the Unix limit, the socket moves to `$XDG_RUNTIME_DIR/pero-<hash>/` (or the temp folder), and the process metadata records where.
+An explicit choice always wins over a workspace found from the current folder, and a workspace is identified by its real path, so a symlinked folder is the same workspace. The development scripts use the checkout as a workspace (`-w .`).
 
-A legacy data directory stays supported: `--data-dir`, `PERO_HOME`, or `~/.pero` when no workspace is found. `pero status` marks it `legacy`.
+`dataDirLayout` knows the workspace: its state is `.pero/pero.sqlite`, `.pero/logs/`, `.pero/run/`, as in a data directory. Startup writes `.pero/.gitignore`, which ignores everything in `.pero/` except `config.yaml` and `.gitignore`. When the socket path would exceed the Unix limit, the socket moves to `$XDG_RUNTIME_DIR/pero-<hash>/` (or the temp folder), and commands find it through the process metadata.
+
+`pero status` shows the workspace, or the data directory marked `(legacy)`.
 
 **Done when:**
-- Unit tests cover the precedence and the upward search, including a workspace inside a Git repository and a symlinked folder.
+- Unit tests cover the precedence and the upward search, including a workspace inside a Git repository, a symlinked folder, and a symlinked home folder.
 - A daemon started in a temporary workspace creates the layout and the `.gitignore`.
 - A deep workspace path still gets a working socket.
 - A legacy data directory starts as before.

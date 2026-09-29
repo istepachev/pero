@@ -264,7 +264,7 @@ describe('Control endpoint (e2e)', () => {
 
     await expect(start()).rejects.toThrow(DaemonAlreadyRunningError);
     await expect(start()).rejects.toThrow(
-      `Pero is already running for ${dataDir} (pid ${process.pid})`,
+      `Pero is already running for data directory ${dataDir} (pid ${process.pid})`,
     );
     await expect(client.status()).resolves.toMatchObject({ dataDir });
   });

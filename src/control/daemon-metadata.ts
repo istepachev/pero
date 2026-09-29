@@ -10,6 +10,8 @@ export const daemonMetadataSchema = z.object({
   pid: z.int().positive(),
   version: z.string(),
   dataDir: z.string(),
+  /** The workspace; null for a legacy data directory, absent before 0.2. */
+  workspace: z.string().nullable().optional(),
   /** The control socket to reach it on. */
   socket: z.string(),
   /** When it became ready. */

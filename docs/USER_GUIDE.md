@@ -16,7 +16,7 @@ pero run --foreground   # attached; logs to stdout
 
 `pero logs` prints the last 50 entries of `logs/pero.log` as readable lines in local time (`-n <count>` for more or fewer); `--follow` keeps streaming new entries, waiting for the file if Pero has not written it yet, and `--json` prints the raw lines for `jq`. It reads files only, so it works whether or not Pero is running. It does not stream `logs/daemon.out`, but it names that file on stderr when it has content.
 
-Every command takes `--data-dir <dir>` to use a data directory other than `~/.pero`; see [Configuration](./OPERATIONS.md#configuration).
+Every command works on the workspace found from the current folder (the nearest folder holding `.pero/`), or takes `--workspace <dir>` (`-w`) to name one; without a workspace, Pero uses the legacy data directory `~/.pero`, or the one `--data-dir <dir>` names. See [Configuration](./OPERATIONS.md#configuration).
 
 ## First-run setup and settings
 

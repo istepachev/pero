@@ -19,14 +19,15 @@ export interface RestoreResult {
 }
 
 /**
- * Restores backup `file` as the data directory `root`, which must be
- * missing or empty. The archive is unpacked next to `root` and renamed into
+ * Restores backup `file` as the state directory `root` of `workspace` (null
+ * for a legacy data directory), which must be missing or empty. The archive is unpacked next to `root` and renamed into
  * place in one step, which fails if anything, such as a starting daemon,
  * wrote to `root` meanwhile. On failure nothing is left behind.
  */
 export async function restoreBackup(
   file: string,
   root: string,
+  workspace: string | null = null,
 ): Promise<RestoreResult> {
   const target = await prepareTarget(root);
   const staging = join(
@@ -47,7 +48,7 @@ export async function restoreBackup(
     if (code === 'ENOTEMPTY' || code === 'EEXIST') throw notEmpty(target);
     throw error;
   }
-  ensureDataDir(target);
+  ensureDataDir(target, workspace);
   return { dataDir: target, manifest, missing: await missingFolders(manifest) };
 }
 

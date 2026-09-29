@@ -59,7 +59,10 @@ export type ComponentStatus = z.infer<typeof componentStatusSchema>;
 export const statusResultSchema = z.object({
   pid: z.int().positive(),
   version: z.string(),
+  /** The state directory: `<workspace>/.pero`, or a legacy data directory. */
   dataDir: z.string(),
+  /** The workspace; null for a legacy data directory, absent before 0.2. */
+  workspace: z.string().nullable().optional(),
   /** When the daemon became ready. */
   startedAt: z.iso.datetime(),
   uptimeMs: z.int().nonnegative(),

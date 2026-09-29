@@ -56,8 +56,9 @@ export async function startDetachedDaemon(
       [
         '--enable-source-maps',
         options.daemonMain ?? DAEMON_MAIN,
-        '--data-dir',
-        layout.root,
+        ...(layout.workspace === null
+          ? ['--data-dir', layout.root]
+          : ['--workspace', layout.workspace]),
       ],
       { detached: true, stdio: ['ignore', output, output] },
     );

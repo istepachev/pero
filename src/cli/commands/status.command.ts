@@ -1,5 +1,6 @@
 import { Command } from 'nest-commander';
 import { PACKAGE_VERSION } from '../../common/package-version.js';
+import { describeLocation } from '../../config/data-dir.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { CliError } from '../errors.js';
 import { formatStatus } from '../format-status.js';
@@ -20,7 +21,7 @@ export class StatusCommand extends PeroCommand {
     } catch (error) {
       if (!(error instanceof DaemonNotRunningError)) throw error;
       throw new CliError(
-        `Pero isn't running (data directory ${this.layout().root})`,
+        `Pero isn't running (${describeLocation(this.layout())})`,
         NOT_RUNNING_EXIT_CODE,
       );
     }
