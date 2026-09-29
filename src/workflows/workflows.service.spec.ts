@@ -314,6 +314,76 @@ describe('WorkflowsService and WorkflowViews', () => {
     ]);
   });
 
+  it('adds and removes the Channels a Workflow notifies', async () => {
+    const agent = await ds.getRepository(Agent).findOneByOrFail({
+      name: 'coach',
+    });
+    const channels = ds.getRepository(Channel);
+    const [topic, direct] = await channels.save([
+      channels.create({
+        integrationKind: 'telegram',
+        externalKey: '-100777:7',
+        address: { chatId: '-100777', topicId: '7' },
+        title: 'English',
+        agentId: agent.id,
+      }),
+      channels.create({
+        integrationKind: 'telegram',
+        externalKey: '1234',
+        address: { chatId: '1234' },
+        title: null,
+        agentId: agent.id,
+        // A disabled Channel may be a target.
+        enabled: false,
+      }),
+    ]);
+    await workflows.create({
+      name: 'review',
+      agent: 'coach',
+      inputTemplate: 'Go',
+    });
+    expect((await views.details('review')).targets).toEqual([]);
+
+    expect(await workflows.notify('Review', direct!.id)).toMatchObject({
+      changed: true,
+    });
+    expect((await workflows.notify('review', topic!.id)).changed).toBe(true);
+    expect((await workflows.notify('review', topic!.id)).changed).toBe(false);
+    expect((await views.details('review')).targets).toEqual([
+      {
+        id: topic!.id,
+        integrationKind: 'telegram',
+        key: '-100777:7',
+        title: 'English',
+        enabled: true,
+      },
+      {
+        id: direct!.id,
+        integrationKind: 'telegram',
+        key: '1234',
+        title: null,
+        enabled: false,
+      },
+    ]);
+
+    expect((await workflows.stopNotifying('review', topic!.id)).changed).toBe(
+      true,
+    );
+    expect((await workflows.stopNotifying('review', topic!.id)).changed).toBe(
+      false,
+    );
+    expect((await views.details('review')).targets.map(({ id }) => id)).toEqual(
+      [direct!.id],
+    );
+
+    await expect(workflows.notify('review', 99)).rejects.toThrow(
+      new NotFoundError('No Channel with ID 99; pero channels ls lists them'),
+    );
+    await expect(workflows.stopNotifying('nope', topic!.id)).rejects.toThrow(
+      new NotFoundError('No Workflow named nope'),
+    );
+  });
+
   it('keeps an Agent a Workflow uses from being deleted', async () => {
     await workflows.create({
       name: 'review',

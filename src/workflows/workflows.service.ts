@@ -19,6 +19,7 @@ import {
 } from '../config/workflow-input.js';
 import type { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
@@ -98,6 +99,48 @@ export class WorkflowsService {
       return workflows.findOneByOrFail({ id: workflow.id });
     });
   }
+
+  /**
+   * Makes the Workflow named `name` notify Channel `channelId` of each run
+   * that finishes from now on. `changed` is false when it already did. A
+   * disabled Workflow or Channel may be a target.
+   */
+  notify(name: string, channelId: number): Promise<TargetChange> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const workflow = await findWorkflow(manager, name);
+      const channel = await existingChannel(manager, channelId);
+      const targets = manager.getRepository(WorkflowNotificationTarget);
+      const target = { workflowId: workflow.id, channelId: channel.id };
+      if (await targets.existsBy(target)) {
+        return { workflow, channel, changed: false };
+      }
+      await targets.insert(target);
+      return { workflow, channel, changed: true };
+    });
+  }
+
+  /**
+   * Stops the Workflow named `name` notifying Channel `channelId`; its
+   * Notifications so far are kept. `changed` is false when it did not.
+   */
+  stopNotifying(name: string, channelId: number): Promise<TargetChange> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const workflow = await findWorkflow(manager, name);
+      const channel = await existingChannel(manager, channelId);
+      const { affected } = await manager
+        .getRepository(WorkflowNotificationTarget)
+        .delete({ workflowId: workflow.id, channelId: channel.id });
+      return { workflow, channel, changed: (affected ?? 0) > 0 };
+    });
+  }
+}
+
+/** A Workflow and Channel whose notification target was added or removed. */
+export interface TargetChange {
+  workflow: Workflow;
+  channel: Channel;
+  /** False when there was nothing to add or remove. */
+  changed: boolean;
 }
 
 /** The Workflow named `name`, in any case; `NotFoundError` otherwise. */
@@ -132,6 +175,20 @@ async function existingChannels(
     );
   }
   return history;
+}
+
+/** Channel `id`; `NotFoundError` if none. */
+async function existingChannel(
+  manager: EntityManager,
+  id: number,
+): Promise<Channel> {
+  const channel = await manager.getRepository(Channel).findOneBy({ id });
+  if (channel === null) {
+    throw new NotFoundError(
+      `No Channel with ID ${id}; pero channels ls lists them`,
+    );
+  }
+  return channel;
 }
 
 /** The Agent named `name`, which must be enabled to take on a Workflow. */

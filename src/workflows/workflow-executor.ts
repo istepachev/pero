@@ -26,6 +26,7 @@ import {
   executionSnapshot,
   historyWindowSchema,
 } from './execution-snapshot.js';
+import { finishRun } from './finish-run.js';
 import { readHistoryWindow } from './history-window.js';
 
 /** A run the executor has claimed and marked `running`. */
@@ -160,6 +161,7 @@ export class WorkflowExecutor
       .findOneByOrFail({ id: workflow.agentId });
     const attempts = `${workflow.maxAttempts} ${workflow.maxAttempts === 1 ? 'attempt' : 'attempts'}`;
     let outcome: string;
+    let retried = false;
     if (run.attempt >= workflow.maxAttempts) {
       outcome = `not retried: Workflow ${workflow.name} allows ${attempts}`;
     } else if (!workflow.enabled) {
@@ -191,12 +193,14 @@ export class WorkflowExecutor
         await runs.findOneByOrFail({ workflowId: workflow.id, triggerKey })
       ).id;
       outcome = `run ${retryId} retries it (attempt ${run.attempt + 1} of ${workflow.maxAttempts})`;
+      retried = true;
     }
-    await runs.update(run.id, {
-      status: 'interrupted',
-      finishedAt: new Date(),
-      errorText: `${INTERRUPTED}; ${outcome}`,
-    });
+    await finishRun(
+      manager,
+      run.id,
+      { status: 'interrupted', errorText: `${INTERRUPTED}; ${outcome}` },
+      { retried },
+    );
     this.logger.warn(
       `Run ${run.id} of Workflow ${workflow.name} was interrupted; ${outcome}`,
     );
@@ -302,9 +306,8 @@ export class WorkflowExecutor
           ? `Agent ${agent.name} was disabled before the run started`
           : null;
       if (refused !== null) {
-        await runs.update(run.id, {
+        await finishRun(manager, run.id, {
           status: 'failed',
-          finishedAt: new Date(),
           errorText: refused,
         });
         this.logger.warn(
@@ -332,7 +335,7 @@ export class WorkflowExecutor
         !history.read.runWhenEmpty
       ) {
         // Completed all the same, so the next run reads after its window.
-        await runs.update(run.id, {
+        await finishRun(manager, run.id, {
           status: 'completed',
           startedAt: now,
           finishedAt: now,
@@ -427,9 +430,8 @@ export class WorkflowExecutor
       return;
     }
     await inTransaction(this.dataSource, (manager) =>
-      manager.getRepository(WorkflowRun).update(runId, {
+      finishRun(manager, runId, {
         status: outcome.status,
-        finishedAt: new Date(),
         ...(outcome.status === 'completed'
           ? {
               result: {

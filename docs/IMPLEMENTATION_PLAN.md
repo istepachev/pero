@@ -263,7 +263,12 @@ Add Workflow notification targets, durable Notification records, Telegram delive
 
 ### 4.1 Notification targets and records
 
-Add `pero workflows notify <workflow> <channel>` (and removal). When a run finishes, create its Notification records in the same transaction as the final run status.
+Add `pero workflows notify <workflow> <channel>`, and `--remove` to stop; `workflows show` lists the Channels a Workflow notifies. When a run finishes, create its Notification records in the same transaction as the final run status, one `pending` per target, due at once, with the rendered text as its payload:
+- **Completed:** the Agent's answer, headed by the Workflow's title or name.
+- **Failed, or interrupted without a retry:** why, so a broken schedule does not go unnoticed. An interrupted run that is retried leaves it to its retry.
+- **Cancelled, or skipped for an empty history window:** nothing.
+
+Every place a run ends goes through one path. Notifications are created in a savepoint: if that fails, the run is still recorded, without them.
 
 **Done when:** tests show a completed run and its Notifications commit together, and a Notification failure never keeps a run `running`.
 

@@ -52,6 +52,7 @@ import {
   WorkflowsEditCommand,
   WorkflowsEnableCommand,
   WorkflowsListCommand,
+  WorkflowsNotifyCommand,
   WorkflowsRunCommand,
   WorkflowsShowCommand,
 } from './commands/workflows.command.js';
@@ -94,6 +95,7 @@ import { GlobalOptionsSetup } from './global-options.js';
     WorkflowsDisableCommand,
     WorkflowsEnableCommand,
     WorkflowsRunCommand,
+    WorkflowsNotifyCommand,
     RunsCommand,
     RunsCancelCommand,
     TriggersCommand,

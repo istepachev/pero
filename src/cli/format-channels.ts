@@ -100,7 +100,7 @@ export function formatHistory(
 }
 
 /** `Channel 2 (telegram -100…:42 "Groceries")`, for one-line messages. */
-export function describeChannel(channel: ChannelView): string {
+export function describeChannel(channel: ChannelAddress): string {
   const title = channel.title === null ? '' : ` "${channel.title}"`;
   return `Channel ${channel.id} (${address(channel)}${title})`;
 }
@@ -114,7 +114,13 @@ export function agentWarning(channel: ChannelView): string | null {
   );
 }
 
-function address(channel: ChannelView): string {
+/** What names a Channel in one-line messages. */
+type ChannelAddress = Pick<
+  ChannelView,
+  'id' | 'integrationKind' | 'key' | 'title'
+>;
+
+function address(channel: ChannelAddress): string {
   return `${channel.integrationKind} ${channel.key}`;
 }
 

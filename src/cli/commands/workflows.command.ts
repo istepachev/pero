@@ -7,10 +7,12 @@ import {
   type WorkflowEdit,
 } from '../../config/workflow-input.js';
 import type { WorkflowView } from '../../control/protocol.js';
+import { channelId } from '../channel-id.js';
 import { CliError } from '../errors.js';
 import {
   agentWarning,
   formatWorkflowDetails,
+  formatNotify,
   formatWorkflowList,
   runOutcome,
 } from '../format-workflows.js';
@@ -331,9 +333,45 @@ export class WorkflowsRunCommand extends PeroCommand {
   }
 }
 
+@SubCommand({
+  name: 'notify',
+  arguments: '<name> <channel>',
+  description:
+    "Post a Workflow's answers, and its failed runs, to a Channel; --remove stops it",
+  argsDescription: {
+    ...NAME,
+    channel: "the Channel's ID, as pero channels ls lists it",
+  },
+})
+export class WorkflowsNotifyCommand extends PeroCommand {
+  async run(
+    [name, channel]: string[],
+    options: { remove?: boolean },
+  ): Promise<void> {
+    const id = channelId(channel!);
+    const notify = options.remove !== true;
+    const { client } = await this.requireDaemon();
+    const { workflow, changed } = await client.call('workflows.notify', {
+      name: name!,
+      channel: id,
+      notify,
+    });
+    console.log(formatNotify(workflow, id, notify, changed));
+  }
+
+  @Option({
+    flags: '--remove',
+    description: 'stop notifying the Channel',
+  })
+  parseRemove(): true {
+    return true;
+  }
+}
+
 @Command({
   name: 'workflows',
-  description: 'List, show, create, change, and run Workflows',
+  description:
+    'List, show, create, change, and run Workflows, and choose the Channels they notify',
   subCommands: [
     WorkflowsListCommand,
     WorkflowsShowCommand,
@@ -342,6 +380,7 @@ export class WorkflowsRunCommand extends PeroCommand {
     WorkflowsDisableCommand,
     WorkflowsEnableCommand,
     WorkflowsRunCommand,
+    WorkflowsNotifyCommand,
   ],
 })
 export class WorkflowsCommand extends CommandRunner {

@@ -112,6 +112,8 @@ A run Pero stops before it finishes, by crashing or through `pero stop` once the
 
 A Workflow can read Channel history as its input, so an Agent can review your chats on a schedule. With `--history`, each run puts a transcript of what people wrote in every Channel since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `--history-channels 3,5` reads only those Channels, `--history-messages all` adds the Agents' replies, and `--history-hours <n>` reads a fixed window instead. A run with no messages to read completes without its Agent unless `--run-when-empty` is given. The longest transcripts keep their newest messages and say how many older ones they left out.
 
+A Workflow can notify Channels of its runs: `pero workflows notify <workflow> <channel>` (a Channel ID from `pero channels ls`) makes each run that finishes leave a Notification for that Channel, holding the Agent's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one. `--remove` stops it. Notifications are recorded together with the run's final status and stay pending; delivering them to Telegram comes next.
+
 ```sh
 npm run cli -- workflows create evening-review --agent coach --input "Review today's chats" --data-dir .pero
 npm run cli -- triggers add evening-review --cron "0 21 * * *" --data-dir .pero   # 21:00 in the timezone setting
@@ -123,6 +125,7 @@ npm run cli -- runs cancel 7 --data-dir .pero                                   
 npm run cli -- workflows disable evening-review --data-dir .pero                   # keep it, and its Triggers, without running
 npm run cli -- workflows create english --agent english-coach --history --input "Suggest better English for: {{history}}" --data-dir .pero
 npm run cli -- triggers add english --cron "0 21 * * *" --data-dir .pero           # review the day's chats every evening
+npm run cli -- workflows notify english 5 --data-dir .pero                         # post its suggestions to Channel 5
 ```
 
 ### Claude Agents

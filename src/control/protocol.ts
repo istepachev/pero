@@ -334,9 +334,24 @@ export const triggerViewSchema = z.object({
 
 export type TriggerView = z.infer<typeof triggerViewSchema>;
 
+/** A Channel a Workflow notifies of its finished runs. */
+export const notificationTargetSchema = z.object({
+  /** The Channel's ID. */
+  id: z.int(),
+  integrationKind: z.enum(INTEGRATION_KINDS),
+  /** Its address, as `pero channels ls` shows it. */
+  key: z.string(),
+  title: z.string().nullable(),
+  enabled: z.boolean(),
+});
+
+export type NotificationTargetView = z.infer<typeof notificationTargetSchema>;
+
 export const workflowDetailsSchema = workflowViewSchema.extend({
   /** Oldest first. */
   triggers: z.array(triggerViewSchema),
+  /** By Channel ID. */
+  targets: z.array(notificationTargetSchema),
 });
 
 export type WorkflowDetails = z.infer<typeof workflowDetailsSchema>;
@@ -487,6 +502,21 @@ export const CONTROL_OPERATIONS = {
    * Queues a run of a Workflow through its manual Trigger; the executor
    * starts it once a slot is free.
    */
+  /**
+   * Makes a Workflow notify a Channel of its finished runs, or stop;
+   * `changed` is false when there was nothing to do.
+   */
+  'workflows.notify': {
+    params: z.strictObject({
+      name: workflowReferenceSchema,
+      channel: channelIdSchema,
+      notify: z.boolean(),
+    }),
+    result: z.object({
+      workflow: workflowDetailsSchema,
+      changed: z.boolean(),
+    }),
+  },
   'workflows.run': {
     params: z.strictObject({ name: workflowReferenceSchema }),
     result: runViewSchema,

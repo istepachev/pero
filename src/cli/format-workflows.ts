@@ -4,7 +4,7 @@ import type {
   WorkflowDetails,
   WorkflowView,
 } from '../control/protocol.js';
-import { localDateTime } from './format-channels.js';
+import { describeChannel, localDateTime } from './format-channels.js';
 import { table } from './format-status.js';
 import { preview } from './settings-keys.js';
 
@@ -51,6 +51,53 @@ export function formatWorkflowDetails(workflow: WorkflowDetails): string {
     lines.push(
       'Triggers',
       ...triggerTable(workflow.triggers, false).map((row) => `  ${row}`),
+    );
+  }
+  lines.push('');
+  if (workflow.targets.length === 0) {
+    lines.push(
+      `Notifies no Channel: pero workflows notify ${workflow.name} <channel> posts its answers there.`,
+    );
+  } else {
+    lines.push(
+      'Notifies',
+      ...table([
+        ['ID', 'CHANNEL', 'TITLE', 'STATE'],
+        ...workflow.targets.map((target) => [
+          String(target.id),
+          `${target.integrationKind} ${target.key}`,
+          target.title ?? '—',
+          state(target.enabled),
+        ]),
+      ]).map((row) => `  ${row}`),
+    );
+  }
+  return lines.join('\n');
+}
+
+/** `pero workflows notify`: what changed, and what the Channel now gets. */
+export function formatNotify(
+  workflow: WorkflowDetails,
+  channelId: number,
+  notify: boolean,
+  changed: boolean,
+): string {
+  const target = workflow.targets.find(({ id }) => id === channelId);
+  const channel =
+    target === undefined ? `Channel ${channelId}` : describeChannel(target);
+  if (!notify) {
+    return changed
+      ? `Workflow ${workflow.name} no longer notifies ${channel}.`
+      : `Workflow ${workflow.name} did not notify ${channel}.`;
+  }
+  const lines = [
+    changed
+      ? `Workflow ${workflow.name} now notifies ${channel}: each answer, and each run that fails, is posted there.`
+      : `Workflow ${workflow.name} already notifies ${channel}.`,
+  ];
+  if (target !== undefined && !target.enabled) {
+    lines.push(
+      `Note: ${channel} is disabled, so its Agent does not answer there; pero channels enable ${channelId} turns it back on.`,
     );
   }
   return lines.join('\n');

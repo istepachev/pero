@@ -3,6 +3,7 @@ import {
   DEFAULT_HISTORY_MESSAGES,
   MAX_HISTORY_MESSAGES,
 } from '../../control/protocol.js';
+import { channelId } from '../channel-id.js';
 import { CliError } from '../errors.js';
 import {
   agentWarning,
@@ -164,15 +165,4 @@ export class ChannelsCommand extends CommandRunner {
   async run(): Promise<void> {
     this.command.help();
   }
-}
-
-/** The Channel ID the owner typed; a `CliError` when it is not one. */
-function channelId(value: string): number {
-  const id = positiveInt(value);
-  if (id === null) {
-    throw new CliError(
-      `channel must be a Channel ID, as pero channels ls lists it, not "${value}"`,
-    );
-  }
-  return id;
 }
