@@ -12,6 +12,7 @@ import {
 } from '../config/secret-store.js';
 import {
   TELEGRAM_TOKEN_ENV,
+  TELEGRAM_TOKEN_SECRET,
   telegramBotTokenSchema,
 } from '../config/settings-input.js';
 import type { TokenSource } from '../control/protocol.js';
@@ -20,8 +21,7 @@ import { CONNECTING_DETAIL } from './telegram-status.js';
 
 export const TELEGRAM_OPTIONS = Symbol('TELEGRAM_OPTIONS');
 
-/** File name of the stored bot token in `secrets/`. */
-export const TELEGRAM_TOKEN_SECRET = 'telegram-bot-token';
+export { TELEGRAM_TOKEN_SECRET };
 
 export interface TelegramOptions {
   /** A legacy data directory's owner-only `secrets/`; unused with `envFile`. */

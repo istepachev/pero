@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,6 +90,7 @@ describe('BackupService', () => {
       createdAt: expect.any(String),
       bytes: statSync(file).size,
       includesSecrets: true,
+      includesData: false,
     });
     const { dir, manifest } = await extract(file);
     expect(manifest).toEqual({
@@ -142,6 +144,75 @@ describe('BackupService', () => {
       'pero-backup.json',
       'pero.sqlite',
     ]);
+  });
+
+  it('includes the data folder when asked, without links or the state directory', async () => {
+    await moduleRef
+      .get(SettingsService)
+      .update({ defaultWorkingDirectory: vault });
+    mkdirSync(join(vault, 'Settings'));
+    writeFileSync(join(vault, 'Settings', 'Pero.md'), 'Be brief.\n');
+    symlinkSync('/etc', join(vault, 'etc'));
+    const file = join(tmp, 'backup.tgz');
+
+    await expect(backups.create(file)).resolves.toMatchObject({
+      includesData: false,
+    });
+    expect((await extract(file)).manifest.format).toBe(2);
+    rmSync(join(tmp, 'extracted'), { recursive: true });
+
+    const result = await backups.create(file, { includeData: true });
+
+    expect(result).toMatchObject({ includesData: true });
+    const { dir, manifest } = await extract(file);
+    expect(manifest).toMatchObject({ format: 3, includesData: true });
+    expect(readdirSync(join(dir, 'data'))).toEqual(['Settings']);
+    expect(readFileSync(join(dir, 'data', 'Settings', 'Pero.md'), 'utf8')).toBe(
+      'Be brief.\n',
+    );
+    expect(readdirSync(tmp).filter((name) => name.startsWith('.'))).toEqual([]);
+  });
+
+  it('leaves out the state directory and .env of a workspace inside its data folder', async () => {
+    const workspace = join(tmp, 'ws');
+    await moduleRef.close();
+    layout = ensureDataDir(join(workspace, '.pero'), workspace);
+    writeFileSync(join(workspace, '.env'), 'PERO_TELEGRAM_BOT_TOKEN=x\n');
+    writeFileSync(join(workspace, 'note.md'), 'Hi');
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        PersistenceModule.forRoot({ database: layout.database }),
+        SettingsModule,
+        BackupModule.forRoot({ layout }),
+      ],
+    }).compile();
+    await moduleRef.init();
+    await moduleRef
+      .get(SettingsService)
+      .update({ defaultWorkingDirectory: workspace });
+    const file = join(tmp, 'backup.tgz');
+
+    await moduleRef.get(BackupService).create(file, { includeData: true });
+
+    const { dir } = await extract(file);
+    expect(readdirSync(join(dir, 'data'))).toEqual(['note.md']);
+  });
+
+  it('refuses to include data it has not got, or into itself', async () => {
+    await expect(
+      backups.create(join(tmp, 'backup.tgz'), { includeData: true }),
+    ).rejects.toThrow(/no data folder to include/);
+
+    await moduleRef
+      .get(SettingsService)
+      .update({ defaultWorkingDirectory: vault });
+    const result = backups.create(join(vault, 'backup.tgz'), {
+      includeData: true,
+    });
+    await expect(result).rejects.toThrow(InvalidInputError);
+    await expect(result).rejects.toThrow(
+      `must be outside the data folder ${vault} it includes`,
+    );
   });
 
   it('rejects a destination it should not write', async () => {

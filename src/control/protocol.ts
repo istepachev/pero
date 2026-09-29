@@ -115,6 +115,8 @@ export const backupResultSchema = z.object({
   bytes: z.int().nonnegative(),
   /** Whether the archive holds stored secrets such as the bot token. */
   includesSecrets: z.boolean(),
+  /** Whether it holds the data folder; absent from an older daemon. */
+  includesData: z.boolean().optional(),
 });
 
 export type BackupResult = z.infer<typeof backupResultSchema>;
@@ -675,9 +677,15 @@ export const CONTROL_OPERATIONS = {
     params: z.strictObject({ id: triggerIdSchema, enabled: z.boolean() }),
     result: triggerViewSchema,
   },
-  /** Writes a backup of the data directory to an absolute path. */
+  /**
+   * Writes a backup of the data directory to an absolute path, with the
+   * data folder when `includeData` is set.
+   */
   'backup.create': {
-    params: z.strictObject({ file: z.string().min(1) }),
+    params: z.strictObject({
+      file: z.string().min(1),
+      includeData: z.boolean().optional(),
+    }),
     result: backupResultSchema,
   },
 } as const satisfies Record<string, { params: z.ZodType; result: z.ZodType }>;

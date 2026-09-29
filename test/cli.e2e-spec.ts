@@ -1940,7 +1940,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: expect.stringMatching(
         new RegExp(
-          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(restored.root)}\\. ` +
+          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(restored.root)}\\.\\n` +
             `Start it with pero run --data-dir ${escape(restored.root)}\\n$`,
         ),
       ),
@@ -1957,6 +1957,80 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(['--data-dir', restored.root, 'stop'])).code).toBe(0);
 
     expect(dumpTables(restored.database)).toEqual(dumpTables(layout.database));
+  });
+
+  it('restores a legacy backup into a workspace, and a workspace with its data folder into a clone', async () => {
+    const cwd = realpathSync(tmp);
+    const ws = join(cwd, 'ws');
+    const clone = join(cwd, 'clone');
+    others.push(
+      dataDirLayout(join(ws, '.pero'), ws),
+      dataDirLayout(join(clone, '.pero'), clone),
+    );
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const token = await pero(
+      withDataDir('settings', 'set', 'telegram-bot-token'),
+      {
+        input: `${TOKEN}\n`,
+      },
+    );
+    expect(token.code).toBe(0);
+    expect(
+      (await pero(withDataDir('telegram', 'allow', '-1001234567890'))).code,
+    ).toBe(0);
+    expect(
+      (await pero(withDataDir('backup', 'legacy.tgz'), { cwd })).code,
+    ).toBe(0);
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+
+    // The token moves to .env; the workspace's data/ is made when it starts.
+    const legacy = await pero(['restore', 'legacy.tgz', '-w', ws], { cwd });
+    expect(legacy).toMatchObject({ code: 0, stderr: '' });
+    expect(legacy.stdout).toContain(
+      `\nWrote the Telegram bot token to ${ws}/.env.\nStart it with pero run --workspace ${ws}\n`,
+    );
+    expect(readFileSync(join(ws, '.env'), 'utf8')).toBe(
+      `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`,
+    );
+    expect(statSync(join(ws, '.env')).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(ws, '.gitignore'), 'utf8')).toBe('.env\n');
+    expect(readFileSync(join(ws, '.pero', 'config.yaml'), 'utf8')).toContain(
+      '- id: -1001234567890',
+    );
+
+    expect((await pero(['run', '-w', ws])).code).toBe(0);
+    writeFileSync(join(ws, 'data', 'note.md'), 'Kept safe\n');
+    const backup = await pero(
+      ['backup', '-w', ws, '--include-data', 'ws.tgz'],
+      {
+        cwd,
+      },
+    );
+    expect(backup).toMatchObject({ code: 0, stderr: '' });
+    expect(backup.stdout).toMatch(
+      new RegExp(
+        `^Backed up ${escape(join(ws, '.pero'))} and the data folder to ${escape(join(cwd, 'ws.tgz'))} `,
+      ),
+    );
+    expect(backup.stdout).not.toContain('bot token');
+    expect((await pero(['stop', '-w', ws])).code).toBe(0);
+
+    // A clone whose config.yaml no longer allows the group.
+    mkdirSync(join(clone, '.pero'), { recursive: true });
+    writeFileSync(join(clone, '.pero', 'config.yaml'), 'data: data\n');
+    const restore = await pero(['restore', 'ws.tgz', '-w', clone], { cwd });
+    expect(restore).toMatchObject({ code: 0, stderr: '' });
+    expect(restore.stdout.split('\n').slice(1)).toEqual([
+      `Kept ${clone}/.pero/config.yaml; the backup's was not used.`,
+      "The backup's config.yaml also allowed -1001234567890; allow them again with pero telegram allow <chat-id>.",
+      `Restored 1 file of the data folder into ${clone}/data.`,
+      `Start it with pero run --workspace ${clone}`,
+      '',
+    ]);
+    expect(readFileSync(join(clone, 'data', 'note.md'), 'utf8')).toBe(
+      'Kept safe\n',
+    );
+    expect(existsSync(join(clone, '.env'))).toBe(false);
   });
 
   it('refuses to restore over a running Pero or a data directory in use', async () => {

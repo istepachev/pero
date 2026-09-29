@@ -82,8 +82,8 @@ pero workflows notify english 5                 # post results to Channel 5 (see
 `pero run` keeps Pero running after you close the terminal. To start it again after a reboot, run `pero run --foreground` under systemd or another service manager. [Operating Pero](./docs/OPERATIONS.md) has a ready-to-use unit file.
 
 ```sh
-pero backup ~/backups/pero.tgz     # while Pero runs
-pero restore ~/backups/pero.tgz    # into an empty data directory, while Pero is stopped
+pero backup ~/backups/pero.tgz     # while Pero runs; --include-data adds the data folder
+pero restore ~/backups/pero.tgz    # into a workspace without a database, such as a fresh clone, while Pero is stopped
 ```
 
 ## Learn more

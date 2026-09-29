@@ -7,7 +7,7 @@
 | `npm test` | Unit tests: services against a real temporary SQLite database, adapters against mocked SDKs and a mocked Bot API | CI |
 | `npm run test:e2e` | Builds, then starts real daemons in-process on temporary data directories, drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Agents use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
 | `npm run test:smoke` | Builds, then runs real Claude and Codex turns through the built runtime adapters. Each is skipped unless enabled, uses a little of the subscription, and never runs in CI. | By hand, on the host |
-| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory, including a backup restored into a fresh data directory | CI |
+| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory: `init`, `run`, what Git commits, a backup with the data folder restored into a `git clone` of the workspace, and a legacy data directory's backup restored into a fresh data directory and into a workspace | CI |
 
 ## Provider smoke tests under the service's account
 
@@ -97,3 +97,15 @@ Where each [Phase 4 exit criterion](./IMPLEMENTATION_PLAN.md#phase-4-exit-criter
 | A daily Workflow can review the previous day's chats and deliver suggestions to a chosen topic, where the owner can reply to them | `test/restore.e2e-spec.ts`: a Workflow reading every Channel's history notifies a topic, and the next message there receives its suggestion; `test/workflows.e2e-spec.ts`: the next turn receives a delivered Notification; schedules as in Phase 3 |
 | A temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs | `test/workflows.e2e-spec.ts`: delivers a Notification once Telegram is back; `src/notifications/notification-delivery.spec.ts`: retries after backoff without another run |
 | Restore brings back definitions and resumable Sessions | `test/restore.e2e-spec.ts`, which follows the drill in [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine): every definition comes back and every Channel resumes its provider session, and a Channel whose provider conversation is gone continues in a fresh Session with its history; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh` for `pero backup` and `pero restore` themselves |
+
+## Phase 5 exit criteria
+
+Where each [Phase 5 exit criterion](./vision/IMPLEMENTATION_PLAN.md#phase-5-exit-criteria) is verified.
+
+| Criterion | Verified by |
+|---|---|
+| `pero init ~/workspace && cd ~/workspace && pero run` sets up a working Pero with its state in `.pero/` and its token in `.env` | `test/cli.e2e-spec.ts`: `init` and a run from home, and the token of a workspace in its `.env`; `test/daemon.e2e-spec.ts`: the state in `.pero/`; `scripts/check-packed-install.sh` |
+| Committing the workspace commits `config.yaml` and nothing secret | `scripts/check-packed-install.sh`: `git add -A` in a running workspace stages `config.yaml` and the notes, not `.env`, the database, logs, or `run/`; `test/cli.e2e-spec.ts` and `src/config/env-file.spec.ts`: `pero status` reports a `.env` Git would commit |
+| Allowed chats can be changed by editing `config.yaml` | `src/host-config/host-config.service.spec.ts`: chats added or removed by hand are served or turned away from the next look, and a broken edit keeps the last valid version; `test/cli.e2e-spec.ts`: `telegram allow` and `deny` edit the file while Pero is stopped, and an invalid file stops startup |
+| Backups restore into a cloned workspace | `test/restore.e2e-spec.ts`: a workspace restored into a fresh clone at its path, with its data folder, resumes every Session; `test/cli.e2e-spec.ts`: a clone keeps its `config.yaml` and data files; `src/cli/restore.spec.ts`; `scripts/check-packed-install.sh`: a `git clone` |
+| A legacy data directory still works unchanged | `test/restore.e2e-spec.ts` and `test/cli.e2e-spec.ts` with `--data-dir`; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh`: a legacy backup restored into a workspace, its token in `.env` |

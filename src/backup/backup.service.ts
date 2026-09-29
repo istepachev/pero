@@ -5,11 +5,11 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  realpath,
   rm,
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   type BeforeApplicationShutdown,
@@ -25,14 +25,21 @@ import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import type { BackupResult } from '../control/protocol.js';
 import {
+  SETTINGS_ID,
+  Settings,
+} from '../persistence/entities/settings.entity.js';
+import {
   BACKUP_FORMAT,
   type BackupManifest,
   CONFIG_ENTRY,
+  DATA_BACKUP_FORMAT,
+  DATA_ENTRY,
   DATABASE_ENTRY,
   MANIFEST_ENTRY,
   SECRETS_ENTRY,
   writeBackupArchive,
 } from './archive.js';
+import { copyTree } from './copy-tree.js';
 
 export const BACKUP_LAYOUT = Symbol('BACKUP_LAYOUT');
 
@@ -50,17 +57,22 @@ export class BackupService implements BeforeApplicationShutdown {
   /**
    * Writes a backup to the absolute path `file`, replacing any file there.
    * The database is copied with SQLite's online backup API, so work still
-   * in the WAL is included and writes may go on meanwhile. One backup runs
-   * at a time.
+   * in the WAL is included and writes may go on meanwhile. With
+   * `includeData`, the data folder is copied as it is at that moment,
+   * without the state directory and `.env` should they be inside it. One
+   * backup runs at a time.
    */
-  async create(file: string): Promise<BackupResult> {
+  async create(
+    file: string,
+    options: { includeData?: boolean } = {},
+  ): Promise<BackupResult> {
     if (this.running) {
       throw new ConflictError('A backup is already being written');
     }
     // Claimed before the first await, so shutdown and a second request
     // both see it.
-    const work = this.checkDestination(file).then((destination) =>
-      this.write(destination),
+    const work = this.checkDestination(file, options.includeData ?? false).then(
+      ({ destination, dataFolder }) => this.write(destination, dataFolder),
     );
     this.running = work;
     try {
@@ -75,8 +87,16 @@ export class BackupService implements BeforeApplicationShutdown {
     await this.running?.catch(() => undefined);
   }
 
-  private async write(file: string): Promise<BackupResult> {
-    const staging = await mkdtemp(join(tmpdir(), 'pero-backup-'));
+  /** Writes the backup, with `dataFolder` when it is not null. */
+  private async write(
+    file: string,
+    dataFolder: string | null,
+  ): Promise<BackupResult> {
+    // Next to the backup, on a disk with room for it, rather than in a
+    // temporary folder that may be kept in memory.
+    const staging = await mkdtemp(
+      join(await realpath(dirname(file)), '.pero-backup-'),
+    );
     try {
       const snapshot = join(staging, DATABASE_ENTRY);
       await this.connection().backup(snapshot);
@@ -91,14 +111,21 @@ export class BackupService implements BeforeApplicationShutdown {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         },
       );
+      if (dataFolder !== null) {
+        // The staging folder too, should a link put the backup inside it.
+        const skip = new Set([this.layout.root, staging]);
+        if (this.layout.envFile) skip.add(this.layout.envFile);
+        await copyTree(dataFolder, join(staging, DATA_ENTRY), skip);
+      }
       const manifest: BackupManifest = {
-        format: BACKUP_FORMAT,
+        format: dataFolder === null ? BACKUP_FORMAT : DATA_BACKUP_FORMAT,
         peroVersion: PACKAGE_VERSION,
         createdAt: new Date().toISOString(),
         sourceDataDir: this.layout.root,
         sourceWorkspace: this.layout.workspace,
         ...describeSnapshot(snapshot),
         secrets,
+        ...(dataFolder === null ? {} : { includesData: true }),
       };
       await writeFile(
         join(staging, MANIFEST_ENTRY),
@@ -114,23 +141,36 @@ export class BackupService implements BeforeApplicationShutdown {
         createdAt: manifest.createdAt,
         bytes: size,
         includesSecrets: secrets.length > 0,
+        includesData: dataFolder !== null,
       };
     } finally {
       await rm(staging, { recursive: true, force: true });
     }
   }
 
-  private async checkDestination(file: string): Promise<string> {
+  /**
+   * The destination, and the data folder to include (null for none), once
+   * the backup can be written there.
+   */
+  private async checkDestination(
+    file: string,
+    includeData: boolean,
+  ): Promise<{ destination: string; dataFolder: string | null }> {
     if (!isAbsolute(file)) {
       throw new InvalidInputError(
         `Backup file ${file} must be an absolute path`,
       );
     }
     const destination = resolve(file);
-    const inside = relative(this.layout.root, destination);
-    if (inside === '' || (!inside.startsWith('..') && !isAbsolute(inside))) {
+    if (isInside(destination, this.layout.root)) {
       throw new InvalidInputError(
         `Backup file ${destination} must be outside the data directory ${this.layout.root}`,
+      );
+    }
+    const dataFolder = includeData ? await this.dataFolder() : null;
+    if (dataFolder !== null && isInside(destination, dataFolder)) {
+      throw new InvalidInputError(
+        `Backup file ${destination} must be outside the data folder ${dataFolder} it includes`,
       );
     }
     const parent = dirname(destination);
@@ -145,7 +185,20 @@ export class BackupService implements BeforeApplicationShutdown {
     if (existing?.isDirectory()) {
       throw new InvalidInputError(`${destination} is a folder`);
     }
-    return destination;
+    return { destination, dataFolder };
+  }
+
+  /** The data folder, which a workspace always has. */
+  private async dataFolder(): Promise<string> {
+    const { defaultWorkingDirectory: folder } = await this.dataSource
+      .getRepository(Settings)
+      .findOneByOrFail({ id: SETTINGS_ID });
+    if (folder === null) {
+      throw new InvalidInputError(
+        'There is no data folder to include; set one with pero settings set default-working-directory <folder>',
+      );
+    }
+    return folder;
   }
 
   /** The better-sqlite3 connection TypeORM holds. */
@@ -156,6 +209,12 @@ export class BackupService implements BeforeApplicationShutdown {
       }
     ).databaseConnection;
   }
+}
+
+/** Whether `path` is `folder` or inside it. */
+function isInside(path: string, folder: string): boolean {
+  const inside = relative(folder, path);
+  return inside === '' || (!inside.startsWith('..') && !isAbsolute(inside));
 }
 
 /**

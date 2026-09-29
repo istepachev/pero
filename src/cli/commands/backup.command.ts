@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { Command } from 'nest-commander';
+import { Command, Option } from 'nest-commander';
 import { PeroCommand } from '../pero-command.js';
 
 /** Copying a large database may take a while. */
@@ -9,24 +9,37 @@ const BACKUP_TIMEOUT_MS = 10 * 60_000;
   name: 'backup',
   arguments: '<file>',
   description:
-    'Write a backup of the data directory while Pero runs (working folders are not included)',
+    'Write a backup of the state directory while Pero runs (the data folder only with --include-data)',
   argsDescription: { file: 'archive to write; an existing file is replaced' },
 })
 export class BackupCommand extends PeroCommand {
-  async run([file]: string[]): Promise<void> {
+  async run(
+    [file]: string[],
+    options: { includeData?: boolean } = {},
+  ): Promise<void> {
     await this.requireDaemon();
     const client = this.client({ timeoutMs: BACKUP_TIMEOUT_MS });
     const result = await client.call('backup.create', {
       file: resolve(process.cwd(), file!),
+      ...(options.includeData ? { includeData: true } : {}),
     });
     console.log(
-      `Backed up ${this.layout().root} to ${result.file} (${formatBytes(result.bytes)})`,
+      `Backed up ${this.layout().root}${result.includesData ? ' and the data folder' : ''} to ${result.file} (${formatBytes(result.bytes)})`,
     );
     if (result.includesSecrets) {
       console.log(
         'It contains the Telegram bot token; keep it private, like the data directory.',
       );
     }
+  }
+
+  @Option({
+    flags: '--include-data',
+    description:
+      'also back up the data folder, if it is not in Git or synced elsewhere',
+  })
+  parseIncludeData(): boolean {
+    return true;
   }
 }
 

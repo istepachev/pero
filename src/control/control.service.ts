@@ -146,7 +146,8 @@ export class ControlService implements OnModuleDestroy {
         'triggers.remove': ({ id }) => this.removeTrigger(id),
         'triggers.setEnabled': ({ id, enabled }) =>
           this.setTriggerEnabled(id, enabled),
-        'backup.create': ({ file }) => this.backup.create(file),
+        'backup.create': ({ file, includeData }) =>
+          this.backup.create(file, { includeData }),
         'telegram.chats': () => this.telegramChats.list(),
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
         'telegram.deny': ({ chatId }) => this.telegramChats.deny(chatId),

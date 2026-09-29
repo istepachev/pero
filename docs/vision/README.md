@@ -55,8 +55,8 @@ Most of that is configuration that people want to **write**, not issue commands 
 | `.env` | The Telegram bot token | Never | Never |
 | `.pero/config.yaml` | Where the data folder is, which chats are allowed | Yes | Yes |
 | `.pero/pero.sqlite` | Sessions, message history, runs, notifications, schedule state | No | Yes |
-| `data/Settings/` | Defaults, Agents, Workflows | Yes | No (it's in Git or synced) |
-| `data/` (the rest) | Your notes and the Agents' work | Your choice | No |
+| `data/Settings/` | Defaults, Agents, Workflows | Yes | With `--include-data` |
+| `data/` (the rest) | Your notes and the Agents' work | Your choice | With `--include-data` |
 
 The data folder is `data/` by default. `.pero/config.yaml` can point it elsewhere, such as an existing vault (`data: ~/notes`). Every Agent works in the data folder unless its note names another folder.
 
