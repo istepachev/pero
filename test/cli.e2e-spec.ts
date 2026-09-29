@@ -393,7 +393,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'Denied: group "Household" (-1001234567890). Its Channels and Agents are kept and resume if you allow it again.\n',
     });
     const config = readFileSync(layout.configFile, 'utf8');
-    expect(config).not.toContain('-1001234567890');
+    // The template's own comments show an example entry with the same ID.
+    expect(config).not.toContain('\n    - id: -1001234567890\n');
     expect(config).toMatch(/# my own note\n$/);
     const missing = await pero(
       withDataDir('telegram', 'deny', '-1001234567890'),
