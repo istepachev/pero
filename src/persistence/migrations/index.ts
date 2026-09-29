@@ -8,6 +8,7 @@ import { RunSkippedCount1790620569391 } from './1790620569391-RunSkippedCount.js
 import { WorkflowMaxAttempts1790621795251 } from './1790621795251-WorkflowMaxAttempts.js';
 import { WorkflowHistory1790623147117 } from './1790623147117-WorkflowHistory.js';
 import { NotificationDelivery1790658397489 } from './1790658397489-NotificationDelivery.js';
+import { HistoryRetention1790680000000 } from './1790680000000-HistoryRetention.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -24,4 +25,5 @@ export const MIGRATIONS = [
   WorkflowMaxAttempts1790621795251,
   WorkflowHistory1790623147117,
   NotificationDelivery1790658397489,
+  HistoryRetention1790680000000,
 ];

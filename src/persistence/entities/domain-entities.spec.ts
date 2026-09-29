@@ -191,10 +191,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Notification delivery, history, attempts, skipped counts, default
-    // permissions, message history, the allowlist, the Session resume
-    // migration, then the domain tables.
-    for (let i = 0; i < 9; i++) {
+    // History retention, Notification delivery, history, attempts, skipped
+    // counts, default permissions, message history, the allowlist, the Session
+    // resume migration, then the domain tables.
+    for (let i = 0; i < 10; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -216,10 +216,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Notification delivery, Workflow history, attempts, skipped counts,
-    // default permissions, message history, the allowlist, then the Session
-    // resume migration.
-    for (let i = 0; i < 8; i++) {
+    // History retention, Notification delivery, Workflow history, attempts,
+    // skipped counts, default permissions, message history, the allowlist, then
+    // the Session resume migration.
+    for (let i = 0; i < 9; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -261,9 +261,9 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Notification delivery, Workflow history, attempts, skipped counts,
-    // default permissions, message history, then the allowlist.
-    for (let i = 0; i < 7; i++) {
+    // History retention, Notification delivery, Workflow history, attempts,
+    // skipped counts, default permissions, message history, then the allowlist.
+    for (let i = 0; i < 8; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -300,9 +300,9 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Notification delivery, Workflow history, attempts, skipped counts,
-    // default permissions, then message history.
-    for (let i = 0; i < 6; i++) {
+    // History retention, Notification delivery, Workflow history, attempts,
+    // skipped counts, default permissions, then message history.
+    for (let i = 0; i < 7; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -332,9 +332,9 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // Notification delivery, history, attempts, skipped counts, then
-    // default permissions.
-    for (let i = 0; i < 5; i++) {
+    // History retention, Notification delivery, history, attempts, skipped
+    // counts, then default permissions.
+    for (let i = 0; i < 6; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -371,7 +371,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Notification delivery, history, attempts, then skipped counts.
+    // History retention, Notification delivery, history, attempts, then skipped
+    // counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -403,7 +405,8 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // Notification delivery, history, then attempts.
+    // History retention, Notification delivery, history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -453,7 +456,8 @@ describe('domain entities', () => {
       },
     });
 
-    // Notification delivery, then history.
+    // History retention, Notification delivery, then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
@@ -489,6 +493,8 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
+    // History retention, then Notification delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = async (table: string) =>
       (
@@ -519,6 +525,37 @@ describe('domain entities', () => {
         .getRepository(Notification)
         .findOneByOrFail({ id: notification.id }),
     ).toMatchObject({ lastError: null });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('keeps the settings row through the history retention migration and back', async () => {
+    const db = await open();
+    const { agent } = await seed(db);
+    expect(
+      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
+    ).toMatchObject({ historyRetentionDays: null });
+    await db.getRepository(Settings).update(1, {
+      historyCarryover: 10,
+      historyRetentionDays: 30,
+    });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('settings')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain(
+      'history_retention_days',
+    );
+    expect(
+      await db.query(
+        `SELECT "main_agent_id", "history_carryover" FROM "settings"`,
+      ),
+    ).toEqual([{ main_agent_id: agent.id, history_carryover: 10 }]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
+    ).toMatchObject({ historyCarryover: 10, historyRetentionDays: null });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 

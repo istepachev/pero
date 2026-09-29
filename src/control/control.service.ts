@@ -24,6 +24,8 @@ import {
   settingsChangeSchema,
 } from '../config/settings-input.js';
 import { ComponentHealth } from '../health/component-health.js';
+import { NotificationDelivery } from '../notifications/notification-delivery.js';
+import { NotificationViews } from '../notifications/notification-views.service.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
@@ -74,6 +76,8 @@ export class ControlService implements OnModuleDestroy {
     private readonly workflowViews: WorkflowViews,
     private readonly workflowRuns: WorkflowRuns,
     private readonly triggers: TriggersService,
+    private readonly delivery: NotificationDelivery,
+    private readonly notificationViews: NotificationViews,
   ) {}
 
   /**
@@ -118,8 +122,20 @@ export class ControlService implements OnModuleDestroy {
         'workflows.notify': ({ name, channel, notify }) =>
           this.notifyChannel(name, channel, notify),
         'workflows.run': ({ name }) => this.workflowRuns.start(name),
+        'runs.list': async (filter) => ({
+          runs: await this.workflowRuns.list(filter),
+        }),
         'runs.get': ({ id }) => this.workflowRuns.get(id),
+        'runs.retry': ({ id }) => this.workflowRuns.retry(id),
         'runs.cancel': ({ id }) => this.workflowRuns.cancel(id),
+        'notifications.list': async (filter) => ({
+          notifications: await this.notificationViews.list(filter),
+        }),
+        'notifications.get': ({ id }) => this.notificationViews.details(id),
+        'notifications.retry': async ({ id }) => {
+          await this.delivery.retry(id);
+          return this.notificationViews.details(id);
+        },
         'triggers.list': async ({ workflow }) => ({
           triggers: await this.triggers.list(workflow),
         }),

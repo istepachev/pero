@@ -87,6 +87,13 @@ export class Settings {
   @Column({ name: 'history_carryover', type: 'integer', default: 50 })
   historyCarryover: number;
 
+  /**
+   * How many days of message history to keep; older messages are deleted.
+   * Null keeps all of it.
+   */
+  @Column({ name: 'history_retention_days', type: 'integer', nullable: true })
+  historyRetentionDays: number | null;
+
   /** How new Agents' tools are approved; copied into each at creation. */
   @Column({ name: 'default_permissions', type: 'text', default: 'ask' })
   defaultPermissions: PermissionMode;

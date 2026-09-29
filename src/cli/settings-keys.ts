@@ -25,7 +25,7 @@ export interface SettingsKey {
   unset: SettingsChange | string;
   show(view: SettingsView): string;
   /** Printed after a change: what it does and does not affect. */
-  note?: string;
+  note?: string | ((view: SettingsView) => string | null);
 }
 
 const PROVIDER_DEFAULT = '(provider default)';
@@ -39,6 +39,11 @@ function wholeNumber(name: string, value: string): number {
     throw new CliError(`${name} must be a whole number, not "${value}"`);
   }
   return Number(value);
+}
+
+/** `1 day` or `30 days`. */
+function days(count: number): string {
+  return count === 1 ? '1 day' : `${count} days`;
 }
 
 function providerOption(
@@ -97,6 +102,21 @@ export const SETTINGS_KEYS: readonly SettingsKey[] = [
     unset: 'history-carryover cannot be unset; set 0 to turn it off',
     show: (view) =>
       view.historyCarryover === 0 ? '0 (off)' : String(view.historyCarryover),
+  },
+  {
+    name: 'history-retention-days',
+    set: (value) => ({
+      historyRetentionDays: wholeNumber('history-retention-days', value),
+    }),
+    unset: { historyRetentionDays: null },
+    show: (view) =>
+      view.historyRetentionDays === null
+        ? '(not set: keep all)'
+        : days(view.historyRetentionDays),
+    note: (view) =>
+      view.historyRetentionDays === null
+        ? 'All message history is kept from now on.'
+        : `Messages older than ${days(view.historyRetentionDays)} are deleted within the hour, and every hour after; runs and Notifications keep their text.`,
   },
   {
     name: 'default-permissions',

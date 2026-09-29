@@ -286,7 +286,7 @@ A delivery tick every 5 seconds dispatches due `pending` Notifications through t
 
 ### 4.3 Operations commands
 
-Add `pero runs ls|show|retry|cancel` and `pero notifications ls|show|retry` with delivery diagnostics. Add the `history-retention-days` setting: unset keeps all history, otherwise a daily task deletes older messages.
+Add `pero runs ls|show|retry|cancel` and `pero notifications ls|show|retry` with delivery diagnostics. Add the `history-retention-days` setting: unset keeps all history, otherwise an hourly task, which also runs at startup, deletes older messages, so a changed setting applies within the hour even on a machine that sleeps. Runs and Notifications keep their text.
 
 **Done when:** e2e tests cover inspection and manual retry of both runs and Notifications, and history older than the retention setting is deleted.
 

@@ -20,6 +20,7 @@ const view: SettingsView = {
   sharedInstructions: null,
   mainAgent: null,
   historyCarryover: 50,
+  historyRetentionDays: null,
   defaultPermissions: 'ask',
   timezone: 'Europe/Berlin',
   maxConcurrentRuns: 2,
@@ -46,6 +47,9 @@ describe('settings keys', () => {
     expect(set('main-agent', 'Coach')).toEqual({ mainAgent: 'Coach' });
     expect(set('timezone', 'utc')).toEqual({ timezone: 'utc' });
     expect(set('history-carryover', '0')).toEqual({ historyCarryover: 0 });
+    expect(set('history-retention-days', '30')).toEqual({
+      historyRetentionDays: 30,
+    });
     expect(set('default-permissions', 'bypass')).toEqual({
       defaultPermissions: 'bypass',
     });
@@ -83,6 +87,9 @@ describe('settings keys', () => {
       telegramBotToken: null,
     });
     expect(findSettingsKey('main-agent').unset).toEqual({ mainAgent: null });
+    expect(findSettingsKey('history-retention-days').unset).toEqual({
+      historyRetentionDays: null,
+    });
     expect(findSettingsKey('default-working-directory').unset).toBe(
       'default-working-directory cannot be unset; set another folder instead',
     );
@@ -125,12 +132,25 @@ describe('formatSettings', () => {
         'shared-instructions        (none)',
         'main-agent                 (not set: main)',
         'history-carryover          50',
+        'history-retention-days     (not set: keep all)',
         'default-permissions        ask',
         'timezone                   Europe/Berlin',
         'max-concurrent-runs        2',
         'telegram-bot-token         not set',
       ].join('\n'),
     );
+  });
+
+  it('shows how long history is kept, and says what a change does', () => {
+    const key = findSettingsKey('history-retention-days');
+    const kept = { ...view, historyRetentionDays: 30 };
+    expect(formatSettings(kept)).toContain(
+      'history-retention-days     30 days',
+    );
+    expect(key.show({ ...view, historyRetentionDays: 1 })).toBe('1 day');
+    const note = key.note as (view: SettingsView) => string;
+    expect(note(kept)).toMatch(/^Messages older than 30 days are deleted/);
+    expect(note(view)).toBe('All message history is kept from now on.');
   });
 
   it('shortens long instructions and says where the token comes from', () => {

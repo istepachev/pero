@@ -4,6 +4,7 @@ import { BackupModule } from '../backup/backup.module.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import { HealthModule } from '../health/health.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
@@ -30,6 +31,7 @@ export class ControlModule {
         AgentsModule,
         ChannelsModule,
         WorkflowsModule,
+        NotificationsModule,
         TriggersModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],

@@ -40,6 +40,7 @@ const settings: SettingsView = {
   sharedInstructions: null,
   mainAgent: null,
   historyCarryover: 50,
+  historyRetentionDays: null,
   defaultPermissions: 'ask',
   timezone: 'UTC',
   maxConcurrentRuns: 2,

@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsService } from '../agents/agents.service.js';
 import type { AgentChannelTurns } from '../channels/agent-channel-turns.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelRouter } from '../channels/channel-router.js';
+import { ChannelSender } from '../channels/channel-sender.js';
 import { ChannelTurns } from '../channels/channel-stages.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import {
@@ -16,6 +17,9 @@ import {
   inboundMessage,
   privateChat,
 } from '../channels/testing/fake-channel-adapter.js';
+import { ConflictError, NotFoundError } from '../common/errors.js';
+import { ComponentHealth } from '../health/component-health.js';
+import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
@@ -37,6 +41,7 @@ import {
   NotificationDelivery,
   retryDelay,
 } from './notification-delivery.js';
+import { NotificationViews } from './notification-views.service.js';
 import { NotificationsModule } from './notifications.module.js';
 
 const OWNER = privateChat('1234');
@@ -285,6 +290,237 @@ describe('NotificationDelivery', () => {
 
     expect(adapter.sent).toHaveLength(1);
     expect(await workflowMessages()).toHaveLength(1);
+  });
+
+  describe('retrying by hand', () => {
+    it('gives a failed Notification fresh attempts and delivers it at once', async () => {
+      await target();
+      const notification = await finishedRun();
+      await moduleRef.get(AllowedChatsService).deny('telegram', OWNER.key);
+      await delivery.tick(after(notification.nextAttemptAt!, 1));
+      expect((await reload(notification)).status).toBe('failed');
+      await moduleRef.get(AllowedChatsService).allow({
+        integrationKind: 'telegram',
+        chatKey: OWNER.key,
+        kind: OWNER.kind,
+        title: OWNER.title,
+      });
+
+      await delivery.retry(notification.id);
+
+      await vi.waitFor(async () =>
+        expect(await reload(notification)).toMatchObject({
+          status: 'delivered',
+          attempt: 1,
+          lastError: null,
+        }),
+      );
+      expect(adapter.sent).toHaveLength(1);
+      expect(await workflowMessages()).toHaveLength(1);
+      expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
+    });
+
+    it('keeps the last error of a failed Notification until its next attempt', async () => {
+      await target();
+      const notification = await finishedRun();
+      await moduleRef.get(AllowedChatsService).deny('telegram', OWNER.key);
+      await delivery.tick(after(notification.nextAttemptAt!, 1));
+
+      // The worker is stopping, so nothing is attempted.
+      await delivery.beforeApplicationShutdown();
+      await delivery.retry(notification.id);
+
+      const queued = await reload(notification);
+      expect(queued).toMatchObject({
+        status: 'pending',
+        attempt: 0,
+        lastError: NOT_ALLOWED,
+      });
+      expect(queued.nextAttemptAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('makes a pending Notification due now, keeping its attempts', async () => {
+      await target();
+      const notification = await finishedRun();
+      adapter.failSends = true;
+      await delivery.tick(after(notification.nextAttemptAt!, 1));
+      expect(await reload(notification)).toMatchObject({
+        status: 'pending',
+        attempt: 1,
+      });
+      adapter.failSends = false;
+
+      await delivery.retry(notification.id);
+
+      await vi.waitFor(async () =>
+        expect(await reload(notification)).toMatchObject({
+          status: 'delivered',
+          attempt: 2,
+        }),
+      );
+      expect(adapter.sent).toHaveLength(1);
+    });
+
+    it('delivers a Notification retried while a tick is under way once that tick ends', async () => {
+      await target();
+      const first = await finishedRun();
+      const second = await finishedRun();
+      await moduleRef.get(AllowedChatsService).deny('telegram', OWNER.key);
+      await delivery.tick(after(second.nextAttemptAt!, 1));
+      expect((await reload(second)).status).toBe('failed');
+      await moduleRef.get(AllowedChatsService).allow({
+        integrationKind: 'telegram',
+        chatKey: OWNER.key,
+        kind: OWNER.kind,
+        title: OWNER.title,
+      });
+      const held = adapter.holdSends();
+      await delivery.retry(first.id);
+      await held.started;
+
+      // The tick under way read what was due before this.
+      await delivery.retry(second.id);
+      held.release();
+
+      await vi.waitFor(async () =>
+        expect((await reload(second)).status).toBe('delivered'),
+      );
+      expect((await reload(first)).status).toBe('delivered');
+      expect(adapter.sent).toHaveLength(2);
+    });
+
+    it('refuses a delivered Notification, and one that does not exist', async () => {
+      await target();
+      const notification = await finishedRun();
+      await delivery.tick(after(notification.nextAttemptAt!, 1));
+
+      await expect(delivery.retry(notification.id)).rejects.toThrow(
+        new ConflictError(
+          `Notification ${notification.id} has already been delivered`,
+        ),
+      );
+      await expect(delivery.retry(99)).rejects.toThrow(
+        new NotFoundError('No Notification with ID 99'),
+      );
+      expect(adapter.sent).toHaveLength(1);
+    });
+  });
+
+  describe('views', () => {
+    let views: NotificationViews;
+
+    beforeEach(() => {
+      views = moduleRef.get(NotificationViews);
+    });
+
+    it('lists the latest Notifications newest first, by status, Workflow, Channel, and run', async () => {
+      const channel = await target();
+      await workflows.create({
+        name: 'other',
+        agent: 'coach',
+        inputTemplate: 'Other.',
+      });
+      await moduleRef
+        .get(TriggersService)
+        .add({ workflow: 'other', kind: 'manual' });
+      await workflows.notify('other', channel.id);
+      const first = await finishedRun();
+      await delivery.tick(after(first.nextAttemptAt!, 1));
+      const { id: otherRun } = await moduleRef.get(WorkflowRuns).start('other');
+      await moduleRef.get(WorkflowExecutor).idle();
+      const second = await ds
+        .getRepository(Notification)
+        .findOneByOrFail({ workflowRunId: otherRun });
+
+      const ids = (filter: Partial<Parameters<typeof views.list>[0]>) =>
+        views
+          .list({ limit: 20, ...filter })
+          .then((list) => list.map(({ id }) => id));
+      expect(await ids({})).toEqual([second.id, first.id]);
+      expect(await ids({ limit: 1 })).toEqual([second.id]);
+      expect(await ids({ status: 'delivered' })).toEqual([first.id]);
+      expect(await ids({ workflow: 'Other' })).toEqual([second.id]);
+      expect(await ids({ channel: channel.id })).toEqual([second.id, first.id]);
+      expect(await ids({ channel: channel.id + 1 })).toEqual([]);
+      expect(await ids({ run: first.workflowRunId })).toEqual([first.id]);
+      await expect(views.list({ limit: 20, workflow: 'nope' })).rejects.toThrow(
+        NotFoundError,
+      );
+      expect((await views.list({ limit: 20 }))[1]).toMatchObject({
+        id: first.id,
+        runId: first.workflowRunId,
+        workflow: 'brief',
+        channel: { id: channel.id, key: OWNER.key, title: null, enabled: true },
+        status: 'delivered',
+        attempt: 1,
+        maxAttempts: MAX_DELIVERY_ATTEMPTS,
+        nextAttemptAt: null,
+        lastError: null,
+        providerMessageId: expect.any(String),
+      });
+    });
+
+    it("shows a Notification's message and whether its chat is allowed", async () => {
+      await target();
+      const notification = await finishedRun();
+
+      expect(await views.details(notification.id)).toMatchObject({
+        id: notification.id,
+        status: 'pending',
+        text: SUGGESTION,
+        chatAllowed: true,
+        delivering: false,
+      });
+
+      await moduleRef.get(AllowedChatsService).deny('telegram', OWNER.key);
+      expect((await views.details(notification.id)).chatAllowed).toBe(false);
+
+      // What the integration's health reports while it is not ok.
+      const health = moduleRef.get(ComponentHealth);
+      health.report('telegram', 'unconfigured', 'Bot token is not set');
+      expect((await views.details(notification.id)).integrationProblem).toBe(
+        'Bot token is not set',
+      );
+      health.report('telegram', 'ok', 'Connected as @pero_bot');
+      expect(
+        (await views.details(notification.id)).integrationProblem,
+      ).toBeNull();
+
+      // An integration that is not connected cannot tell.
+      const unconnected = new NotificationViews(
+        ds,
+        new ChannelSender(moduleRef.get(MessageHistory)),
+        moduleRef.get(AllowedChatsService),
+        delivery,
+        moduleRef.get(ComponentHealth),
+      );
+      expect((await unconnected.details(notification.id)).chatAllowed).toBe(
+        null,
+      );
+      await expect(views.details(99)).rejects.toThrow(
+        new NotFoundError('No Notification with ID 99'),
+      );
+    });
+
+    it('says while a Notification is being delivered', async () => {
+      await target();
+      const notification = await finishedRun();
+      const held = adapter.holdSends();
+
+      const tick = delivery.tick(after(notification.nextAttemptAt!, 1));
+      await held.started;
+      expect(await views.details(notification.id)).toMatchObject({
+        status: 'pending',
+        attempt: 1,
+        delivering: true,
+      });
+      held.release();
+      await tick;
+      expect(await views.details(notification.id)).toMatchObject({
+        status: 'delivered',
+        delivering: false,
+      });
+    });
   });
 
   describe('in the Channel afterwards', () => {
