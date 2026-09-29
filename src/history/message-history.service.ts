@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
+import type { DataSource, EntityManager, SelectQueryBuilder } from 'typeorm';
 import type { HistoryMessages } from '../config/workflow-input.js';
 import {
   Message,
@@ -11,7 +11,11 @@ import {
   Settings,
 } from '../persistence/entities/settings.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { withEarlierConversation } from './carry-over.js';
+import {
+  type CarriedMessage,
+  withEarlierConversation,
+  withPostedMessages,
+} from './carry-over.js';
 
 /** Who wrote a message Pero sent: an Agent in its Session, or Pero itself. */
 export type Author =
@@ -34,13 +38,27 @@ export interface OutboundEntry {
   author: Author;
 }
 
-/** The conversation a fresh Session starts from; Pero's notices are left out. */
-const CARRIED_ORIGINS: readonly MessageOrigin[] = ['user', 'agent'];
+/** A delivered Notification, as its Channel's history records it. */
+export interface DeliveredEntry {
+  channelId: number;
+  notificationId: number;
+  externalMessageId: string;
+  text: string;
+}
 
-/** The origins each choice of a Workflow's history input reads. */
+/**
+ * The conversation a fresh Session starts from: what people, Agents, and
+ * Workflows said there. Pero's notices are left out.
+ */
+const CARRIED_ORIGINS: readonly MessageOrigin[] = ['user', 'agent', 'workflow'];
+
+/**
+ * The origins each choice of a Workflow's history input reads. Workflow
+ * messages are left out, so a Workflow never reads its own answers back.
+ */
 const WINDOW_ORIGINS: Record<HistoryMessages, readonly MessageOrigin[]> = {
   people: ['user'],
-  all: CARRIED_ORIGINS,
+  all: ['user', 'agent'],
 };
 
 /**
@@ -97,6 +115,25 @@ export class MessageHistory {
     );
   }
 
+  /**
+   * Records delivered Notification `notificationId` inside the caller's
+   * transaction, which marks it delivered. A Notification is recorded once:
+   * a second row for it is refused.
+   */
+  async recordDeliveredWithin(
+    manager: EntityManager,
+    entry: DeliveredEntry,
+  ): Promise<void> {
+    await manager.getRepository(Message).insert({
+      ...entry,
+      direction: 'out',
+      origin: 'workflow',
+      agentId: null,
+      sessionId: null,
+      senderId: null,
+    });
+  }
+
   /** Links message `messageId` to the Session its turn runs in. */
   async attachSessionWithin(
     manager: EntityManager,
@@ -129,7 +166,8 @@ export class MessageHistory {
 
   /**
    * The Channel's latest `limit` messages, oldest first, with the Agent
-   * each was to or from, inside the caller's transaction.
+   * each was to or from and the Workflow of each Workflow message, inside
+   * the caller's transaction.
    */
   async latestWithin(
     manager: EntityManager,
@@ -138,7 +176,10 @@ export class MessageHistory {
   ): Promise<Message[]> {
     const latest = await manager.getRepository(Message).find({
       where: { channelId },
-      relations: { agent: true },
+      relations: {
+        agent: true,
+        notification: { workflowRun: { workflow: true } },
+      },
       order: { id: 'DESC' },
       take: limit,
     });
@@ -210,27 +251,39 @@ export class MessageHistory {
   }
 
   /**
-   * `input` preceded by the Channel's latest messages from before message
-   * `beforeId`, up to the `history-carryover` setting, for a Session whose
-   * provider has none of the conversation yet. Also says how many it
-   * carried; none when the setting is 0 or there is no earlier message.
+   * The input a turn of message `messageId` in the Channel runs with.
+   * Workflow messages posted there since the Channel's previous person's
+   * message come first, so the owner can answer them. When `carryOver`
+   * is set, as for a Session whose provider has none of the conversation
+   * yet, the Channel's latest messages before those come ahead of them, up
+   * to the `history-carryover` setting. Says how many of each it added.
    */
-  async carryOverWithin(
+  async turnInputWithin(
     manager: EntityManager,
     channelId: number,
-    beforeId: number,
+    messageId: number,
     input: string,
-  ): Promise<{ input: string; carried: number }> {
+    { carryOver }: { carryOver: boolean },
+  ): Promise<{ input: string; posted: number; carried: number }> {
     const { historyCarryover, timezone } = await manager
       .getRepository(Settings)
       .findOneByOrFail({ id: SETTINGS_ID });
-    if (historyCarryover === 0) return { input, carried: 0 };
-    const latest = await manager
-      .getRepository(Message)
-      .createQueryBuilder('message')
-      .leftJoinAndSelect('message.agent', 'agent')
+    const posted = await this.postedBeforeWithin(manager, channelId, messageId);
+    let text = withPostedMessages(input, posted.map(carried), timezone);
+    if (!carryOver || historyCarryover === 0) {
+      return { input: text, posted: posted.length, carried: 0 };
+    }
+    // Up to the posted messages, which are already there.
+    const latest = await withWorkflow(
+      manager
+        .getRepository(Message)
+        .createQueryBuilder('message')
+        .leftJoinAndSelect('message.agent', 'agent'),
+    )
       .where('message.channelId = :channelId', { channelId })
-      .andWhere('message.id < :beforeId', { beforeId })
+      .andWhere('message.id < :beforeId', {
+        beforeId: posted[0]?.id ?? messageId,
+      })
       .andWhere('message.origin IN (:...origins)', {
         origins: CARRIED_ORIGINS,
       })
@@ -238,16 +291,68 @@ export class MessageHistory {
       .addOrderBy('message.id', 'DESC')
       .limit(historyCarryover)
       .getMany();
-    const carried = withEarlierConversation(
-      input,
-      latest.reverse().map((message) => ({
-        speaker:
-          message.origin === 'user' ? 'User' : (message.agent?.name ?? 'Agent'),
-        text: message.text,
-        createdAt: message.createdAt,
-      })),
+    text = withEarlierConversation(
+      text,
+      latest.reverse().map(carried),
       timezone,
     );
-    return { input: carried, carried: latest.length };
+    return { input: text, posted: posted.length, carried: latest.length };
   }
+
+  /**
+   * The Workflow messages posted in the Channel before message `beforeId`
+   * and after the person's message before it, oldest first.
+   */
+  private async postedBeforeWithin(
+    manager: EntityManager,
+    channelId: number,
+    beforeId: number,
+  ): Promise<Message[]> {
+    const messages = manager.getRepository(Message);
+    const previous = await messages
+      .createQueryBuilder('message')
+      .select('MAX(message.id)', 'id')
+      .where('message.channelId = :channelId', { channelId })
+      .andWhere('message.id < :beforeId', { beforeId })
+      .andWhere("message.origin = 'user'")
+      .getRawOne<{ id: number | null }>();
+    return withWorkflow(messages.createQueryBuilder('message'))
+      .where('message.channelId = :channelId', { channelId })
+      .andWhere('message.id < :beforeId', { beforeId })
+      .andWhere('message.id > :afterId', { afterId: Number(previous?.id ?? 0) })
+      .andWhere("message.origin = 'workflow'")
+      .orderBy('message.id', 'ASC')
+      .getMany();
+  }
+}
+
+/** `query` over messages, with the Workflow each Workflow message came from. */
+function withWorkflow(
+  query: SelectQueryBuilder<Message>,
+): SelectQueryBuilder<Message> {
+  return query
+    .leftJoinAndSelect('message.notification', 'notification')
+    .leftJoinAndSelect('notification.workflowRun', 'run')
+    .leftJoinAndSelect('run.workflow', 'workflow');
+}
+
+/** The name of the Workflow whose Notification `message` delivered. */
+export function workflowOf(message: Message): string | null {
+  return message.notification?.workflowRun?.workflow?.name ?? null;
+}
+
+/** `message` as a transcript shows it, with who wrote it. */
+function carried(message: Message): CarriedMessage {
+  let speaker: string;
+  switch (message.origin) {
+    case 'user':
+      speaker = 'User';
+      break;
+    case 'workflow':
+      speaker = `Workflow ${workflowOf(message) ?? '?'}`;
+      break;
+    default:
+      speaker = message.agent?.name ?? 'Agent';
+  }
+  return { speaker, text: message.text, createdAt: message.createdAt };
 }

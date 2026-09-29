@@ -145,18 +145,30 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
     const parts = splitText(message.text);
     let chatId = target.chatId;
     let first: string | null = null;
-    for (const [index, part] of parts.entries()) {
-      const options =
-        index === parts.length - 1 && message.buttons?.length
-          ? { ...thread, reply_markup: keyboard(message.buttons) }
-          : thread;
-      const sent = await this.withRetries(chatId, (id) => {
-        chatId = id;
-        return bot.api.sendMessage(id, part, options);
-      });
-      first ??= String(sent.message_id);
+    try {
+      for (const [index, part] of parts.entries()) {
+        const options =
+          index === parts.length - 1 && message.buttons?.length
+            ? { ...thread, reply_markup: keyboard(message.buttons) }
+            : thread;
+        const sent = await this.withRetries(chatId, (id) => {
+          chatId = id;
+          return bot.api.sendMessage(id, part, options);
+        });
+        first ??= String(sent.message_id);
+      }
+    } catch (error) {
+      // grammY's own message names only the method; say what went wrong.
+      if (error instanceof HttpError) {
+        throw new Error(`Telegram is unreachable: ${this.describe(error)}`);
+      }
+      throw error;
     }
     return { messageId: first! };
+  }
+
+  chatKey(address: ChannelAddress): string {
+    return parseAddress(address).chatId;
   }
 
   async edit(

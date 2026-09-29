@@ -49,6 +49,7 @@ const message = (fields: Partial<HistoryMessage>): HistoryMessage => ({
   direction: 'in',
   origin: 'user',
   agent: 'groceries',
+  workflow: null,
   senderId: '1234',
   text: 'Milk',
   ...fields,
@@ -168,13 +169,23 @@ describe('Channel formatting', () => {
           senderId: null,
           text: 'Noted',
         }),
+        message({
+          id: 4,
+          direction: 'out',
+          origin: 'workflow',
+          agent: null,
+          workflow: 'weekly-shop',
+          senderId: null,
+          text: 'Shop on Friday',
+        }),
       ]),
     ).toBe(
       [
-        '2026-09-28 15:04  out  pero             Welcome',
-        '2026-09-28 15:04  in   user             Milk',
-        '                                        and eggs',
-        '2026-09-28 15:04  out  agent groceries  Noted',
+        '2026-09-28 15:04  out  pero                  Welcome',
+        '2026-09-28 15:04  in   user                  Milk',
+        '                                             and eggs',
+        '2026-09-28 15:04  out  agent groceries       Noted',
+        '2026-09-28 15:04  out  workflow weekly-shop  Shop on Friday',
       ].join('\n'),
     );
   });

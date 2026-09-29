@@ -79,10 +79,11 @@ const STOPPING = 'Pero is stopping';
  * Runs Agents' turns: builds each request from the Agent record, runs it
  * in the Channel's Session, and persists the provider's session ID as soon
  * as the runtime reports it. A Session whose provider has none of the
- * conversation yet starts from the Channel's latest messages. Turns within
- * a Session run one at a time in the order they were accepted; turns of
- * other Sessions run alongside, even in a shared folder. Isolated turns,
- * such as Workflow Runs, use none of a Channel's state.
+ * conversation yet starts from the Channel's latest messages, and each turn
+ * receives the Workflow messages posted there since the last person's
+ * message. Turns within a Session run one at a time in the order they were
+ * accepted; turns of other Sessions run alongside, even in a shared folder.
+ * Isolated turns, such as Workflow Runs, use none of a Channel's state.
  */
 @Injectable()
 export class AgentManager implements BeforeApplicationShutdown {
@@ -188,9 +189,8 @@ export class AgentManager implements BeforeApplicationShutdown {
     try {
       // One snapshot of the Agent, settings, Session, and history as the
       // turn starts.
-      const { agent, session, input, carried, skipped } = await inTransaction(
-        this.dataSource,
-        async (manager) => {
+      const { agent, session, input, posted, carried, skipped } =
+        await inTransaction(this.dataSource, async (manager) => {
           const agent = await this.agents.resolveWithin(manager, turn.agentId);
           const skipped = await skipReasonWithin(manager, turn, agent);
           if (skipped !== null) {
@@ -198,6 +198,7 @@ export class AgentManager implements BeforeApplicationShutdown {
               agent,
               session: null,
               input: turn.input,
+              posted: 0,
               carried: 0,
               skipped,
             };
@@ -215,18 +216,15 @@ export class AgentManager implements BeforeApplicationShutdown {
           // Without a provider session, the provider has none of the
           // conversation: a changed provider or folder, a reassigned
           // Channel, or a first turn that failed before it began.
-          const { input, carried } =
-            session.providerSessionId === null
-              ? await this.history.carryOverWithin(
-                  manager,
-                  turn.channelId,
-                  turn.messageId,
-                  turn.input,
-                )
-              : { input: turn.input, carried: 0 };
-          return { agent, session, input, carried, skipped: null };
-        },
-      );
+          const { input, posted, carried } = await this.history.turnInputWithin(
+            manager,
+            turn.channelId,
+            turn.messageId,
+            turn.input,
+            { carryOver: session.providerSessionId === null },
+          );
+          return { agent, session, input, posted, carried, skipped: null };
+        });
       if (session === null) {
         this.logger.debug(`Skipped a turn in ${where}: ${skipped}`);
         return null;
@@ -235,6 +233,9 @@ export class AgentManager implements BeforeApplicationShutdown {
       where += `, Session ${session.id} (${agent.provider})`;
       if (carried > 0) {
         this.logger.log(`Carried over ${carried} message(s) into ${where}`);
+      }
+      if (posted > 0) {
+        this.logger.log(`Passed ${posted} Workflow message(s) into ${where}`);
       }
       const text = await this.run(
         agent,

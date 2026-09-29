@@ -31,30 +31,27 @@ export class ChannelSender {
     return [...this.adapters.values()];
   }
 
-  send(
+  async send(
     kind: IntegrationKind,
     address: ChannelAddress,
     message: OutboundMessage,
   ): Promise<SentMessage> {
-    const adapter = this.adapters.get(kind);
-    if (!adapter) {
-      return Promise.reject(new Error(`No ${kind} adapter is connected`));
-    }
-    return adapter.send(address, message);
+    return this.adapter(kind).send(address, message);
+  }
+
+  /** The key of the chat `address` belongs to; see `ChannelAdapter`. */
+  chatKey(kind: IntegrationKind, address: ChannelAddress): string {
+    return this.adapter(kind).chatKey(address);
   }
 
   /** Replaces the text and buttons of a message sent through `kind`. */
-  edit(
+  async edit(
     kind: IntegrationKind,
     address: ChannelAddress,
     messageId: string,
     message: OutboundMessage,
   ): Promise<void> {
-    const adapter = this.adapters.get(kind);
-    if (!adapter) {
-      return Promise.reject(new Error(`No ${kind} adapter is connected`));
-    }
-    return adapter.edit(address, messageId, message);
+    return this.adapter(kind).edit(address, messageId, message);
   }
 
   /**
@@ -84,5 +81,11 @@ export class ChannelSender {
       );
     }
     return sent;
+  }
+
+  private adapter(kind: IntegrationKind): ChannelAdapter {
+    const adapter = this.adapters.get(kind);
+    if (!adapter) throw new Error(`No ${kind} adapter is connected`);
+    return adapter;
   }
 }
