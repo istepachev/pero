@@ -101,21 +101,22 @@ Pero's secrets move to `<workspace>/.env` (`src/config/env-file.ts`):
 
 ### 5.4 `pero init` and first run
 
-`pero init [dir]` writes the skeleton:
+`pero init [dir]` (default: `--workspace`, then the current folder) writes the skeleton:
 
 - `.gitignore` with `.env`, or the line added to an existing one
-- `.pero/config.yaml`, with commented defaults
-- `data/Settings/Pero.md`, `Agents/Main.md`, and `Agents/_Template.md`, each with commented example properties
+- `.pero/` with its `.gitignore`, and `.pero/config.yaml` with commented defaults
+- in the settings folder (`data/Settings/` unless `config.yaml` names another data or settings folder): `Pero.md`, `Agents/Main.md`, and `Agents/_Template.md`, each with commented example properties that the phase 6 note readers accept
 - an empty `Workflows/`
 
-It never overwrites a file, and prints what it created and what it kept. These notes aren't read until phase 8. They exist now so a workspace made today stays valid.
+It never overwrites a file, and prints what it created, updated, and kept. It refuses the home folder and a legacy data directory. These notes aren't read until phase 8. They exist now so a workspace made today stays valid.
 
-An interactive `pero run` with no workspace found offers `pero init` in the current folder (or `~/workspace` from home). This replaces today's working-folder question. A non-interactive run prints the `pero init` command instead.
+Discovery no longer creates `~/.pero`: it is used only when it exists. With no workspace found, an interactive `pero run` offers `pero init` in the current folder (or `~/workspace` from home). This replaces today's working-folder question, which a workspace no longer needs, since its `data/` folder is set. A non-interactive run prints the `pero init` command and exits 1; `pero status` exits 3 with the same hint.
 
 **Done when:**
 - Running `init` twice changes nothing the second time.
 - `init` inside a cloned workspace fills in only missing files.
 - An interactive first run from home ends with a running Pero in `~/workspace`.
+- The packed-install job starts from `pero init ~/workspace`.
 
 ### 5.5 Backup and restore of a workspace
 

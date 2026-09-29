@@ -25,10 +25,11 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
    ```sh
    npm install -g @perokit/pero
-   pero run
+   pero init ~/workspace
+   cd ~/workspace && pero run
    ```
 
-   On first run, Pero asks for what it needs: the folder your Agents work in, your Telegram bot token, and a provider sign-in. You can stop at any step and run `pero run` again later to continue.
+   `pero init` makes the workspace: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. On first run, Pero asks for what it still needs: your Telegram bot token and a provider sign-in. You can stop at any step and run `pero run` again later to continue. (A `pero run` with no workspace offers to make one.)
 
 2. **Create a Telegram bot** with [@BotFather](https://t.me/BotFather), then paste its token when `pero run` asks for it.
 
@@ -44,7 +45,7 @@ You can also message the bot directly and allow your user ID the same way. That 
 
 Agents keep their notes, plans, and results as files in their working folder. Make that folder an [Obsidian](https://obsidian.md) vault, and everything they write becomes plain Markdown notes that you can browse, search, and edit on your desktop and phone.
 
-1. Create the vault folder on the server, such as `~/notes`, and choose it when `pero run` asks for the working folder (or later: `pero settings set default-working-directory ~/notes`).
+1. Use the workspace's `data/` folder as the vault, or point Pero at another folder with `data: ~/notes` in `.pero/config.yaml` and restart it.
 2. Sync it to your devices with a tool that works on a headless server, such as [Syncthing](https://syncthing.net) or Git with the [Obsidian Git](https://github.com/Vinzent03/obsidian-git) plugin.
 3. Open the synced folder as a vault in Obsidian on your desktop and phone.
 

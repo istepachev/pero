@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Command } from 'nest-commander';
 import { STOP_DEADLINE_MS } from '../../common/shutdown.js';
+import { NoWorkspaceError } from '../../config/bootstrap-config.js';
 import { describeLocation } from '../../config/data-dir.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { CliError } from '../errors.js';
@@ -14,7 +15,15 @@ const POLL_INTERVAL_MS = 100;
 @Command({ name: 'stop', description: 'Stop Pero and wait until it exits' })
 export class StopCommand extends PeroCommand {
   async run(): Promise<void> {
-    const layout = this.layout();
+    let layout;
+    try {
+      layout = this.layout();
+    } catch (error) {
+      // Nothing was ever started, so there is nothing to stop.
+      if (!(error instanceof NoWorkspaceError)) throw error;
+      console.log(`Pero isn't running. ${error.message}`);
+      return;
+    }
     const client = this.client();
 
     let pid: number;

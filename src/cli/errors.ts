@@ -6,6 +6,7 @@ import {
 } from '../common/errors.js';
 import { ConfigError } from '../config/bootstrap-config.js';
 import { DataDirError } from '../config/data-dir.js';
+import { WorkspaceInitError } from '../config/workspace-skeleton.js';
 import { DaemonNotRunningError } from '../control/client.js';
 import { ControlError } from '../control/protocol.js';
 
@@ -32,6 +33,7 @@ const EXPECTED_ERRORS = [
   NotFoundError,
   ConflictError,
   BackupFormatError,
+  WorkspaceInitError,
 ];
 
 /**
