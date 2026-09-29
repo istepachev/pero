@@ -18,6 +18,7 @@ import {
   ChannelsListCommand,
   ChannelsShowCommand,
 } from './commands/channels.command.js';
+import { CheckCommand } from './commands/check.command.js';
 import { InitCommand } from './commands/init.command.js';
 import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
@@ -79,6 +80,7 @@ import { GlobalOptionsSetup } from './global-options.js';
   providers: [
     GlobalOptionsSetup,
     InitCommand,
+    CheckCommand,
     RunCommand,
     StopCommand,
     StatusCommand,

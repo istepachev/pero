@@ -14,13 +14,10 @@ import {
   defaultHostConfig,
   HOST_CONFIG_FILE,
   readHostConfig,
-  resolveDataFolder,
+  resolveSettingsFolder,
 } from './host-config.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
-
-/** The settings folder inside the data folder, unless `settings` names one. */
-export const SETTINGS_FOLDER = 'Settings';
 
 /** What `pero init` did with one path of the skeleton. */
 export interface SkeletonEntry {
@@ -133,7 +130,11 @@ export function initWorkspace(
   const configFile = join(state, HOST_CONFIG_FILE);
   file(configFile, defaultHostConfig());
 
-  const settings = settingsFolder(dir, configFile, home);
+  const settings = resolveSettingsFolder(
+    readHostConfig(configFile) ?? { data: null, settings: null },
+    dir,
+    home,
+  );
   file(join(settings, 'Pero.md'), PERO_NOTE);
   folder(join(settings, 'Agents'));
   file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
@@ -144,24 +145,6 @@ export function initWorkspace(
     action: folder(workflows) ? 'created' : 'kept',
   });
   return { workspace: dir, entries };
-}
-
-/** The settings folder `config.yaml` names, else `<data>/Settings`. */
-function settingsFolder(
-  workspace: string,
-  configFile: string,
-  home?: string,
-): string {
-  const config = readHostConfig(configFile) ?? {
-    data: null,
-    settings: null,
-    allowedChats: [],
-  };
-  if (config.settings !== null) {
-    return resolveDataFolder({ data: config.settings }, workspace, true, home)!;
-  }
-  const data = resolveDataFolder(config, workspace, true, home)!;
-  return join(data, SETTINGS_FOLDER);
 }
 
 /** Writes `text` to `path`, creating its folder; false when it existed. */

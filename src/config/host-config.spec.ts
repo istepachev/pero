@@ -20,6 +20,7 @@ import {
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
+  resolveSettingsFolder,
   setDataFolder,
 } from './host-config.js';
 
@@ -249,6 +250,23 @@ describe('data folder', () => {
     );
     expect(resolveDataFolder({ data: null }, '/home/o/.pero', false)).toBe(
       null,
+    );
+  });
+
+  it('holds the settings folder, unless settings names another', () => {
+    const settings = (config: {
+      data: string | null;
+      settings: string | null;
+    }) => resolveSettingsFolder(config, '/ws', '/home/o');
+    expect(settings({ data: null, settings: null })).toBe('/ws/data/Settings');
+    expect(settings({ data: '~/notes', settings: null })).toBe(
+      '/home/o/notes/Settings',
+    );
+    expect(settings({ data: 'vault', settings: 'config/pero' })).toBe(
+      '/ws/config/pero',
+    );
+    expect(settings({ data: null, settings: '/srv/settings' })).toBe(
+      '/srv/settings',
     );
   });
 
