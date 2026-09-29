@@ -40,6 +40,12 @@ const OTHER_TOKEN = '987654321:BBEhBOweik6ad9r_QXMENQjcrGbqCr4K-xy';
 const STARTED_ENTRY =
   /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} INFO {2}Pero daemon started /m;
 
+/**
+ * For waits on a spawned `pero logs --follow`: starting the CLI alone can
+ * take over the 1s `vi.waitFor` default on a busy macOS runner.
+ */
+const FOLLOWER_WAIT = { timeout: 10_000 };
+
 interface Result {
   code: number | null;
   stdout: string;
@@ -1550,15 +1556,20 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     let stderr = '';
     follower.stdout.on('data', (chunk: Buffer) => (stdout += chunk));
     follower.stderr.on('data', (chunk: Buffer) => (stderr += chunk));
-    await vi.waitFor(() =>
-      expect(stderr).toBe(`Waiting for ${layout.logFile}…\n`),
+    await vi.waitFor(
+      () => expect(stderr).toBe(`Waiting for ${layout.logFile}…\n`),
+      FOLLOWER_WAIT,
     );
 
     expect((await pero(withDataDir('run'))).code).toBe(0);
-    await vi.waitFor(() => expect(stdout).toMatch(STARTED_ENTRY));
+    await vi.waitFor(
+      () => expect(stdout).toMatch(STARTED_ENTRY),
+      FOLLOWER_WAIT,
+    );
     expect((await pero(withDataDir('stop'))).code).toBe(0);
-    await vi.waitFor(() =>
-      expect(stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/),
+    await vi.waitFor(
+      () => expect(stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/),
+      FOLLOWER_WAIT,
     );
 
     expect(follower.exitCode).toBeNull();
@@ -1718,7 +1729,10 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     children.push(follower);
     let followed = '';
     follower.stdout!.on('data', (chunk: Buffer) => (followed += chunk));
-    await vi.waitFor(() => expect(followed).toMatch(STARTED_ENTRY));
+    await vi.waitFor(
+      () => expect(followed).toMatch(STARTED_ENTRY),
+      FOLLOWER_WAIT,
+    );
     expect(follower.exitCode).toBeNull();
     // The hook itself works: the daemon cannot start under it.
     const foreground = await pero(withDataDir('run', '--foreground'), {
