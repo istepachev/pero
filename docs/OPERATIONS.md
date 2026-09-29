@@ -46,6 +46,20 @@ pero stop && pero run
 
 A running Pero keeps the version it started with until it is restarted.
 
+## Configuration
+
+Almost everything is configured with `pero settings` while Pero runs (see the [user guide](./USER_GUIDE.md#first-run-setup-and-settings)). A few settings are read when Pero starts, from its command line and environment:
+
+| Setting | Source | Default |
+|---|---|---|
+| Data directory | `--data-dir` (any `pero` command, before or after its name), then `PERO_HOME` | `~/.pero` |
+| Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
+| Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then `secrets/telegram-bot-token` | none |
+| Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
+| Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every Agent answers `echo: <message>` instead of running Claude or Codex | unset |
+
+Pero creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting. `pero run` passes its own environment to the daemon it starts.
+
 ## Credentials
 
 Pero keeps no provider credentials of its own. It runs Claude Code and Codex with the sign-ins of the account it runs as:

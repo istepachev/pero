@@ -52,7 +52,7 @@ When a test fails:
 
 To see the Telegram path work end to end before any provider is set up, run Pero with the echo runtime, where every Agent answers `echo: <message>`:
 
-1. `PERO_FAKE_RUNTIME=echo pero run`, then follow the [recommended Telegram setup](../README.md#recommended-setup) until the group is allowed.
+1. `PERO_FAKE_RUNTIME=echo pero run`, then follow the [recommended Telegram setup](./USER_GUIDE.md#set-up-telegram) until the group is allowed.
 2. Create a topic. Pero posts a welcome naming the new Agent; a message there gets its echo.
 3. Create a second topic and write in both; `pero agents` lists an Agent for each, and `pero channels` a Channel for each.
 4. Write in the General topic and in a direct chat with the bot. Both answer as the main Agent, and `pero channels` shows them as separate Channels.
