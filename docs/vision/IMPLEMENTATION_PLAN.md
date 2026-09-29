@@ -120,15 +120,21 @@ Discovery no longer creates `~/.pero`: it is used only when it exists. With no w
 
 ### 5.5 Backup and restore of a workspace
 
-- **`pero backup`** archives `.pero/`: the online-backup snapshot of the database, plus `config.yaml`. `--include-data` adds the data folder. `.env`, logs, and `run/` are never included.
-- **`pero restore <file>`** extracts into a workspace whose `.pero/` has no database, creating `.pero/` if needed. It keeps an existing `config.yaml` unless `--replace-config` is given.
-- **Legacy backups** (made from `~/.pero`) restore into a workspace too: their `secrets/` token goes to `.env`.
+- **`pero backup`** archives the database snapshot and `config.yaml`, as before; a legacy data directory's backup still has its `secrets/`. `.env`, logs, and `run/` are never included, so a workspace's backup has no token.
+- **`--include-data`** adds the data folder under `data/`: its regular files and folders, never links, and not `.pero/` or `.env` should they be inside it. The destination must be outside it. Only such a backup is format 3, with `includesData` in the manifest, so an older Pero restores every other backup and asks for an upgrade for this one. Staging moves next to the destination, which has room for it, instead of a temporary folder that may be in memory.
+- **`pero restore <file>`** into a workspace (found, or `-w`, created when missing) needs a `.pero/` without `pero.sqlite*`. It extracts next to `.pero/` and copies each file without overwriting, the database first, so a daemon starting meanwhile stops it with nothing changed.
+  - **`config.yaml`:** the workspace's own is kept, and the chats only the backup's allowed are listed; `--replace-config` takes the backup's. Nothing is said when both are the same.
+  - **Data:** into the folder the workspace's `config.yaml` names, keeping each file already there, with the numbers copied and kept.
+  - **Legacy backups:** their token goes to `.env` unless it has one, with the `.gitignore` line.
+  - **Missing folders** are checked against the workspace's `config.yaml`, not the path the backup recorded; a legacy backup's default `data/` isn't reported, since it never had one.
+- **Into a legacy data directory**, restore is unchanged, and refuses a backup with a data folder.
+- **Found while building:** a workspace restored at another path keeps working, but each Channel starts a fresh Session with its recent messages, since a provider conversation belongs to its folder. The drill restores at the same path, as on a new machine.
 
 **Done when:**
-- A backup restores into a freshly cloned workspace, and Pero starts with the same history and runs.
-- `--include-data` round-trips the data folder.
-- A legacy backup restores into a workspace.
-- The packed-install CI job runs `init`, `run`, `backup`, `stop`, and `restore` in a temporary workspace.
+- A backup restores into a freshly cloned workspace, and Pero starts with the same history and runs: `test/restore.e2e-spec.ts`.
+- `--include-data` round-trips the data folder: `test/restore.e2e-spec.ts`, `test/cli.e2e-spec.ts`.
+- A legacy backup restores into a workspace, its token in `.env`: `test/cli.e2e-spec.ts`, the packed-install script.
+- The packed-install CI job runs `init`, `run`, a Git commit check, `backup --include-data`, `stop`, and `restore` into a `git clone`, then a legacy backup restored into a data directory and a workspace.
 
 ### Phase 5 exit criteria
 

@@ -117,8 +117,8 @@ The database holds:
 - **Message history:** the text of each Channel (see below).
 - **Workflows, Triggers, and Notifications:** the definitions, each Workflow Run with its answer or error, and each Notification with its delivery state.
 
-Outside the data directory, and never in Pero's backups:
-- **Working folders:** the default working directory and each Agent's own folder. They are yours, such as a notes vault or a project.
+Outside the data directory:
+- **Working folders:** the data folder and each Agent's own folder. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
 - **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
 - **Provider sign-ins:** listed under [Credentials](#credentials).
 
@@ -141,28 +141,41 @@ History is kept until you set `history-retention-days`; then messages older than
 pero backup ~/backups/pero-$(date +%F).tgz
 ```
 
-`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml`, a legacy data directory's `secrets/`, and a manifest as an owner-only gzip tar. The file must be outside the data directory; one already at that path is replaced. Logs and `run/` are left out. The backup holds the bot token and your message history, so keep it as private as the data directory. A bot token given in `PERO_TELEGRAM_BOT_TOKEN` is not in it.
+`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml` and a manifest as an owner-only gzip tar. The file must be outside the state directory; one already at that path is replaced. Logs, `run/`, and a workspace's `.env` are never in it, so a workspace's backup has no bot token; a legacy data directory's backup has its `secrets/`, and with them the token. The backup holds your message history, so keep it as private as the state directory.
+
+`--include-data` adds the data folder, as it is at that moment, for when it isn't in Git or synced elsewhere. Only its files and folders are included, not links, and neither `.pero/` nor `.env` should they be inside it. The file must then be outside the data folder too. Such a backup needs this version of Pero or newer to restore.
 
 It needs Pero running. To back up every night, add a line to the crontab of the account that runs Pero (`crontab -e`), with the full path to `pero` when cron's `PATH` does not have it:
 
 ```text
-30 3 * * * pero backup "$HOME/backups/pero-$(date +\%F).tgz"
+30 3 * * * cd "$HOME/workspace" && pero backup "$HOME/backups/pero-$(date +\%F).tgz"
 ```
 
 Back up the rest yourself, with the tool you already use for your files:
-- **Working folders:** every folder `pero agents` lists, and the default working directory in `pero settings`. The manifest inside each backup, `pero-backup.json`, lists them too.
+- **The workspace:** commit it to a private Git repository. That keeps `config.yaml` and the data folder, including its `Settings/`, and never the token or the database.
+- **Working folders:** each Agent's own folder that `pero agents` lists, and a data folder outside the workspace. The manifest inside each backup, `pero-backup.json`, lists them too.
 - **Provider conversations:** `~/.claude/projects` and `~/.codex` (without `auth.json` when you would rather sign in again), so every Session can resume after a restore. Without them, Pero still restores, and each Channel continues in a fresh Session that starts from its recent messages (see below).
 - **Provider sign-ins:** optional. Signing in again after a restore is simpler and keeps the credentials out of your backups; if you do back them up, encrypt that backup.
 
 ## Restore
 
-`pero restore <file>` runs without the daemon and restores into a data directory that is missing or empty, so it never overwrites an installation. It warns about each working folder the records name that does not exist on this machine.
+`pero restore <file>` runs without the daemon and never overwrites Pero's database.
 
-To go back to a backup on the same machine, stop Pero and move its data directory aside first:
+**Into a workspace** (the one found from the current folder, or `-w <folder>`, created when missing), whose `.pero/` must have no database, such as a fresh clone of the workspace's repository:
+- The database goes into `.pero/`. If Pero starts there meanwhile, the restore stops with nothing changed.
+- The workspace's own `config.yaml` is kept, and the restore lists the chats the backup's file allowed that it doesn't; `--replace-config` takes the backup's instead. Without one, the backup's is used.
+- A backup made with `--include-data` restores its data folder into the one the workspace's `config.yaml` names, keeping every file already there.
+- A backup of a legacy data directory brings its bot token to `.env`, unless `.env` has one already, and adds `.env` to `.gitignore`.
+
+**Into a legacy data directory** (`--data-dir` or `PERO_HOME`), which must be missing or empty. A backup with the data folder only restores into a workspace.
+
+Either way, it warns about each folder the installation uses that does not exist here: the data folder, and each Agent's own.
+
+To go back to a backup on the same machine, stop Pero and move its database aside first:
 
 ```sh
 pero stop
-mv ~/.pero ~/.pero.old
+mkdir ~/pero-old && mv ~/workspace/.pero/pero.sqlite* ~/pero-old/
 pero restore ~/backups/pero-2026-09-28.tgz
 pero run
 ```
@@ -174,16 +187,18 @@ The drill below brings back every definition, and every Session resumes where it
 1. **Stop Pero on the old machine** (`pero stop`, or stop its service), and take a last backup before that with `pero backup`. The two must never poll the same bot at once.
 2. **Install Pero** on the new machine, the same version or a newer one, under an account with the **same home directory path** as before, so that the folders and provider stores keep their paths.
 3. **Sign in to the providers** as that account: `claude auth login`, `codex login --device-auth`. Or restore their credential files from your encrypted backup.
-4. **Restore the working folders** from your own backup, at the same paths as before.
+4. **Clone the workspace** from its Git repository to the same path, and restore any other working folders from your own backup, at the same paths as before.
 5. **Restore the provider conversations**, `~/.claude/projects` and `~/.codex`, from your own backup.
-6. **Restore Pero's backup:**
+6. **Restore Pero's backup** into the clone:
 
    ```sh
+   cd ~/workspace
    pero restore ~/backups/pero-2026-09-28.tgz
    ```
 
-   A warning names each working folder that is still missing; restore it before going on.
-7. **Start Pero**, with the same `PERO_TELEGRAM_BOT_TOKEN` if you gave it the token that way:
+   A warning names each folder that is still missing; restore it before going on.
+7. **Write the bot token** again: `printf '%s' "$TOKEN" | pero settings set telegram-bot-token` once Pero runs, a `PERO_TELEGRAM_BOT_TOKEN=…` line in the workspace's `.env`, or the same `PERO_TELEGRAM_BOT_TOKEN` in Pero's environment. A restored legacy backup brought it along already.
+8. **Start Pero:**
 
    ```sh
    pero run
@@ -196,6 +211,7 @@ Then write in a topic: its Agent answers in the same conversation.
 What to expect afterwards:
 - **Schedules** that came due while Pero was down run once, as one catch-up run that records how many times it stands for.
 - **Notifications** still waiting to be delivered are delivered, and a Workflow that reads history goes on from where its last successful run stopped.
+- **A workspace at a new path** keeps working: its data folder is relative to it. Each Channel then starts a fresh Session that begins with its recent messages, since a provider conversation belongs to its folder.
 - **Folders at new paths:** point Pero at them with `pero settings set default-working-directory <folder>`, or `pero agents edit <agent> --working-directory <folder>` for an Agent with its own. A provider conversation belongs to its folder, so each affected Channel then starts a fresh Session that begins with its recent messages.
 - **Provider conversations not restored:** when a provider no longer has a Session's conversation, Pero closes that Session and answers the same message in a fresh one that begins with the Channel's recent messages, so the Channel keeps working. The same happens when a provider has deleted an old transcript.
 - **A newer Pero** applies its migrations to the restored database as it starts.

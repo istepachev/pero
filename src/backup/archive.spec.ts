@@ -160,13 +160,39 @@ describe('backup archive', () => {
   });
 
   it('asks for a newer Pero for a newer backup format', async () => {
-    stage({ manifest: { ...manifest, format: 3 } });
+    stage({ manifest: { ...manifest, format: 4 } });
     const file = join(tmp, 'backup.tgz');
     await writeBackupArchive(staging, file);
 
     await expect(extractBackupArchive(file, target)).rejects.toThrow(
-      /newer Pero \(backup format 3\)/,
+      /newer Pero \(backup format 4\)/,
     );
+  });
+
+  it('round-trips the data folder, with its folders and hidden files', async () => {
+    stage({ manifest: { ...manifest, format: 3, includesData: true } });
+    mkdirSync(join(staging, 'data', 'Settings', 'Agents'), { recursive: true });
+    mkdirSync(join(staging, 'data', 'Empty'));
+    writeFileSync(join(staging, 'data', 'Settings', 'Agents', 'Main.md'), 'Hi');
+    writeFileSync(join(staging, 'data', '.obsidian'), '{}');
+    const file = join(tmp, 'backup.tgz');
+    await writeBackupArchive(staging, file);
+
+    await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
+      format: 3,
+      includesData: true,
+    });
+    expect(
+      readFileSync(
+        join(target, 'data', 'Settings', 'Agents', 'Main.md'),
+        'utf8',
+      ),
+    ).toBe('Hi');
+    expect(readdirSync(join(target, 'data')).sort()).toEqual([
+      '.obsidian',
+      'Empty',
+      'Settings',
+    ]);
   });
 
   it('restores config.yaml, and a format 1 backup without it', async () => {
@@ -229,6 +255,18 @@ describe('backup archive', () => {
       /unexpected entry secrets\/link/,
     );
     expect(readdirSync(join(target, 'secrets'))).not.toContain('link');
+  });
+
+  it('rejects a link in the data folder', async () => {
+    stage();
+    mkdirSync(join(staging, 'data'));
+    symlinkSync('/etc', join(staging, 'data', 'etc'));
+
+    const file = await rawArchive([MANIFEST_ENTRY, DATABASE_ENTRY, 'data']);
+
+    await expect(extractBackupArchive(file, target)).rejects.toThrow(
+      /unexpected entry data\/etc/,
+    );
   });
 
   it('lists recorded folders that are missing', async () => {

@@ -134,7 +134,7 @@ pero backup ~/backups/pero.tgz     # while Pero runs
 pero restore ~/backups/pero.tgz    # while Pero is stopped
 ```
 
-- **A backup holds `.pero/`:** a consistent snapshot of the database from SQLite's online backup API, plus `config.yaml`.
+- **A backup holds `.pero/`:** a consistent snapshot of the database from SQLite's online backup API, plus `config.yaml`. A legacy data directory's backup also holds its `secrets/`, with the token.
 - **Not in a backup:** the data folder and its settings (in your Git repository or sync), `.env` (write the token again on the new host), and logs.
 - **`--include-data`** adds the data folder, for people who don't keep it anywhere else.
-- **Restore** needs a workspace whose `.pero/` has no database yet. The usual path is: clone the workspace repository, `pero restore`, write the token, `pero run`.
+- **Restore** needs a workspace whose `.pero/` has no database yet. The usual path is: clone the workspace repository, `pero restore`, write the token, `pero run`. It keeps the clone's `config.yaml` (`--replace-config` takes the backup's) and never overwrites a file in the data folder. A legacy backup's token goes to `.env`.

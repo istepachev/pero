@@ -1,5 +1,14 @@
 import { execFile } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -7,6 +16,7 @@ import type { Chat, Message, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
+import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import type { Provider } from '../src/config/provider-options.js';
 import {
   type ControlClient,
@@ -91,14 +101,22 @@ describe('Restore drill (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** A daemon on `root` and the fake Bot API whose Agents answer with an echo. */
-  async function start(root: string) {
+  /**
+   * A daemon on data directory `root`, or on workspace `workspace`, and
+   * the fake Bot API whose Agents answer with an echo.
+   */
+  async function start(root: string, workspace?: string) {
+    const config = resolveBootstrapConfig(
+      workspace === undefined
+        ? { dataDir: root, env: {} }
+        : { workspace, env: {} },
+    );
     daemon = await startDaemon({
-      config: resolveBootstrapConfig({ dataDir: root, env: {} }),
+      config,
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
-    client = createControlClient(join(root, 'run', 'pero.sock'));
+    client = createControlClient(join(config.dataDir, 'run', 'pero.sock'));
   }
 
   async function connected() {
@@ -400,4 +418,73 @@ describe('Restore drill (e2e)', () => {
       (await client.call('channels.get', { id: english })).nextTurn.kind,
     ).toBe('resume');
   }, 90_000);
+
+  it('restores a workspace into a fresh clone of it, with its data folder', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, tmp);
+    await start(join(ws, '.pero'), ws);
+    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await connected();
+    await client.call('telegram.allow', { chatId: String(FORUM.id) });
+    await client.call('telegram.allow', { chatId: String(DIRECT.id) });
+    await createTopic(ENGLISH, 'English');
+    expect(await say(FORUM, ENGLISH, 'Hello')).toBe('echo: Hello');
+    expect(await say(DIRECT, null, 'Hi')).toBe('echo: Hi');
+    writeFileSync(join(ws, 'data', 'Diary.md'), 'Dear diary\n');
+    const before = await definitions();
+    const recorded = await sessions();
+    expect(recorded).toHaveLength(2);
+
+    const file = join(tmp, 'ws.tgz');
+    await expect(
+      client.call('backup.create', { file, includeData: true }),
+    ).resolves.toMatchObject({ includesData: true, includesSecrets: false });
+    await stop();
+
+    // The machine is gone. On a fresh one, the workspace's repository is
+    // cloned to the same path: what Git has, without the data folder,
+    // which only the backup has here.
+    const repo = join(tmp, 'repo');
+    for (const path of [
+      '.gitignore',
+      '.pero/.gitignore',
+      '.pero/config.yaml',
+    ]) {
+      cpSync(join(ws, path), join(repo, path));
+    }
+    rmSync(ws, { recursive: true });
+    cpSync(repo, ws, { recursive: true });
+    expect(await pero(['restore', file, '--workspace', ws])).toEqual({
+      code: 0,
+      stderr: '',
+    });
+    expect(readFileSync(join(ws, 'data', 'Diary.md'), 'utf8')).toBe(
+      'Dear diary\n',
+    );
+    expect(readdirSync(join(ws, 'data', 'Settings')).sort()).toEqual([
+      'Agents',
+      'Pero.md',
+      'Workflows',
+    ]);
+    // The token is written again on the new host.
+    writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
+      mode: 0o600,
+    });
+
+    // The same definitions, and both Channels resume their sessions.
+    await start(join(ws, '.pero'), ws);
+    await connected();
+    expect(await definitions()).toEqual(before);
+    for (const [chat, topic] of [
+      [FORUM, ENGLISH],
+      [DIRECT, null],
+    ] as const) {
+      const id = await channelId(chat, topic);
+      const session = recorded.find((s) => s.channelId === id)!;
+      expect(await say(chat, topic, 'Back')).toBe('echo: Back');
+      expect(lastRequest('claude').providerSessionId).toBe(
+        session.providerSessionId,
+      );
+    }
+  }, 60_000);
 });

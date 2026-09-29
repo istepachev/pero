@@ -14,13 +14,22 @@ unset PERO_HOME PERO_WORKSPACE PERO_TELEGRAM_BOT_TOKEN
 mkdir -p "$HOME" "$prefix"
 
 cleanup() {
-  [ -d "$HOME/workspace" ] && pero stop -w "$HOME/workspace" >/dev/null 2>&1 || true
-  [ -d "$HOME/restored" ] && pero stop --data-dir "$HOME/restored" >/dev/null 2>&1 || true
+  for ws in workspace clone from-legacy; do
+    [ -d "$HOME/$ws" ] && pero stop -w "$HOME/$ws" >/dev/null 2>&1 || true
+  done
+  for dir in legacy restored; do
+    [ -d "$HOME/$dir" ] && pero stop --data-dir "$HOME/$dir" >/dev/null 2>&1 || true
+  done
   rm -rf "$work"
 }
 trap cleanup EXIT
 
 step() { printf '\n==> %s\n' "$*"; }
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+git() { command git -c user.name=Pero -c user.email=pero@example.com "$@"; }
 
 step 'Packing'
 npm pack --pack-destination "$work" >/dev/null
@@ -50,13 +59,13 @@ step 'pero run without a workspace (not interactive)'
 code=0
 pero run </dev/null || code=$?
 if [ "$code" -ne 1 ]; then
-  echo "Expected exit status 1 without a workspace, got $code" >&2
-  exit 1
+  fail "Expected exit status 1 without a workspace, got $code"
 fi
 
-step 'pero init ~/workspace'
+step 'pero init ~/workspace, a Git repository'
 pero init "$HOME/workspace"
 cd "$HOME/workspace"
+git init --quiet
 
 step 'pero run (not interactive)'
 pero run </dev/null
@@ -64,8 +73,21 @@ pero run </dev/null
 step 'pero status'
 pero status
 
-step 'pero backup'
-pero backup "$work/backup.tgz"
+step 'Committing the workspace commits config.yaml and nothing secret'
+printf 'PERO_TELEGRAM_BOT_TOKEN=123456789:not-a-real-token\n' >.env
+chmod 600 .env
+git add -A
+staged="$(git diff --cached --name-only)"
+printf '%s\n' "$staged"
+grep -qx '.pero/config.yaml' <<<"$staged" || fail 'config.yaml is not staged'
+grep -qx 'data/Settings/Pero.md' <<<"$staged" || fail 'Pero.md is not staged'
+if grep -Eq '^\.env$|pero\.sqlite|^\.pero/(logs|run)/' <<<"$staged"; then
+  fail 'Git would commit a secret or Pero state'
+fi
+git commit --quiet -m 'Pero workspace'
+
+step 'pero backup --include-data'
+pero backup --include-data "$work/backup.tgz"
 
 step 'pero stop'
 pero stop
@@ -74,14 +96,35 @@ step 'pero status (stopped)'
 code=0
 pero status || code=$?
 if [ "$code" -ne 3 ]; then
-  echo "Expected exit status 3 from a stopped Pero, got $code" >&2
-  exit 1
+  fail "Expected exit status 3 from a stopped Pero, got $code"
 fi
 
-step 'pero restore into a fresh data directory'
-pero restore "$work/backup.tgz" --data-dir "$HOME/restored"
+step 'pero restore into a fresh clone'
+cd "$HOME"
+git clone --quiet "$HOME/workspace" "$HOME/clone"
+rm -rf "$HOME/clone/data"
+pero restore "$work/backup.tgz" -w "$HOME/clone"
+[ -f "$HOME/clone/data/Settings/Agents/Main.md" ] || fail 'The data folder was not restored'
+pero run -w "$HOME/clone" </dev/null
+pero status -w "$HOME/clone"
+pero stop -w "$HOME/clone"
+
+step 'A legacy data directory: run, backup, stop'
+pero run --data-dir "$HOME/legacy" </dev/null
+pero status --data-dir "$HOME/legacy"
+pero backup --data-dir "$HOME/legacy" "$work/legacy.tgz"
+pero stop --data-dir "$HOME/legacy"
+
+step 'pero restore a legacy backup into a fresh data directory'
+pero restore "$work/legacy.tgz" --data-dir "$HOME/restored"
 pero run --data-dir "$HOME/restored" </dev/null
 pero status --data-dir "$HOME/restored"
 pero stop --data-dir "$HOME/restored"
+
+step 'pero restore a legacy backup into a workspace'
+pero restore "$work/legacy.tgz" -w "$HOME/from-legacy"
+pero run -w "$HOME/from-legacy" </dev/null
+pero status -w "$HOME/from-legacy"
+pero stop -w "$HOME/from-legacy"
 
 step 'Packed install works'

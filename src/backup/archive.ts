@@ -18,22 +18,35 @@ import { describeIssues } from '../common/errors.js';
 
 /*
  * A backup is a gzip tar holding a manifest, a consistent snapshot of the
- * database, `config.yaml`, and a legacy data directory's owner-only
- * secrets. Logs, `run/`, `.env`, and working folders are not part of it.
+ * database, `config.yaml`, a legacy data directory's owner-only secrets,
+ * and, when asked for, the data folder under `data/`. Logs, `run/`,
+ * `.env`, and other working folders are not part of it.
  */
 
 export const MANIFEST_ENTRY = 'pero-backup.json';
 export const DATABASE_ENTRY = 'pero.sqlite';
 export const SECRETS_ENTRY = 'secrets';
 export const CONFIG_ENTRY = 'config.yaml';
+export const DATA_ENTRY = 'data';
 
 /** 2 added `config.yaml`; a format 1 backup, without it, still restores. */
 export const BACKUP_FORMAT = 2;
 
+/**
+ * A backup that includes the data folder. Only those are format 3, so a
+ * Pero that predates `data/` still restores every other backup, and asks
+ * for an upgrade instead of rejecting one that has it.
+ */
+export const DATA_BACKUP_FORMAT = 3;
+
 const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'latin1');
 
 export const backupManifestSchema = z.object({
-  format: z.union([z.literal(1), z.literal(BACKUP_FORMAT)]),
+  format: z.union([
+    z.literal(1),
+    z.literal(BACKUP_FORMAT),
+    z.literal(DATA_BACKUP_FORMAT),
+  ]),
   peroVersion: z.string(),
   createdAt: z.iso.datetime(),
   /** The data directory the backup was taken from. */
@@ -51,6 +64,8 @@ export const backupManifestSchema = z.object({
   ),
   /** Names of the files in `secrets/`; never their values. */
   secrets: z.array(z.string()),
+  /** Whether `data/` holds the data folder; absent before format 3. */
+  includesData: z.boolean().optional(),
 });
 
 export type BackupManifest = z.infer<typeof backupManifestSchema>;
@@ -64,8 +79,9 @@ export class BackupFormatError extends Error {
 
 /**
  * Archives `stagingDir`, which holds the manifest, the database snapshot,
- * `config.yaml`, and `secrets/`, as `file`. The file is owner-only from the moment it
- * exists and replaces any earlier one in one step.
+ * and any of `config.yaml`, `secrets/`, and `data/`, as `file`. The file is
+ * owner-only from the moment it exists and replaces any earlier one in
+ * one step.
  */
 export async function writeBackupArchive(
   stagingDir: string,
@@ -73,7 +89,7 @@ export async function writeBackupArchive(
 ): Promise<void> {
   const entries = [MANIFEST_ENTRY, DATABASE_ENTRY];
   const staged = await readdir(stagingDir);
-  for (const optional of [CONFIG_ENTRY, SECRETS_ENTRY]) {
+  for (const optional of [CONFIG_ENTRY, SECRETS_ENTRY, DATA_ENTRY]) {
     if (staged.includes(optional)) entries.push(optional);
   }
   const temporary = `${file}.${process.pid}.tmp`;
@@ -98,9 +114,10 @@ export async function writeBackupArchive(
 
 /**
  * Extracts backup `file` into the empty directory `dir` and returns its
- * manifest. Only the manifest, the database, `config.yaml`, and regular
- * files in `secrets/` are accepted; anything else fails as `BackupFormatError`, and
- * `dir` may then hold part of the archive.
+ * manifest. Only the manifest, the database, `config.yaml`, regular files
+ * in `secrets/`, and regular files and folders in `data/` are accepted;
+ * anything else, such as a link, fails as `BackupFormatError`, and `dir`
+ * may then hold part of the archive.
  */
 export async function extractBackupArchive(
   file: string,
@@ -151,6 +168,10 @@ export async function missingFolders(
 
 function isBackupEntry(path: string, type: string): boolean {
   const parts = path.split('/').filter((part) => part !== '');
+  if (parts.some((part) => part === '.' || part === '..')) return false;
+  if (parts[0] === DATA_ENTRY) {
+    return type === 'Directory' || (parts.length > 1 && type === 'File');
+  }
   if (parts.length === 1) {
     if (parts[0] === SECRETS_ENTRY) return type === 'Directory';
     return (
@@ -160,13 +181,7 @@ function isBackupEntry(path: string, type: string): boolean {
       type === 'File'
     );
   }
-  return (
-    parts.length === 2 &&
-    parts[0] === SECRETS_ENTRY &&
-    parts[1] !== '..' &&
-    parts[1] !== '.' &&
-    type === 'File'
-  );
+  return parts.length === 2 && parts[0] === SECRETS_ENTRY && type === 'File';
 }
 
 async function readManifest(
@@ -180,7 +195,7 @@ async function readManifest(
     throw notABackup(file, `${MANIFEST_ENTRY} is missing or not JSON`);
   }
   const format = (json as { format?: unknown } | null)?.format;
-  if (typeof format === 'number' && format > BACKUP_FORMAT) {
+  if (typeof format === 'number' && format > DATA_BACKUP_FORMAT) {
     throw new BackupFormatError(
       `${file} was made by a newer Pero (backup format ${format}); upgrade Pero to restore it`,
     );
