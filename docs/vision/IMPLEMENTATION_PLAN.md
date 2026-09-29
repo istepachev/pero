@@ -20,11 +20,12 @@ The switch touches almost every module that reads an Agent, a Workflow, or a set
 
 **Existing installations keep working until the release.** Until phase 10, a legacy data directory (`--data-dir`, `PERO_HOME`, or an existing `~/.pero` with no workspace found) still starts. From phase 8 on, it needs `pero migrate` first, and says so. The version that ships this is `0.2.0`. Removed commands become stubs that say what to edit instead, and a later release removes the stubs and the legacy data directory.
 
-**What can run in parallel:** 5.x and 6.1–6.2 don't depend on each other. Phase 7 needs 6.2. Phases 8 and 9 are sequential, since both change the `Definitions` implementation.
+**What can run in parallel:** 5.x and 6.1–6.2 don't depend on each other. 6.3 and later need the workspace and `config.yaml` (5.1–5.3), since they find the settings folder through them. Phase 7 needs 6.2. Phases 8 and 9 are sequential, since both change the `Definitions` implementation.
 
 ```text
-5.1 ─ 5.2 ─ 5.3 ─ 5.4 ─ 5.5 ─┐
-6.1 ─ 6.2 ─────── 6.3 ─ 6.4 ─┴─ 7.1 ─ 7.2 ─ 7.3 ─ 7.4 ─ 8.1 … 8.5 ─ 9.1 … 9.4 ─ 10.1 ─ 10.2 ─ 10.3
+5.1 ─ 5.2 ─ 5.3 ─┬─ 5.4 ─ 5.5 ────────┐
+                 │                    │
+6.1 ─ 6.1b ─ 6.2 ┴─ 6.3 ─ 6.4 ─ 6.3b ─┴─ 7.1 ─ 7.2 ─ 7.3 ─ 7.4 ─ 8.1 … 8.5 ─ 9.1 … 9.4 ─ 10.1 ─ 10.2 ─ 10.3
 ```
 
 ## Phase 5 — workspace
@@ -128,38 +129,48 @@ An interactive `pero run` with no workspace found offers `pero init` in the curr
 
 Build the note loader as a pure module, `src/settings-files/` (no Nest or TypeORM, like `src/config/`), and run it in the daemon. Nothing reads its snapshot yet.
 
-### 6.1 Note parsing and schemas
+Each problem is reported as `{ file, property, message }`: `file` is the note's path inside the settings folder, and `property` is null for a problem with the whole note.
 
-**Parsing:**
-- **Frontmatter:** split it from the body and parse it with `yaml` (YAML 1.2, so `12:00` stays a string).
-- **Names:** the name comes from the file name through `src/config/slug.ts`, and the title is the file name without `.md`.
+### 6.1 Note parsing
+
+Add the `yaml` dependency (5.3 needs it too).
+
+- **Frontmatter:** only when the first line is `---`, up to the next `---` line. It's parsed with `yaml` as YAML 1.2, so `12:00` and `yes` stay strings. It must be `name: value` lines. A missing closing line, duplicate keys, and syntax errors are errors naming the line.
+- **Body:** everything after the frontmatter, trimmed. An empty body counts as none.
+- **Ignored files:** anything but `.md`, and any file or folder whose name starts with `_` or `.` (`_Template.md`, `.obsidian/`).
+- **Kinds by location:** `Pero.md` at the root, Agents anywhere under `Agents/`, Workflows anywhere under `Workflows/`. Any other note in the settings folder is an error, so a note in a misspelled `Agent/` folder isn't silently skipped.
+- **Names:** the name comes from the file name through `src/config/slug.ts`, and the title is the file name without `.md`. A file name with no letter or digit is an error.
 - **Property keys:** unknown ones are errors with a "did you mean" suggestion. `tags`, `aliases`, and `cssclasses` are allowed and ignored.
+
+**Done when:**
+- An empty note, frontmatter without a body, and a body without frontmatter are all valid.
+- Tests cover the errors above, file names in Cyrillic and with accents, subfolders, and ignored paths.
+
+### 6.1b Note schemas
 
 **Zod schemas**, reusing today's value schemas in `src/config/` (provider options, permissions, time zone, cron, history):
 - `Pero.md`
 - Agent notes
 - Workflow notes
 
-**Workflow schedules:** `day`/`hour`/`minute` become a cron expression, and `trigger` is inferred from them. Lists and single values are accepted for `topics`, `channel`, `day`, and `hour`.
-
-Each error is structured as `{ file, property, message }`.
+**Workflow schedules:** `day`/`hour`/`minute` become a cron expression, and `trigger` is inferred from them. Lists and single values are accepted for `topics`, `channel`, `day`, and `hour`. `cron` with `day`, `hour`, or `minute` is an error. A `manual` Workflow may keep its times, which then don't run.
 
 **Done when:**
 - Unit tests cover every property in the [configuration reference](./CONFIGURATION.md): its default, invalid values, and the schedule mapping (`sunday` 12:00 → `0 12 * * 0`; `weekdays` with `[9, 18]` → `0 9,18 * * 1-5`).
-- An empty note, frontmatter without a body, and a body without frontmatter are all valid.
 
 ### 6.2 Snapshot and references
 
 `buildSnapshot(files, lookups)`:
 
-1. **Scan the settings folder:** recursive, `.md` only, skipping `_*` and `.*`, with duplicate names reported against both files.
-2. **Parse each note** (6.1).
+1. **Scan the settings folder:** recursive, `.md` only, skipping ignored files and never entering ignored folders, with duplicate names reported against both files.
+2. **Parse each note** (6.1, 6.1b).
 3. **Resolve references** into an immutable snapshot of `defaults`, `agents`, `mainAgent`, and `workflows`:
    - `main-agent`
    - Workflow `agent`
    - the default Agent from `channel`
    - `topics` claimed twice
-4. **Leave out broken notes.** A broken note is left out along with only the notes that depend on it.
+   - each Agent's `effort` against its provider, after `Pero.md`
+4. **Leave out broken notes.** A broken note is left out along with only the notes that depend on it. A broken `Pero.md` means all defaults, not missing Agents. A topic claimed twice is an error on both notes, which still load, and the topic goes to neither.
 
 Topic titles in `channel` and `history-channels` resolve through an injected lookup. Without one, as in CI, they're checked for syntax only.
 
@@ -169,14 +180,13 @@ Topic titles in `channel` and `history-channels` resolve through an injected loo
 
 ### 6.3 `pero check`
 
-- **Without Pero running:** `pero check` resolves the workspace, loads `config.yaml` and the notes, and prints errors grouped by file. It checks the `.env` permissions and the Git rules from 5.2. Exit 1 on any error. It opens no database, so it runs in CI on a workspace repository.
-- **With Pero running:** it asks the daemon through a new `check` control request, which adds topic resolution against the `channels` table.
-- **`--json`** prints the errors for tools.
+Needs 5.1–5.3 for the workspace and `config.yaml`, and 5.2 for the `.env` checks.
+
+Without Pero running, `pero check` resolves the workspace, loads `config.yaml` and the notes, and prints errors grouped by file. It checks the `.env` permissions and the Git rules from 5.2. Exit 1 on any error. It opens no database, so it runs in CI on a workspace repository. It says that topic titles weren't checked. `--json` prints the errors for tools.
 
 **Done when:**
 - `check` passes on the `pero init` skeleton and fails with the expected messages on fixtures.
-- It works with and without the daemon.
-- Topic errors appear only with the daemon.
+- It works without the daemon, including `--json`.
 
 ### 6.4 Reloading in the daemon
 
@@ -185,7 +195,7 @@ Add a `ConfigModule` whose `SettingsFiles` service holds the current snapshot. I
 1. **Stat** every note.
 2. **Reparse** only the changed ones.
 3. **Debounce:** a note is reported broken only after two failing scans with the same size and mtime.
-4. **Keep last good versions** in memory while the daemon runs.
+4. **Keep last good versions** in memory while the daemon runs. They aren't kept across restarts: a note still broken after a restart loads once it's fixed.
 5. **Swap in** the new snapshot and log the changed files.
 
 It also emits a `snapshotChanged` event with the names that changed, and adds a `config` health component (`ok`, or `degraded — N notes have errors`) to `pero status`.
@@ -196,6 +206,14 @@ It also emits a `snapshotChanged` event with the names that changed, and adds a 
 - A note that becomes broken keeps its last good version and is reported.
 - A deleted note leaves the snapshot.
 - 500 notes rescan in well under a second.
+
+### 6.3b `pero check` through the daemon
+
+With Pero running, `pero check` asks the daemon through a new `check` control request. The daemon checks the notes as they are on disk now, without the debounce or last good versions, and adds topic resolution against the `channels` table: a title that matches no topic lists the topics Pero has seen, and one that matches several asks for `<chat title>/<topic title>`.
+
+**Done when:**
+- It works with and without the daemon.
+- Topic errors appear only with the daemon.
 
 ### Phase 6 exit criteria
 
@@ -473,7 +491,6 @@ A later release removes the command stubs, the legacy data directory (`--data-di
 | Question | Needed by | Proposed default |
 |---|---|---|
 | Unclaimed topic: new note or main Agent? | 8.3 | New note (`create-agent`), as today |
-| Keep last good versions across restarts? | 6.4 | No: a broken note loads once it's fixed |
 | Report Codex changes under the settings folder? | 8.4 | No: documented limitation |
 | Accept topic IDs in `topics`? | 8.2 | No: titles only |
 | Several schedules per Workflow note? | 7.4 | No: one note per schedule |
