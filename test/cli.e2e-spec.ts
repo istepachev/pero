@@ -1584,17 +1584,14 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const file = join(cwd, 'backup.tgz');
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
-    // Agents have no commands yet: add one while Pero is stopped.
     expect((await pero(withDataDir('run'))).code).toBe(0);
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
-    const db = new Database(layout.database);
-    db.prepare(
-      `INSERT INTO "agents" ("name", "provider", "provider_options", "working_directory", "tool_policy_json") ` +
-        `VALUES ('coder', 'claude', '{"model":null,"effort":null}', ?, '{}')`,
-    ).run(own);
-    db.close();
-
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect(
+      (
+        await pero(
+          withDataDir('agents', 'create', 'coder', '--working-directory', own),
+        )
+      ).code,
+    ).toBe(0);
     const settings = [
       ['default-working-directory', vault],
       ['timezone', 'Europe/Lisbon'],

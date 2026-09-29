@@ -7,7 +7,7 @@
 | `npm test` | Unit tests: services against a real temporary SQLite database, adapters against mocked SDKs and a mocked Bot API | CI |
 | `npm run test:e2e` | Builds, then starts real daemons in-process on temporary data directories, drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Agents use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
 | `npm run test:smoke` | Builds, then runs real Claude and Codex turns through the built runtime adapters. Each is skipped unless enabled, uses a little of the subscription, and never runs in CI. | By hand, on the host |
-| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory | CI |
+| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory, including a backup restored into a fresh data directory | CI |
 
 ## Provider smoke tests under the service's account
 
@@ -41,7 +41,7 @@ Pero runs Claude and Codex with the sign-ins of the OS account its daemon runs a
 
    `PERO_SMOKE_CODEX_MODEL` changes the model the resumed Codex turn switches to (`gpt-5.5` by default).
 
-The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that an `ask` Agent's shell command is refused, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
+The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that resuming a conversation Claude Code does not have is reported as lost (so Pero continues in a fresh Session), checks that an `ask` Agent's shell command is refused, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
 
 When a test fails:
 - **Signed out:** sign in again as the service account, not as yourself.
@@ -75,3 +75,25 @@ Where each [Phase 2 exit criterion](./IMPLEMENTATION_PLAN.md#phase-2-exit-criter
 | Each Channel's history holds the text sent and received there, and nothing else | `test/phase2.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
 | A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/phase2.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
 | Codex and Claude subscription sign-ins each have a documented SDK smoke test under the service's account | `test/smoke/claude-runtime.smoke-spec.ts` and `test/smoke/codex-runtime.smoke-spec.ts`, run as in [the section above](#provider-smoke-tests-under-the-services-account) |
+
+## Phase 3 exit criteria
+
+Where each [Phase 3 exit criterion](./IMPLEMENTATION_PLAN.md#phase-3-exit-criteria) is verified.
+
+| Criterion | Verified by |
+|---|---|
+| A missed scheduled run is found after restart | `test/workflows.e2e-spec.ts`: one catch-up run for the times a schedule missed while Pero was down; `src/scheduler/schedule-tick.spec.ts`: missed times |
+| Duplicate polls create one run per trigger occurrence | `src/scheduler/schedule-tick.spec.ts`: one run per time however often it polls, and when polls overlap |
+| An interrupted run is visibly recorded and handled according to its policy | `test/workflows.e2e-spec.ts`: a run Pero stopped is recorded interrupted and retried as its Workflow allows; `src/workflows/workflow-runs.spec.ts` |
+| A scheduled Workflow reads each message in its Channel history window exactly once across runs | `src/workflows/workflow-runs.spec.ts`: adjacent windows across consecutive runs, and a retry reading the window of the run it retries; `test/restore.e2e-spec.ts` across a restore |
+
+## Phase 4 exit criteria
+
+Where each [Phase 4 exit criterion](./IMPLEMENTATION_PLAN.md#phase-4-exit-criteria) is verified.
+
+| Criterion | Verified by |
+|---|---|
+| A Workflow can notify a configured topic | `test/workflows.e2e-spec.ts`: notifies the Channels a Workflow names; `src/notifications/run-notifications.spec.ts` |
+| A daily Workflow can review the previous day's chats and deliver suggestions to a chosen topic, where the owner can reply to them | `test/restore.e2e-spec.ts`: a Workflow reading every Channel's history notifies a topic, and the next message there receives its suggestion; `test/workflows.e2e-spec.ts`: the next turn receives a delivered Notification; schedules as in Phase 3 |
+| A temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs | `test/workflows.e2e-spec.ts`: delivers a Notification once Telegram is back; `src/notifications/notification-delivery.spec.ts`: retries after backoff without another run |
+| Restore brings back definitions and resumable Sessions | `test/restore.e2e-spec.ts`, which follows the drill in [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine): every definition comes back and every Channel resumes its provider session, and a Channel whose provider conversation is gone continues in a fresh Session with its history; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh` for `pero backup` and `pero restore` themselves |

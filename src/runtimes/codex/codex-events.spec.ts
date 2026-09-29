@@ -236,6 +236,24 @@ describe('classifyCodexFailure', () => {
     ).toBe('auth');
   });
 
+  it('recognizes a thread Codex no longer has as lost', () => {
+    expect(
+      classifyCodexFailure(
+        new Error(
+          'Codex Exec exited with code 1: Reading prompt from stdin...\n' +
+            'Error: thread/resume: thread/resume failed: no rollout found ' +
+            'for thread id 0b1c (code -32600)\n',
+        ),
+        context,
+      ),
+    ).toEqual(
+      new RuntimeError(
+        'session_lost',
+        'Error: thread/resume: thread/resume failed: no rollout found for thread id 0b1c (code -32600)',
+      ),
+    );
+  });
+
   it('reports an aborted turn as cancelled, whatever the SDK threw', () => {
     expect(
       classifyCodexFailure(new Error('boom'), { ...context, aborted: true })

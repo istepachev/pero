@@ -24,7 +24,7 @@ npm run lint           # oxlint
 bash scripts/check-packed-install.sh  # install the npm pack artifact globally and drive it
 ```
 
-[Testing](./docs/TESTING.md) describes each test layer, how to run the provider smoke tests as the account the service runs as, how to check a real bot by hand, and where each Phase 2 exit criterion is verified.
+[Operating Pero](./docs/OPERATIONS.md) is the guide to running an installation: install and upgrade, credentials, data layout, message history, backup, and restore. [Testing](./docs/TESTING.md) describes each test layer, how to run the provider smoke tests as the account the service runs as, how to check a real bot by hand, and where each Phase 2 exit criterion is verified.
 
 ### Bootstrap configuration
 
@@ -144,7 +144,7 @@ Each Agent's tools run under one of two permission modes, copied from `default-p
 - `ask` (the default): reading and editing files in the Agent's folder runs freely; any other tool that needs permission, such as a shell command or a web fetch, asks in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
 
-The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that an `ask` Agent's command is refused, and aborts a turn. Run it as the account the service runs as, as [Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account) describes, so that it checks the sign-in Pero will use.
+The smoke test runs real turns as the current account, using a little of its subscription: `PERO_SMOKE_CLAUDE=1 npm run test:smoke`. It builds first, then creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` Agent's command is refused, and aborts a turn. Run it as the account the service runs as, as [Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account) describes, so that it checks the sign-in Pero will use.
 
 ### Codex Agents
 
@@ -157,7 +157,7 @@ Codex runs each turn without a way to ask the owner, so the permission modes map
 - `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it).
 - `bypass`: no sandbox, like `codex --dangerously-bypass-approvals-and-sandbox`.
 
-The smoke test runs real turns as the current account: `PERO_SMOKE_CODEX=1 npm run test:smoke` (set `PERO_SMOKE_CODEX_MODEL` to change the model the resumed turn switches to, `gpt-5.5` by default). It creates a thread that writes a file, resumes it from another process with a different model and effort, checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, aborts a turn, and checks that a signed-out Codex is reported as such. As with Claude, run it as the account the service runs as ([Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account)).
+The smoke test runs real turns as the current account: `PERO_SMOKE_CODEX=1 npm run test:smoke` (set `PERO_SMOKE_CODEX_MODEL` to change the model the resumed turn switches to, `gpt-5.5` by default). It creates a thread that writes a file, resumes it from another process with a different model and effort, checks that a thread Codex no longer has is reported as lost, checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, aborts a turn, and checks that a signed-out Codex is reported as such. As with Claude, run it as the account the service runs as ([Testing](./docs/TESTING.md#provider-smoke-tests-under-the-services-account)).
 
 The daemon has no network port. Once ready, it answers on the owner-only control socket `run/pero.sock`, one JSON line per request (`echo '{"op":"status"}' | nc -U -N .pero/run/pero.sock`); the CLI is a client of that socket and never opens the database.
 
@@ -172,10 +172,8 @@ npm run cli -- backup ~/backups/pero.tgz --data-dir .pero        # while Pero ru
 npm run cli -- restore ~/backups/pero.tgz --data-dir /srv/pero   # while it is stopped
 ```
 
-`pero backup <file>` asks the running daemon for a backup. The daemon copies the database with SQLite's online backup API, so recent work still in the WAL is included and Pero keeps working meanwhile, then writes a gzip tar with that snapshot, `secrets/`, and a manifest. The archive is owner-only and replaces any file already at that path; it must be outside the data directory. It includes the Telegram bot token when one is stored (one from `PERO_TELEGRAM_BOT_TOKEN` is not), so keep it as private as the data directory. Logs and `run/` are left out.
+`pero backup <file>` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API, and writes it with `secrets/` and a manifest as an owner-only gzip tar outside the data directory. It holds the Telegram bot token and the message history, so keep it private. `pero restore <file>` runs without the daemon, into a data directory that is missing or empty, and warns about each working folder the records name that does not exist on this machine. Working folders and the providers' own conversations are not in the backup; back them up yourself so that every Session can resume after a restore.
 
-Working folders are not in the backup: they are yours, and a notes vault may already sync elsewhere. Back them up yourself. The manifest records the folders the settings and Agents point to.
-
-`pero restore <file>` runs without the daemon. It needs a data directory that is missing or empty, so it never overwrites an installation: to restore over one, stop Pero and move its folder aside first. It unpacks the archive next to the target and renames it into place in one step, then warns about each recorded working folder that does not exist on this machine. Start the restored installation with `pero run`; it applies any newer migrations as usual.
+[Operating Pero](./docs/OPERATIONS.md) covers installing and upgrading Pero, running it as a service, credentials, the data layout, what the message history keeps, what to back up besides `pero backup`, and a step-by-step move to a fresh machine.
 
 Design docs live in [docs/](./docs/README.md).
