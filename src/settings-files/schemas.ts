@@ -429,7 +429,7 @@ function readProperties<S extends z.ZodObject>(
 }
 
 /** `a or b`, `a, b, or c`. */
-function listing(values: readonly string[]): string {
+export function listing(values: readonly string[]): string {
   if (values.length <= 2) return values.join(' or ');
   return `${values.slice(0, -1).join(', ')}, or ${values.at(-1)}`;
 }
