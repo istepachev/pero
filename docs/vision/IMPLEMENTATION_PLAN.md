@@ -90,13 +90,13 @@ Pero's secrets move to `<workspace>/.env` (`src/config/env-file.ts`):
 
 ### 5.3b Live reload, and `allow`/`deny` without the daemon
 
-- **The daemon rereads `config.yaml` every 10 seconds** (a size and mtime check). A chat added or removed by hand applies from its next message.
-- **`pero telegram allow`/`deny` edit the file directly** when Pero isn't running.
-- **`data` and `settings` changes need a restart.** `pero status` says so when the file changed since startup.
-- **At runtime, an invalid edit** is reported and the last good version kept.
+- **The daemon rereads `config.yaml` every 10 seconds** (a size and mtime check; Pero's own writes don't count). A chat added or removed by hand applies from its next message, and the Telegram status catches up: the chat count, and the bot's standing in each group added.
+- **`pero telegram allow`/`deny` edit the file directly** when Pero isn't running, without loading the daemon's dependencies, and say the change applies when Pero starts.
+- **`data` and `settings` changes need a restart.** A new `config` component in `pero status` says so while the file differs from what Pero runs with. `settings set default-working-directory` still applies at once.
+- **At runtime, an invalid edit** (or a deleted file) is logged once per version and shown by `config`, and the last valid version stays in use.
 
 **Done when:**
-- A chat allowed by hand is served within 10 seconds, and one removed stops being served.
+- A chat allowed by hand is served from the next look, and one removed stops being served.
 - `allow`/`deny` work without Pero running and keep comments.
 
 ### 5.4 `pero init` and first run

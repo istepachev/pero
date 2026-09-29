@@ -5,15 +5,18 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/bootstrap-config.js';
+import { ComponentHealth } from '../health/component-health.js';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import {
   SETTINGS_ID,
@@ -21,7 +24,10 @@ import {
 } from '../persistence/entities/settings.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { HostConfigModule } from './host-config.module.js';
-import { HostConfigService } from './host-config.service.js';
+import {
+  type AllowedChatsChange,
+  HostConfigService,
+} from './host-config.service.js';
 
 describe('HostConfigService', () => {
   let tmp: string;
@@ -208,6 +214,105 @@ describe('HostConfigService', () => {
     const text = readFileSync(file, 'utf8');
     expect(text).toContain('\ndata: notes\n');
     expect(text).toContain('    - id: -100777\n      title: Family\n');
+  });
+
+  describe('edits by hand', () => {
+    /** Writes `text` so that its size or modification time surely changes. */
+    function edit(text: string) {
+      writeFileSync(file, text);
+      const later = new Date(Date.now() + 5_000);
+      utimesSync(file, later, later);
+    }
+
+    const component = () => moduleRef!.get(ComponentHealth).get('config');
+
+    it('serves chats added or removed by hand from the next look, and says which', async () => {
+      const service = await start();
+      service.allow('-100111', 'Family');
+      const changes: AllowedChatsChange[] = [];
+      service.onChatsChange((change) => changes.push(change));
+
+      // Pero's own write is not news on the next look.
+      service.reload();
+      expect(changes).toEqual([]);
+
+      edit(
+        readFileSync(file, 'utf8').replace(
+          '    - id: -100111\n      title: Family\n',
+          '    - id: 42 # me\n',
+        ),
+      );
+      service.reload();
+      service.reload();
+
+      expect(service.allowedChats()).toEqual([{ chatKey: '42', title: null }]);
+      expect(changes).toEqual([{ added: ['42'], removed: ['-100111'] }]);
+      expect(component()).toMatchObject({ state: 'ok' });
+    });
+
+    it('keeps the last valid version of a broken edit, reporting it once', async () => {
+      const service = await start();
+      service.allow('42', null);
+      const errors = vi
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      edit('data: data\ntelegram:\n  allowed-chats:\n    - id: me\n');
+      service.reload();
+      edit('data: data\ntelegram:\n  allowed-chats:\n    - id: me\n');
+      service.reload();
+
+      expect(service.allowedChats()).toEqual([{ chatKey: '42', title: null }]);
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(errors.mock.calls[0]![0]).toContain(
+        'line 4: telegram.allowed-chats (item 1).id: must be a Telegram chat ID',
+      );
+      expect(component()).toMatchObject({
+        state: 'degraded',
+        detail: expect.stringMatching(
+          /^Invalid .*config\.yaml: line 4: telegram\.allowed-chats \(item 1\)\.id: .*; the last valid version stays in use$/,
+        ),
+      });
+
+      edit('data: data\ntelegram:\n  allowed-chats:\n    - id: 43\n');
+      service.reload();
+      expect(service.allowedChats()).toEqual([{ chatKey: '43', title: null }]);
+      expect(component()).toMatchObject({ state: 'ok' });
+      errors.mockRestore();
+    });
+
+    it('says a changed data folder waits for a restart, unless Pero set it', async () => {
+      const service = await start();
+
+      edit(readFileSync(file, 'utf8').replace('data: data', 'data: notes'));
+      service.reload();
+      expect(component()).toMatchObject({
+        state: 'degraded',
+        detail: `data changed in ${file}; restart Pero to apply`,
+      });
+
+      mkdirSync(join(workspace, 'vault'));
+      service.setDataFolder(join(workspace, 'vault'));
+      expect(component()).toMatchObject({ state: 'ok' });
+    });
+
+    it('reports a deleted file and keeps serving the last version', async () => {
+      const service = await start();
+      service.allow('42', null);
+      const errors = vi
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      rmSync(file);
+      service.reload();
+
+      expect(service.allowedChats()).toHaveLength(1);
+      expect(component()).toMatchObject({
+        state: 'degraded',
+        detail: `${file} is missing; the last valid version stays in use`,
+      });
+      errors.mockRestore();
+    });
   });
 
   describe('in a legacy data directory', () => {

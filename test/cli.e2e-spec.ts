@@ -1663,6 +1663,53 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(readDaemonMetadata(layout.metadataFile)).toBeNull();
   });
 
+  it('allows and denies chats in config.yaml while Pero is stopped', async () => {
+    mkdirSync(layout.root, { recursive: true });
+    writeFileSync(
+      layout.configFile,
+      '# my Pero\ntelegram:\n  allowed-chats: []\n',
+    );
+    // Without the daemon, and without loading what the daemon needs.
+    const nodeArgs = ['--import', DENY_DAEMON_DEPS];
+    const notRunning =
+      "Pero isn't running; the change is in config.yaml and applies when it starts.\n";
+
+    const allow = await pero(
+      withDataDir('telegram', 'allow', '-1001234567890'),
+      { nodeArgs },
+    );
+    expect(allow).toMatchObject({
+      code: 0,
+      stderr: '',
+      stdout: `Allowed: group -1001234567890\n${notRunning}`,
+    });
+    expect(readFileSync(layout.configFile, 'utf8')).toBe(
+      '# my Pero\ntelegram:\n  allowed-chats:\n    - id: -1001234567890\n',
+    );
+
+    const deny = await pero(withDataDir('telegram', 'deny', '-1001234567890'), {
+      nodeArgs,
+    });
+    expect(deny).toMatchObject({
+      code: 0,
+      stderr: '',
+      stdout:
+        'Denied: group -1001234567890. Its Channels and Agents are kept and resume if you allow it again.\n' +
+        notRunning,
+    });
+    expect(readFileSync(layout.configFile, 'utf8')).toBe(
+      '# my Pero\ntelegram:\n  allowed-chats: []\n',
+    );
+    const again = await pero(withDataDir('telegram', 'deny', '-1001234567890'));
+    expect(again).toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining(
+        'Telegram chat -1001234567890 is not allowed',
+      ),
+    });
+    expect(existsSync(layout.database)).toBe(false);
+  });
+
   it('marks a data directory as legacy', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const status = await pero(withDataDir('status'));

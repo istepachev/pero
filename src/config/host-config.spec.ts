@@ -194,6 +194,14 @@ describe('config.yaml on disk', () => {
     ]);
   });
 
+  it('writes a list left empty as []', () => {
+    writeFileSync(file, 'telegram:\n  allowed-chats:\n    - id: 5\n');
+
+    editHostConfig(file, (document) => denyChat(document, '5'));
+
+    expect(readFileSync(file, 'utf8')).toBe('telegram:\n  allowed-chats: []\n');
+  });
+
   it('keeps every digit of a large ID it writes', () => {
     editHostConfig(file, (document) => allowChat(document, BIG, null));
 
