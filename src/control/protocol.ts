@@ -5,6 +5,7 @@ import {
   PROVIDERS,
   providerDefaultsSchema,
 } from '../config/provider-options.js';
+import { telegramChatIdSchema } from '../config/host-config.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import {
@@ -118,14 +119,7 @@ export const backupResultSchema = z.object({
 
 export type BackupResult = z.infer<typeof backupResultSchema>;
 
-/** A Telegram chat ID: negative for a group, the user's ID for a direct chat. */
-export const telegramChatIdSchema = z
-  .string()
-  .trim()
-  .regex(
-    /^-?\d{1,20}$/,
-    'must be a Telegram chat ID, such as -1001234567890 or 123456789',
-  );
+export { telegramChatIdSchema };
 
 export const BOT_MEMBERSHIPS = [
   'administrator',
@@ -145,7 +139,8 @@ export const allowedChatSchema = z.object({
   topics: z.boolean().nullable(),
   /** Why the bot cannot see every message there; null when it can. */
   problem: z.string().nullable(),
-  allowedAt: z.iso.datetime(),
+  /** When a daemon from before `config.yaml` recorded the allowing. */
+  allowedAt: z.iso.datetime().optional(),
 });
 
 export type AllowedChatView = z.infer<typeof allowedChatSchema>;

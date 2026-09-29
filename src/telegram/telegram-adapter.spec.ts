@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -10,7 +10,6 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message as HistoryMessage } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -23,6 +22,7 @@ import { TelegramCredentials } from './telegram-credentials.service.js';
 import { TelegramStatus } from './telegram-status.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 const OTHER = '987654321:BBEhBOweik6ad9r_QXMENQjcrGbqCr4K-xy';
@@ -81,6 +81,7 @@ describe('TelegramAdapter', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         AgentsModule,
         ChannelsModule,
@@ -406,8 +407,11 @@ describe('TelegramAdapter', () => {
         text: 'echo: After',
       });
       expect(
-        (await db().getRepository(AllowedChat).find()).map((c) => c.chatKey),
+        (await get(AllowedChatsService).list('telegram')).map((c) => c.chatKey),
       ).toEqual(['-1009876543210']);
+      expect(readFileSync(join(tmp, 'config.yaml'), 'utf8')).toContain(
+        '- id: -1009876543210\n',
+      );
       expect(await db().getRepository(Channel).find()).toEqual([
         expect.objectContaining({
           id: before!.id,

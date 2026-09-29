@@ -6,7 +6,6 @@ import { AgentsService } from '../agents/agents.service.js';
 import { InvalidInputError } from '../common/errors.js';
 import { SLUG_MAX_LENGTH } from '../config/slug.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import {
   SETTINGS_ID,
@@ -15,6 +14,7 @@ import {
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { AgentNamer } from './agent-namer.js';
+import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
   ChannelEvent,
   InboundChannel,
@@ -67,6 +67,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     private readonly agents: AgentsService,
     private readonly namer: AgentNamer,
     private readonly sender: ChannelSender,
+    private readonly allowedChats: AllowedChatsService,
   ) {
     super();
   }
@@ -230,33 +231,24 @@ export class ChannelOnboardingService extends ChannelOnboarding {
 
   /**
    * Moves a chat that now lives under a new ID, as when a group gains
-   * topics: its allowlist entry, and its primary Channel, whose key is the
-   * chat's. A chat that migrates has no topics yet, so no other Channel has
-   * its key. Sessions and history follow the Channel's ID.
+   * topics: its primary Channel, whose key is the chat's, then its entry in
+   * `config.yaml`. A chat that migrates has no topics yet, so no other
+   * Channel has its key. Sessions and history follow the Channel's ID.
    */
   private async migrate(
     event: Extract<ChannelEvent, { type: 'chat-migrated' }>,
   ): Promise<void> {
     const { integrationKind, chat, newChatKey, newAddress } = event;
-    const moved = await inTransaction(this.dataSource, async (manager) => {
-      const allowed = manager.getRepository(AllowedChat);
-      const entry = await allowed.findOneBy({
-        integrationKind,
-        chatKey: chat.key,
-      });
-      if (entry === null) return false;
-      if (await allowed.existsBy({ integrationKind, chatKey: newChatKey })) {
-        await allowed.delete(entry.id);
-      } else {
-        await allowed.update(entry.id, { chatKey: newChatKey });
-      }
-
+    if ((await this.allowedChats.find(integrationKind, chat.key)) === null) {
+      return;
+    }
+    await inTransaction(this.dataSource, async (manager) => {
       const channels = manager.getRepository(Channel);
       const channel = await channels.findOneBy({
         integrationKind,
         externalKey: chat.key,
       });
-      if (channel === null) return true;
+      if (channel === null) return;
       if (
         await channels.existsBy({ integrationKind, externalKey: newChatKey })
       ) {
@@ -264,18 +256,25 @@ export class ChannelOnboardingService extends ChannelOnboarding {
           `Kept ${integrationKind} Channel ${channel.id} under ${chat.key}: ` +
             `a Channel for the migrated chat ${newChatKey} already exists`,
         );
-        return true;
+        return;
       }
       channel.externalKey = newChatKey;
       channel.address = { ...newAddress };
       await channels.save(channel);
-      return true;
     });
-    if (moved) {
-      this.logger.log(
-        `Followed ${integrationKind} chat ${chat.key} to its new ID ${newChatKey}`,
+    try {
+      this.allowedChats.migrate(integrationKind, chat.key, newChatKey);
+    } catch (error) {
+      this.logger.error(
+        `Moved ${integrationKind} chat ${chat.key} to ${newChatKey}, but ` +
+          `could not update config.yaml; allow ${newChatKey} again: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
       );
+      return;
     }
+    this.logger.log(
+      `Followed ${integrationKind} chat ${chat.key} to its new ID ${newChatKey}`,
+    );
   }
 
   /** Sends Pero's own notice with `send`; a failure is only logged. */

@@ -7,6 +7,7 @@ import { resolveDaemonEnv } from './config/daemon-env.js';
 import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
 import { HistoryRetentionModule } from './history/history-retention.module.js';
+import { HostConfigModule } from './host-config/host-config.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
@@ -41,6 +42,11 @@ export class AppModule {
           daemonEnv.fakeRuntime ? { fake: daemonEnv.fakeRuntime } : {},
         ),
         PersistenceModule.forRoot({ database: options.layout.database }),
+        HostConfigModule.forRoot({
+          file: options.layout.configFile,
+          workspace: options.layout.workspace,
+          base: options.layout.workspace ?? options.layout.root,
+        }),
         SettingsModule,
         AgentsModule,
         ChannelsModule,

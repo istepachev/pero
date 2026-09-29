@@ -47,6 +47,7 @@ import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const OWNER = privateChat('1234');
 const HOME = groupChat('-100777', 'Home');
@@ -69,6 +70,7 @@ describe('Workflow Runs and the executor', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         ChannelsModule,
         WorkflowsModule,

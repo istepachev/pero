@@ -33,6 +33,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 import { AgentsService } from './agents.service.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
@@ -53,6 +54,7 @@ describe('AgentManager', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         AgentsModule,
         ChannelsModule,

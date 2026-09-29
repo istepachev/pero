@@ -23,7 +23,9 @@ import {
   type SettingsChange,
   settingsChangeSchema,
 } from '../config/settings-input.js';
+import { validateWorkingDirectory } from '../config/working-directory.js';
 import { ComponentHealth } from '../health/component-health.js';
+import { HostConfigService } from '../host-config/host-config.service.js';
 import { NotificationDelivery } from '../notifications/notification-delivery.js';
 import { NotificationViews } from '../notifications/notification-views.service.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
@@ -64,6 +66,7 @@ export class ControlService implements OnModuleDestroy {
     @Inject(CONTROL_LAYOUT) private readonly layout: DataDirLayout,
     private readonly health: ComponentHealth,
     private readonly settings: SettingsService,
+    private readonly hostConfig: HostConfigService,
     private readonly telegram: TelegramCredentials,
     private readonly telegramChats: TelegramChats,
     private readonly providers: ProviderAuthService,
@@ -196,6 +199,14 @@ export class ControlService implements OnModuleDestroy {
       change,
     );
     const fields = withoutUndefined(update);
+    if (fields.defaultWorkingDirectory !== undefined) {
+      // config.yaml holds it; the settings row follows for the rest of Pero.
+      const folder = await validateWorkingDirectory(
+        fields.defaultWorkingDirectory,
+      );
+      this.hostConfig.setDataFolder(folder);
+      fields.defaultWorkingDirectory = folder;
+    }
     if (Object.keys(fields).length > 0) {
       await this.settings.update(fields);
       if (fields.defaultProvider !== undefined) {

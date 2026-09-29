@@ -1,12 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AllowedChatsService } from '../channels/allowed-chats.service.js';
+import {
+  type AllowedChatEntry,
+  AllowedChatsService,
+} from '../channels/allowed-chats.service.js';
 import { PairingRequests } from '../channels/pairing-requests.js';
 import { NotFoundError } from '../common/errors.js';
 import type {
   AllowedChatView,
   TelegramChats as TelegramChatsView,
 } from '../control/protocol.js';
-import type { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
+import { chatKindOf } from '../config/host-config.js';
 import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramStatus } from './telegram-status.js';
 
@@ -51,9 +54,10 @@ export class TelegramChats {
   }
 
   /**
-   * Allows chat `chatKey`. Its kind and name come from its pairing request,
-   * otherwise from Telegram, otherwise from the ID alone: groups have
-   * negative IDs. Waits briefly for the bot's standing in a group.
+   * Allows chat `chatKey`, adding it to `config.yaml`. Its kind and name
+   * come from its pairing request, otherwise from Telegram, otherwise from
+   * the ID alone: groups have negative IDs. Waits briefly for the bot's
+   * standing in a group.
    */
   async allow(
     chatKey: string,
@@ -67,7 +71,7 @@ export class TelegramChats {
     const chat = await this.allowedChats.allow({
       integrationKind: 'telegram',
       chatKey,
-      kind: found?.kind ?? (chatKey.startsWith('-') ? 'group' : 'private'),
+      kind: found?.kind ?? chatKindOf(chatKey),
       title: found?.title ?? existing?.title ?? null,
     });
     if (existing === null) {
@@ -105,7 +109,7 @@ export class TelegramChats {
     this.status.setAllowedChats(await this.allowedChats.count('telegram'));
   }
 
-  private view(chat: AllowedChat): AllowedChatView {
+  private view(chat: AllowedChatEntry): AllowedChatView {
     const access = this.status
       .access()
       .find((candidate) => candidate.chatKey === chat.chatKey);
@@ -116,7 +120,6 @@ export class TelegramChats {
       bot: access?.status ?? null,
       topics: access?.topics ?? null,
       problem: access?.problem ?? null,
-      allowedAt: chat.createdAt.toISOString(),
     };
   }
 }
