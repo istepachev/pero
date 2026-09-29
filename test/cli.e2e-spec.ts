@@ -353,11 +353,18 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
 
     // A group's ID is negative, which must not pass for an option.
+    writeFileSync(
+      layout.configFile,
+      `${readFileSync(layout.configFile, 'utf8')}# my own note\n`,
+    );
     const allow = await pero(
       withDataDir('telegram', 'allow', '-1001234567890'),
     );
     expect(allow).toMatchObject({ code: 0, stderr: '' });
     expect(allow.stdout).toBe('Allowed: group "Household" (-1001234567890)\n');
+    expect(readFileSync(layout.configFile, 'utf8')).toContain(
+      '  allowed-chats:\n    - id: -1001234567890\n      title: Household\n',
+    );
     const again = await pero([
       'telegram',
       'allow',
@@ -385,6 +392,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stdout:
         'Denied: group "Household" (-1001234567890). Its Channels and Agents are kept and resume if you allow it again.\n',
     });
+    const config = readFileSync(layout.configFile, 'utf8');
+    expect(config).not.toContain('-1001234567890');
+    expect(config).toMatch(/# my own note\n$/);
     const missing = await pero(
       withDataDir('telegram', 'deny', '-1001234567890'),
     );
@@ -1634,6 +1644,22 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '--workspace: cannot be combined with --data-dir',
       ),
     });
+  });
+
+  it('stops startup on an invalid config.yaml, naming the file, line, and key', async () => {
+    mkdirSync(layout.root, { recursive: true });
+    writeFileSync(
+      layout.configFile,
+      'telegram:\n  allowed-chats:\n    - id: family\n',
+    );
+
+    const run = await pero(withDataDir('run', '--foreground'));
+
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain(
+      `Invalid ${layout.configFile}:\n  line 3: telegram.allowed-chats (item 1).id: must be a Telegram chat ID`,
+    );
+    expect(readDaemonMetadata(layout.metadataFile)).toBeNull();
   });
 
   it('marks a data directory as legacy', async () => {

@@ -4,8 +4,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,7 +67,7 @@ describe('BackupService', () => {
     return { dir, manifest: await extractBackupArchive(file, dir) };
   }
 
-  it('snapshots committed work still in the WAL, with the secrets and a manifest', async () => {
+  it('snapshots committed work still in the WAL, with config.yaml, the secrets, and a manifest', async () => {
     await moduleRef.get(SettingsService).update({
       defaultWorkingDirectory: vault,
       sharedInstructions: 'Answer in English.',
@@ -75,6 +77,7 @@ describe('BackupService', () => {
       .get(AgentsService)
       .create({ name: 'coder', workingDirectory: own });
     writeSecret(layout.secrets, 'telegram-bot-token', 'secret-token');
+    writeFileSync(layout.configFile, '# mine\ndata: /srv/vault\n');
     // Not checkpointed: a copy of pero.sqlite alone would miss these rows.
     expect(statSync(`${layout.database}-wal`).size).toBeGreaterThan(0);
     const file = join(tmp, 'backup.tgz');
@@ -89,10 +92,11 @@ describe('BackupService', () => {
     });
     const { dir, manifest } = await extract(file);
     expect(manifest).toEqual({
-      format: 1,
+      format: 2,
       peroVersion: PACKAGE_VERSION,
       createdAt: result.createdAt,
       sourceDataDir: layout.root,
+      sourceWorkspace: null,
       lastMigration: MIGRATIONS.at(-1)!.name,
       workingDirectories: [
         { path: vault, agent: null },
@@ -101,10 +105,14 @@ describe('BackupService', () => {
       secrets: ['telegram-bot-token'],
     });
     expect(readdirSync(dir).sort()).toEqual([
+      'config.yaml',
       'pero-backup.json',
       'pero.sqlite',
       'secrets',
     ]);
+    expect(readFileSync(join(dir, 'config.yaml'), 'utf8')).toBe(
+      '# mine\ndata: /srv/vault\n',
+    );
 
     const snapshot = new Database(join(dir, DATABASE_ENTRY), {
       readonly: true,

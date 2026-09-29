@@ -27,6 +27,7 @@ import type { BackupResult } from '../control/protocol.js';
 import {
   BACKUP_FORMAT,
   type BackupManifest,
+  CONFIG_ENTRY,
   DATABASE_ENTRY,
   MANIFEST_ENTRY,
   SECRETS_ENTRY,
@@ -85,11 +86,17 @@ export class BackupService implements BeforeApplicationShutdown {
         this.layout.workspace === null
           ? await copySecrets(this.layout.secrets, join(staging, SECRETS_ENTRY))
           : [];
+      await copyFile(this.layout.configFile, join(staging, CONFIG_ENTRY)).catch(
+        (error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        },
+      );
       const manifest: BackupManifest = {
         format: BACKUP_FORMAT,
         peroVersion: PACKAGE_VERSION,
         createdAt: new Date().toISOString(),
         sourceDataDir: this.layout.root,
+        sourceWorkspace: this.layout.workspace,
         ...describeSnapshot(snapshot),
         secrets,
       };

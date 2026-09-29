@@ -56,6 +56,8 @@ export interface DataDirLayout {
   secrets: string;
   /** `.pero/.gitignore`; null for a legacy data directory. */
   stateGitignore: string | null;
+  /** `config.yaml`: the data folder and the chats Pero serves. */
+  configFile: string;
   /** The workspace's `.env`; null for a legacy data directory. */
   envFile: string | null;
   /** The workspace's own `.gitignore`; null for a legacy data directory. */
@@ -89,6 +91,7 @@ export function dataDirLayout(
     metadataFile: join(run, 'pero.json'),
     secrets: join(root, 'secrets'),
     stateGitignore: workspace === null ? null : join(root, '.gitignore'),
+    configFile: join(root, 'config.yaml'),
     envFile: workspace === null ? null : join(workspace, '.env'),
     workspaceGitignore:
       workspace === null ? null : join(workspace, '.gitignore'),

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
@@ -8,7 +8,6 @@ import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
@@ -29,6 +28,7 @@ import {
   privateChat,
   topicCreated,
 } from './testing/fake-channel-adapter.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 // Beyond Number.MAX_SAFE_INTEGER, like real supergroup IDs can be.
 const GROUP = groupChat('-1009007199254740993', 'Household');
@@ -61,6 +61,7 @@ describe('ChannelRouter', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         AgentsModule,
         ChannelsModule,
@@ -356,18 +357,19 @@ describe('ChannelRouter', () => {
       expect(adapter.sent).toEqual([]);
     });
 
-    it('records a new chat title', async () => {
+    it('remembers a new chat title without writing config.yaml', async () => {
       await allow(OWNER, null);
+      const file = join(tmp, 'config.yaml');
+      const written = readFileSync(file, 'utf8');
       await adapter.deliver(inboundMessage(groupChat(GROUP.key, 'Home')));
       await adapter.deliver(inboundMessage(OWNER));
 
-      const titles = await ds
-        .getRepository(AllowedChat)
-        .find({ order: { chatKey: 'ASC' } });
+      const titles = await allowedChats.list('telegram');
       expect(titles.map((chat) => [chat.chatKey, chat.title])).toEqual([
         [GROUP.key, 'Home'],
         [OWNER.key, null],
       ]);
+      expect(readFileSync(file, 'utf8')).toBe(written);
     });
 
     it('logs a failing stage and keeps routing', async () => {

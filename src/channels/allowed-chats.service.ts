@@ -1,9 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
+import { chatKindOf } from '../config/host-config.js';
+import { HostConfigService } from '../host-config/host-config.service.js';
 import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
-import { inTransaction } from '../persistence/transaction.js';
+
+/** A chat Pero serves; messages from any other chat never reach a Channel. */
+export interface AllowedChatEntry {
+  integrationKind: IntegrationKind;
+  /** The integration's chat ID, as a string; Telegram's may exceed 2^53. */
+  chatKey: string;
+  kind: ChatKind;
+  /** The chat's name as last seen, else its label in `config.yaml`. */
+  title: string | null;
+}
 
 export interface ChatToAllow {
   integrationKind: IntegrationKind;
@@ -12,40 +20,41 @@ export interface ChatToAllow {
   title: string | null;
 }
 
-/** The chats Pero serves; only the owner on the host adds to them. */
+/**
+ * The chats Pero serves: `telegram.allowed-chats` in `config.yaml`. Only
+ * the owner on the host adds to them, through the file or the CLI. Chat
+ * names seen in messages are kept in memory only, so Pero writes the file
+ * just when the list itself changes.
+ */
 @Injectable()
 export class AllowedChatsService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  private readonly seenTitles = new Map<string, string>();
+
+  constructor(private readonly hostConfig: HostConfigService) {}
 
   find(
     integrationKind: IntegrationKind,
     chatKey: string,
-  ): Promise<AllowedChat | null> {
-    return this.dataSource
-      .getRepository(AllowedChat)
-      .findOneBy({ integrationKind, chatKey });
+  ): Promise<AllowedChatEntry | null> {
+    const found = this.entries(integrationKind).find(
+      (chat) => chat.chatKey === chatKey,
+    );
+    return Promise.resolve(found ?? null);
   }
 
-  /** The integration's allowed chats, oldest first. */
-  list(integrationKind: IntegrationKind): Promise<AllowedChat[]> {
-    return this.dataSource
-      .getRepository(AllowedChat)
-      .find({ where: { integrationKind }, order: { id: 'ASC' } });
+  /** The integration's allowed chats, in the file's order. */
+  list(integrationKind: IntegrationKind): Promise<AllowedChatEntry[]> {
+    return Promise.resolve(this.entries(integrationKind));
   }
 
-  /** Allows a chat; allowing one again updates its kind and title. */
-  allow(chat: ChatToAllow): Promise<AllowedChat> {
-    return inTransaction(this.dataSource, async (manager) => {
-      const repo = manager.getRepository(AllowedChat);
-      const { integrationKind, chatKey } = chat;
-      const existing = await repo.findOneBy({ integrationKind, chatKey });
-      if (existing === null) {
-        await repo.insert(chat);
-      } else {
-        await repo.update(existing.id, { kind: chat.kind, title: chat.title });
-      }
-      return repo.findOneByOrFail({ integrationKind, chatKey });
-    });
+  /**
+   * Allows a chat, labelled with its title in `config.yaml`. Allowing one
+   * again keeps its entry.
+   */
+  async allow(chat: ChatToAllow): Promise<AllowedChatEntry> {
+    this.hostConfig.allow(chat.chatKey, chat.title);
+    if (chat.title !== null) this.seenTitles.set(chat.chatKey, chat.title);
+    return (await this.find(chat.integrationKind, chat.chatKey))!;
   }
 
   /**
@@ -53,30 +62,44 @@ export class AllowedChatsService {
    * was not allowed. Its Channels, Agents, Sessions, and history stay, so
    * allowing it again picks up where it left off.
    */
-  deny(
+  async deny(
     integrationKind: IntegrationKind,
     chatKey: string,
-  ): Promise<AllowedChat | null> {
-    return inTransaction(this.dataSource, async (manager) => {
-      const repo = manager.getRepository(AllowedChat);
-      const existing = await repo.findOneBy({ integrationKind, chatKey });
-      if (existing !== null) await repo.delete(existing.id);
-      return existing;
-    });
+  ): Promise<AllowedChatEntry | null> {
+    const existing = await this.find(integrationKind, chatKey);
+    if (existing !== null) this.hostConfig.deny(chatKey);
+    return existing;
+  }
+
+  /**
+   * Follows an allowed chat to its new ID, as when a group turns on topics;
+   * false when it was not allowed.
+   */
+  migrate(integrationKind: IntegrationKind, from: string, to: string): boolean {
+    if (integrationKind !== 'telegram') return false;
+    const title = this.seenTitles.get(from);
+    if (title !== undefined) this.seenTitles.set(to, title);
+    return this.hostConfig.moveChat(from, to);
   }
 
   /** How many chats the integration serves. */
-  count(integrationKind: IntegrationKind): Promise<number> {
-    return this.dataSource
-      .getRepository(AllowedChat)
-      .countBy({ integrationKind });
+  async count(integrationKind: IntegrationKind): Promise<number> {
+    return (await this.list(integrationKind)).length;
   }
 
-  /** Records the chat's current name when it differs from the stored one. */
-  async refreshTitle(chat: AllowedChat, title: string | null): Promise<void> {
-    if (title === null || title === chat.title) return;
-    await inTransaction(this.dataSource, (manager) =>
-      manager.getRepository(AllowedChat).update(chat.id, { title }),
-    );
+  /** Remembers the chat's current name; nothing is written. */
+  refreshTitle(chat: AllowedChatEntry, title: string | null): Promise<void> {
+    if (title !== null) this.seenTitles.set(chat.chatKey, title);
+    return Promise.resolve();
+  }
+
+  private entries(integrationKind: IntegrationKind): AllowedChatEntry[] {
+    if (integrationKind !== 'telegram') return [];
+    return this.hostConfig.allowedChats().map((chat) => ({
+      integrationKind,
+      chatKey: chat.chatKey,
+      kind: chatKindOf(chat.chatKey),
+      title: this.seenTitles.get(chat.chatKey) ?? chat.title,
+    }));
   }
 }

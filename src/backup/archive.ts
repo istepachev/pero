@@ -18,24 +18,28 @@ import { describeIssues } from '../common/errors.js';
 
 /*
  * A backup is a gzip tar holding a manifest, a consistent snapshot of the
- * database, and the owner-only secrets. Logs, `run/`, and working folders
- * are not part of it.
+ * database, `config.yaml`, and a legacy data directory's owner-only
+ * secrets. Logs, `run/`, `.env`, and working folders are not part of it.
  */
 
 export const MANIFEST_ENTRY = 'pero-backup.json';
 export const DATABASE_ENTRY = 'pero.sqlite';
 export const SECRETS_ENTRY = 'secrets';
+export const CONFIG_ENTRY = 'config.yaml';
 
-export const BACKUP_FORMAT = 1;
+/** 2 added `config.yaml`; a format 1 backup, without it, still restores. */
+export const BACKUP_FORMAT = 2;
 
 const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'latin1');
 
 export const backupManifestSchema = z.object({
-  format: z.literal(BACKUP_FORMAT),
+  format: z.union([z.literal(1), z.literal(BACKUP_FORMAT)]),
   peroVersion: z.string(),
   createdAt: z.iso.datetime(),
   /** The data directory the backup was taken from. */
   sourceDataDir: z.string(),
+  /** Its workspace; null for a legacy data directory, absent in format 1. */
+  sourceWorkspace: z.string().nullable().optional(),
   /** The newest migration the snapshot has applied; null when none. */
   lastMigration: z.string().nullable(),
   /**
@@ -60,7 +64,7 @@ export class BackupFormatError extends Error {
 
 /**
  * Archives `stagingDir`, which holds the manifest, the database snapshot,
- * and `secrets/`, as `file`. The file is owner-only from the moment it
+ * `config.yaml`, and `secrets/`, as `file`. The file is owner-only from the moment it
  * exists and replaces any earlier one in one step.
  */
 export async function writeBackupArchive(
@@ -68,8 +72,9 @@ export async function writeBackupArchive(
   file: string,
 ): Promise<void> {
   const entries = [MANIFEST_ENTRY, DATABASE_ENTRY];
-  if ((await readdir(stagingDir)).includes(SECRETS_ENTRY)) {
-    entries.push(SECRETS_ENTRY);
+  const staged = await readdir(stagingDir);
+  for (const optional of [CONFIG_ENTRY, SECRETS_ENTRY]) {
+    if (staged.includes(optional)) entries.push(optional);
   }
   const temporary = `${file}.${process.pid}.tmp`;
   await rm(temporary, { force: true });
@@ -93,8 +98,8 @@ export async function writeBackupArchive(
 
 /**
  * Extracts backup `file` into the empty directory `dir` and returns its
- * manifest. Only the manifest, the database, and regular files in
- * `secrets/` are accepted; anything else fails as `BackupFormatError`, and
+ * manifest. Only the manifest, the database, `config.yaml`, and regular
+ * files in `secrets/` are accepted; anything else fails as `BackupFormatError`, and
  * `dir` may then hold part of the archive.
  */
 export async function extractBackupArchive(
@@ -149,7 +154,9 @@ function isBackupEntry(path: string, type: string): boolean {
   if (parts.length === 1) {
     if (parts[0] === SECRETS_ENTRY) return type === 'Directory';
     return (
-      (parts[0] === MANIFEST_ENTRY || parts[0] === DATABASE_ENTRY) &&
+      (parts[0] === MANIFEST_ENTRY ||
+        parts[0] === DATABASE_ENTRY ||
+        parts[0] === CONFIG_ENTRY) &&
       type === 'File'
     );
   }
@@ -207,6 +214,9 @@ async function checkDatabase(file: string, database: string): Promise<void> {
 async function makeOwnerOnly(dir: string): Promise<void> {
   await chmod(join(dir, MANIFEST_ENTRY), 0o600);
   await chmod(join(dir, DATABASE_ENTRY), 0o600);
+  await chmod(join(dir, CONFIG_ENTRY), 0o600).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  });
   const secrets = join(dir, SECRETS_ENTRY);
   let names: string[];
   try {

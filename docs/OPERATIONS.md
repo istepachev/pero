@@ -87,13 +87,29 @@ Everything Pero owns is in its data directory: a workspace's `.pero/`, or `~/.pe
 │   ├── pero.log         # daemon logs, JSON lines, without message text
 │   └── daemon.out       # raw output of a daemon started by `pero run`
 ├── run/                 # control socket, lock, and process metadata while Pero runs
-└── secrets/
+├── config.yaml          # the data folder and the chats Pero serves; commit it in a workspace
+└── secrets/             # a legacy data directory only; a workspace uses .env
     └── telegram-bot-token
 ```
 
+`config.yaml` holds what describes the installation, and that an Agent working in the data folder must not change:
+
+```yaml
+data: data               # the data folder Agents work in; relative to the workspace
+telegram:
+  allowed-chats:
+    - id: -1001234567890 # a group; negative
+      title: Home        # for you; Pero doesn't use it
+    - id: 123456789      # a direct chat: your user ID
+```
+
+- **Created on first start.** A workspace gets `data: data` (the folder is created when missing); an existing installation gets its default working directory, relative to the workspace when it is inside it. The allowed chats move from the database into the file once, keeping their titles.
+- **Edited with comments kept.** `pero telegram allow` and `deny`, a chat's new ID when a group turns on topics, and `pero settings set default-working-directory` change only their own lines, read the file again right before, and replace it in one step.
+- **Read at startup.** An invalid file stops Pero with the file, line, key, and reason. In a workspace, a `data` folder that doesn't exist stops it too; a legacy data directory only warns. For now, edit the file by hand only while Pero is stopped: Pero rereads it on its own from [plan step 5.3b](./vision/IMPLEMENTATION_PLAN.md#53b-live-reload-and-allowdeny-without-the-daemon).
+
 The database holds:
-- **Settings:** the installation defaults, including the default working directory and shared instructions.
-- **Telegram:** the allowed chats, and the inbound updates already handled.
+- **Settings:** the installation defaults, including shared instructions, and the default working directory, which follows `data` in `config.yaml`.
+- **Telegram:** the inbound updates already handled.
 - **Agents, Channels, and Sessions:** each Agent's settings, each Channel's Agent, and the provider session ID each Session resumes.
 - **Message history:** the text of each Channel (see below).
 - **Workflows, Triggers, and Notifications:** the definitions, each Workflow Run with its answer or error, and each Notification with its delivery state.
@@ -122,7 +138,7 @@ History is kept until you set `history-retention-days`; then messages older than
 pero backup ~/backups/pero-$(date +%F).tgz
 ```
 
-`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `secrets/` and a manifest as an owner-only gzip tar. The file must be outside the data directory; one already at that path is replaced. Logs and `run/` are left out. The backup holds the bot token and your message history, so keep it as private as the data directory. A bot token given in `PERO_TELEGRAM_BOT_TOKEN` is not in it.
+`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml`, a legacy data directory's `secrets/`, and a manifest as an owner-only gzip tar. The file must be outside the data directory; one already at that path is replaced. Logs and `run/` are left out. The backup holds the bot token and your message history, so keep it as private as the data directory. A bot token given in `PERO_TELEGRAM_BOT_TOKEN` is not in it.
 
 It needs Pero running. To back up every night, add a line to the crontab of the account that runs Pero (`crontab -e`), with the full path to `pero` when cron's `PATH` does not have it:
 

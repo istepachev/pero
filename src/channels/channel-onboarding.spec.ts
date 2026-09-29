@@ -37,6 +37,7 @@ import {
   topicCreated,
   topicRenamed,
 } from './testing/fake-channel-adapter.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
@@ -61,6 +62,7 @@ describe('Channel onboarding', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         AgentsModule,
         ChannelsModule,

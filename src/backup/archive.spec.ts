@@ -160,13 +160,37 @@ describe('backup archive', () => {
   });
 
   it('asks for a newer Pero for a newer backup format', async () => {
-    stage({ manifest: { ...manifest, format: 2 } });
+    stage({ manifest: { ...manifest, format: 3 } });
     const file = join(tmp, 'backup.tgz');
     await writeBackupArchive(staging, file);
 
     await expect(extractBackupArchive(file, target)).rejects.toThrow(
-      /newer Pero \(backup format 2\)/,
+      /newer Pero \(backup format 3\)/,
     );
+  });
+
+  it('restores config.yaml, and a format 1 backup without it', async () => {
+    stage({ manifest: { ...manifest, format: 2 } });
+    writeFileSync(join(staging, 'config.yaml'), 'data: data\n');
+    const file = join(tmp, 'backup.tgz');
+    await writeBackupArchive(staging, file);
+
+    await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
+      format: 2,
+    });
+    expect(readFileSync(join(target, 'config.yaml'), 'utf8')).toBe(
+      'data: data\n',
+    );
+    expect(statSync(join(target, 'config.yaml')).mode & 0o777).toBe(0o600);
+
+    rmSync(join(staging, 'config.yaml'));
+    rmSync(target, { recursive: true });
+    mkdirSync(target);
+    stage({ manifest: { ...manifest, format: 1 } });
+    await writeBackupArchive(staging, file);
+    await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
+      format: 1,
+    });
   });
 
   it('rejects a database that is not SQLite', async () => {

@@ -1,0 +1,237 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import type { DataSource } from 'typeorm';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ConfigError } from '../config/bootstrap-config.js';
+import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
+import {
+  SETTINGS_ID,
+  Settings,
+} from '../persistence/entities/settings.entity.js';
+import { PersistenceModule } from '../persistence/persistence.module.js';
+import { HostConfigModule } from './host-config.module.js';
+import { HostConfigService } from './host-config.service.js';
+
+describe('HostConfigService', () => {
+  let tmp: string;
+  let database: string;
+  let workspace: string;
+  let file: string;
+  let moduleRef: TestingModule | undefined;
+
+  beforeEach(() => {
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-host-')));
+    database = join(tmp, 'pero.sqlite');
+    workspace = join(tmp, 'ws');
+    file = join(workspace, '.pero', 'config.yaml');
+    mkdirSync(join(workspace, '.pero'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    // A module whose startup failed throws that failure again on close.
+    await moduleRef?.close().catch(() => undefined);
+    moduleRef = undefined;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  /** Opens the database without the service, to arrange rows first. */
+  async function withDatabase(
+    arrange: (dataSource: DataSource) => Promise<unknown>,
+  ): Promise<void> {
+    const ref = await Test.createTestingModule({
+      imports: [PersistenceModule.forRoot({ database })],
+    }).compile();
+    await ref.init();
+    await arrange(ref.get<DataSource>(getDataSourceToken()));
+    await ref.close();
+  }
+
+  async function start(
+    options: { legacy?: boolean } = {},
+  ): Promise<HostConfigService> {
+    const legacyDir = join(tmp, 'legacy');
+    mkdirSync(legacyDir, { recursive: true });
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        PersistenceModule.forRoot({ database }),
+        HostConfigModule.forRoot(
+          options.legacy
+            ? {
+                file: join(legacyDir, 'config.yaml'),
+                workspace: null,
+                base: legacyDir,
+              }
+            : { file, workspace, base: workspace },
+        ),
+      ],
+    }).compile();
+    await moduleRef.init();
+    return moduleRef.get(HostConfigService);
+  }
+
+  const defaultFolder = () =>
+    moduleRef!
+      .get<DataSource>(getDataSourceToken())
+      .getRepository(Settings)
+      .findOneByOrFail({ id: SETTINGS_ID })
+      .then((settings) => settings.defaultWorkingDirectory);
+
+  it('creates config.yaml with the data folder once, in a new workspace', async () => {
+    await start();
+
+    expect(readFileSync(file, 'utf8')).toContain('\ndata: data\n');
+    expect(existsSync(join(workspace, 'data'))).toBe(true);
+    expect(await defaultFolder()).toBe(join(workspace, 'data'));
+
+    await moduleRef!.close();
+    writeFileSync(file, `${readFileSync(file, 'utf8')}# kept\n`);
+    await start();
+    expect(readFileSync(file, 'utf8')).toMatch(/# kept\n$/);
+  });
+
+  it('carries the default working directory and allowed chats over once', async () => {
+    const vault = join(workspace, 'vault');
+    mkdirSync(vault);
+    await withDatabase(async (dataSource) => {
+      await dataSource
+        .getRepository(Settings)
+        .update(SETTINGS_ID, { defaultWorkingDirectory: vault });
+      await dataSource.getRepository(AllowedChat).insert([
+        {
+          integrationKind: 'telegram',
+          chatKey: '-1009007199254740993',
+          kind: 'group',
+          title: 'Home',
+        },
+        {
+          integrationKind: 'telegram',
+          chatKey: '123456789',
+          kind: 'private',
+          title: null,
+        },
+      ]);
+    });
+
+    const service = await start();
+
+    expect(service.allowedChats()).toEqual([
+      { chatKey: '-1009007199254740993', title: 'Home' },
+      { chatKey: '123456789', title: null },
+    ]);
+    const text = readFileSync(file, 'utf8');
+    expect(text).toContain('\ndata: vault\n');
+    expect(text).toContain(
+      '    - id: -1009007199254740993\n      title: Home\n    - id: 123456789\n',
+    );
+    const dataSource = moduleRef!.get<DataSource>(getDataSourceToken());
+    expect(await dataSource.getRepository(AllowedChat).count()).toBe(0);
+    expect(await defaultFolder()).toBe(vault);
+
+    // Denied by hand, it stays denied on the next start.
+    await moduleRef!.close();
+    writeFileSync(file, text.replace(/ {4}- id: 123456789\n/, ''));
+    expect((await start()).allowedChats()).toHaveLength(1);
+  });
+
+  it('adds rows found later, such as from a restored database, to the file', async () => {
+    await start();
+    await moduleRef!.close();
+    await withDatabase((dataSource) =>
+      dataSource.getRepository(AllowedChat).insert({
+        integrationKind: 'telegram',
+        chatKey: '42',
+        kind: 'private',
+        title: null,
+      }),
+    );
+
+    const service = await start();
+
+    expect(service.allowedChats()).toEqual([{ chatKey: '42', title: null }]);
+  });
+
+  it('points the settings row at the data folder config.yaml names', async () => {
+    mkdirSync(join(tmp, 'notes'));
+    writeFileSync(file, `data: ${join(tmp, 'notes')}\n`);
+
+    await start();
+
+    expect(await defaultFolder()).toBe(join(tmp, 'notes'));
+  });
+
+  it('stops startup when a data folder it names is missing', async () => {
+    writeFileSync(file, 'data: missing\n');
+
+    const error = await start().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message).toBe(
+      `Invalid ${file}:\n  data: Working directory ${join(workspace, 'missing')} does not exist`,
+    );
+  });
+
+  it('stops startup on an invalid file, naming the key', async () => {
+    writeFileSync(file, 'telegram:\n  allowed-chats: 5\n');
+
+    const error = await start().catch((caught: unknown) => caught);
+    expect((error as Error).message).toContain(
+      'line 2: telegram.allowed-chats: must be a list of chats, each with an id',
+    );
+  });
+
+  it('writes its changes to the file and keeps them in memory', async () => {
+    const service = await start();
+
+    expect(service.allow('-100555', 'Family')).toBe(true);
+    expect(service.allow('-100555', null)).toBe(false);
+    expect(service.moveChat('-100555', '-100777')).toBe(true);
+    expect(service.allow('12', null)).toBe(true);
+    expect(service.deny('12')).toBe(true);
+    expect(service.deny('12')).toBe(false);
+    mkdirSync(join(tmp, 'elsewhere'));
+    service.setDataFolder(join(tmp, 'elsewhere'));
+    service.setDataFolder(join(workspace, 'notes'));
+
+    expect(service.allowedChats()).toEqual([
+      { chatKey: '-100777', title: 'Family' },
+    ]);
+    const text = readFileSync(file, 'utf8');
+    expect(text).toContain('\ndata: notes\n');
+    expect(text).toContain('    - id: -100777\n      title: Family\n');
+  });
+
+  describe('in a legacy data directory', () => {
+    it('leaves data unset without a default working directory', async () => {
+      await start({ legacy: true });
+
+      const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
+      expect(text).toContain('\n# data: data\n');
+      expect(await defaultFolder()).toBeNull();
+    });
+
+    it('writes the default working directory as an absolute path, and only warns when it is gone', async () => {
+      const vault = join(tmp, 'vault');
+      await withDatabase((dataSource) =>
+        dataSource
+          .getRepository(Settings)
+          .update(SETTINGS_ID, { defaultWorkingDirectory: vault }),
+      );
+
+      await start({ legacy: true });
+
+      const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
+      expect(text).toContain(`\ndata: ${vault}\n`);
+      expect(await defaultFolder()).toBe(vault);
+    });
+  });
+});

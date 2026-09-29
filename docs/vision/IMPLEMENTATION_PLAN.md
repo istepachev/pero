@@ -20,10 +20,10 @@ The switch touches almost every module that reads an Agent, a Workflow, or a set
 
 **Existing installations keep working until the release.** Until phase 10, a legacy data directory (`--data-dir`, `PERO_HOME`, or an existing `~/.pero` with no workspace found) still starts. From phase 8 on, it needs `pero migrate` first, and says so. The version that ships this is `0.2.0`. Removed commands become stubs that say what to edit instead, and a later release removes the stubs and the legacy data directory.
 
-**What can run in parallel:** 5.x and 6.1–6.2 don't depend on each other. 6.3 and later need the workspace and `config.yaml` (5.1–5.3), since they find the settings folder through them. Phase 7 needs 6.2. Phases 8 and 9 are sequential, since both change the `Definitions` implementation.
+**What can run in parallel:** 5.x and 6.1–6.2 don't depend on each other. 6.3 and later need the workspace and `config.yaml` (5.1–5.3a), since they find the settings folder through them. Phase 7 needs 6.2. Phases 8 and 9 are sequential, since both change the `Definitions` implementation.
 
 ```text
-5.1 ─ 5.2 ─ 5.3 ─┬─ 5.4 ─ 5.5 ────────┐
+5.1 ─ 5.2 ─ 5.3a ┬─ 5.3b ─ 5.4 ─ 5.5 ─┐
                  │                    │
 6.1 ─ 6.1b ─ 6.2 ┴─ 6.3 ─ 6.4 ─ 6.3b ─┴─ 7.1 ─ 7.2 ─ 7.3 ─ 7.4 ─ 8.1 … 8.5 ─ 9.1 … 9.4 ─ 10.1 ─ 10.2 ─ 10.3
 ```
@@ -72,23 +72,32 @@ Pero's secrets move to `<workspace>/.env` (`src/config/env-file.ts`):
 - The Git check catches a tracked `.env`.
 - The token never appears in logs, `status`, or `settings show`.
 
-### 5.3 `config.yaml`: data folder and allowed chats
+### 5.3a `config.yaml`: data folder and allowed chats
 
-Add the `yaml` dependency and `.pero/config.yaml`, with a Zod schema for `data`, `settings`, and `telegram.allowed-chats`. Writes go through the `yaml` document API, so comments and ordering survive.
+`config.yaml` lives in the state directory: `.pero/config.yaml` in a workspace, `<data dir>/config.yaml` in a legacy data directory, so both take one code path. `src/config/host-config.ts` parses it with `yaml` (YAML 1.2, integers as bigints so large chat IDs keep every digit) against a strict Zod schema for `data`, `settings`, and `telegram.allowed-chats`. Errors name the file, line, key, and reason. Writes go through the `yaml` document API: each one reads the file again, changes only its own lines, and replaces the file atomically, so comments, ordering, and hand edits survive.
 
-- **`data`** replaces the `default-working-directory` setting. On first start, a missing `config.yaml` gets `data:` from that setting (or `data`).
-- **`telegram.allowed-chats`** replaces the `allowed_chats` table. On first start, the table's rows are written to the file. The table itself is dropped in 9.4.
-- **The daemon rereads `config.yaml` every 10 seconds** (a size and mtime check). A chat added or removed by hand applies from its next message.
-- **`pero telegram allow`/`deny` edit the file directly** and work without the daemon.
-- **A chat ID migration** rewrites that entry's `id`.
-- **`data` and `settings` changes need a restart.** `pero status` says so when the file changed since startup.
-- **An invalid `config.yaml`** stops startup with the file, key, and reason. At runtime, an invalid edit is reported and the last good version kept.
+- **`data`** replaces the `default-working-directory` setting. On first start, a missing `config.yaml` gets `data:` from that setting (relative to the workspace when inside it, absolute in a legacy data directory), or `data`. At every start the resolved folder is copied into the settings row, which the rest of Pero reads until 8.5 drops it. A workspace's `data/` is created when missing; any other missing folder stops startup in a workspace and only warns in a legacy data directory.
+- **`telegram.allowed-chats`** replaces the `allowed_chats` table. At startup, any rows are added to the file (a union by chat ID) and then deleted, so the import happens once and a restored older database is picked up too. The table itself is dropped in 9.4. `AllowedChatsService` keeps its interface, backed by the file; chat kinds come from the ID's sign, and titles seen in messages stay in memory, so Pero writes the file only when the list changes.
+- **`pero telegram allow`/`deny`** and `settings set default-working-directory` go through the daemon, which edits the file.
+- **A chat ID migration** moves the Channel, then rewrites that entry's `id` (or drops it when the new ID is already allowed).
+- **An invalid `config.yaml`** stops startup with the file, line, key, and reason.
+- **Backups** (format 2) include `config.yaml`; format 1 backups still restore.
 
 **Done when:**
-- A chat allowed by hand is served within 10 seconds, and one removed stops being served.
 - `allow`/`deny` keep comments.
 - Chat migration updates the file.
 - Existing `allowed_chats` rows and the default working directory are carried into a new `config.yaml` exactly once.
+
+### 5.3b Live reload, and `allow`/`deny` without the daemon
+
+- **The daemon rereads `config.yaml` every 10 seconds** (a size and mtime check). A chat added or removed by hand applies from its next message.
+- **`pero telegram allow`/`deny` edit the file directly** when Pero isn't running.
+- **`data` and `settings` changes need a restart.** `pero status` says so when the file changed since startup.
+- **At runtime, an invalid edit** is reported and the last good version kept.
+
+**Done when:**
+- A chat allowed by hand is served within 10 seconds, and one removed stops being served.
+- `allow`/`deny` work without Pero running and keep comments.
 
 ### 5.4 `pero init` and first run
 
@@ -183,7 +192,7 @@ Topic titles in `channel` and `history-channels` resolve through an injected loo
 
 ### 6.3 `pero check`
 
-Needs 5.1–5.3 for the workspace and `config.yaml`, and 5.2 for the `.env` checks.
+Needs 5.1–5.3a for the workspace and `config.yaml`, and 5.2 for the `.env` checks.
 
 Without Pero running, `pero check` resolves the workspace, loads `config.yaml` and the notes, and prints errors grouped by file. It checks the `.env` permissions and the Git rules from 5.2. Exit 1 on any error. It opens no database, so it runs in CI on a workspace repository. It says that topic titles weren't checked. `--json` prints the errors for tools.
 

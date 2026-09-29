@@ -43,6 +43,7 @@ import {
 } from './notification-delivery.js';
 import { NotificationViews } from './notification-views.service.js';
 import { NotificationsModule } from './notifications.module.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const OWNER = privateChat('1234');
 
@@ -68,6 +69,7 @@ describe('NotificationDelivery', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         ChannelsModule,
         WorkflowsModule,

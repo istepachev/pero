@@ -49,7 +49,7 @@ Before signing in to a provider, you can try the whole setup with the echo runti
 
 ### How it works
 
-With a bot token set, Pero long-polls Telegram for messages and membership changes. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its allowlist entry and Channel to the new ID.
+With a bot token set, Pero long-polls Telegram for messages and membership changes. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its Channel and its entry in `config.yaml` to the new ID.
 
 ### Allowed chats
 

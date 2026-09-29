@@ -217,12 +217,7 @@ describe('Restore drill (e2e)', () => {
       ),
       triggers: (await client.call('triggers.list', {})).triggers,
       allowed: (await client.call('telegram.chats')).allowed.map(
-        ({ chatId, kind, title, allowedAt }) => ({
-          chatId,
-          kind,
-          title,
-          allowedAt,
-        }),
+        ({ chatId, kind, title }) => ({ chatId, kind, title }),
       ),
     };
   }

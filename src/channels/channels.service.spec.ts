@@ -18,6 +18,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { ChannelViews } from './channel-views.service.js';
 import { ChannelsModule } from './channels.module.js';
 import { ChannelsService } from './channels.service.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 describe('ChannelsService and ChannelViews', () => {
   let tmp: string;
@@ -34,6 +35,7 @@ describe('ChannelsService and ChannelViews', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         ChannelsModule,
       ],

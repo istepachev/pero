@@ -22,6 +22,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { TelegramChats } from './telegram-chats.service.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
+import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 
@@ -68,6 +69,7 @@ describe('TelegramChats', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        hostConfigIn(tmp),
         SettingsModule,
         AgentsModule,
         ChannelsModule,
@@ -156,7 +158,6 @@ describe('TelegramChats', () => {
         bot: 'administrator',
         topics: null,
         problem: null,
-        allowedAt: expect.any(String),
       },
     ]);
   });

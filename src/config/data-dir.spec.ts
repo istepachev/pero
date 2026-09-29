@@ -36,6 +36,7 @@ describe('dataDirLayout', () => {
       metadataFile: '/srv/pero/run/pero.json',
       secrets: '/srv/pero/secrets',
       stateGitignore: null,
+      configFile: '/srv/pero/config.yaml',
       envFile: null,
       workspaceGitignore: null,
     });
