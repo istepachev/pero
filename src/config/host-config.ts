@@ -30,6 +30,9 @@ export const HOST_CONFIG_FILE = 'config.yaml';
 /** The data folder of a workspace whose `config.yaml` names none. */
 export const DEFAULT_DATA_FOLDER = 'data';
 
+/** The settings folder inside the data folder, unless `settings` names one. */
+export const SETTINGS_FOLDER = 'Settings';
+
 /**
  * A Telegram chat ID: negative for a group, the user's ID for a direct
  * chat. Kept as a string, since it may exceed 2^53.
@@ -269,6 +272,24 @@ export function resolveDataFolder(
 ): string | null {
   const data = config.data ?? (workspace ? DEFAULT_DATA_FOLDER : null);
   return data === null ? null : resolvePath(data, base, home);
+}
+
+/**
+ * The settings folder of `workspace` as an absolute path: the one
+ * `config` names, relative to the workspace, or else `<data>/Settings`.
+ */
+export function resolveSettingsFolder(
+  config: Pick<HostConfig, 'data' | 'settings'>,
+  workspace: string,
+  home: string = homedir(),
+): string {
+  if (config.settings !== null) {
+    return resolvePath(config.settings, workspace, home);
+  }
+  return join(
+    resolveDataFolder(config, workspace, true, home)!,
+    SETTINGS_FOLDER,
+  );
 }
 
 /**
