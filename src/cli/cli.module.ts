@@ -22,7 +22,19 @@ import { LogsCommand } from './commands/logs.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
 import { RunCommand } from './commands/run.command.js';
-import { RunsCancelCommand, RunsCommand } from './commands/runs.command.js';
+import {
+  NotificationsCommand,
+  NotificationsListCommand,
+  NotificationsRetryCommand,
+  NotificationsShowCommand,
+} from './commands/notifications.command.js';
+import {
+  RunsCancelCommand,
+  RunsCommand,
+  RunsListCommand,
+  RunsRetryCommand,
+  RunsShowCommand,
+} from './commands/runs.command.js';
 import {
   SettingsCommand,
   SettingsSetCommand,
@@ -97,7 +109,14 @@ import { GlobalOptionsSetup } from './global-options.js';
     WorkflowsRunCommand,
     WorkflowsNotifyCommand,
     RunsCommand,
+    RunsListCommand,
+    RunsShowCommand,
+    RunsRetryCommand,
     RunsCancelCommand,
+    NotificationsCommand,
+    NotificationsListCommand,
+    NotificationsShowCommand,
+    NotificationsRetryCommand,
     TriggersCommand,
     TriggersListCommand,
     TriggersAddCommand,

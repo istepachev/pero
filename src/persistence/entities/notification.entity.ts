@@ -11,16 +11,14 @@ import {
 } from 'typeorm';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
 import { Channel } from './channel.entity.js';
-import { oneOf } from './sql.js';
+import {
+  NOTIFICATION_STATUSES,
+  type NotificationStatus,
+  oneOf,
+} from './sql.js';
 import { WorkflowRun } from './workflow-run.entity.js';
 
-export const NOTIFICATION_STATUSES = [
-  'pending',
-  'delivered',
-  'failed',
-] as const;
-
-export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];
+export { NOTIFICATION_STATUSES, type NotificationStatus };
 
 /** A durable request to deliver a message to a Channel. */
 @Entity('notifications')

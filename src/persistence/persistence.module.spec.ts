@@ -101,6 +101,7 @@ describe('PersistenceModule', () => {
         sharedInstructions: null,
         mainAgentId: null,
         historyCarryover: 50,
+        historyRetentionDays: null,
         defaultPermissions: 'ask',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         maxConcurrentRuns: 2,

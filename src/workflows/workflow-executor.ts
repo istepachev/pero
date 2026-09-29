@@ -24,10 +24,10 @@ import { inTransaction } from '../persistence/transaction.js';
 import {
   type ExecutionSnapshot,
   executionSnapshot,
-  historyWindowSchema,
 } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { readHistoryWindow } from './history-window.js';
+import { queueRetryWithin } from './retry-run.js';
 
 /** A run the executor has claimed and marked `running`. */
 interface ClaimedRun {
@@ -169,29 +169,7 @@ export class WorkflowExecutor
     } else if (!agent.enabled) {
       outcome = `not retried: Agent ${agent.name} is disabled`;
     } else {
-      const triggerKey = `retry:${run.id}`;
-      const window = historyWindowSchema.safeParse(
-        run.executionConfig?.history,
-      );
-      await runs
-        .createQueryBuilder()
-        .insert()
-        .values({
-          workflowId: workflow.id,
-          triggerId: run.triggerId,
-          triggerKey,
-          status: 'pending',
-          attempt: run.attempt + 1,
-          // Taken up when the retry is claimed.
-          executionConfig: window.success ? { history: window.data } : null,
-        })
-        .orIgnore()
-        .execute();
-      // Found rather than taken from the insert, which an earlier
-      // recovery's retry may have made a no-op.
-      const retryId = (
-        await runs.findOneByOrFail({ workflowId: workflow.id, triggerKey })
-      ).id;
+      const retryId = await queueRetryWithin(manager, run);
       outcome = `run ${retryId} retries it (attempt ${run.attempt + 1} of ${workflow.maxAttempts})`;
       retried = true;
     }

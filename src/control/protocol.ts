@@ -20,6 +20,7 @@ import {
   INTEGRATION_KINDS,
   MESSAGE_DIRECTIONS,
   MESSAGE_ORIGINS,
+  NOTIFICATION_STATUSES,
   RUN_STATUSES,
   TRIGGER_KINDS,
 } from '../persistence/entities/sql.js';
@@ -82,6 +83,8 @@ export const settingsViewSchema = z.object({
   /** The name of the Agent primary Channels get; null until one is chosen. */
   mainAgent: z.string().nullable(),
   historyCarryover: z.int(),
+  /** Days of message history kept; null keeps all of it. */
+  historyRetentionDays: z.int().nullable(),
   defaultPermissions: z.enum(PERMISSION_MODES),
   timezone: z.string(),
   maxConcurrentRuns: z.int(),
@@ -398,6 +401,81 @@ export type RunView = z.infer<typeof runViewSchema>;
 
 const runIdSchema = z.int().positive();
 
+/** The most runs or Notifications a list returns at once. */
+export const MAX_LISTED = 500;
+
+export const DEFAULT_LISTED = 20;
+
+const listLimitSchema = z.int().min(1).max(MAX_LISTED).default(DEFAULT_LISTED);
+
+/** A durable message a finished run leaves for a Channel. */
+export const notificationViewSchema = z.object({
+  id: z.int(),
+  /** The run that left it. */
+  runId: z.int(),
+  /** The name of that run's Workflow. */
+  workflow: z.string(),
+  /** Where it goes. */
+  channel: notificationTargetSchema,
+  status: z.enum(NOTIFICATION_STATUSES),
+  /** Delivery attempts made so far. */
+  attempt: z.int(),
+  /** Attempts it gets before it is `failed`. */
+  maxAttempts: z.int(),
+  /** When a pending one is tried next; null otherwise. */
+  nextAttemptAt: z.iso.datetime().nullable(),
+  /** Why the latest attempt failed; null once delivered or before trying. */
+  lastError: z.string().nullable(),
+  /** The delivered message's ID in its integration; null until then. */
+  providerMessageId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type NotificationView = z.infer<typeof notificationViewSchema>;
+
+export const notificationDetailsSchema = notificationViewSchema.extend({
+  /** The message it delivers; null when its payload holds none. */
+  text: z.string().nullable(),
+  /**
+   * Whether its Channel's chat is allowed now; null while the Channel's
+   * integration is not connected, so it cannot tell.
+   */
+  chatAllowed: z.boolean().nullable(),
+  /**
+   * Why its Channel's integration is not ready, as `pero status` shows it;
+   * null while it is.
+   */
+  integrationProblem: z.string().nullable(),
+  /** Whether an attempt to deliver it is under way. */
+  delivering: z.boolean(),
+});
+
+export type NotificationDetails = z.infer<typeof notificationDetailsSchema>;
+
+/** A run with what it read and whom it told. */
+export const runDetailsSchema = runViewSchema.extend({
+  /** The run that retries it; null when none does. */
+  retriedBy: z.int().nullable(),
+  /** The Channel history it read; null when it read none, or not yet. */
+  history: z
+    .object({
+      channels: z.union([z.literal('all'), z.array(z.int())]),
+      messages: z.enum(HISTORY_MESSAGES),
+      /** How many messages its window held. */
+      count: z.int(),
+      /** How many of the oldest its input left out to fit its budget. */
+      dropped: z.int(),
+    })
+    .nullable(),
+  /** Oldest first. */
+  notifications: z.array(notificationViewSchema),
+});
+
+export type RunDetails = z.infer<typeof runDetailsSchema>;
+
+const notificationIdSchema = z.int().positive();
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -501,10 +579,6 @@ export const CONTROL_OPERATIONS = {
     result: workflowDetailsSchema,
   },
   /**
-   * Queues a run of a Workflow through its manual Trigger; the executor
-   * starts it once a slot is free.
-   */
-  /**
    * Makes a Workflow notify a Channel of its finished runs, or stop;
    * `changed` is false when there was nothing to do.
    */
@@ -519,13 +593,39 @@ export const CONTROL_OPERATIONS = {
       changed: z.boolean(),
     }),
   },
+  /**
+   * Queues a run of a Workflow through its manual Trigger; the executor
+   * starts it once a slot is free.
+   */
   'workflows.run': {
     params: z.strictObject({ name: workflowReferenceSchema }),
     result: runViewSchema,
   },
+  /** The latest runs, newest first. */
+  'runs.list': {
+    params: z.strictObject({
+      workflow: workflowReferenceSchema.optional(),
+      status: z.enum(RUN_STATUSES).optional(),
+      limit: listLimitSchema,
+    }),
+    result: z.object({ runs: z.array(runViewSchema) }),
+  },
   'runs.get': {
     params: z.strictObject({ id: runIdSchema }),
-    result: runViewSchema,
+    result: runDetailsSchema,
+  },
+  /**
+   * Queues a failed, interrupted, or cancelled run again as a new run that
+   * reads the same history window, whatever its Workflow's attempts allow.
+   * `alsoReadBy` names a run completed since that read some of those
+   * messages too; null when none did.
+   */
+  'runs.retry': {
+    params: z.strictObject({ id: runIdSchema }),
+    result: z.object({
+      run: runViewSchema,
+      alsoReadBy: z.int().nullable(),
+    }),
   },
   /**
    * Cancels a pending run at once, or aborts a running one, which is
@@ -534,6 +634,29 @@ export const CONTROL_OPERATIONS = {
   'runs.cancel': {
     params: z.strictObject({ id: runIdSchema }),
     result: runViewSchema,
+  },
+  /** The latest Notifications, newest first. */
+  'notifications.list': {
+    params: z.strictObject({
+      status: z.enum(NOTIFICATION_STATUSES).optional(),
+      workflow: workflowReferenceSchema.optional(),
+      channel: channelIdSchema.optional(),
+      run: runIdSchema.optional(),
+      limit: listLimitSchema,
+    }),
+    result: z.object({ notifications: z.array(notificationViewSchema) }),
+  },
+  'notifications.get': {
+    params: z.strictObject({ id: notificationIdSchema }),
+    result: notificationDetailsSchema,
+  },
+  /**
+   * Makes a pending Notification due now, or gives a failed one a fresh
+   * set of attempts starting now; a delivered one is refused.
+   */
+  'notifications.retry': {
+    params: z.strictObject({ id: notificationIdSchema }),
+    result: notificationDetailsSchema,
   },
   /** Every Trigger, or one Workflow's, by ID. */
   'triggers.list': {

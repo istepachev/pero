@@ -1,23 +1,41 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
+import type { DataSource, EntityManager, FindOptionsWhere } from 'typeorm';
 import {
   ConflictError,
   InvalidInputError,
   NotFoundError,
 } from '../common/errors.js';
-import type { RunView } from '../control/protocol.js';
+import type {
+  ControlResult,
+  ParsedControlParams,
+  RunDetails,
+  RunView,
+} from '../control/protocol.js';
+import {
+  NOTIFICATION_RELATIONS,
+  notificationView,
+} from '../notifications/notification-views.service.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import { Notification } from '../persistence/entities/notification.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import {
+  historyReadSchema,
+  historyWindowSchema,
+} from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
+import { queueRetryWithin, retryKey } from './retry-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { findWorkflow } from './workflows.service.js';
 
-/** Queues Workflow Runs started by hand, cancels runs, and reads them back. */
+/**
+ * Queues Workflow Runs started or retried by hand, cancels runs, and reads
+ * them back.
+ */
 @Injectable()
 export class WorkflowRuns {
   private readonly logger = new Logger('Workflows');
@@ -120,16 +138,157 @@ export class WorkflowRuns {
     return run;
   }
 
-  /** Run `id`; `NotFoundError` if none. */
-  async get(id: number): Promise<RunView> {
-    const run = await this.dataSource.getRepository(WorkflowRun).findOne({
-      where: { id },
-      relations: { workflow: true },
+  /**
+   * Queues failed, interrupted, or cancelled run `id` again, as a new run
+   * with the next attempt that reads the same history window, and wakes the
+   * executor. The owner decides, so the Workflow's attempts do not limit
+   * it, but the Workflow and its Agent must be enabled. A run has one
+   * retry: `ConflictError` names it once it exists, and refuses a run that
+   * has not finished or that completed.
+   */
+  async retry(id: number): Promise<ControlResult<'runs.retry'>> {
+    const result = await inTransaction(this.dataSource, async (manager) => {
+      const runs = manager.getRepository(WorkflowRun);
+      const run = await runs.findOne({
+        where: { id },
+        relations: { workflow: true },
+      });
+      if (run === null) throw new NotFoundError(`No run with ID ${id}`);
+      // The foreign key guarantees the Workflow.
+      const workflow = run.workflow!;
+      if (run.status === 'pending' || run.status === 'running') {
+        throw new ConflictError(
+          `Run ${id} has not finished (${run.status}); pero runs cancel ${id} cancels it`,
+        );
+      }
+      if (run.status === 'completed') {
+        throw new ConflictError(
+          `Run ${id} completed; pero workflows run ${workflow.name} starts another`,
+        );
+      }
+      const existing = await runs.findOneBy({
+        workflowId: workflow.id,
+        triggerKey: retryKey(id),
+      });
+      if (existing !== null) {
+        throw new ConflictError(
+          `Run ${id} is already retried by run ${existing.id}; retry that one instead`,
+        );
+      }
+      if (!workflow.enabled) {
+        throw new InvalidInputError(
+          `Workflow ${workflow.name} is disabled; enable it first with pero workflows enable ${workflow.name}`,
+        );
+      }
+      const agent = await manager
+        .getRepository(Agent)
+        .findOneByOrFail({ id: workflow.agentId });
+      if (!agent.enabled) {
+        throw new InvalidInputError(
+          `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
+        );
+      }
+      const retryId = await queueRetryWithin(manager, run);
+      return {
+        run: runView(await runs.findOneByOrFail({ id: retryId }), workflow),
+        alsoReadBy: await alsoReadBy(manager, run),
+      };
     });
-    if (run === null) throw new NotFoundError(`No run with ID ${id}`);
-    // The foreign key guarantees the Workflow.
-    return runView(run, run.workflow!);
+    this.logger.log(
+      `Run ${id} of Workflow ${result.run.workflow} retried by hand as run ${result.run.id}`,
+    );
+    void this.executor.wake();
+    return result;
   }
+
+  /** The latest runs that match `filter`, newest first. */
+  list(filter: ParsedControlParams<'runs.list'>): Promise<RunView[]> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const where: FindOptionsWhere<WorkflowRun> = {};
+      if (filter.status !== undefined) where.status = filter.status;
+      if (filter.workflow !== undefined) {
+        where.workflowId = (await findWorkflow(manager, filter.workflow)).id;
+      }
+      const runs = await manager.getRepository(WorkflowRun).find({
+        where,
+        relations: { workflow: true },
+        order: { id: 'DESC' },
+        take: filter.limit,
+      });
+      // The foreign key guarantees each Workflow.
+      return runs.map((run) => runView(run, run.workflow!));
+    });
+  }
+
+  /**
+   * Run `id` with its retry, the history it read, and its Notifications;
+   * `NotFoundError` if none.
+   */
+  get(id: number): Promise<RunDetails> {
+    return inTransaction(this.dataSource, async (manager) => {
+      const runs = manager.getRepository(WorkflowRun);
+      const run = await runs.findOne({
+        where: { id },
+        relations: { workflow: true },
+      });
+      if (run === null) throw new NotFoundError(`No run with ID ${id}`);
+      const retry = await runs.findOneBy({
+        workflowId: run.workflowId,
+        triggerKey: retryKey(id),
+      });
+      const history = historyReadSchema.safeParse(run.executionConfig?.history);
+      const notifications = await manager.getRepository(Notification).find({
+        where: { workflowRunId: id },
+        relations: NOTIFICATION_RELATIONS,
+        order: { id: 'ASC' },
+      });
+      return {
+        // The foreign key guarantees the Workflow.
+        ...runView(run, run.workflow!),
+        retriedBy: retry?.id ?? null,
+        history: history.success
+          ? {
+              channels: history.data.channels,
+              messages: history.data.messages,
+              count: history.data.count,
+              dropped: history.data.dropped,
+            }
+          : null,
+        notifications: notifications.map(notificationView),
+      };
+    });
+  }
+}
+
+/**
+ * The first run of `run`'s Workflow completed after it that read messages
+ * its window holds too, which its retry reads again; null when none did.
+ */
+async function alsoReadBy(
+  manager: EntityManager,
+  run: WorkflowRun,
+): Promise<number | null> {
+  const window = historyWindowSchema.safeParse(run.executionConfig?.history);
+  if (!window.success) return null;
+  const later = await manager
+    .getRepository(WorkflowRun)
+    .createQueryBuilder('run')
+    .select('run.id', 'id')
+    .where('run.workflowId = :workflowId', { workflowId: run.workflowId })
+    .andWhere('run.id > :id', { id: run.id })
+    .andWhere('run.status = :status', { status: 'completed' })
+    .andWhere(`json_extract(run.executionConfig, '$.history.count') > 0`)
+    .andWhere(
+      `json_extract(run.executionConfig, '$.history.untilId') > :afterId`,
+      { afterId: window.data.afterId ?? 0 },
+    )
+    .andWhere(
+      `coalesce(json_extract(run.executionConfig, '$.history.afterId'), 0) < :untilId`,
+      { untilId: window.data.untilId },
+    )
+    .orderBy('run.id', 'ASC')
+    .getRawOne<{ id: number }>();
+  return later === undefined ? null : Number(later.id);
 }
 
 /** A run as the CLI shows it. */

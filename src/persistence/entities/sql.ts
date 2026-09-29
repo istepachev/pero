@@ -64,3 +64,15 @@ export const RUN_STATUSES = [
 ] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+/**
+ * Where a Notification stands: `pending` until it is delivered, or
+ * `failed` once it has run out of attempts or cannot be delivered.
+ */
+export const NOTIFICATION_STATUSES = [
+  'pending',
+  'delivered',
+  'failed',
+] as const;
+
+export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];

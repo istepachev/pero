@@ -1052,6 +1052,165 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
   });
 
+  it('lists, shows, and retries runs and Notifications', async () => {
+    const echo = { env: { PERO_FAKE_RUNTIME: 'echo' } };
+    expect((await pero(withDataDir('run'), echo)).code).toBe(0);
+    const vault = join(tmp, 'vault');
+    mkdirSync(vault);
+    await pero(
+      withDataDir('settings', 'set', 'default-working-directory', vault),
+    );
+    await pero(withDataDir('agents', 'create', 'coach'));
+    await pero(
+      withDataDir(
+        'workflows',
+        'create',
+        'brief',
+        '--agent',
+        'coach',
+        '--input',
+        'Summarize the day.',
+      ),
+    );
+    await pero(withDataDir('triggers', 'add', 'brief', '--manual'));
+    const runs = (...args: string[]) => pero(withDataDir('runs', ...args));
+    const notifications = (...args: string[]) =>
+      pero(withDataDir('notifications', ...args));
+
+    expect(await runs()).toEqual({
+      code: 0,
+      stdout: 'No runs yet. pero workflows run <name> starts one by hand.\n',
+      stderr: '',
+    });
+    expect((await pero(withDataDir('workflows', 'run', 'brief'))).code).toBe(0);
+    expect(await runs('retry', '1')).toMatchObject({
+      code: 1,
+      stderr: 'Run 1 completed; pero workflows run brief starts another\n',
+    });
+
+    // Run 1 failed, and left a Notification that could not be delivered.
+    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    const db = new Database(layout.database);
+    db.prepare(
+      `UPDATE "workflow_runs" SET "status" = 'failed', "result_json" = NULL, ` +
+        `"error_text" = 'The model is overloaded' WHERE "id" = 1`,
+    ).run();
+    db.prepare(
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "title", "agent_id") ` +
+        `VALUES ('telegram', '-100:7', '{"chatId":"-100","topicId":7}', 'English', 1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO "notifications" ("workflow_run_id", "channel_id", "status", "payload", "attempt", "last_error") ` +
+        `VALUES (1, 1, 'failed', '{"text":"Run 1 of Workflow brief failed"}', 10, 'Telegram is unreachable')`,
+    ).run();
+    db.close();
+    expect((await pero(withDataDir('run'), echo)).code).toBe(0);
+
+    const listed = await runs('ls', '--status', 'failed');
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toMatch(
+      /^ID +WORKFLOW +STATUS +ATTEMPT +STARTED BY +CREATED +FINISHED\n1 +brief +failed +1 +manual +/,
+    );
+    const shown = await runs('show', '1');
+    expect(shown.stdout).toContain('Run 1 of Workflow brief\n');
+    expect(shown.stdout).toContain('\nError\n  The model is overloaded\n');
+    expect(shown.stdout).toMatch(
+      /\nNotifications\n  ID +CHANNEL +STATUS +ATTEMPTS +NEXT ATTEMPT +LAST ERROR\n  1 +1 English +failed +10\/10 +— +Telegram is unreachable\n/,
+    );
+    expect(shown.stdout).toMatch(/pero runs retry 1 queues it again\.\n$/);
+
+    expect(await runs('retry', '1')).toEqual({
+      code: 0,
+      stdout: 'echo: Summarize the day.\n',
+      stderr: 'Queued run 2 to retry run 1 of Workflow brief…\n',
+    });
+    expect((await runs('show', '1')).stdout).toContain('  retried by  run 2\n');
+    expect((await runs('show', '2')).stdout).toContain(
+      '  started by  retry of run 1\n',
+    );
+    expect(await runs('retry', '1')).toMatchObject({
+      code: 1,
+      stderr: 'Run 1 is already retried by run 2; retry that one instead\n',
+    });
+    expect(await runs('ls', '--status', 'lost')).toMatchObject({
+      code: 1,
+      stderr:
+        '--status must be one of pending, running, completed, failed, cancelled, interrupted, not "lost"\n',
+    });
+    expect(await runs('ls', '-n', '0')).toMatchObject({
+      code: 1,
+      stderr: '--lines must be a whole number from 1 to 500, not "0"\n',
+    });
+    expect((await runs('ls', '-n', '1')).stdout).toMatch(
+      /\n2 +brief +completed +2 +retry of run 1 /,
+    );
+
+    const notificationList = await notifications();
+    expect(notificationList.stdout).toMatch(
+      /^ID +RUN +WORKFLOW +CHANNEL +STATUS +ATTEMPTS +NEXT ATTEMPT +LAST ERROR\n1 +1 +brief +1 English +failed +10\/10 +— +Telegram is unreachable\n$/,
+    );
+    expect((await notifications('ls', '--status', 'delivered')).stdout).toBe(
+      'No Notifications match.\n',
+    );
+    const notification = await notifications('show', '1');
+    expect(notification.stdout).toContain(
+      '  to            Channel 1 (telegram -100:7 "English")\n',
+    );
+    expect(notification.stdout).toContain(
+      '\nMessage\n  Run 1 of Workflow brief failed\n',
+    );
+    // The chat was never allowed, and there is no bot token.
+    expect(notification.stdout).toMatch(
+      /\n\nIts Channel's chat is no longer allowed; pero telegram chats lists the chats, and pero telegram allow <chat-id> allows it again\.\nTelegram: Bot token is not set; pero status shows more\.\npero notifications retry 1 tries it again with fresh attempts\.\n$/,
+    );
+
+    const retried = await notifications('retry', '1');
+    expect(retried.code).toBe(1);
+    expect(retried.stderr).toMatch(
+      /^Delivering Notification 1…\nCould not deliver Notification 1: the chat is no longer allowed\nIts Channel's chat is no longer allowed; pero telegram chats lists the chats, and pero telegram allow <chat-id> allows it again\.\nTelegram: Bot token is not set; pero status shows more\.\n$/,
+    );
+    expect((await notifications('show', '1')).stdout).toContain(
+      '  attempts      1/10\n',
+    );
+    expect(await notifications('retry', '1', '--no-wait')).toEqual({
+      code: 0,
+      stdout: 'Notification 1 is due now; Pero delivers it within seconds.\n',
+      stderr: '',
+    });
+    expect(await notifications('show', '9')).toMatchObject({
+      code: 1,
+      stderr: 'No Notification with ID 9\n',
+    });
+  });
+
+  it('keeps message history for as many days as the owner sets', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const settings = (...args: string[]) =>
+      pero(withDataDir('settings', ...args));
+
+    expect((await settings('show')).stdout).toContain(
+      'history-retention-days     (not set: keep all)\n',
+    );
+    expect(await settings('set', 'history-retention-days', '30')).toEqual({
+      code: 0,
+      stdout:
+        'history-retention-days is now 30 days\n' +
+        'Messages older than 30 days are deleted within the hour, and every hour after; runs and Notifications keep their text.\n',
+      stderr: '',
+    });
+    expect(await settings('set', 'history-retention-days', '0')).toMatchObject({
+      code: 1,
+      stderr: 'history-retention-days: Too small: expected number to be >=1\n',
+    });
+    expect(await settings('unset', 'history-retention-days')).toEqual({
+      code: 0,
+      stdout:
+        'history-retention-days is now (not set: keep all)\n' +
+        'All message history is kept from now on.\n',
+      stderr: '',
+    });
+  });
+
   it('sets the Channel history a Workflow reads, and skips a run with none', async () => {
     const run = await pero(withDataDir('run'), {
       env: { PERO_FAKE_RUNTIME: 'echo' },

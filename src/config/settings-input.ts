@@ -28,6 +28,9 @@ export const timeZoneSchema = z.string().transform((value, ctx) => {
   return zone;
 });
 
+/** The longest `historyRetentionDays`: a hundred years. */
+export const MAX_HISTORY_RETENTION_DAYS = 36_500;
+
 /** Changes to installation settings; an omitted field keeps its value. */
 export const settingsUpdateSchema = z.strictObject({
   defaultProvider: z.enum(PROVIDERS).optional(),
@@ -49,6 +52,13 @@ export const settingsUpdateSchema = z.strictObject({
   mainAgent: slugSchema.nullable().optional(),
   /** Messages a replacing Session starts with; 0 turns carry-over off. */
   historyCarryover: z.int().min(0).optional(),
+  /** Days of message history kept; null keeps all of it. */
+  historyRetentionDays: z
+    .int()
+    .min(1)
+    .max(MAX_HISTORY_RETENTION_DAYS)
+    .nullable()
+    .optional(),
   /** How new Agents' tools are approved; existing Agents keep theirs. */
   defaultPermissions: permissionModeSchema.optional(),
   timezone: timeZoneSchema.optional(),

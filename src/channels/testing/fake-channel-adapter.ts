@@ -40,6 +40,8 @@ export class FakeChannelAdapter implements ChannelAdapter {
   failSends = false;
   private handlers: ChannelHandlers | null = null;
   private nextMessageId = 1;
+  /** The hold the next send waits on, if any. */
+  private hold: { started: () => void; released: Promise<void> } | null = null;
 
   constructor(readonly kind: IntegrationKind = 'telegram') {}
 
@@ -54,13 +56,36 @@ export class FakeChannelAdapter implements ChannelAdapter {
     return Promise.resolve();
   }
 
-  send(
+  async send(
     address: ChannelAddress,
     message: OutboundMessage,
   ): Promise<SentMessage> {
-    if (this.failSends) return Promise.reject(new Error('Service unreachable'));
+    const hold = this.hold;
+    this.hold = null;
+    if (hold !== null) {
+      hold.started();
+      await hold.released;
+    }
+    if (this.failSends) throw new Error('Service unreachable');
     this.sent.push({ address, message });
-    return Promise.resolve({ messageId: String(this.nextMessageId++) });
+    return { messageId: String(this.nextMessageId++) };
+  }
+
+  /**
+   * Holds the next send until `release`; `started` resolves once it is
+   * under way.
+   */
+  holdSends(): { started: Promise<void>; release: () => void } {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.hold = { started, released };
+    return { started: startedPromise, release };
   }
 
   chatKey(address: ChannelAddress): string {

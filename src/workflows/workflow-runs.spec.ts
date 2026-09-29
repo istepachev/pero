@@ -720,6 +720,29 @@ describe('Workflow Runs and the executor', () => {
       expect(await notificationsOf(other.id)).toEqual([]);
     });
 
+    it('shows the Notifications a run left, with how their delivery stands', async () => {
+      await manualWorkflow('brief');
+      const channel = await target('brief');
+
+      const { id } = await runs.start('brief');
+      await executor.idle();
+
+      const details = await runs.get(id);
+      expect(details).toMatchObject({ retriedBy: null, history: null });
+      expect(details.notifications).toEqual([
+        expect.objectContaining({
+          runId: id,
+          workflow: 'brief',
+          channel: expect.objectContaining({ id: channel, key: '1234' }),
+          status: 'pending',
+          attempt: 0,
+          maxAttempts: 10,
+          lastError: null,
+          providerMessageId: null,
+        }),
+      ]);
+    });
+
     it('commits the final status and the Notifications together', async () => {
       await manualWorkflow('brief');
       await target('brief');
@@ -1174,6 +1197,219 @@ describe('Workflow Runs and the executor', () => {
       expect(await windowOf(queued.id)).toMatchObject({
         afterId: crashedUntil,
       });
+    });
+
+    it('retries a failed run by hand with the window it read, naming a run completed since that read it too', async () => {
+      await say('One');
+      await historyWorkflow();
+      claude.failNext();
+      const failed = await runReview();
+      expect(failed.view.status).toBe('failed');
+      await say('Two');
+      const later = await runReview();
+      expect(later.input).toContain('User: One');
+
+      const { run: retry, alsoReadBy } = await runs.retry(failed.view.id);
+      await executor.idle();
+
+      expect(alsoReadBy).toBe(later.view.id);
+      expect(await run(retry.id)).toMatchObject({ status: 'completed' });
+      const input = claude.requests.at(-1)!.input;
+      expect(input).toContain('User: One');
+      expect(input).not.toContain('Two');
+      expect(await windowOf(retry.id)).toMatchObject({
+        untilId: failed.window.untilId,
+        count: 1,
+      });
+      // The next run starts after the latest window, not the retry's.
+      await say('Three');
+      const next = await runReview();
+      expect(next.input).toContain('User: Three');
+      expect(next.input).not.toContain('One');
+    });
+
+    it('names no run when none has read the window of the run retried', async () => {
+      await say('One');
+      await historyWorkflow();
+      claude.failNext();
+      const failed = await runReview();
+
+      expect((await runs.retry(failed.view.id)).alsoReadBy).toBeNull();
+      await executor.idle();
+      expect(claude.requests.at(-1)!.input).toContain('User: One');
+    });
+
+    it('shows the history a run read', async () => {
+      await say('One');
+      await say('Two');
+      await historyWorkflow({ messages: 'all' });
+
+      const { view } = await runReview();
+
+      expect((await runs.get(view.id)).history).toEqual({
+        channels: 'all',
+        messages: 'all',
+        count: 4,
+        dropped: 0,
+      });
+    });
+  });
+
+  describe('retrying by hand', () => {
+    it('queues a failed run again as a new run with the next attempt, whatever the Workflow allows', async () => {
+      await manualWorkflow('brief');
+      claude.failNext();
+      const { id } = await runs.start('brief');
+      await executor.idle();
+
+      const { run: retry, alsoReadBy } = await runs.retry(id);
+      expect(retry).toMatchObject({
+        workflow: 'brief',
+        status: 'pending',
+        attempt: 2,
+        triggerKey: `retry:${id}`,
+      });
+      expect(retry.triggerId).toBe((await run(id)).triggerId);
+      expect(alsoReadBy).toBeNull();
+      await executor.idle();
+
+      expect(await run(retry.id)).toMatchObject({
+        status: 'completed',
+        result: 'echo: Run brief.',
+      });
+      expect(await runs.get(id)).toMatchObject({
+        status: 'failed',
+        retriedBy: retry.id,
+      });
+      expect((await runs.get(retry.id)).retriedBy).toBeNull();
+    });
+
+    it('retries a cancelled run, and an interrupted one Pero did not retry', async () => {
+      await settings.update({ maxConcurrentRuns: 1 });
+      await manualWorkflow('a');
+      await manualWorkflow('b');
+      const held = claude.hold();
+      await runs.start('a');
+      const b = await runs.start('b');
+      await held.started;
+      await runs.cancel(b.id);
+      held.release();
+      await executor.idle();
+      const interrupted = await ds.getRepository(WorkflowRun).save(
+        ds.getRepository(WorkflowRun).create({
+          workflowId: (await workflows.get('a')).id,
+          triggerId: null,
+          triggerKey: 'manual:interrupted',
+          status: 'interrupted',
+          attempt: 1,
+        }),
+      );
+
+      const cancelledRetry = await runs.retry(b.id);
+      const interruptedRetry = await runs.retry(interrupted.id);
+      await executor.idle();
+
+      expect(await run(cancelledRetry.run.id)).toMatchObject({
+        workflow: 'b',
+        status: 'completed',
+      });
+      expect(await run(interruptedRetry.run.id)).toMatchObject({
+        workflow: 'a',
+        status: 'completed',
+        triggerId: null,
+      });
+    });
+
+    it('refuses a run that has not finished, that completed, that is retried already, or that does not exist', async () => {
+      await manualWorkflow('brief');
+      const held = claude.hold();
+      const running = await runs.start('brief');
+      const pending = await runs.start('brief');
+      await held.started;
+
+      await expect(runs.retry(running.id)).rejects.toThrow(
+        new ConflictError(
+          `Run ${running.id} has not finished (running); pero runs cancel ${running.id} cancels it`,
+        ),
+      );
+      await expect(runs.retry(pending.id)).rejects.toThrow(
+        `Run ${pending.id} has not finished (pending)`,
+      );
+      held.release();
+      await executor.idle();
+      await expect(runs.retry(running.id)).rejects.toThrow(
+        new ConflictError(
+          `Run ${running.id} completed; pero workflows run brief starts another`,
+        ),
+      );
+
+      claude.failNext();
+      const failed = await runs.start('brief');
+      await executor.idle();
+      const { run: retry } = await runs.retry(failed.id);
+      await expect(runs.retry(failed.id)).rejects.toThrow(
+        new ConflictError(
+          `Run ${failed.id} is already retried by run ${retry.id}; retry that one instead`,
+        ),
+      );
+      await expect(runs.retry(99)).rejects.toThrow(
+        new NotFoundError('No run with ID 99'),
+      );
+      await executor.idle();
+    });
+
+    it('refuses while the Workflow or its Agent is disabled', async () => {
+      await manualWorkflow('brief');
+      claude.failNext();
+      const { id } = await runs.start('brief');
+      await executor.idle();
+
+      await workflows.edit('brief', { enabled: false });
+      await expect(runs.retry(id)).rejects.toThrow(
+        new InvalidInputError(
+          'Workflow brief is disabled; enable it first with pero workflows enable brief',
+        ),
+      );
+      await workflows.edit('brief', { enabled: true });
+      await agents.edit('coach', { enabled: false });
+      await expect(runs.retry(id)).rejects.toThrow(
+        new InvalidInputError(
+          'Agent coach is disabled; enable it first with pero agents enable coach',
+        ),
+      );
+      expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
+    });
+  });
+
+  describe('listing runs', () => {
+    it('lists the latest runs newest first, by Workflow and status', async () => {
+      await manualWorkflow('a');
+      await manualWorkflow('b');
+      const first = await runs.start('a');
+      await executor.idle();
+      claude.failNext();
+      const second = await runs.start('b');
+      await executor.idle();
+      const third = await runs.start('a');
+      await executor.idle();
+
+      const ids = (list: RunView[]) => list.map(({ id }) => id);
+      expect(ids(await runs.list({ limit: 20 }))).toEqual([
+        third.id,
+        second.id,
+        first.id,
+      ]);
+      expect(ids(await runs.list({ limit: 2 }))).toEqual([third.id, second.id]);
+      expect(ids(await runs.list({ workflow: 'A', limit: 20 }))).toEqual([
+        third.id,
+        first.id,
+      ]);
+      expect(await runs.list({ status: 'failed', limit: 20 })).toEqual([
+        expect.objectContaining({ id: second.id, workflow: 'b' }),
+      ]);
+      await expect(runs.list({ workflow: 'nope', limit: 20 })).rejects.toThrow(
+        NotFoundError,
+      );
     });
   });
 

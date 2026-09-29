@@ -21,7 +21,11 @@ import { AgentManager } from '../src/agents/agent-manager.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
-import { NotificationDelivery } from '../src/notifications/notification-delivery.js';
+import {
+  NOT_ALLOWED,
+  NotificationDelivery,
+} from '../src/notifications/notification-delivery.js';
+import type { RunView } from '../src/control/protocol.js';
 import { Notification } from '../src/persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js';
 import { Agent } from '../src/persistence/entities/agent.entity.js';
@@ -94,6 +98,65 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       ...(maxAttempts === undefined ? {} : { maxAttempts }),
     });
     await client.call('triggers.add', { workflow: 'brief', kind: 'manual' });
+  }
+
+  /** Every text the bot has sent. */
+  const texts = () => api.sent().map((payload) => String(payload.text));
+
+  /**
+   * Starts Pero with `brief` connected to the fake Bot API, and onboards the
+   * English topic of the allowed forum, which `brief` notifies. `say`
+   * writes there as the owner.
+   */
+  async function englishTopic() {
+    let nextMessageId = 1;
+    const say = (text: string) =>
+      api.push({
+        message: {
+          message_id: nextMessageId++,
+          date: 0,
+          chat: FORUM,
+          from: OWNER,
+          text,
+          message_thread_id: 7,
+          is_topic_message: true,
+        } as never,
+      });
+    api.chats.set(String(FORUM.id), FORUM);
+    await start();
+    await manualBrief();
+    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await vi.waitFor(async () =>
+      expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
+    );
+    await client.call('telegram.allow', { chatId: String(FORUM.id) });
+    // The topic onboards its Agent, which answers.
+    say('Hello');
+    await vi.waitFor(() => expect(texts()).toContain('echo: Hello'));
+    const channel = (await client.call('channels.list')).channels.find(
+      ({ key }) => key === `${FORUM.id}:7`,
+    )!;
+    await client.call('workflows.notify', {
+      name: 'brief',
+      channel: channel.id,
+      notify: true,
+    });
+    return { channel, say, texts };
+  }
+
+  /** Runs `brief` by hand and waits until it has finished. */
+  async function runBrief(): Promise<RunView> {
+    const { id } = await client.call('workflows.run', { name: 'brief' });
+    return waitFinished(id);
+  }
+
+  async function waitFinished(id: number): Promise<RunView> {
+    let run: RunView | undefined;
+    await vi.waitFor(async () => {
+      run = await client.call('runs.get', { id });
+      expect(['pending', 'running']).not.toContain(run.status);
+    });
+    return run!;
   }
 
   it('creates, edits, disables, and enables Workflows and their Triggers, keeping them across a restart', async () => {
@@ -658,40 +721,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     'delivers a Notification once Telegram is back, where the next turn receives it',
     { timeout: 60_000 },
     async () => {
-      const topic = { message_thread_id: 7, is_topic_message: true };
-      let nextMessageId = 1;
-      const say = (text: string) =>
-        api.push({
-          message: {
-            message_id: nextMessageId++,
-            date: 0,
-            chat: FORUM,
-            from: OWNER,
-            text,
-            ...topic,
-          } as never,
-        });
-      const texts = () => api.sent().map((payload) => String(payload.text));
-
-      api.chats.set(String(FORUM.id), FORUM);
-      await start();
-      await manualBrief();
-      await client.call('settings.update', { telegramBotToken: TOKEN });
-      await vi.waitFor(async () =>
-        expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
-      );
-      await client.call('telegram.allow', { chatId: String(FORUM.id) });
-      // The topic onboards its Agent, which answers.
-      say('Hello');
-      await vi.waitFor(() => expect(texts()).toContain('echo: Hello'));
-      const channel = (await client.call('channels.list')).channels.find(
-        ({ key }) => key === `${FORUM.id}:7`,
-      )!;
-      await client.call('workflows.notify', {
-        name: 'brief',
-        channel: channel.id,
-        notify: true,
-      });
+      const { channel, say, texts } = await englishTopic();
       const delivery = daemon!.app.get(NotificationDelivery);
       const notification = () =>
         daemon!.app
@@ -757,6 +787,168 @@ describe('Workflow and Trigger definitions (e2e)', () => {
 
       say('Thanks');
       await vi.waitFor(() => expect(texts().at(-1)).toBe('echo: Thanks'));
+    },
+  );
+  it(
+    'lists, shows, and retries runs and Notifications by hand',
+    { timeout: 60_000 },
+    async () => {
+      const { channel } = await englishTopic();
+      const delivery = daemon!.app.get(NotificationDelivery);
+      const runs = () =>
+        daemon!.app
+          .get<DataSource>(getDataSourceToken())
+          .getRepository(WorkflowRun);
+
+      // A run that fails is retried by hand, however few attempts it has.
+      claude().failNext();
+      const failed = await runBrief();
+      expect(failed).toMatchObject({
+        status: 'failed',
+        error: 'The model is overloaded',
+      });
+      expect(
+        await client.call('runs.list', { status: 'failed' }),
+      ).toMatchObject({ runs: [{ id: failed.id, workflow: 'brief' }] });
+      const { run: queued, alsoReadBy } = await client.call('runs.retry', {
+        id: failed.id,
+      });
+      expect(queued).toMatchObject({
+        status: 'pending',
+        attempt: 2,
+        triggerKey: `retry:${failed.id}`,
+      });
+      expect(alsoReadBy).toBeNull();
+      expect(await waitFinished(queued.id)).toMatchObject({
+        status: 'completed',
+        result: 'echo: Summarize the day.',
+      });
+      expect(await client.call('runs.get', { id: failed.id })).toMatchObject({
+        status: 'failed',
+        retriedBy: queued.id,
+      });
+      await expect(
+        client.call('runs.retry', { id: failed.id }),
+      ).rejects.toThrow(ConflictError);
+      expect(
+        (await client.call('runs.list', {})).runs.map(({ id }) => id),
+      ).toEqual([queued.id, failed.id]);
+
+      // A Notification to a chat no longer allowed fails, and is delivered
+      // once retried after the chat is allowed again.
+      await delivery.tick(new Date(Date.now() + 1_000));
+      expect(
+        (await client.call('runs.get', { id: queued.id })).notifications,
+      ).toEqual([expect.objectContaining({ status: 'delivered' })]);
+      await client.call('telegram.deny', { chatId: String(FORUM.id) });
+      const denied = await runBrief();
+      await delivery.tick(new Date(Date.now() + 1_000));
+      const [notification] = (
+        await client.call('notifications.list', { status: 'failed' })
+      ).notifications;
+      expect(notification).toMatchObject({
+        runId: denied.id,
+        workflow: 'brief',
+        channel: { id: channel.id, key: `${FORUM.id}:7` },
+        status: 'failed',
+        attempt: 1,
+        lastError: NOT_ALLOWED,
+      });
+      expect(
+        await client.call('notifications.get', { id: notification!.id }),
+      ).toMatchObject({
+        chatAllowed: false,
+        delivering: false,
+        text: 'Workflow brief\n\necho: Summarize the day.',
+      });
+      const sentBefore = api.sent().length;
+
+      await client.call('telegram.allow', { chatId: String(FORUM.id) });
+      expect(
+        await client.call('notifications.retry', { id: notification!.id }),
+      ).toMatchObject({ status: 'pending', attempt: 0, chatAllowed: true });
+      await vi.waitFor(async () =>
+        expect(
+          await client.call('notifications.get', { id: notification!.id }),
+        ).toMatchObject({
+          status: 'delivered',
+          attempt: 1,
+          lastError: null,
+          providerMessageId: expect.any(String),
+        }),
+      );
+      expect(api.sent().slice(sentBefore)).toEqual([
+        expect.objectContaining({
+          text: 'Workflow brief\n\necho: Summarize the day.',
+          message_thread_id: 7,
+        }),
+      ]);
+      await expect(
+        client.call('notifications.retry', { id: notification!.id }),
+      ).rejects.toThrow(ConflictError);
+      await expect(
+        client.call('notifications.get', { id: 99 }),
+      ).rejects.toThrow(NotFoundError);
+      const { messages } = await client.call('channels.history', {
+        id: channel.id,
+        limit: 50,
+      });
+      // Why the first run failed, its retry's answer, and the answer
+      // delivered by hand, each once.
+      expect(
+        messages
+          .filter((message) => message.origin === 'workflow')
+          .map(({ text }) => text),
+      ).toEqual([
+        `Run ${failed.id} of Workflow brief failed: The model is overloaded`,
+        'Workflow brief\n\necho: Summarize the day.',
+        'Workflow brief\n\necho: Summarize the day.',
+      ]);
+      // No run was created for a delivery.
+      expect(await runs().count()).toBe(3);
+    },
+  );
+
+  it(
+    'deletes history older than the retention setting',
+    { timeout: 60_000 },
+    async () => {
+      const { channel, say } = await englishTopic();
+      say('Recent');
+      await vi.waitFor(() => expect(texts()).toContain('echo: Recent'));
+      const history = async () =>
+        (
+          await client.call('channels.history', { id: channel.id, limit: 50 })
+        ).messages.map(({ text }) => text);
+      expect(await history()).toEqual([
+        expect.stringContaining('Agent'),
+        'Hello',
+        'echo: Hello',
+        'Recent',
+        'echo: Recent',
+      ]);
+      // The welcome and the first exchange were forty days ago.
+      await daemon!.app
+        .get<DataSource>(getDataSourceToken())
+        .query(
+          `UPDATE "messages" SET "created_at" = datetime('now', '-40 days') WHERE "text" NOT LIKE '%Recent'`,
+        );
+
+      expect(
+        await client.call('settings.update', { historyRetentionDays: 30 }),
+      ).toMatchObject({ historyRetentionDays: 30 });
+      await restart();
+
+      await vi.waitFor(async () =>
+        expect(await history()).toEqual(['Recent', 'echo: Recent']),
+      );
+      expect(
+        await client.call('channels.get', { id: channel.id }),
+      ).toMatchObject({ messages: 2 });
+      await client.call('settings.update', { historyRetentionDays: null });
+      expect(
+        (await client.call('settings.get')).historyRetentionDays,
+      ).toBeNull();
     },
   );
 });

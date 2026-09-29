@@ -9,6 +9,7 @@ import { type DataSource, type EntityManager, LessThanOrEqual } from 'typeorm';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import type { SentMessage } from '../channels/channel-adapter.js';
 import { ChannelSender } from '../channels/channel-sender.js';
+import { ConflictError, NotFoundError } from '../common/errors.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
@@ -81,6 +82,11 @@ export class NotificationDelivery implements BeforeApplicationShutdown {
   private readonly logger = new Logger('Notifications');
   /** The tick under way, if any. */
   private current: Promise<void> | null = null;
+  /**
+   * Whether to tick again once the tick under way ends: something became
+   * due after it looked.
+   */
+  private again = false;
   /** Notifications being sent, which no overlapping tick may take. */
   private readonly sending = new Set<number>();
   private stopping = false;
@@ -101,6 +107,57 @@ export class NotificationDelivery implements BeforeApplicationShutdown {
   @Interval('notification-delivery', DELIVERY_TICK_MS)
   onInterval(): void {
     void this.poll();
+  }
+
+  /**
+   * Looks for due Notifications now, rather than at the next interval;
+   * after the tick under way, if any, since it may have looked already.
+   */
+  wake(): void {
+    if (this.current === null) {
+      void this.poll();
+    } else {
+      this.again = true;
+    }
+  }
+
+  /** Whether an attempt to deliver Notification `id` is under way. */
+  isDelivering(id: number): boolean {
+    return this.sending.has(id);
+  }
+
+  /**
+   * Makes Notification `id` due now: a pending one skips the rest of its
+   * wait, and a failed one starts a fresh set of attempts, keeping its last
+   * error until the next attempt. Then wakes the worker. `ConflictError`
+   * once it is delivered, since it would be sent twice.
+   */
+  async retry(id: number): Promise<void> {
+    const status = await inTransaction(this.dataSource, async (manager) => {
+      const notifications = manager.getRepository(Notification);
+      const notification = await notifications.findOneBy({ id });
+      if (notification === null) {
+        throw new NotFoundError(`No Notification with ID ${id}`);
+      }
+      if (notification.status === 'delivered') {
+        throw new ConflictError(
+          `Notification ${id} has already been delivered`,
+        );
+      }
+      await notifications.update(
+        id,
+        notification.status === 'failed'
+          ? { status: 'pending', attempt: 0, nextAttemptAt: new Date() }
+          : { nextAttemptAt: new Date() },
+      );
+      return notification.status;
+    });
+    this.logger.log(
+      status === 'failed'
+        ? `Notification ${id} queued again with fresh attempts`
+        : `Notification ${id} is due now`,
+    );
+    this.wake();
   }
 
   /**
@@ -139,6 +196,10 @@ export class NotificationDelivery implements BeforeApplicationShutdown {
       })
       .finally(() => {
         this.current = null;
+        if (this.again) {
+          this.again = false;
+          void this.poll();
+        }
       });
     return this.current;
   }
