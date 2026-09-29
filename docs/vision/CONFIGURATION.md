@@ -15,6 +15,7 @@ Pero reads four kinds of configuration:
 
 - **Notes are Markdown with YAML frontmatter,** as Obsidian writes them. The frontmatter is the block between `---` lines at the very top, and everything after it is the body. A note without frontmatter is valid: every property takes its default.
 - **Property names are lowercase words joined by hyphens,** like `claude-model`. Unknown properties are errors, so a typo like `modle:` doesn't pass silently. Obsidian's own properties are allowed and ignored: `tags`, `aliases`, and `cssclasses`.
+- **An empty property is not set.** A property Obsidian shows without a value takes its default.
 - **The file name is the identity.** `Settings/Agents/Weekly Health.md` is the Agent titled *Weekly Health* and named `weekly-health`. The name is a slug made the same way Pero makes topic names today: lowercase, accents dropped, Cyrillic spelled in Latin letters. Two notes with the same name are an error. Renaming a note makes a new Agent or Workflow (see [Runtime](./RUNTIME.md#identity-and-renames)).
 - **Subfolders are allowed** under `Agents/` and `Workflows/` for your own grouping. They don't change the name.
 - **Ignored files:** names starting with `_` or `.`, and anything that isn't `.md`. That leaves room for templates and drafts, such as `_Template.md` and `_Ideas.md`.
