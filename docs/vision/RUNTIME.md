@@ -19,7 +19,7 @@ One daemon runs per workspace, guarded by the lock in `.pero/run/` as today. The
 
 Pero holds the whole configuration in memory as one **snapshot**: `config.yaml`, `Pero.md`, every Agent, and every Workflow, with references resolved. Turns and runs read the snapshot current when they start, and keep it until they finish, as they keep an Agent's settings today.
 
-**Every 10 seconds**, on the same tick that checks schedules, Pero:
+**Every 10 seconds** Pero:
 
 1. **Scans** `config.yaml` and the settings folder recursively, keeping `.md` files whose names don't start with `_` or `.`.
 2. **Compares** each file's size and modification time with the last scan, and rereads only the files that changed, appeared, or disappeared.
@@ -107,7 +107,7 @@ Edits to existing files change only the one value, keeping comments, ordering, a
 
 A configuration problem is reported in four places:
 
-- **`pero status`** gains a `config` component: `ok`, or `degraded — 2 notes have errors`.
+- **`pero status`** gains a `settings` component: `ok`, or `degraded — 2 notes have errors`. The `config` component is `config.yaml`'s.
 - **`pero check`** lists every error with file and property ([Configuration](./CONFIGURATION.md#validation)).
 - **The log** records each error once, when it appears, and again when it's fixed.
 - **Telegram:** you'll often edit on your phone, so Pero posts one short message per broken version of a note: *"Weekly health report: channel: no topic titled 'Helth'. The last good version stays in use."* It goes to the topics the note relates to (an Agent's topics, a Workflow's `channel`), or to the main Agent's primary Channel. It isn't recorded in Channel history.

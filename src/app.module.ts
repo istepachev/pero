@@ -13,6 +13,7 @@ import { PersistenceModule } from './persistence/persistence.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
+import { SettingsNotesModule } from './settings-notes/settings-notes.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 import { TriggersModule } from './triggers/triggers.module.js';
@@ -54,6 +55,7 @@ export class AppModule {
         TriggersModule,
         ScheduleModule.forRoot(),
         SchedulerModule,
+        SettingsNotesModule,
         NotificationsModule,
         HistoryRetentionModule,
         TelegramModule.forRoot({

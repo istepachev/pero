@@ -203,7 +203,7 @@ Without Pero running, `pero check` resolves the workspace, loads `config.yaml` a
 
 ### 6.4 Reloading in the daemon
 
-Add a `ConfigModule` whose `SettingsFiles` service holds the current snapshot. It runs on the 10-second tick shared with the scheduler:
+Add a `SettingsNotesModule` whose `SettingsNotes` service holds the current snapshot. It rescans every 10 seconds, on its own interval: what reacts to a change (schedule reconciliation in 9.2) listens for the change event, so it needn't share the scheduler's tick.
 
 1. **Stat** every note.
 2. **Reparse** only the changed ones.
@@ -211,7 +211,7 @@ Add a `ConfigModule` whose `SettingsFiles` service holds the current snapshot. I
 4. **Keep last good versions** in memory while the daemon runs. They aren't kept across restarts: a note still broken after a restart loads once it's fixed.
 5. **Swap in** the new snapshot and log the changed files.
 
-It also emits a `snapshotChanged` event with the names that changed, and adds a `config` health component (`ok`, or `degraded — N notes have errors`) to `pero status`.
+It also tells listeners of each new snapshot with the notes that changed, and adds a `settings` health component (`ok`, or `degraded — N notes have errors`) to `pero status`, next to 5.3's `config` component for `config.yaml`. A legacy data directory has no notes and no `settings` component.
 
 **Done when:**
 - An edited note shows in the snapshot within one tick.

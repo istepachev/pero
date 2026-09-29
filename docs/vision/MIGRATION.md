@@ -10,7 +10,7 @@ The CLI keeps what files can't do (start, stop, inspect, run by hand, back up) a
 |---|---|
 | `pero init [dir]` | **New.** Creates a workspace skeleton; fills in only what's missing. |
 | `pero check` | **New.** Validates the workspace; exit 1 on errors. Works without Pero running. |
-| `pero run`, `run --foreground`, `stop`, `status`, `logs` | Kept. `status` gains the `config` component. |
+| `pero run`, `run --foreground`, `stop`, `status`, `logs` | Kept. `status` gains the `config` and `settings` components. |
 | `pero backup`, `restore` | Kept. They back up `.pero/`; `--include-data` adds the data folder. |
 | `pero agents ls`, `agents show <name>` | Kept, read-only. They show each Agent's note path, effective values (and which come from `Pero.md`), and its topics. |
 | `pero workflows ls`, `workflows show <name>` | Kept, read-only. They show the note path, the schedule as cron, the next run, and the resolved Channels. |
