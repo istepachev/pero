@@ -216,8 +216,10 @@ describe('Restore drill (e2e)', () => {
         workflows.map(({ name }) => client.call('workflows.get', { name })),
       ),
       triggers: (await client.call('triggers.list', {})).triggers,
+      // Titles seen in messages are kept in memory only, so a direct
+      // chat's comes back with its next message, not with the backup.
       allowed: (await client.call('telegram.chats')).allowed.map(
-        ({ chatId, kind, title }) => ({ chatId, kind, title }),
+        ({ chatId, kind }) => ({ chatId, kind }),
       ),
     };
   }
