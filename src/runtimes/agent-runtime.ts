@@ -68,9 +68,11 @@ export type RuntimeEvent =
 
 /**
  * Why a turn failed: signed out of the provider, aborted through its
- * signal, or anything else.
+ * signal, the provider no longer has the conversation it was asked to
+ * resume (`session_lost`, such as after a restore without the provider's
+ * own session store), or anything else.
  */
-export type RuntimeErrorKind = 'auth' | 'cancelled' | 'failed';
+export type RuntimeErrorKind = 'auth' | 'cancelled' | 'session_lost' | 'failed';
 
 /** A failed turn; adapters turn their SDK's errors into this. */
 export class RuntimeError extends Error {

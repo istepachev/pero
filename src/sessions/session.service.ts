@@ -63,6 +63,22 @@ export class SessionService {
   }
 
   /**
+   * Closes `session` and begins a fresh one in its place for `agent`,
+   * inside the caller's transaction, as when the provider no longer has
+   * the conversation `session` would resume.
+   */
+  async replaceWithin(
+    manager: EntityManager,
+    session: Pick<Session, 'id' | 'channelId'>,
+    agent: Pick<ResolvedAgent, 'id' | 'provider' | 'workingDirectory'>,
+  ): Promise<Session> {
+    await manager
+      .getRepository(Session)
+      .update({ id: session.id, status: 'active' }, { status: 'closed' });
+    return this.beginWithin(manager, session.channelId, agent);
+  }
+
+  /**
    * Closes the Channel's active Sessions inside the caller's transaction,
    * as when it is assigned another Agent: its next turn starts a fresh one.
    */

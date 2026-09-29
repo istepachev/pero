@@ -38,6 +38,12 @@ const MAX_MESSAGE_LENGTH = 300;
 const SIGNED_OUT =
   /\/login\b|not logged in|invalid api key|authentication_error|oauth token (?:has )?(?:expired|been revoked)/i;
 
+/**
+ * What Claude Code says when it has no conversation to resume by that ID,
+ * as in `No conversation found with session ID: <id>` (Claude Code 2.1).
+ */
+const SESSION_LOST = /no conversation found with session id/i;
+
 /** API errors that a new sign-in fixes. */
 const AUTH_ERRORS: ReadonlySet<SDKAssistantMessageError> = new Set([
   'authentication_failed',
@@ -112,7 +118,7 @@ export function classifyClaudeResult(
     (assistantError !== null && AUTH_ERRORS.has(assistantError)) ||
     SIGNED_OUT.test(text);
   return new RuntimeError(
-    auth ? 'auth' : 'failed',
+    auth ? 'auth' : SESSION_LOST.test(text) ? 'session_lost' : 'failed',
     oneLine(text) || `Claude failed (${assistantError ?? 'unknown error'})`,
   );
 }
@@ -131,12 +137,13 @@ export function classifyClaudeFailure(
   }
   const message = error instanceof Error ? error.message : String(error);
   const auth = SIGNED_OUT.test(message) || SIGNED_OUT.test(stderr);
+  const lost = SESSION_LOST.test(message) || SESSION_LOST.test(stderr);
   // An exit code alone says little; the process's last words say more.
   const reason = /process exited with code/.test(message)
     ? lastLine(stderr) || oneLine(message)
     : oneLine(message) || lastLine(stderr);
   return new RuntimeError(
-    auth ? 'auth' : 'failed',
+    auth ? 'auth' : lost ? 'session_lost' : 'failed',
     reason || 'Claude Code failed',
   );
 }

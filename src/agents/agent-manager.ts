@@ -10,6 +10,7 @@ import type { Provider } from '../config/provider-options.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
@@ -184,73 +185,52 @@ export class AgentManager implements BeforeApplicationShutdown {
     const controller = new AbortController();
     this.running.add(controller);
     const startedAt = Date.now();
-    let where = `Channel ${turn.channelId}, Agent ${turn.agentId}`;
+    const base = `Channel ${turn.channelId}, Agent ${turn.agentId}`;
+    let where = base;
     let provider: Provider | null = null;
     try {
       // One snapshot of the Agent, settings, Session, and history as the
       // turn starts.
-      const { agent, session, input, posted, carried, skipped } =
-        await inTransaction(this.dataSource, async (manager) => {
-          const agent = await this.agents.resolveWithin(manager, turn.agentId);
-          const skipped = await skipReasonWithin(manager, turn, agent);
-          if (skipped !== null) {
-            return {
-              agent,
-              session: null,
-              input: turn.input,
-              posted: 0,
-              carried: 0,
-              skipped,
-            };
-          }
-          const session = await this.sessions.beginWithin(
-            manager,
-            turn.channelId,
-            agent,
-          );
-          await this.history.attachSessionWithin(
-            manager,
-            turn.messageId,
-            session.id,
-          );
-          // Without a provider session, the provider has none of the
-          // conversation: a changed provider or folder, a reassigned
-          // Channel, or a first turn that failed before it began.
-          const { input, posted, carried } = await this.history.turnInputWithin(
-            manager,
-            turn.channelId,
-            turn.messageId,
-            turn.input,
-            { carryOver: session.providerSessionId === null },
-          );
-          return { agent, session, input, posted, carried, skipped: null };
-        });
-      if (session === null) {
-        this.logger.debug(`Skipped a turn in ${where}: ${skipped}`);
+      const first = await inTransaction(this.dataSource, async (manager) => {
+        const agent = await this.agents.resolveWithin(manager, turn.agentId);
+        return this.prepareWithin(manager, turn, agent, (agent) =>
+          this.sessions.beginWithin(manager, turn.channelId, agent),
+        );
+      });
+      if (first.session === null) {
+        this.logger.debug(`Skipped a turn in ${where}: ${first.skipped}`);
         return null;
       }
+      const { agent } = first;
+      let { session } = first;
       provider = agent.provider;
-      where += `, Session ${session.id} (${agent.provider})`;
-      if (carried > 0) {
-        this.logger.log(`Carried over ${carried} message(s) into ${where}`);
+      where = `${base}, Session ${session.id} (${agent.provider})`;
+      // Read first: the turn may record a provider session ID as it runs.
+      const resumed = session.providerSessionId;
+      let text: string;
+      try {
+        text = await this.runInSession(first, turn, where, controller);
+      } catch (error) {
+        if (!lostConversation(error, resumed)) throw error;
+        // The provider no longer has the conversation, as after a restore
+        // without its own session store: the same turn runs once more in a
+        // fresh Session that starts from the Channel's latest messages.
+        const retry = await inTransaction(this.dataSource, (manager) =>
+          this.prepareWithin(manager, turn, agent, (agent) =>
+            this.sessions.replaceWithin(manager, session, agent),
+          ),
+        );
+        this.logger.warn(
+          `The ${agent.provider} conversation ${resumed} of ${where} is gone; ` +
+            (retry.session === null
+              ? `skipped the turn: ${retry.skipped}`
+              : `continuing in Session ${retry.session.id}`),
+        );
+        if (retry.session === null) return null;
+        session = retry.session;
+        where = `${base}, Session ${session.id} (${agent.provider})`;
+        text = await this.runInSession(retry, turn, where, controller);
       }
-      if (posted > 0) {
-        this.logger.log(`Passed ${posted} Workflow message(s) into ${where}`);
-      }
-      const text = await this.run(
-        agent,
-        input,
-        {
-          ...(session.providerSessionId === null
-            ? {}
-            : { providerSessionId: session.providerSessionId }),
-          ...(turn.approve ? { approve: turn.approve } : {}),
-        },
-        controller,
-        // Committed before this turn settles, so before the next starts.
-        (providerSessionId) =>
-          this.sessions.recordProviderSessionId(session, providerSessionId),
-      );
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
       );
@@ -266,6 +246,65 @@ export class AgentManager implements BeforeApplicationShutdown {
     } finally {
       this.running.delete(controller);
     }
+  }
+
+  /**
+   * Inside the caller's transaction: why `agent` no longer takes the turn,
+   * or the Session `begin` gives it, with the turn's message attached and
+   * the input it runs with.
+   */
+  private async prepareWithin(
+    manager: EntityManager,
+    turn: TurnInput,
+    agent: ResolvedAgent,
+    begin: (agent: ResolvedAgent) => Promise<Session>,
+  ): Promise<PreparedTurn> {
+    const skipped = await skipReasonWithin(manager, turn, agent);
+    if (skipped !== null) {
+      return { agent, session: null, skipped };
+    }
+    const session = await begin(agent);
+    await this.history.attachSessionWithin(manager, turn.messageId, session.id);
+    // Without a provider session, the provider has none of the
+    // conversation: a changed provider or folder, a reassigned Channel, a
+    // first turn that failed before it began, or a lost conversation.
+    const { input, posted, carried } = await this.history.turnInputWithin(
+      manager,
+      turn.channelId,
+      turn.messageId,
+      turn.input,
+      { carryOver: session.providerSessionId === null },
+    );
+    return { agent, session, input, posted, carried };
+  }
+
+  /** Runs a prepared turn in its Session; resolves to the reply text. */
+  private async runInSession(
+    { agent, session, input, posted, carried }: ReadyTurn,
+    turn: TurnInput,
+    where: string,
+    controller: AbortController,
+  ): Promise<string> {
+    if (carried > 0) {
+      this.logger.log(`Carried over ${carried} message(s) into ${where}`);
+    }
+    if (posted > 0) {
+      this.logger.log(`Passed ${posted} Workflow message(s) into ${where}`);
+    }
+    return this.run(
+      agent,
+      input,
+      {
+        ...(session.providerSessionId === null
+          ? {}
+          : { providerSessionId: session.providerSessionId }),
+        ...(turn.approve ? { approve: turn.approve } : {}),
+      },
+      controller,
+      // Committed before this turn settles, so before the next starts.
+      (providerSessionId) =>
+        this.sessions.recordProviderSessionId(session, providerSessionId),
+    );
   }
 
   private async executeIsolated(turn: IsolatedTurn): Promise<IsolatedResult> {
@@ -374,6 +413,34 @@ export class AgentManager implements BeforeApplicationShutdown {
   }
 }
 
+/** A turn ready to run in its Session. */
+interface ReadyTurn {
+  agent: ResolvedAgent;
+  session: Session;
+  input: string;
+  /** How many Workflow messages the input passes on. */
+  posted: number;
+  /** How many earlier messages the input carries over. */
+  carried: number;
+}
+
+/** A turn ready to run, or why its Agent no longer takes it. */
+type PreparedTurn =
+  ReadyTurn | { agent: ResolvedAgent; session: null; skipped: string };
+
+/**
+ * Whether `error` says the provider no longer has the conversation
+ * `resumed`, the provider session a turn resumed. A turn that resumed
+ * nothing never counts, so the fresh Session replacing it runs only once.
+ */
+function lostConversation(error: unknown, resumed: string | null): boolean {
+  return (
+    resumed !== null &&
+    error instanceof RuntimeError &&
+    error.kind === 'session_lost'
+  );
+}
+
 /**
  * Why a turn accepted earlier no longer runs: its Agent was disabled, or
  * its Channel was disabled or reassigned meanwhile. Null when it runs.
@@ -408,6 +475,7 @@ function asTurnError(error: unknown, aborted: boolean): TurnError {
         );
       case 'cancelled':
         return new TurnError('the turn was cancelled');
+      case 'session_lost':
       case 'failed':
         return new TurnError(error.message);
     }

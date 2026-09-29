@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -117,6 +118,18 @@ describe.skipIf(!ENABLED)(
         providerSessionId: session,
       });
       expect(resultOf(lines as RuntimeEvent[])).toContain('pero-smoke');
+    });
+
+    it('reports a conversation Claude Code no longer has as lost', async () => {
+      await expect(
+        collect(
+          runtime,
+          request(folder, {
+            input: 'Reply with the word ok.',
+            providerSessionId: randomUUID(),
+          }),
+        ),
+      ).rejects.toMatchObject({ kind: 'session_lost' });
     });
 
     it('refuses a command when the Agent must ask and no one can answer', async () => {

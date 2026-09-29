@@ -140,17 +140,26 @@ describe('normalizeClaudeMessage', () => {
     it.each([
       ['error_max_turns', [], 'Claude stopped after too many steps'],
       ['error_during_execution', [], 'Claude Code failed during the turn'],
-      [
-        'error_during_execution',
-        ['No conversation found with session ID: x'],
-        'No conversation found with session ID: x',
-      ],
     ] as const)('reports a %s result as failed', (subtype, errors, message) => {
       expect(
         run([init(), failedResult(subtype, [...errors])]).error,
       ).toMatchObject({
         kind: 'failed',
         message,
+      });
+    });
+
+    it('reports a conversation Claude Code no longer has as lost', () => {
+      const { events, error } = run([
+        init(),
+        failedResult('error_during_execution', [
+          'No conversation found with session ID: 0b1c',
+        ]),
+      ]);
+      expect(events).toEqual([]);
+      expect(error).toMatchObject({
+        kind: 'session_lost',
+        message: 'No conversation found with session ID: 0b1c',
       });
     });
 
@@ -209,6 +218,21 @@ describe('classifyClaudeFailure', () => {
         { aborted: false, stderr: 'Invalid API key · Please run /login' },
       ),
     ).toMatchObject({ kind: 'auth' });
+  });
+
+  it('recognizes a lost conversation in the output', () => {
+    expect(
+      classifyClaudeFailure(
+        new Error('Claude Code process exited with code 1'),
+        {
+          aborted: false,
+          stderr: 'No conversation found with session ID: 0b1c\n',
+        },
+      ),
+    ).toMatchObject({
+      kind: 'session_lost',
+      message: 'No conversation found with session ID: 0b1c',
+    });
   });
 
   it('reports anything else as failed', () => {

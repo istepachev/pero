@@ -341,6 +341,63 @@ describe('AgentManager', () => {
     expect(claude.requests[1]!.providerSessionId).toBe('fake-claude-1');
   });
 
+  describe('when the provider no longer has the conversation', () => {
+    const lost = () =>
+      new RuntimeError(
+        'session_lost',
+        'No conversation found with session ID: fake-claude-1',
+      );
+
+    it('answers the same turn in a fresh Session that carries over the history', async () => {
+      await say(OWNER, 'one');
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      claude.failNext(lost());
+
+      await say(OWNER, 'two');
+
+      expect(claude.requests.map((r) => r.providerSessionId)).toEqual([
+        undefined,
+        'fake-claude-1',
+        undefined,
+      ]);
+      const retried = claude.requests[2]!.input;
+      expect(retried).toMatch(
+        /^\[Earlier conversation in this chat, from a previous session\]\n.*User: one\n.*main: echo: one\n\[End of earlier conversation\]\n\ntwo$/s,
+      );
+      expect(sentTexts().at(-1)).toBe(`echo: ${retried}`);
+      const [old, fresh] = await allSessions();
+      expect(old).toMatchObject({ status: 'closed' });
+      expect(fresh).toMatchObject({
+        status: 'active',
+        providerSessionId: 'fake-claude-2',
+      });
+      // The message and its answer belong to the fresh Session.
+      expect(
+        (await allMessages()).slice(-2).map((m) => [m.text, m.sessionId]),
+      ).toEqual([
+        ['two', fresh!.id],
+        [`echo: ${retried}`, fresh!.id],
+      ]);
+
+      await say(OWNER, 'three');
+      expect(claude.requests.at(-1)).toMatchObject({
+        input: 'three',
+        providerSessionId: 'fake-claude-2',
+      });
+    });
+
+    it('fails a turn that resumed nothing, without trying again', async () => {
+      claude.failNext(lost());
+
+      await say(OWNER, 'Hello');
+
+      expect(claude.requests).toHaveLength(1);
+      expect(sentTexts().at(-1)).toBe(
+        "Agent main couldn't answer: No conversation found with session ID: fake-claude-1.",
+      );
+    });
+  });
+
   it('reports the provider degraded when a turn is refused as signed out, and ok once one succeeds', async () => {
     const health = moduleRef.get(ComponentHealth);
     claude.failNext(

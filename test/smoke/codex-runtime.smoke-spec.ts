@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -151,6 +152,18 @@ describe.skipIf(!ENABLED)('Codex runtime (smoke)', { timeout: 240_000 }, () => {
       providerSessionId: thread,
     });
     expect(resultOf(lines as RuntimeEvent[])).toContain('pero-smoke');
+  });
+
+  it('reports a thread Codex no longer has as lost', async () => {
+    const error = await failure(
+      runtime,
+      request(repo, {
+        input: 'Reply with the word ok.',
+        providerSessionId: randomUUID(),
+      }),
+    );
+
+    expect(error.kind).toBe('session_lost');
   });
 
   it('refuses a folder outside Git unless the Agent skips the check', async () => {

@@ -38,6 +38,12 @@ const MAX_MESSAGE_LENGTH = 300;
 const SIGNED_OUT =
   /\b401 unauthorized\b|not logged in|codex login|access token could not be refreshed|log out and sign in again/i;
 
+/**
+ * What Codex says when it has no thread to resume by that ID, as in
+ * `thread/resume failed: no rollout found for thread id <id>` (Codex 0.158).
+ */
+const SESSION_LOST = /no rollout found for thread id/i;
+
 /** What Codex says when its folder is not a Git repository. */
 const NOT_GIT = /not inside a trusted directory/i;
 
@@ -118,10 +124,7 @@ function toolName(item: ThreadItem): string | null {
 
 /** A failed turn, from the message Codex ended it with. */
 export function classifyCodexResult(message: string): RuntimeError {
-  return new RuntimeError(
-    SIGNED_OUT.test(message) ? 'auth' : 'failed',
-    oneLine(message) || 'Codex failed',
-  );
+  return new RuntimeError(kindOf(message), oneLine(message) || 'Codex failed');
 }
 
 /**
@@ -149,10 +152,13 @@ export function classifyCodexFailure(
     ? lastLine(message.replace(EXEC_EXITED, '')) ||
       oneLine(message.replace(/:\s*$/, ''))
     : oneLine(message);
-  return new RuntimeError(
-    SIGNED_OUT.test(message) ? 'auth' : 'failed',
-    reason || 'Codex failed',
-  );
+  return new RuntimeError(kindOf(message), reason || 'Codex failed');
+}
+
+/** The kind of failure Codex's `message` reports. */
+function kindOf(message: string): RuntimeError['kind'] {
+  if (SIGNED_OUT.test(message)) return 'auth';
+  return SESSION_LOST.test(message) ? 'session_lost' : 'failed';
 }
 
 /** The first line of `text` with content, shortened for a chat message. */

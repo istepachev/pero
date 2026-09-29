@@ -135,4 +135,34 @@ describe('SessionService', () => {
       await ds.getRepository(Session).findOneByOrFail({ id: session.id }),
     ).toMatchObject({ providerSessionId: 'claude-2' });
   });
+
+  it('replaces a Session whose provider lost the conversation with a fresh one', async () => {
+    const first = await begin();
+    await sessions.recordProviderSessionId(first, 'claude-1');
+
+    const fresh = await inTransaction(ds, (manager) =>
+      sessions.replaceWithin(manager, first, {
+        id: agentId,
+        provider: 'claude',
+        workingDirectory: vault,
+      }),
+    );
+
+    expect(fresh).toMatchObject({
+      channelId,
+      agentId,
+      provider: 'claude',
+      workingDirectory: vault,
+      providerSessionId: null,
+      status: 'active',
+    });
+    expect(
+      (await allSessions()).map(({ id, status }) => ({ id, status })),
+    ).toEqual([
+      { id: first.id, status: 'closed' },
+      { id: fresh.id, status: 'active' },
+    ]);
+    // The fresh Session is the one the next turn resumes.
+    expect((await begin()).id).toBe(fresh.id);
+  });
 });
