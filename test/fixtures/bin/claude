@@ -7,12 +7,7 @@ const { join } = process.getBuiltinModule('node:path');
 const dir = process.env.PERO_FAKE_AUTH_DIR;
 const loggedIn = Boolean(dir && existsSync(join(dir, 'claude')));
 const status = loggedIn
-  ? {
-      loggedIn,
-      authMethod: 'claude.ai',
-      email: 'owner@example.com',
-      subscriptionType: 'pro',
-    }
+  ? { loggedIn, authMethod: 'claude.ai', email: 'owner@example.com', subscriptionType: 'pro' }
   : { loggedIn, authMethod: 'none' };
 console.log(JSON.stringify(status, null, 2));
 process.exitCode = loggedIn ? 0 : 1;
