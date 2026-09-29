@@ -64,3 +64,26 @@ PERO_SMOKE_CODEX=1 npm run test:smoke   # PERO_SMOKE_CODEX_MODEL changes the res
 ```
 
 The Claude test creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` Agent's command is refused, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, and checks that a signed-out Codex is reported as such.
+
+## Releasing
+
+A merge to `main` publishes `@perokit/pero` when `package.json` holds a version that is not on npm yet. To release, open a PR that bumps the version and merge it:
+
+```sh
+npm version minor --no-git-tag-version   # or patch, major, prerelease; updates package.json and package-lock.json
+```
+
+After CI passes on the merge commit, the [Release workflow](../.github/workflows/release.yml) publishes that commit to npm with provenance, then creates the `vX.Y.Z` tag and a GitHub Release with generated notes. A version with a prerelease suffix, such as `0.2.0-beta.1`, is published under the `next` dist-tag and marked as a prerelease. Merges that leave the version alone publish nothing. Don't create release tags by hand. If the workflow fails partway, re-run it: it skips a version npm already has and a release that already exists.
+
+### One-time setup
+
+The workflow publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token is stored in GitHub. A trusted publisher is configured on the package itself, and the package doesn't exist before its first publish, so the first release uses a short-lived token:
+
+1. **npm organization.** Make sure the `perokit` organization exists on npmjs.com and your account can publish to it (`npm org ls perokit`).
+2. **Bootstrap token.** On npmjs.com, open Access Tokens → Generate New Token → Granular Access Token. Give it read and write access to packages in the `@perokit` scope (or to all packages), a 7-day expiry, and enable bypassing two-factor authentication. In the GitHub repository, open Settings → Secrets and variables → Actions and add it as the repository secret `NPM_TOKEN`.
+3. **GitHub.** If a tag ruleset covers `v*`, let GitHub Actions create tags. The workflow's `npm` environment is created the first time it runs; you can then restrict its deployment branches to `main` under Settings → Environments.
+4. **First release.** Merge the PR that sets the version. Once CI passes, the Release workflow publishes it. Check with `npm view @perokit/pero` and `npm install -g @perokit/pero && pero --version`.
+5. **Trusted publisher.** On npmjs.com, open `@perokit/pero` → Settings → Trusted Publisher, choose GitHub Actions, and enter organization `perokit`, repository `pero`, workflow filename `release.yml`, and environment `npm`.
+6. **Lock it down.** On the same page, set Publishing access to "Require two-factor authentication and disallow tokens". Revoke the bootstrap token on npm and delete the `NPM_TOKEN` secret from GitHub.
+
+Instead of steps 2 and 4, you can publish the first version yourself with `npm publish` from a clean checkout of `main`; the workflow then finds the version on npm and only creates the GitHub Release.

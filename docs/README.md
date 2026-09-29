@@ -8,7 +8,7 @@ For people using Pero:
 
 For people working on Pero:
 
-- [Development](./DEVELOPMENT.md) — building, running from a checkout, tests, and daemon internals.
+- [Development](./DEVELOPMENT.md) — building, running from a checkout, tests, daemon internals, and releasing.
 
 ## Design docs
 
