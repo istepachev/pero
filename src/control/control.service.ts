@@ -30,6 +30,7 @@ import { NotificationDelivery } from '../notifications/notification-delivery.js'
 import { NotificationViews } from '../notifications/notification-views.service.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { WorkspaceChecks } from '../settings-notes/workspace-checks.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { TriggersService } from '../triggers/triggers.service.js';
@@ -81,6 +82,7 @@ export class ControlService implements OnModuleDestroy {
     private readonly triggers: TriggersService,
     private readonly delivery: NotificationDelivery,
     private readonly notificationViews: NotificationViews,
+    private readonly workspaceChecks: WorkspaceChecks,
   ) {}
 
   /**
@@ -97,6 +99,7 @@ export class ControlService implements OnModuleDestroy {
           this.requestShutdown(options.onShutdown);
           return {};
         },
+        check: () => this.workspaceChecks.check(),
         'settings.get': () => this.settingsView(),
         'settings.update': (change) => this.updateSettings(change),
         'providers.check': async () => {

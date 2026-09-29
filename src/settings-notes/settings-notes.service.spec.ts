@@ -50,7 +50,8 @@ describe('SettingsNotes', () => {
     })
       .useMocker((token) => {
         if (token === HostConfigService) return { folders: () => folders };
-        return undefined;
+        // The database, which only `pero check` reads.
+        return {};
       })
       .compile();
     await moduleRef.init();

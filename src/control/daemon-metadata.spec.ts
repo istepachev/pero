@@ -23,6 +23,7 @@ const unused = () => {
   throw new Error('not used in this test');
 };
 const UNUSED_HANDLERS = {
+  check: unused,
   'settings.get': unused,
   'settings.update': unused,
   'providers.check': unused,

@@ -7,6 +7,7 @@ import { HealthModule } from '../health/health.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
+import { SettingsNotesModule } from '../settings-notes/settings-notes.module.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
@@ -33,6 +34,7 @@ export class ControlModule {
         WorkflowsModule,
         NotificationsModule,
         TriggersModule,
+        SettingsNotesModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],
       providers: [

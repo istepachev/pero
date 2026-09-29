@@ -480,6 +480,21 @@ export type RunDetails = z.infer<typeof runDetailsSchema>;
 
 const notificationIdSchema = z.int().positive();
 
+/** What `pero check` found in the workspace; see `WorkspaceCheck`. */
+export const workspaceCheckSchema = z.object({
+  settingsFolder: z.string().nullable(),
+  agents: z.int().nonnegative(),
+  workflows: z.int().nonnegative(),
+  topicsChecked: z.boolean(),
+  problems: z.array(
+    z.object({
+      file: z.string(),
+      property: z.string().nullable(),
+      message: z.string(),
+    }),
+  ),
+});
+
 const noParams = z.strictObject({});
 
 // Results are plain objects, not strict ones: a newer daemon may add fields
@@ -488,6 +503,8 @@ const noParams = z.strictObject({});
 export const CONTROL_OPERATIONS = {
   status: { params: noParams, result: statusResultSchema },
   shutdown: { params: noParams, result: z.object({}) },
+  /** `pero check`, with topic titles checked against the topics seen. */
+  check: { params: noParams, result: workspaceCheckSchema },
   'settings.get': { params: noParams, result: settingsViewSchema },
   'settings.update': {
     params: settingsChangeSchema,
