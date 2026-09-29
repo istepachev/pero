@@ -145,6 +145,61 @@ interface Read<T> {
   result: NoteResult<T>;
 }
 
+/** A note read as its kind, before references to other notes resolve. */
+export type NoteRead =
+  | { kind: 'pero'; read: Read<PeroNote> }
+  | { kind: 'agent'; read: Read<AgentNote> }
+  | { kind: 'workflow'; read: Read<WorkflowNote> };
+
+/** A note for `buildSnapshot`. */
+export interface SnapshotNote extends NoteFile {
+  /**
+   * An earlier version of the note that read without errors, used in its
+   * place while `text` has errors; they are still reported.
+   */
+  fallback?: string;
+}
+
+/**
+ * `text` read as the note at `file`, on its own: its identity, properties,
+ * and values. `errors` lists every problem found without looking at other
+ * notes; `note` is null when the file isn't a note Pero knows.
+ */
+export function readNote(
+  file: string,
+  text: string,
+): { note: NoteRead | null; errors: SettingsError[] } {
+  const identified = noteIdentity(file);
+  if (!identified.ok) return { note: null, errors: [identified.error] };
+  const { identity } = identified;
+  const parsed = parseNote(file, text);
+  const note = parsed.ok ? parsed.note : null;
+  const reading = <T>(
+    reader: (file: string, note: ParsedNote) => NoteResult<T>,
+  ): Read<T> => ({
+    file,
+    identity,
+    note,
+    result: parsed.ok ? reader(file, parsed.note) : parsed,
+  });
+  let read: NoteRead;
+  switch (identity.kind) {
+    case 'pero':
+      read = { kind: 'pero', read: reading(readPeroNote) };
+      break;
+    case 'agent':
+      read = { kind: 'agent', read: reading(readAgentNote) };
+      break;
+    case 'workflow':
+      read = { kind: 'workflow', read: reading(readWorkflowNote) };
+      break;
+  }
+  return {
+    note: read,
+    errors: read.read.result.ok ? [] : read.read.result.errors,
+  };
+}
+
 /**
  * The snapshot `notes`, the settings folder's notes, describe. A note that
  * doesn't parse or validate is left out along with only the notes that
@@ -152,7 +207,7 @@ interface Read<T> {
  * property. A broken `Pero.md` leaves the defaults, not the Agents, out.
  */
 export function buildSnapshot(
-  notes: readonly NoteFile[],
+  notes: readonly SnapshotNote[],
   context: SnapshotContext,
 ): SettingsSnapshot {
   const errors: SettingsError[] = [];
@@ -160,34 +215,23 @@ export function buildSnapshot(
   const workflowNotes: Read<WorkflowNote>[] = [];
   let pero: Read<PeroNote> | null = null;
 
-  for (const { file, text } of notes) {
+  for (const { file, text, fallback } of notes) {
     if (isIgnoredPath(file)) continue;
-    const identified = noteIdentity(file);
-    if (!identified.ok) {
-      errors.push(identified.error);
-      continue;
+    let { note, errors: found } = readNote(file, text);
+    errors.push(...found);
+    if (found.length > 0 && fallback !== undefined) {
+      const previous = readNote(file, fallback);
+      if (previous.errors.length === 0) note = previous.note;
     }
-    const { identity } = identified;
-    const parsed = parseNote(file, text);
-    const note = parsed.ok ? parsed.note : null;
-    const reading = <T>(
-      reader: (file: string, note: ParsedNote) => NoteResult<T>,
-    ): Read<T> => {
-      const result: NoteResult<T> = parsed.ok
-        ? reader(file, parsed.note)
-        : parsed;
-      if (!result.ok) errors.push(...result.errors);
-      return { file, identity, note, result };
-    };
-    switch (identity.kind) {
+    switch (note?.kind) {
       case 'pero':
-        pero = reading(readPeroNote);
+        pero = note.read;
         break;
       case 'agent':
-        agentNotes.push(reading(readAgentNote));
+        agentNotes.push(note.read);
         break;
       case 'workflow':
-        workflowNotes.push(reading(readWorkflowNote));
+        workflowNotes.push(note.read);
         break;
     }
   }

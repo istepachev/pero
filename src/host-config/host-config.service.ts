@@ -18,6 +18,7 @@ import {
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
+  resolveSettingsFolder,
   setDataFolder,
 } from '../config/host-config.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
@@ -163,6 +164,25 @@ export class HostConfigService implements OnModuleInit {
   onChatsChange(listener: (change: AllowedChatsChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Where the running Pero's data and settings folders are: as they were
+   * at startup, since changing them takes a restart. Null for a legacy
+   * data directory, which has no settings folder.
+   */
+  folders(): {
+    workspace: string;
+    dataFolder: string;
+    settingsFolder: string;
+  } | null {
+    const { workspace } = this.options;
+    if (workspace === null) return null;
+    return {
+      workspace,
+      dataFolder: resolveDataFolder(this.running, workspace, true)!,
+      settingsFolder: resolveSettingsFolder(this.running, workspace),
+    };
   }
 
   /** The chats Pero serves, in the file's order. */
