@@ -4,7 +4,7 @@ This sequence produces a working personal installation in small, reviewable incr
 
 Each phase ends with **exit criteria**: the phase is complete only when all of them hold, even if every PR in it has merged.
 
-Phases 1–4 built Pero 0.1, where Agents, Workflows, and settings lived in SQLite and changed through the CLI. Phases 5–10 moved that configuration into files for 0.2: a workspace with `.env`, `config.yaml`, and Markdown notes, with SQLite keeping only state. Where the two differ, the later phases describe what Pero does now, and the [configuration reference](./CONFIGURATION.md) describes the files.
+Phases 1–4 built Pero 0.1, where Agents, Workflows, and settings lived in SQLite and changed through the CLI. Phases 5–10 moved that configuration into files for 0.2: a workspace with `.env`, `config.yaml`, and Markdown notes, with SQLite keeping only state. Nobody installed 0.1, so phase 11 removes what the move left for upgrades, and 0.2.0 ships as Pero's first release. Where the two differ, the later phases describe what Pero does now, and the [configuration reference](./CONFIGURATION.md) describes the files.
 
 ## Phase 1 — boot and persistence
 
@@ -895,15 +895,175 @@ Rewrite the [README](../README.md), [User guide](./USER_GUIDE.md), [CLI referenc
 
 **Done when:** no doc describes SQLite-held definitions or removed commands except as stubs, and every link resolves.
 
-### 10.3 Release 0.2.0
+### 10.3 Release
 
-Bump to `0.2.0`, which the release workflow publishes. Before tagging, run `pero migrate` on a real 0.1 installation, as a checklist item in the PR.
+Moved to [11.10](#1110-release-020): the release follows the cleanup in phase 11.
 
-**Done when:** a 0.1 installation upgraded by the documented steps answers every topic and runs every Workflow as before.
+## Phase 11 — clean slate
 
-### After 0.2.0
+Pero 0.1.0 is on npm, but nobody ever installed it, so no installation needs upgrading. Pero ships 0.2.0 as if it were its first release. The code, schema, CLI, and docs keep only what a design from scratch would have. Phases 5–10 left behind scaffolding that only an upgrade needed:
 
-A later release removes the command stubs, the legacy data directory (`--data-dir`, `PERO_HOME`, `~/.pero`), and the `secrets/` fallback.
+- **The legacy data directory:** `~/.pero`, `--data-dir`, `PERO_HOME`, and `secrets/`, with a `Definitions` of its own and a nullable workspace in every layout, backup, and view.
+- **`pero migrate`**, with the `legacy_*` tables it reads and the startup code that moves their allowed chats into `config.yaml`.
+- **Command stubs** for the 0.1 write commands, and the `triggers` group.
+- **Sixteen migrations** that build 0.1's schema and then rebuild it for state keyed by name.
+- **The branch-by-abstraction layer from phase 7.** `Definitions` is an abstract, asynchronous interface built so SQLite could serve it too. It maps the snapshot's Agent into another Agent type, and `resolveAgent` maps that into a third.
+- **0.1 concepts in the notes:** a Workflow's `trigger` property, which does what `enabled: false` does, and a list of schedules where a note has one.
+
+Rules for every step:
+
+- **No compatibility code.** Nothing reads an old table, backup format, option, or file. A removed command is gone, not a stub: nest-commander reports it as unknown.
+- **Tests leave with their code.** A test that exists only for removed behavior is deleted, not rewritten. A test that also covers something that stays loses only its legacy cases.
+- **Behavior in a workspace stays the same,** except where a step says otherwise (11.4 and 11.5). Every step leaves `main` green on unit, e2e, and the packed install.
+
+What stays open for after the release: protecting `.env` and `.pero/` in the edit policy (10.2), and anything new.
+
+```text
+11.1 ─ 11.2 ─ 11.3 ┬─ 11.4 ─────────────────────┬─ 11.9 ─ 11.10
+                   └─ 11.5 ─ 11.6 ─ 11.7 ─ 11.8 ┘
+```
+
+11.4 and 11.5 don't depend on each other. 11.6 squashes the schema once 11.3 and 11.5 have settled it. 11.7 and 11.8 are the internal refactors, after the removals, so they touch less code.
+
+### 11.1 Remove `pero migrate`
+
+Delete the command and everything only it uses:
+
+- `src/migrate/`, `migrate.command.ts`, and `format-migrate.ts`
+- `src/definitions/installation.ts`
+- the readers in `legacy-definitions.ts` that only `pero migrate` calls (Agents, Workflows, Triggers, notification targets, and Channel routes)
+- `test/migrate.e2e-spec.ts`, and the migrate cases in `test/cli.e2e-spec.ts`
+
+`LegacyChannelAgent` and the `legacy_*` tables stay until 11.3 and 11.6, since the legacy data directory still reads its defaults from them. The docs still describe `pero migrate` until 11.9.
+
+**Done when:**
+- `pero migrate` is an unknown command.
+- No code outside `legacy-definitions.ts`, `LegacyDataDirDefinitions`, and the migrations names a `legacy_` table.
+
+### 11.2 Backup and restore for workspaces only
+
+- **Backups:** `pero backup` makes one archive format: the database, `config.yaml`, a manifest, and with `--include-data` the data folder. The manifest's format number restarts at 1, and the `secrets` entry and its manifest field go. The backup service drops its branch for a legacy data directory, so a daemon there refuses `backup.create` until 11.3 removes it.
+- **Restore:** `pero restore` restores into a workspace only. The legacy data directory target, reading backups of older formats, and writing a legacy backup's token to `.env` all go. `--replace-config` stays.
+- **Packed install:** `scripts/check-packed-install.sh` loses its three legacy steps.
+
+**Done when:**
+- A backup restores into a fresh clone as before.
+- An archive whose manifest is not format 1 is refused, saying it isn't a Pero backup this version reads.
+- `archive.spec.ts`, `backup.service.spec.ts`, `restore.spec.ts`, and `test/restore.e2e-spec.ts` have no legacy cases.
+
+### 11.3 Remove the legacy data directory
+
+Pero works on a workspace and nothing else:
+
+- **Discovery:** `resolveBootstrapConfig` resolves `--workspace`, then `PERO_WORKSPACE`, then the nearest `.pero/` upward, then `~/workspace`. `--data-dir`, `PERO_HOME`, and the `~/.pero` fallback go. The home folder is still never a workspace, since every folder under it would resolve to it, and `pero init` still refuses it with that reason.
+- **Layout:** `DataDirLayout` becomes `WorkspaceLayout`, with `workspace`, `envFile`, and both `.gitignore` paths never null and no `secrets`. `dataDir` becomes `stateDir` everywhere, and `data-dir.ts` becomes `workspace-layout.ts`. "Data directory" meant `~/.pero` and was easy to confuse with the data folder. `describeLocation` goes.
+- **Token:** it lives only in `.env` or the environment. `secret-store.ts`, `TELEGRAM_TOKEN_SECRET`, and the `secrets` token source go.
+- **Definitions:** `LegacyDataDirDefinitions` and the rest of `legacy-definitions.ts` go, and `DefinitionsModule` provides `FileDefinitions` alone. The `legacy` reason a Channel goes unanswered and `RouteQuery.id`, which only the legacy data directory routed by, go too.
+- **`config.yaml`:** `HostConfigService` stops carrying a legacy installation over (`legacyDataFolder`, moving `legacy_allowed_chats`). Its `workspace` and `base` options become one `workspace`, and `data` always resolves to a folder: `Defaults.dataFolder` and `SettingsNotes.folders()` are never null.
+- **Views and setup:** `(legacy)` in `pero status`, the migrate hint in setup and `pero settings`, and the nullable `file` and `origins` of an Agent view go.
+- **Tests:** `src/definitions/boundary.spec.ts` goes, since nothing is left to guard. So do the legacy cases in the e2e suites (`--data-dir` in `cli`, `daemon`, `control`, `channels`, and `lifecycle`), and in `bootstrap-config`, `data-dir`, `host-config.service`, `channel-onboarding`, and `persistence.module` specs.
+
+**Done when:**
+- `--data-dir` is an unknown option, and `PERO_HOME` is ignored.
+- Outside `src/persistence/migrations/` and `LegacyChannelAgent`, which 11.6 removes, `git grep -il legacy src test scripts` finds nothing.
+- The packed install passes from a fresh home directory.
+
+### 11.4 No command stubs
+
+- **Stubs go:** `agents create|edit|enable|disable`, `channels assign|enable|disable`, `workflows create|edit|enable|disable|notify`, the `triggers` group, and `settings set|unset` for any key but the token. So do the hints only they print (`agentHint`, `workflowHint`, `triggerHint`, `channelHint`, `settingHint`, and `SETTING_HOMES` in `note-hints.ts`), and `note-stubs.ts`. `pero check` keeps what it uses there, such as `findAgentNote` and `shownPath`.
+- **The hidden `ping` goes.** `pero status` answers the same question, and the e2e tests that use `ping` switch to it.
+- **The token gets its own command:** `pero telegram token` sets the bot token. It prompts hidden on a terminal, reads stdin otherwise, and refuses an argument. Like `telegram allow`, it goes through the daemon while Pero runs, so the token applies without a restart, and writes `.env` itself while Pero is stopped. It replaces `pero settings set telegram-bot-token`. `settings unset` has no replacement: delete the line from `.env`.
+- **`pero settings`** takes no subcommand. It shows what `settings show` showed, and the `settings.update` control operation becomes `telegram.token`.
+
+This is the one step that changes the CLI a user sees. Interactive setup already asks for the token itself, so first run doesn't change.
+
+**Done when:**
+- Every command in the [CLI reference](./CLI.md) does what it says, and none exists only to name a file.
+- `pero telegram token` works with Pero running and stopped, and a running Pero uses the new token without a restart.
+
+### 11.5 One schedule per Workflow, without `trigger`
+
+- **`trigger` goes** from Workflow notes: a note with a time runs on it unless `enabled: false`, which already means "only by hand". `pero check` reports `trigger` as an unknown property, like any other, and the example workspace and docs don't use it.
+- **One schedule:** `WorkflowDefinition.schedules: Schedule[]` becomes `schedule: Schedule | null`, as the snapshot already holds it. `ScheduleTick`, reconciliation, and the Workflow views read the one schedule.
+- **The `schedules` table** stays keyed by `(workflow_name, fingerprint)` until 11.6 gives it one row per Workflow.
+
+**Done when:**
+- A note with `trigger` fails `pero check`.
+- `schedule-tick.spec.ts` and `test/workflows.e2e-spec.ts` pass with one schedule per Workflow and no `trigger`.
+
+### 11.6 One initial migration
+
+Replace the sixteen migrations with one, `InitialSchema`, generated from the entities with `npm run migration:generate` and reviewed by hand. It creates only the state tables: `channels`, `sessions`, `messages`, `schedules`, `workflow_runs`, `notifications`, and `inbound_updates`, with their indexes, `CHECK`s, and foreign keys as they stand. There are no `legacy_*` tables, and no `LegacyChannelAgent` entity.
+
+`schedules` becomes one row per Workflow: `workflow_name` is unique, and `fingerprint` stays a column, so a changed schedule still replaces its time instead of catching up.
+
+`domain-entities.spec.ts` drops every test of a migration step and keeps the constraints, foreign keys, and storage tests: exact Telegram IDs, UTC, and reopening. One test migrates an empty database and reverts it.
+
+A database made before this step won't open. Development databases are thrown away, which is fine, since no installation exists.
+
+**Done when:**
+- `MIGRATIONS` holds one migration, and `migration:generate` against a fresh database finds no difference from the entities.
+- The architecture's persistence table, in 11.9, lists exactly the tables the migration creates.
+
+### 11.7 Definitions: one implementation, read synchronously
+
+Phase 7 made `Definitions` an abstract class with async methods, so SQLite could serve it while the notes took over. The notes won, and the snapshot is in memory:
+
+- **One module:** `src/definitions/` and `src/settings-notes/` merge into `src/settings/`: the `SettingsNotes` scanner and writer, the last good versions, broken-note tracking, and the read API.
+- **A concrete injectable:** `Definitions` stays as the name runtime code reads through, but as a concrete class with no abstract base. `FileDefinitions` is folded into it.
+- **Synchronous reads:** its methods return values, not promises. The daemon loads the first snapshot in `onModuleInit`, before anything reads it, so no read waits on `ready()`. `SettingsNotes.inWorkspace()` goes, since it is always true.
+- **What stays:** `src/settings-files/`, the loader with no Nest imports that `pero check` and `pero init` share with the daemon, and `onChange`.
+
+**Done when:**
+- `grep -rn "await .*definitions\." src` finds nothing.
+- The full suite passes, apart from wiring and the removed `await`s.
+
+### 11.8 One shape per Agent and per Workflow
+
+An Agent has three types today:
+
+- the snapshot's `AgentDefinition`, with `model` and `effort`
+- `Definitions`' `AgentDefinition`, with `providerOptions` and `skipGitRepoCheck`
+- `ResolvedAgent`, with `toolPolicy` and `codexSkipGitRepoCheck`, and the shared instructions composed in
+
+Keep the snapshot's type as the one `Agent`, and the snapshot's `WorkflowDefinition` as the one `Workflow`. `composeInstructions(agent, defaults)` stays a function, called where a runtime request or execution snapshot is built.
+
+`agent-resolution.ts` and the mapping in `FileDefinitions` go. The Agent view and the execution snapshot read the one type. The execution snapshot keeps its stored JSON shape, since runs keep it.
+
+One name per concept, everywhere: `skipGitRepoCheck`, the property's name.
+
+**Done when:**
+- `AgentDefinition` and `ResolvedAgent` no longer exist, and only `src/settings-files/` declares an Agent or Workflow type.
+- The full suite passes.
+
+### 11.9 Docs for a first release
+
+Describe Pero as it is, with no past:
+
+- **No upgrade path:** no "Upgrading from 0.1" in the [README](../README.md) or [Operating Pero](./OPERATIONS.md), and no legacy data directory, `pero migrate`, stubs, `trigger`, or `secrets/` in any doc.
+- **[CLI reference](./CLI.md):** only real commands, with `pero telegram token` and `pero settings`.
+- **[Architecture](./ARCHITECTURE.md):** the persistence table lists the state tables only. The `Definitions` section describes the one implementation, and the vocabulary drops "initial behavior" columns written for 0.1.
+- **[Testing](./TESTING.md):** where each behavior is verified, rather than each phase's exit criteria. Its rows for 7.x and 8.x migration criteria go. `test/phase2.e2e-spec.ts` is renamed after what it covers, the interactive path.
+- **[Tech stack](./TECH_STACK.md)** and the [docs index](./README.md): no `migrate/` module, and no "phases 1–4 for 0.1".
+- **This plan** has done its job once 0.2.0 ships. It becomes a short roadmap of open items, such as the edit policy protecting `.env` and `.pero/`, and Git keeps the build history.
+
+**Done when:** `git grep -n -i -E "legacy|Pero 0\.1|pero migrate|--data-dir|PERO_HOME" -- "*.md"` finds nothing outside this plan, and the link check passes.
+
+### 11.10 Release 0.2.0
+
+- Bump to `0.2.0`, which the release workflow publishes. 0.1.0 can't be reused on npm, even after an unpublish.
+- Run `npm deprecate @perokit/pero@0.1.0` with a message pointing to 0.2.0, so nobody installs it by accident.
+- Before tagging, walk through the README's "Get started" on a fresh VPS with a real bot, as a checklist item in the PR: `pero init`, `pero run`, allow a group, onboard a topic, edit a note, run a Workflow, back up, and restore into a clone.
+
+**Done when:** 0.2.0 is on npm, 0.1.0 is deprecated, and the checklist passes on a fresh machine.
+
+### Phase 11 exit criteria
+
+- Pero knows only workspaces. Nothing reads `~/.pero`, `--data-dir`, `PERO_HOME`, `secrets/`, or a `legacy_*` table, and `pero migrate` doesn't exist.
+- Every command does what it says, and no command exists only to point elsewhere.
+- One migration creates a schema that holds only state.
+- Runtime code reads one `Definitions` class synchronously, and an Agent and a Workflow each have one type.
+- The docs describe Pero 0.2.0 without mentioning an earlier version.
 
 ## Questions settled along the way
 
