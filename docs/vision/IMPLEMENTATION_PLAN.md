@@ -435,6 +435,14 @@ Today Claude `ask` Agents run in `acceptEdits` mode, which approves edits in the
 
 `bypass` and Codex are unchanged. The Codex limitation is documented.
 
+- **Found while building:**
+  - **The permission mode is `default`.** `acceptEdits` also ran `mkdir`, `touch`, `rm`, `mv`, `cp`, and `sed` in the folder without asking, another way into the settings folder, so shell commands now always ask. Claude Code still reads in the folder without asking; every other tool reaches `canUseTool`.
+  - **Claude Code's, Git's, and the shell's own files keep asking** (`.claude/`, `.git/`, `.vscode/`, `.idea/`, `.mcp.json`, `.claude.json`, `.gitconfig`, `.gitmodules`, shell profiles, `.ripgreprc`), as Claude Code did under `acceptEdits`. Allowing every edit in the folder would otherwise let an Agent add hooks or allow rules to `.claude/settings.local.json` unasked.
+  - **Paths:** `Edit`, `MultiEdit`, `Write`, and `NotebookEdit` count as edits. A path is resolved against the working folder with a leading `~` expanded, and through symlinks down to its nearest existing folder, so a new note behind a symlinked folder counts too. A path that can't be resolved asks.
+  - **The settings folder reaches the runtime** as `RuntimeRequest.settingsFolder`, set by `AgentManager` from the folders the notes were loaded from, for Channel turns and Workflow runs alike. A legacy data directory has none, so nothing changes there.
+  - **The owner sees what's at stake:** a request to edit the settings folder starts with "Change Pero's settings", and a Workflow run's refusal says the settings folder needs the owner's approval.
+  - **The owner's own Claude Code allow rules** still apply before Pero is asked, as they always did.
+
 **Done when:**
 - Tests show a Claude `ask` Agent edits a note in the vault without a prompt, but is asked before editing `Settings/Agents/Health.md` (including through a symlink or a `../` path) and refused in a Workflow run.
 - `bypass` edits freely.
@@ -551,6 +559,6 @@ A later release removes the command stubs, the legacy data directory (`--data-di
 | Question | Needed by | Proposed default |
 |---|---|---|
 | Unclaimed topic: new note or main Agent? | 8.3 | Settled in 8.3: new note (`create-agent`) by default |
-| Report Codex changes under the settings folder? | 8.4 | No: documented limitation |
+| Report Codex changes under the settings folder? | 8.4 | Settled in 8.4: no, documented limitation |
 | Accept topic IDs in `topics`? | 8.2 | Settled in 8.2: titles only |
 | Several schedules per Workflow note? | 7.4 | Settled in 7.4: one note per schedule |

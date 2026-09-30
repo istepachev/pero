@@ -13,13 +13,13 @@ import {
   RuntimeError,
   type RuntimeEvent,
   type RuntimeRequest,
-  type ToolApprover,
 } from '../agent-runtime.js';
 import {
   classifyClaudeFailure,
   newTurnState,
   normalizeClaudeMessage,
 } from './claude-events.js';
+import { editDecision } from './edit-policy.js';
 
 /** Starts a Claude Code turn; the SDK's `query`, or a fake in tests. */
 export type ClaudeQuery = (params: {
@@ -43,6 +43,14 @@ const MAX_SUMMARY_INPUT = 200;
 export const NO_APPROVER =
   "no one can approve tools here yet; the owner can let this Agent's tools " +
   'run without asking with permissions set to bypass';
+
+/** Why an edit of the settings folder was refused when no one can be asked. */
+export const NO_SETTINGS_APPROVER =
+  "Pero's settings folder changes only with the owner's approval, and no " +
+  'one can approve here';
+
+/** Starts the summary of an edit of the settings folder, for the owner. */
+const SETTINGS_EDIT = "Change Pero's settings";
 
 /**
  * Runs Agents on Claude Code through the Claude Agent SDK, signed in with
@@ -139,9 +147,10 @@ export class ClaudeRuntime implements AgentRuntime {
             allowDangerouslySkipPermissions: true,
           }
         : {
-            // Reading and editing in its folder never asks.
-            permissionMode: 'acceptEdits',
-            canUseTool: askOwner(request.approve),
+            // Claude Code reads in its folder without asking, and hands
+            // everything else to Pero, which decides about edits itself.
+            permissionMode: 'default',
+            canUseTool: askOwner(request),
           }),
       abortController: abort,
       env: this.env,
@@ -159,16 +168,28 @@ function claudeEffort(effort: string): EffortLevel {
 }
 
 /**
- * Asks `approve` about each tool the permission mode leaves open; without
- * one, or when asking fails, the tool is refused and Claude is told why.
+ * Decides about each tool Claude Code leaves open: an edit in the Agent's
+ * folder runs, except under the settings folder, which asks like any other
+ * tool. Without an approver, or when asking fails, the tool is refused and
+ * Claude is told why.
  */
-function askOwner(approve: ToolApprover | undefined): CanUseTool {
+function askOwner(request: RuntimeRequest): CanUseTool {
+  const { approve, workingDirectory, settingsFolder } = request;
   return async (tool, input, { signal, title }) => {
-    if (approve === undefined) return deny(NO_APPROVER);
+    const decision = await editDecision(tool, input, {
+      workingDirectory,
+      ...(settingsFolder === undefined ? {} : { settingsFolder }),
+    });
+    if (decision === 'allow') return { behavior: 'allow', updatedInput: input };
+    const settings = decision === 'settings';
+    if (approve === undefined) {
+      return deny(settings ? NO_SETTINGS_APPROVER : NO_APPROVER);
+    }
+    const summary = title ?? summarize(tool, input);
     try {
       const answer = await approve({
         tool,
-        summary: title ?? summarize(tool, input),
+        summary: settings ? `${SETTINGS_EDIT}: ${summary}` : summary,
         signal,
       });
       return answer.allow

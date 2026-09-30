@@ -21,6 +21,7 @@ import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import { SessionService } from '../sessions/session.service.js';
+import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { type ResolvedAgent, resolveAgent } from './agent-resolution.js';
 
 /** One message for the Agent assigned to a Channel. */
@@ -109,6 +110,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     private readonly runtimes: AgentRuntimes,
     private readonly history: MessageHistory,
     private readonly health: ComponentHealth,
+    private readonly notes: SettingsNotes,
   ) {}
 
   /**
@@ -400,6 +402,8 @@ export class AgentManager implements BeforeApplicationShutdown {
     if (runtime === null) {
       throw new TurnError(`the ${agent.provider} runtime isn't available yet`);
     }
+    await this.notes.ready();
+    const folders = this.notes.folders();
     let result: string | null = null;
     let streamed = '';
     for await (const event of runtime.execute({
@@ -410,6 +414,8 @@ export class AgentManager implements BeforeApplicationShutdown {
       skipGitRepoCheck: agent.codexSkipGitRepoCheck,
       ...options,
       toolPolicy: agent.toolPolicy,
+      // So that an Agent can't change its own configuration unasked.
+      ...(folders === null ? {} : { settingsFolder: folders.settingsFolder }),
       signal: controller.signal,
     })) {
       switch (event.type) {

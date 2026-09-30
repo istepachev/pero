@@ -1,6 +1,13 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -145,6 +152,32 @@ describe.skipIf(!ENABLED)(
 
       resultOf(events);
       expect(existsSync(join(folder, 'ran.txt'))).toBe(false);
+    });
+
+    it('lets an ask Agent edit its folder but not the settings folder when no one can answer', async () => {
+      const settings = join(folder, 'Settings');
+      mkdirSync(join(settings, 'Agents'), { recursive: true });
+      writeFileSync(join(settings, 'Agents', 'Health.md'), 'Be kind.\n');
+
+      const events = await collect(
+        runtime,
+        request(folder, {
+          input:
+            'With the Write tool, write exactly "pero-note" to note.md and ' +
+            'exactly "pero-settings" to Settings/Agents/Health.md, both in ' +
+            'the current folder. Use no other tool.',
+          toolPolicy: { permissions: 'ask' },
+          settingsFolder: settings,
+        }),
+      );
+
+      resultOf(events);
+      expect(readFileSync(join(folder, 'note.md'), 'utf8').trim()).toBe(
+        'pero-note',
+      );
+      expect(readFileSync(join(settings, 'Agents', 'Health.md'), 'utf8')).toBe(
+        'Be kind.\n',
+      );
     });
 
     it('stops promptly when the turn is aborted', async () => {
