@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { ComponentHealth } from '../health/component-health.js';
@@ -95,6 +95,17 @@ describe('ProviderAuthService', () => {
     await service.refreshRequirements();
     expect(await service.inUse()).toEqual(['codex']);
     expect(component('claude')?.required).toBe(false);
+  });
+
+  it('follows each change to the definitions once running', async () => {
+    await moduleRef.init();
+    expect(component('codex')?.required).toBe(false);
+
+    await agents.create({ name: 'coder', provider: 'codex' });
+    await vi.waitFor(() => expect(component('codex')?.required).toBe(true));
+
+    await agents.edit('coder', { enabled: false });
+    await vi.waitFor(() => expect(component('codex')?.required).toBe(false));
   });
 
   it('reports a sign-in once checked again', async () => {

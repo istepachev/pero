@@ -25,6 +25,9 @@ const view: SettingsView = {
   timezone: 'Europe/Berlin',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
+  files: null,
+  newTopics: null,
+  setInPero: null,
 };
 
 const set = (name: string, value: string) =>

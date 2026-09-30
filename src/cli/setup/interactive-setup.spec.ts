@@ -42,6 +42,9 @@ class FakeDaemon {
     timezone: 'UTC',
     maxConcurrentRuns: 2,
     telegramBotToken: { set: false, source: null },
+    files: null,
+    newTopics: null,
+    setInPero: null,
   };
   signedIn = new Set<string>();
   checks = 0;

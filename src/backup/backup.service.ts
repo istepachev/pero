@@ -191,7 +191,7 @@ export class BackupService implements BeforeApplicationShutdown {
     const { dataFolder: folder } = await this.definitions.defaults();
     if (folder === null) {
       throw new InvalidInputError(
-        'There is no data folder to include; set one with pero settings set default-working-directory <folder>',
+        'There is no data folder to include; a workspace has one, and pero migrate <workspace> makes one from this data directory',
       );
     }
     return folder;

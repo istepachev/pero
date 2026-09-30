@@ -108,6 +108,8 @@ describe('Control endpoint (e2e)', () => {
       { name: 'claude', state: 'unconfigured', required: true },
       { name: 'codex', state: 'unconfigured', required: false },
       { name: 'config', state: 'ok', required: true },
+      // A legacy data directory, whose Agents and settings can't change.
+      { name: 'settings', state: 'degraded', required: true },
       { name: 'telegram', state: 'unconfigured', required: true },
     ]);
   });

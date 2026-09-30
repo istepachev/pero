@@ -18,6 +18,7 @@ const general: ChannelView = {
   title: 'Household',
   agent: 'main',
   agentEnabled: true,
+  agentDefined: true,
   enabled: true,
   createdAt: '2026-09-28T09:00:00.000Z',
 };
@@ -108,11 +109,12 @@ describe('Channel formatting', () => {
       formatChannelDetails({
         ...details,
         agentEnabled: false,
+        agentDefined: true,
         messages: 0,
         lastMessageAt: null,
       }),
     ).toMatch(
-      /history {4}no messages yet\n.*\n\nWarning: Agent groceries is disabled, so this Channel gets no answer until pero agents enable groceries\.$/,
+      /history {4}no messages yet\n.*\n\nWarning: Agent groceries is disabled, so this Channel gets no answer until it is enabled again \(enabled: true in its note\)\.$/,
     );
   });
 
@@ -137,7 +139,7 @@ describe('Channel formatting', () => {
         {
           ...assigned,
           enabled: false,
-          nextTurn: { ...assigned.nextTurn, carriesOver: false },
+          nextTurn: { ...assigned.nextTurn!, carriesOver: false },
         },
         false,
       ),

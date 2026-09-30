@@ -152,7 +152,7 @@ describe('Workflow formatting', () => {
         '  history   all messages in Channels 3, 5 from the last 12 hours; runs even when there are none',
         '  state     enabled',
         '',
-        'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
+        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
         '',
         'No Trigger yet: pero triggers add evening-review --cron "<expression>" or --manual.',
         '',

@@ -20,9 +20,10 @@ import type {
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 import {
+  assignedAgent,
   ChannelOnboarding,
   type RoutedChannel,
-  routedChannel,
+  undefinedAgentHint,
 } from './channel-stages.js';
 
 export { MAIN_AGENT_NAME };
@@ -38,7 +39,7 @@ export function welcomeText(
     `This ${where} talks to Agent ${agent.name}: ${agent.provider}, ` +
     `${model === null ? 'default model' : `model ${model}`}, ` +
     `working in ${folder}. ` +
-    `To change it, run on the Pero host: pero agents edit ${agent.name}`
+    `To see where to change it, run on the Pero host: pero agents show ${agent.name}`
   );
 }
 
@@ -46,8 +47,8 @@ export function welcomeText(
 export function setupHint(reason: string): string {
   return (
     `Pero can't set up an Agent here yet. ${reason}. ` +
-    `To choose the folder Agents work in, run on the Pero host: ` +
-    `pero settings set default-working-directory <folder>`
+    `Agents work in a workspace's data folder: run on the Pero host ` +
+    `pero migrate <workspace>, then start Pero there`
   );
 }
 
@@ -110,6 +111,10 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     // transaction queue must not wait on it.
     const name =
       inbound.topicId === null ? null : await this.namer.suggest(inbound);
+    // In a workspace, `Pero.md` names the main Agent, whether or not its
+    // note exists yet.
+    const main =
+      inbound.topicId === null ? await this.definitions.mainAgentName() : null;
 
     let result: { channel: Channel; created: boolean };
     try {
@@ -119,7 +124,9 @@ export class ChannelOnboardingService extends ChannelOnboarding {
 
         const agent =
           name === null
-            ? await this.agents.mainAgentWithin(manager)
+            ? main === null
+              ? await this.agents.mainAgentWithin(manager)
+              : await this.agents.anchorWithin(manager, main)
             : await this.agents.createForTopicWithin(manager, {
                 base: name,
                 title: inbound.title,
@@ -154,11 +161,20 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     }
 
     if (result.created) this.agents.committed();
-    const channel = await routedChannel(
+    const { name: agentName, agent } = await assignedAgent(
       result.channel,
       this.definitions,
       this.ids,
     );
+    if (agent === null) {
+      // Until onboarding writes notes (plan step 8.3).
+      this.logger.warn(
+        `${kind} Channel ${inbound.key} gets no answer yet: ` +
+          undefinedAgentHint(agentName),
+      );
+      return null;
+    }
+    const channel = Object.assign(result.channel, { agent });
     if (result.created) {
       this.logger.log(
         `Onboarded ${kind} Channel ${inbound.key} with Agent ${channel.agent.name}`,

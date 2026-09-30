@@ -297,7 +297,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       }),
     ).rejects.toThrow(
       new InvalidInputError(
-        'Agent idle is disabled; enable it first with pero agents enable idle',
+        'Agent idle is disabled; enable it first (enabled: true in its note)',
       ),
     );
     await expect(

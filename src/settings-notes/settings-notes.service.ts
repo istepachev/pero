@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  Optional,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { homedir } from 'node:os';
@@ -18,6 +19,17 @@ export const SETTINGS_NOTES_TICK_MS = 10_000;
 /** The health component the notes report as. */
 export const SETTINGS_COMPONENT = 'settings';
 
+/** What the `settings` component says in a legacy data directory. */
+export const LEGACY_SETTINGS_DETAIL =
+  "legacy data directory: its Agents and settings can't be changed; run pero migrate <workspace>";
+
+/** Where the notes are, and the folders they are read against. */
+export interface SettingsFolders {
+  workspace: string;
+  dataFolder: string;
+  settingsFolder: string;
+}
+
 /** What changed in a new snapshot. */
 export interface SettingsChange {
   snapshot: SettingsSnapshot;
@@ -32,8 +44,9 @@ export interface SettingsChange {
  * note is reported in the log and the `settings` component, and its last
  * good version stays in use while Pero runs.
  *
- * Nothing reads the snapshot yet. In a legacy data directory there are no
- * notes, and this does nothing.
+ * `FileDefinitions` serves Agents and defaults from the snapshot. In a
+ * legacy data directory there are no notes: the `settings` component says
+ * to run `pero migrate`, and this does nothing else.
  */
 @Injectable()
 export class SettingsNotes
@@ -41,25 +54,57 @@ export class SettingsNotes
 {
   private readonly logger = new Logger('Settings');
   private reloader: SettingsReloader | null = null;
-  private settingsFolder: string | null = null;
+  private locations: SettingsFolders | null = null;
+  /** The first load, started by whichever needs the notes first. */
+  private loaded: Promise<void> | null = null;
   private readonly listeners = new Set<(change: SettingsChange) => void>();
   /** The rescan under way, if any. */
   private current: Promise<void> | null = null;
   private stopping = false;
 
   constructor(
-    private readonly hostConfig: HostConfigService,
     private readonly health: ComponentHealth,
+    // Absent only in tests that need no notes: as in a legacy data directory.
+    @Optional() private readonly hostConfig?: HostConfigService,
   ) {}
 
+  /** Whether Pero runs from a workspace, which has notes. */
+  inWorkspace(): boolean {
+    return this.hostConfig?.inWorkspace() ?? false;
+  }
+
   /**
-   * Loads the notes once `config.yaml` has been read, before the daemon
-   * answers its control socket.
+   * Loads the notes before the daemon answers its control socket, if
+   * nothing needed them earlier.
    */
   async onApplicationBootstrap(): Promise<void> {
-    const folders = this.hostConfig.folders();
-    if (folders === null) return;
-    this.settingsFolder = folders.settingsFolder;
+    await this.ready();
+  }
+
+  /**
+   * The snapshot in use, loading the notes the first time: startup work,
+   * such as recovering Workflow runs, may need them before
+   * `onApplicationBootstrap`. `config.yaml` has been read by then, its
+   * module being global. Null in a legacy data directory.
+   */
+  async ready(): Promise<SettingsSnapshot | null> {
+    await (this.loaded ??= this.load());
+    return this.snapshot();
+  }
+
+  private async load(): Promise<void> {
+    const folders = this.hostConfig?.folders() ?? null;
+    if (folders === null) {
+      if (this.hostConfig !== undefined) {
+        this.health.report(
+          SETTINGS_COMPONENT,
+          'degraded',
+          LEGACY_SETTINGS_DETAIL,
+        );
+      }
+      return;
+    }
+    this.locations = folders;
     this.reloader = new SettingsReloader(folders.settingsFolder, {
       workspace: folders.workspace,
       dataFolder: folders.dataFolder,
@@ -67,6 +112,14 @@ export class SettingsNotes
       hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
     await this.rescan();
+  }
+
+  /**
+   * The workspace, data folder, and settings folder the notes were loaded
+   * from, absolute; null until then, and in a legacy data directory.
+   */
+  folders(): SettingsFolders | null {
+    return this.locations;
   }
 
   /** Lets a rescan under way finish. */
@@ -100,7 +153,7 @@ export class SettingsNotes
     this.current ??= this.reload(this.reloader)
       .catch((error: unknown) => {
         this.logger.error(
-          `Could not read the settings in ${this.settingsFolder}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not read the settings in ${this.locations?.settingsFolder}: ${error instanceof Error ? error.message : String(error)}`,
         );
       })
       .finally(() => {
@@ -116,7 +169,7 @@ export class SettingsNotes
     const { snapshot, changed, appeared, fixed } = reload;
     if (first) {
       this.logger.log(
-        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.settingsFolder}`,
+        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.locations?.settingsFolder}`,
       );
     } else {
       this.logger.log(`Settings notes changed: ${changed.join(', ')}`);

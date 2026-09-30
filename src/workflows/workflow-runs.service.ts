@@ -192,7 +192,7 @@ export class WorkflowRuns {
     const agent = await requireAgent(this.definitions, workflow.agent);
     if (!agent.enabled) {
       throw new InvalidInputError(
-        `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
+        `Agent ${agent.name} is disabled; enable it first (enabled: true in its note)`,
       );
     }
   }

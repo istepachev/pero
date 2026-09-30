@@ -180,8 +180,8 @@ describe('Channel onboarding', () => {
       ]);
       expect(sentTexts()[0]).toBe(
         `This topic talks to Agent groceries-errands: codex, model ` +
-          `gpt-5.5-codex, working in ${vault}. To change it, run on the ` +
-          `Pero host: pero agents edit groceries-errands`,
+          `gpt-5.5-codex, working in ${vault}. To see where to change it, run on the ` +
+          `Pero host: pero agents show groceries-errands`,
       );
       expect(turns.handle).not.toHaveBeenCalled();
     });
@@ -523,7 +523,7 @@ describe('Channel onboarding', () => {
         { address: topicMessage.channel.address, message: { text: hint } },
         { address: OWNER.address, message: { text: hint } },
       ]);
-      expect(hint).toContain('pero settings set default-working-directory');
+      expect(hint).toContain('pero migrate <workspace>');
       expect(await allMessages()).toEqual([]);
 
       await settings.update({ defaultWorkingDirectory: vault });

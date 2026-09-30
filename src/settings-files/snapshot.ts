@@ -84,6 +84,11 @@ export interface SettingsSnapshot {
   defaults: Defaults;
   /** `Pero.md`'s body. */
   sharedInstructions: string | null;
+  /**
+   * The properties the `Pero.md` in use sets, to tell its values from
+   * Pero's own defaults.
+   */
+  peroProperties: ReadonlySet<string>;
   agents: ReadonlyMap<string, AgentDefinition>;
   /** The name of the main Agent; its note may not exist yet. */
   mainAgent: string;
@@ -237,6 +242,13 @@ export function buildSnapshot(
   }
 
   const peroNote = pero?.result.ok ? pero.result.value : defaultPeroNote();
+  const peroProperties = new Set(
+    pero?.result.ok
+      ? Object.entries(pero.note?.properties ?? {})
+          .filter(([, value]) => value !== null)
+          .map(([key]) => key)
+      : [],
+  );
   const { timezone, sharedInstructions, ...peroDefaults } = peroNote;
   const defaults: Defaults = {
     ...peroDefaults,
@@ -324,6 +336,7 @@ export function buildSnapshot(
   return Object.freeze({
     defaults: Object.freeze(defaults),
     sharedInstructions,
+    peroProperties,
     agents,
     mainAgent,
     workflows,

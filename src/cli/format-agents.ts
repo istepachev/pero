@@ -4,6 +4,7 @@ import type {
   AgentView,
   NextTurn,
 } from '../control/protocol.js';
+import type { ValueOrigin } from '../settings-files/origins.js';
 import { table } from './format-status.js';
 import { preview } from './settings-keys.js';
 
@@ -12,41 +13,68 @@ const DEFAULT = 'default';
 /** `pero agents ls`: one row per Agent, the main one marked. */
 export function formatAgentList(agents: readonly AgentView[]): string {
   if (agents.length === 0) {
-    return (
-      'No Agents yet. Create a topic in an allowed Telegram group, ' +
-      'or run pero agents create <name>.'
-    );
+    return 'No Agents yet. Add a note to the Agents folder in the settings folder.';
   }
+  const notes = agents.some((agent) => agent.file !== null);
   const lines = table([
-    ['NAME', 'PROVIDER', 'MODEL', 'EFFORT', 'FOLDER', 'PERMISSIONS', 'STATE'],
+    [
+      'NAME',
+      'PROVIDER',
+      'MODEL',
+      'EFFORT',
+      'FOLDER',
+      'PERMISSIONS',
+      'STATE',
+      ...(notes ? ['TOPICS', 'NOTE'] : []),
+    ],
     ...agents.map((agent) => [
-      agent.main ? `${agent.name} *` : agent.name,
+      `${agent.name}${agent.main ? ' *' : ''}${agent.errors.length > 0 ? ' !' : ''}`,
       agent.provider,
       agent.model ?? DEFAULT,
       agent.effort ?? DEFAULT,
       folder(agent),
       agent.permissions,
       agent.enabled ? 'enabled' : 'disabled',
+      ...(notes ? [agent.topics.join(', ') || '—', agent.file ?? '—'] : []),
     ]),
   ]);
-  if (agents.some((agent) => agent.main)) {
-    lines.push('', '* the main Agent: General topics and direct chats');
-  }
+  const footnotes = [
+    ...(agents.some((agent) => agent.main)
+      ? ['* the main Agent: General topics and direct chats']
+      : []),
+    ...(agents.some((agent) => agent.errors.length > 0)
+      ? [
+          '! its note has errors, so its last good version is in use; pero check lists them',
+        ]
+      : []),
+  ];
+  if (footnotes.length > 0) lines.push('', ...footnotes);
   return lines.join('\n');
 }
 
 /** `pero agents show`: settings, then each Channel's next turn. */
 export function formatAgentDetails(agent: AgentDetails): string {
+  const from = (origin: ValueOrigin | undefined) =>
+    origin === 'pero' ? ' (Pero.md)' : origin === 'default' ? ' (default)' : '';
+  const option = (value: string | null, origin: ValueOrigin | undefined) =>
+    value === null ? '(provider default)' : `${value}${from(origin)}`;
+  const { origins } = agent;
   const lines = [
     `Agent ${agent.name}${agent.title === null ? '' : ` "${agent.title}"`}`,
     ...table([
-      ['provider', agent.provider],
-      ['model', agent.model ?? '(provider default)'],
-      ['effort', agent.effort ?? '(provider default)'],
+      ...(agent.file === null
+        ? []
+        : [
+            ['note', agent.file],
+            ['topics', agent.topics.join(', ') || '(none)'],
+          ]),
+      ['provider', `${agent.provider}${from(origins?.provider)}`],
+      ['model', option(agent.model, origins?.model)],
+      ['effort', option(agent.effort, origins?.effort)],
       ['working directory', folder(agent)],
       ['instructions', preview(agent.instructions)],
       ['shared instructions', agent.useSharedInstructions ? 'on' : 'off'],
-      ['permissions', agent.permissions],
+      ['permissions', `${agent.permissions}${from(origins?.permissions)}`],
       ['codex git check', agent.codexSkipGitRepoCheck ? 'skipped' : 'required'],
       ['state', agent.enabled ? 'enabled' : 'disabled'],
       [
@@ -55,6 +83,16 @@ export function formatAgentDetails(agent: AgentDetails): string {
       ],
     ]).map((row) => `  ${row}`),
   ];
+  if (agent.errors.length > 0) {
+    lines.push(
+      '',
+      'Its note has errors, so its last good version is in use:',
+      ...agent.errors.map(
+        ({ property, message }) =>
+          `  ${property === null ? '' : `${property}: `}${message}`,
+      ),
+    );
+  }
   if (agent.folderProblem !== null) {
     lines.push('', `Warning: ${agent.folderProblem}`);
   }
@@ -95,42 +133,9 @@ export function describeNextTurn(turn: NextTurn): string {
   }
 }
 
-/** One line on an Agent: what runs it and where. */
-export function summarize(agent: AgentView): string {
-  const model = agent.model === null ? 'default model' : agent.model;
-  const effort =
-    agent.effort === null ? 'default effort' : `${agent.effort} effort`;
-  return `${agent.provider}, ${model}, ${effort}, working in ${folder(agent)}`;
-}
-
-/**
- * What an edit means for the Agent's Sessions: which Channels start a
- * fresh one, or that model and effort apply within the same Session.
- */
-export function sessionEffect(
-  agent: AgentDetails,
-  changedWithinSession: boolean,
-): string | null {
-  const fresh = agent.channels.filter(
-    (channel) => channel.nextTurn.kind === 'fresh',
-  );
-  if (fresh.length > 0) {
-    const count = fresh.length === 1 ? '1 Channel' : `${fresh.length} Channels`;
-    const carried = fresh.some((channel) => channel.nextTurn.carriesOver)
-      ? ", with that Channel's recent messages"
-      : '';
-    return `Its next turn in ${count} starts a fresh Session${carried}.`;
-  }
-  if (changedWithinSession && agent.channels.length > 0) {
-    return 'The change applies from the next turn of the same Session.';
-  }
-  return null;
-}
-
 function folder(agent: AgentView): string {
-  return agent.workingDirectory === null
-    ? `${agent.effectiveWorkingDirectory} (default)`
-    : agent.effectiveWorkingDirectory;
+  if (agent.workingDirectory !== null) return agent.effectiveWorkingDirectory;
+  return `${agent.effectiveWorkingDirectory} (${agent.origins === null ? 'default' : 'data folder'})`;
 }
 
 function title(channel: AgentChannelView): string {

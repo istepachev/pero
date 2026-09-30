@@ -197,7 +197,7 @@ describe('ChannelsService and ChannelViews', () => {
 
     await expect(channels.assign(id, 'chef')).rejects.toThrow(
       new InvalidInputError(
-        'Agent chef is disabled; enable it first with pero agents enable chef',
+        'Agent chef is disabled; enable it first (enabled: true in its note)',
       ),
     );
     await expect(channels.assign(id, 'nobody')).rejects.toThrow(

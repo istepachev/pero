@@ -11,8 +11,11 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
-import type { SettingsChange } from './settings-notes.service.js';
-import { SettingsNotes } from './settings-notes.service.js';
+import {
+  LEGACY_SETTINGS_DETAIL,
+  type SettingsChange,
+  SettingsNotes,
+} from './settings-notes.service.js';
 import { SettingsNotesModule } from './settings-notes.module.js';
 
 describe('SettingsNotes', () => {
@@ -49,8 +52,9 @@ describe('SettingsNotes', () => {
       imports: [SettingsNotesModule],
     })
       .useMocker((token) => {
-        if (token === HostConfigService) return { folders: () => folders };
-        // The database, which only `pero check` reads.
+        if (token === HostConfigService) {
+          return { folders: () => folders, inWorkspace: () => workspace };
+        }
         return {};
       })
       .compile();
@@ -127,11 +131,47 @@ describe('SettingsNotes', () => {
     expect(health.get('settings')!.state).toBe('ok');
   });
 
-  it('does nothing in a legacy data directory', async () => {
+  it('says to migrate a legacy data directory, and reads no notes', async () => {
     write('Agents/Health.md', 'Coach');
     await boot(false);
     expect(notes.snapshot()).toBeNull();
     await notes.rescan();
-    expect(health.get('settings')).toBeUndefined();
+    expect(notes.snapshot()).toBeNull();
+    expect(notes.folders()).toBeNull();
+    expect(health.get('settings')).toMatchObject({
+      state: 'degraded',
+      detail: LEGACY_SETTINGS_DETAIL,
+      required: true,
+    });
+  });
+
+  it('loads the notes for whoever needs them before startup ends', async () => {
+    write('Agents/Health.md', 'Coach');
+    moduleRef = await Test.createTestingModule({
+      imports: [SettingsNotesModule],
+    })
+      .useMocker((token) =>
+        token === HostConfigService
+          ? {
+              folders: () => ({
+                workspace: tmp,
+                dataFolder: join(tmp, 'data'),
+                settingsFolder: settings,
+              }),
+              inWorkspace: () => true,
+            }
+          : {},
+      )
+      .compile();
+    notes = moduleRef.get(SettingsNotes);
+    const [first, second] = await Promise.all([notes.ready(), notes.ready()]);
+    expect(first!.agents.has('health')).toBe(true);
+    expect(second).toBe(first);
+    await moduleRef.init();
+    expect(notes.snapshot()).toBe(first);
+
+    write('Agents/Health.md', '---\nmodel: opus\n---\nCoach');
+    await notes.rescan();
+    expect((await notes.ready())!.agents.get('health')!.model).toBe('opus');
   });
 });

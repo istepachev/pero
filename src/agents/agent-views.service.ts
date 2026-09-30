@@ -1,7 +1,8 @@
+import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { InvalidInputError } from '../common/errors.js';
+import { InvalidInputError, NotFoundError } from '../common/errors.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
 import type {
   AgentChannelView,
@@ -13,13 +14,15 @@ import {
   type AgentDefinition,
   type Defaults,
   Definitions,
-  requireAgent,
 } from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
+import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+import { findAgentNote, shownPath } from '../settings-files/note-hints.js';
+import { agentOrigins } from '../settings-files/origins.js';
 
 /**
  * Agents as the CLI shows them: their settings with defaults resolved, and
@@ -32,27 +35,82 @@ export class AgentViews {
     private readonly history: MessageHistory,
     private readonly definitions: Definitions,
     private readonly ids: DefinitionIds,
+    private readonly notes: SettingsNotes,
   ) {}
 
   /** Every Agent, by name. */
   async list(): Promise<AgentView[]> {
     const main = (await this.definitions.mainAgent())?.name ?? null;
     return (await this.definitions.agents()).map((agent) =>
-      agentView(agent, main),
+      this.view(agent, main),
     );
   }
 
   /** The Agent named `name` with its Channels; `NotFoundError` if none. */
   async details(name: string): Promise<AgentDetails> {
-    const agent = await requireAgent(this.definitions, name);
+    const agent = await this.definitions.agent(name);
+    if (agent === null) throw this.notFound(name);
     const main = (await this.definitions.mainAgent())?.name ?? null;
     const defaults = await this.definitions.defaults();
-    const id = await this.ids.agentId(agent.name);
+    const id = await this.ids.findAgentId(agent.name);
     const view = {
-      ...agentView(agent, main),
-      channels: await this.channels(id, agent, defaults),
+      ...this.view(agent, main),
+      channels: id === null ? [] : await this.channels(id, agent, defaults),
     };
     return { ...view, folderProblem: await folderProblem(view) };
+  }
+
+  /** `agent` as the CLI shows it, with its note when notes define it. */
+  private view(agent: AgentDefinition, main: string | null): AgentView {
+    const snapshot = this.notes.snapshot();
+    const folders = this.notes.folders();
+    const note = snapshot?.agents.get(agent.name);
+    if (snapshot === null || folders === null || note === undefined) {
+      return {
+        ...agentView(agent, main),
+        file: null,
+        topics: [],
+        origins: null,
+        errors: [],
+      };
+    }
+    return {
+      ...agentView(agent, main),
+      file: shownPath(
+        folders.workspace,
+        join(folders.settingsFolder, note.file),
+      ),
+      topics: [...note.topics],
+      origins: agentOrigins(note, snapshot.peroProperties),
+      errors: snapshot.errors
+        .filter((error) => error.file === note.file)
+        .map(({ property, message }) => ({ property, message })),
+    };
+  }
+
+  /**
+   * Why there is no Agent named `name`: its note has errors and never
+   * loaded, or there is no such note.
+   */
+  private notFound(name: string): NotFoundError {
+    const snapshot = this.notes.snapshot();
+    const folders = this.notes.folders();
+    if (snapshot !== null && folders !== null) {
+      const broken = findAgentNote(
+        snapshot.errors.map((error) => error.file),
+        name,
+      );
+      if (broken !== null) {
+        const file = shownPath(
+          folders.workspace,
+          join(folders.settingsFolder, broken),
+        );
+        return new NotFoundError(
+          `Agent ${name} isn't loaded: ${file} has errors; pero check lists them`,
+        );
+      }
+    }
+    return new NotFoundError(`No Agent named ${name}`);
   }
 
   /** The Channels Agent `id` answers in, with what its next turn does. */
@@ -91,7 +149,10 @@ export class AgentViews {
   }
 }
 
-function agentView(agent: AgentDefinition, main: string | null): AgentView {
+function agentView(
+  agent: AgentDefinition,
+  main: string | null,
+): Omit<AgentView, 'file' | 'topics' | 'origins' | 'errors'> {
   return {
     name: agent.name,
     title: agent.title,
@@ -110,7 +171,9 @@ function agentView(agent: AgentDefinition, main: string | null): AgentView {
 }
 
 /** Why the Agent's folder cannot be used now, such as a missing vault. */
-async function folderProblem(view: AgentView): Promise<string | null> {
+async function folderProblem(
+  view: Pick<AgentView, 'effectiveWorkingDirectory'>,
+): Promise<string | null> {
   try {
     await validateWorkingDirectory(view.effectiveWorkingDirectory);
     return null;

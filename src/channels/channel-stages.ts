@@ -1,8 +1,7 @@
 import type { DefinitionIds } from '../definitions/definition-ids.js';
-import {
-  type AgentDefinition,
-  type Definitions,
-  requireAgent,
+import type {
+  AgentDefinition,
+  Definitions,
 } from '../definitions/definitions.js';
 import type { Channel } from '../persistence/entities/channel.entity.js';
 import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
@@ -16,16 +15,23 @@ import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
 /** A known, enabled Channel with its assigned Agent. */
 export type RoutedChannel = Omit<Channel, 'agent'> & { agent: AgentDefinition };
 
-/** `channel`, given the Agent assigned to it. */
-export async function routedChannel(
-  channel: Channel,
+/**
+ * The Agent assigned to `channel`: its name, and its definition, which is
+ * null when there is none, as for an Agent onboarding created in a
+ * workspace that no note defines.
+ */
+export async function assignedAgent(
+  channel: Pick<Channel, 'agentId'>,
   definitions: Definitions,
   ids: DefinitionIds,
-): Promise<RoutedChannel> {
+): Promise<{ name: string; agent: AgentDefinition | null }> {
   const name = await ids.agentName(channel.agentId);
-  return Object.assign(channel, {
-    agent: await requireAgent(definitions, name),
-  });
+  return { name, agent: await definitions.agent(name) };
+}
+
+/** Why a Channel whose Agent has no definition gets no answer. */
+export function undefinedAgentHint(name: string): string {
+  return `Agent ${name} has no note; add Agents/${name}.md to the settings folder`;
 }
 
 /** Runs a turn of a known Channel's Agent. */

@@ -121,9 +121,7 @@ async function mainAgentFor(
   const agent = await manager.getRepository(Agent).findOneBy({ name });
   if (agent === null) throw new NotFoundError(`No Agent named ${name}`);
   if (!agent.enabled) {
-    throw new InvalidInputError(
-      `Agent ${name} is disabled; enable it first with pero agents enable ${name}`,
-    );
+    throw new InvalidInputError(`Agent ${name} is disabled; enable it first`);
   }
   return agent;
 }

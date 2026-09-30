@@ -99,7 +99,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       workflows.create({ name: 'review', agent: 'coach', inputTemplate: 'Go' }),
     ).rejects.toThrow(
       new InvalidInputError(
-        'Agent coach is disabled; enable it first with pero agents enable coach',
+        'Agent coach is disabled; enable it first (enabled: true in its note)',
       ),
     );
     expect(await views.list()).toEqual([]);

@@ -190,7 +190,7 @@ describe('SettingsService', () => {
     const disabled = settings.update({ mainAgent: 'retired' });
     await expect(disabled).rejects.toThrow(InvalidInputError);
     await expect(disabled).rejects.toThrow(
-      'Agent retired is disabled; enable it first with pero agents enable retired',
+      'Agent retired is disabled; enable it first',
     );
     expect(await settings.get()).toEqual(before);
   });

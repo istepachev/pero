@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -15,14 +16,17 @@ export const PROVIDER_AUTH_EXEC = Symbol('PROVIDER_AUTH_EXEC');
 /**
  * Keeps each provider's component state current: whether its CLI is signed
  * in, and whether health depends on it at all. A provider is in use when it
- * is the default provider or an enabled Agent uses it.
+ * is the default provider or an enabled Agent uses it, which follows each
+ * change to the definitions.
  */
 @Injectable()
 export class ProviderAuthService
   implements OnApplicationBootstrap, OnModuleDestroy
 {
+  private readonly logger = new Logger('Providers');
   private readonly abort = new AbortController();
   private running: Promise<void> | undefined;
+  private stopListening: (() => void) | undefined;
 
   constructor(
     private readonly definitions: Definitions,
@@ -31,12 +35,20 @@ export class ProviderAuthService
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    this.stopListening = this.definitions.onChange(() => {
+      this.refreshRequirements().catch((error: unknown) => {
+        this.logger.error(
+          `Could not tell which providers are in use: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    });
     await this.refreshRequirements();
     // In the background: readiness must not wait for the provider CLIs.
     void this.check();
   }
 
   onModuleDestroy(): void {
+    this.stopListening?.();
     this.abort.abort();
   }
 

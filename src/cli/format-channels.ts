@@ -34,7 +34,12 @@ export function formatChannelDetails(channel: ChannelDetails): string {
       ['address', address(channel)],
       ['agent', agent(channel)],
       ['state', state(channel)],
-      ['next turn', describeNextTurn(channel.nextTurn)],
+      [
+        'next turn',
+        channel.nextTurn === null
+          ? 'none: no note defines its Agent'
+          : describeNextTurn(channel.nextTurn),
+      ],
       ['history', describeHistory(channel)],
       ['created', localDateTime(new Date(channel.createdAt))],
     ]).map((row) => `  ${row}`),
@@ -53,7 +58,7 @@ export function formatAssigned(
     return `${describeChannel(channel)} already talks to Agent ${channel.agent}.`;
   }
   // Assignment closes the Channel's Session, so the next turn starts one.
-  const carried = channel.nextTurn.carriesOver
+  const carried = channel.nextTurn?.carriesOver
     ? ", with the Channel's recent messages"
     : '';
   const lines = [
@@ -107,10 +112,16 @@ export function describeChannel(channel: ChannelAddress): string {
 
 /** Why the Channel gets no answer from its Agent; null when it does. */
 export function agentWarning(channel: ChannelView): string | null {
+  if (!channel.agentDefined) {
+    return (
+      `Warning: Agent ${channel.agent} has no note, so this Channel gets no ` +
+      `answer until Agents/${channel.agent}.md is added to the settings folder.`
+    );
+  }
   if (channel.agentEnabled) return null;
   return (
     `Warning: Agent ${channel.agent} is disabled, so this Channel gets no ` +
-    `answer until pero agents enable ${channel.agent}.`
+    `answer until it is enabled again (enabled: true in its note).`
   );
 }
 
@@ -125,6 +136,7 @@ function address(channel: ChannelAddress): string {
 }
 
 function agent(channel: ChannelView): string {
+  if (!channel.agentDefined) return `${channel.agent} (no note)`;
   return channel.agentEnabled ? channel.agent : `${channel.agent} (disabled)`;
 }
 

@@ -24,13 +24,15 @@ export class DefinitionIds {
     return row.name;
   }
 
-  /** The row ID of the Agent named `name`, in any case; `NotFoundError` if none. */
-  async agentId(name: string): Promise<number> {
+  /**
+   * The row ID of the Agent named `name`, in any case; null when it has
+   * none, as an Agent only a note defines.
+   */
+  async findAgentId(name: string): Promise<number | null> {
     const row = await this.dataSource
       .getRepository(Agent)
       .findOne({ select: { id: true }, where: { name: name.toLowerCase() } });
-    if (row === null) throw new NotFoundError(`No Agent named ${name}`);
-    return row.id;
+    return row?.id ?? null;
   }
 
   /** Every Agent's name, by row ID. */

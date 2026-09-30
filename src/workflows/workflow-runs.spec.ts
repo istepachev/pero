@@ -1405,7 +1405,7 @@ describe('Workflow Runs and the executor', () => {
       await agents.edit('coach', { enabled: false });
       await expect(runs.retry(id)).rejects.toThrow(
         new InvalidInputError(
-          'Agent coach is disabled; enable it first with pero agents enable coach',
+          'Agent coach is disabled; enable it first (enabled: true in its note)',
         ),
       );
       expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
@@ -1487,7 +1487,7 @@ describe('Workflow Runs and the executor', () => {
 
       await agents.edit('coach', { enabled: false });
       await expect(runs.start('brief')).rejects.toThrow(
-        'Agent coach is disabled; enable it first with pero agents enable coach',
+        'Agent coach is disabled; enable it first (enabled: true in its note)',
       );
       expect(await ds.getRepository(WorkflowRun).count()).toBe(0);
     });

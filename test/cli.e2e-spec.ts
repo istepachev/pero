@@ -171,6 +171,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     ...args,
   ];
 
+  /**
+   * The running daemon's control endpoint, which still changes a legacy
+   * data directory's Agents and settings; its CLI names the notes to edit.
+   */
+  const control = () => createControlClient(layout.controlSocket);
+
   it('runs once, reports status, and stops safely twice', async () => {
     const first = await pero(withDataDir('run'));
     expect(first).toMatchObject({ code: 0, stderr: '' });
@@ -181,7 +187,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(first.stdout).toContain(
       [
         'Setup needed:',
-        '  Default working directory is not set — pero settings set default-working-directory <folder>',
+        '  Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
@@ -303,7 +309,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
     expect(status!.stdout).not.toContain('Error:');
     const show = await pero(ws('settings', 'show'));
-    expect(show.stdout).toMatch(/^telegram-bot-token +set \(\.env\)$/m);
+    expect(show.stdout).toMatch(/^Telegram bot token: set \(\.env\)$/m);
 
     // A tracked .env is an error, whether or not Pero runs.
     execFileSync('git', ['-C', workspace, 'add', '-f', '.env']);
@@ -440,273 +446,185 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
   });
 
-  it('changes and clears settings through the daemon', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    // The CLI sees the real path where the temporary folder is a link.
-    const cwd = realpathSync(tmp);
-    mkdirSync(join(cwd, 'vault'));
-
-    const settings = (...args: string[]) =>
-      pero(withDataDir('settings', ...args), { cwd });
-
-    expect(
-      await settings('set', 'default-working-directory', 'vault'),
-    ).toMatchObject({
-      code: 0,
-      stdout: `default-working-directory is now ${join(cwd, 'vault')}\n`,
+  it('names the file to edit instead of changing Agents and settings', async () => {
+    const workspace = join(realpathSync(tmp), 'ws');
+    expect((await pero(['init', workspace])).code).toBe(0);
+    mkdirSync(join(workspace, 'data', 'Settings', 'Agents', 'Home'));
+    writeFileSync(
+      join(workspace, 'data', 'Settings', 'Agents', 'Home', 'Health Coach.md'),
+      'You coach.\n',
+    );
+    // Whether or not Pero runs, and with any of the old options.
+    const ws = (...args: string[]) => pero(['-w', workspace, ...args]);
+    const agents = 'Agents are configured in notes now';
+    expect(await ws('agents', 'create', 'Garden', '--model', 'opus')).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: `${agents}: add data/Settings/Agents/Garden.md (Agents/_Template.md shows the properties).\n`,
+    });
+    expect(await ws('agents', 'create', 'health-coach')).toMatchObject({
+      code: 1,
+      stderr: `${agents}, and data/Settings/Agents/Home/Health Coach.md already defines health-coach; edit it there.\n`,
     });
     expect(
-      await settings('set', 'default-working-directory', 'missing'),
+      await ws('agents', 'edit', 'Health Coach', '--instructions', '-'),
     ).toMatchObject({
       code: 1,
-      stderr: `Working directory ${join(cwd, 'missing')} does not exist\n`,
+      stderr: `${agents}: edit data/Settings/Agents/Home/Health Coach.md.\n`,
     });
-    expect(await settings('unset', 'default-working-directory')).toMatchObject({
+    expect(await ws('agents', 'disable', 'health-coach')).toMatchObject({
       code: 1,
-      stderr:
-        'default-working-directory cannot be unset; set another folder instead\n',
+      stderr: `${agents}: set enabled: false in data/Settings/Agents/Home/Health Coach.md.\n`,
     });
-    expect(
-      await settings('set', 'claude.model', 'claude-opus-5-5'),
-    ).toMatchObject({
-      code: 0,
-      stdout: 'claude.model is now claude-opus-5-5\n',
+    expect(await ws('agents', 'enable', 'nobody')).toMatchObject({
+      code: 1,
+      stderr: `${agents}, and no note is named nobody: add data/Settings/Agents/nobody.md (Agents/_Template.md shows the properties).\n`,
     });
-    expect(await settings('unset', 'claude.model')).toMatchObject({
-      code: 0,
-      stdout: 'claude.model is now (provider default)\n',
-    });
-    expect(await settings('set', 'default-provider', 'gemini')).toMatchObject({
+    expect(await ws('settings', 'set', 'claude.model', 'opus')).toMatchObject({
       code: 1,
       stderr:
-        'default-provider: Invalid option: expected one of "claude"|"codex"\n',
+        'Settings are in notes now: set claude-model in data/Settings/Pero.md.\n',
     });
-    expect(await settings('set', 'nope', 'x')).toMatchObject({
+    expect(await ws('settings', 'unset', 'default-permissions')).toMatchObject({
+      code: 1,
+      stderr:
+        'Settings are in notes now: set permissions in data/Settings/Pero.md.\n',
+    });
+    expect(await ws('settings', 'set', 'shared-instructions')).toMatchObject({
+      code: 1,
+      stderr:
+        "Settings are in notes now: edit the body of data/Settings/Pero.md, which goes before each Agent's own instructions.\n",
+    });
+    expect(
+      await ws('settings', 'set', 'default-working-directory', 'vault'),
+    ).toMatchObject({
+      code: 1,
+      stderr:
+        'The data folder is set in config.yaml now: set data in .pero/config.yaml, then restart Pero.\n',
+    });
+    expect(await ws('settings', 'set', 'nope', 'x')).toMatchObject({
       code: 1,
       stderr: expect.stringMatching(/^Unknown setting "nope"\. Settings: /),
     });
-    const instructions = await pero(
-      withDataDir('settings', 'set', 'shared-instructions'),
-      { input: 'Be brief.\nAnswer in English.\n' },
-    );
-    expect(instructions.stdout).toBe(
-      'shared-instructions is now Be brief. (2 lines)\n',
-    );
-    expect(await settings('set', 'history-carryover', '10')).toMatchObject({
-      code: 0,
-      stdout: 'history-carryover is now 10\n',
-    });
-    expect(await settings('set', 'history-carryover', 'all')).toMatchObject({
-      code: 1,
-      stderr: 'history-carryover must be a whole number, not "all"\n',
-    });
-    expect(await settings('set', 'history-carryover', '0')).toMatchObject({
-      code: 0,
-      stdout: 'history-carryover is now 0 (off)\n',
-    });
 
-    const show = await settings();
-    expect(show.code).toBe(0);
-    expect(show.stdout).toMatch(
-      new RegExp(`^default-working-directory +${join(cwd, 'vault')}$`, 'm'),
+    // A legacy data directory, running or not, can only be migrated.
+    const legacy = `${layout.root} is a legacy data directory: its Agents and settings can't be changed any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.\n`;
+    expect(await pero(withDataDir('agents', 'create', 'notes'))).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: legacy,
+    });
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect(
+      await pero(withDataDir('settings', 'set', 'timezone', 'UTC')),
+    ).toMatchObject({ code: 1, stderr: legacy });
+    expect((await pero(withDataDir('settings'))).stdout).toMatch(
+      /^timezone +\S+$/m,
     );
-    expect(show.stdout).toMatch(/^claude\.model +\(provider default\)$/m);
-    expect(show.stdout).toMatch(/^history-carryover +0 \(off\)$/m);
-    expect(show.stdout).toMatch(/^telegram-bot-token +not set$/m);
+    expect((await pero(withDataDir('status'))).stdout).toContain(
+      "settings  degraded      legacy data directory: its Agents and settings can't be changed; run pero migrate <workspace>",
+    );
   });
 
-  it('lists, shows, creates, edits, disables, and enables Agents', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    // The CLI sees the real path where the temporary folder is a link.
-    const cwd = realpathSync(tmp);
-    const vault = join(cwd, 'vault');
-    const own = join(cwd, 'own');
-    mkdirSync(vault);
-    const agents = (...args: string[]) =>
-      pero(withDataDir('agents', ...args), { cwd });
-
-    expect(await agents()).toMatchObject({
-      code: 0,
-      stdout:
-        'No Agents yet. Create a topic in an allowed Telegram group, or run pero agents create <name>.\n',
-    });
-    expect(await agents('create', 'notes')).toMatchObject({
-      code: 1,
-      stderr:
-        'No default working directory is set: give the Agent its own folder, or set the default working directory first\n',
-    });
-    await pero(withDataDir('settings', 'set', 'default-working-directory'), {
-      cwd,
-      input: 'vault\n',
-    });
-
-    expect(
-      await agents(
-        'create',
-        'Notes',
-        '--model',
-        'claude-opus-5-5',
-        '--no-shared-instructions',
-      ),
-    ).toMatchObject({
-      code: 0,
-      stdout: `Created Agent notes: claude, claude-opus-5-5, default effort, working in ${vault} (default)\n`,
-    });
-    expect(await agents('create', 'notes')).toMatchObject({
-      code: 1,
-      stderr: 'An Agent named notes already exists\n',
-    });
-    expect(
-      await agents('create', 'coder', '--working-directory', 'own'),
-    ).toMatchObject({
-      code: 1,
-      stderr: `Working directory ${own} does not exist\n`,
-    });
-    mkdirSync(own);
-    const coder = await pero(
-      withDataDir(
-        'agents',
-        'create',
-        'coder',
-        '--provider',
-        'codex',
-        '--effort',
-        'ultra',
-        '--working-directory',
-        'own',
-        '--instructions',
-        '-',
-        '--skip-git-repo-check',
-      ),
-      { cwd, input: 'Write tests first.\nKeep it short.\n' },
+  it('shows the Agents and settings the notes hold, as they change', async () => {
+    const workspace = join(realpathSync(tmp), 'ws');
+    const settingsFolder = join(workspace, 'data', 'Settings');
+    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    others.push(state);
+    expect((await pero(['init', workspace])).code).toBe(0);
+    writeFileSync(
+      join(settingsFolder, 'Pero.md'),
+      '---\nclaude-effort: high\ntimezone: Europe/Berlin\n---\nBe brief.\n',
     );
-    expect(coder).toMatchObject({
-      code: 0,
-      stdout: `Created Agent coder: codex, default model, ultra effort, working in ${own}\n`,
-    });
+    mkdirSync(join(settingsFolder, 'Agents', 'Home'));
+    writeFileSync(
+      join(settingsFolder, 'Agents', 'Home', 'Coach.md'),
+      '---\ntopics: [Health, Running]\nmodel: sonnet\npermissions: bypass\nworking-directory: data/Health\n---\nYou coach.\n',
+    );
+    mkdirSync(join(workspace, 'data', 'Health'));
+    writeFileSync(
+      join(settingsFolder, 'Agents', 'Broken.md'),
+      '---\nmodle: opus\n---\n',
+    );
+    const ws = (...args: string[]) => pero(['-w', workspace, ...args]);
+    expect((await ws('run')).code).toBe(0);
 
-    const ls = await agents('ls');
+    const ls = await ws('agents');
     expect(ls).toMatchObject({ code: 0, stderr: '' });
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^coder +codex +default +ultra +${escape(own)} +ask +enabled$`,
+        `^coach +claude +sonnet +high +${escape(join(workspace, 'data', 'Health'))} +bypass +enabled +Health, Running +data/Settings/Agents/Home/Coach\\.md$`,
         'm',
       ),
     );
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^notes +claude +claude-opus-5-5 +default +${escape(vault)} \\(default\\) +ask +enabled$`,
+        `^main \\* +claude +default +high +${escape(join(workspace, 'data'))} \\(data folder\\) +ask +enabled +— +data/Settings/Agents/Main\\.md$`,
         'm',
       ),
     );
-
-    const show = await agents('show', 'coder');
+    const show = await ws('agents', 'show', 'Coach');
     expect(show).toMatchObject({ code: 0, stderr: '' });
-    expect(show.stdout).toContain(
+    expect(show.stdout).toBe(
       [
-        'Agent coder',
-        '  provider             codex',
-        '  model                (provider default)',
-        '  effort               ultra',
-        `  working directory    ${own}`,
-        '  instructions         Write tests first. (2 lines)',
+        'Agent coach "Coach"',
+        '  note                 data/Settings/Agents/Home/Coach.md',
+        '  topics               Health, Running',
+        '  provider             claude (default)',
+        '  model                sonnet',
+        '  effort               high (Pero.md)',
+        `  working directory    ${join(workspace, 'data', 'Health')}`,
+        '  instructions         You coach.',
         '  shared instructions  on',
-        '  permissions          ask',
-        '  codex git check      skipped',
+        '  permissions          bypass',
+        '  codex git check      required',
         '  state                enabled',
         '  main agent           no',
         '',
         'No Channel is assigned to it yet.',
+        '',
       ].join('\n'),
     );
-
-    expect(await agents('edit', 'notes', '--effort', 'ultra')).toMatchObject({
-      code: 1,
-      stderr: expect.stringContaining('--effort: Invalid option'),
-    });
-    expect(await agents('edit', 'notes')).toMatchObject({
+    expect(await ws('agents', 'show', 'broken')).toMatchObject({
       code: 1,
       stderr:
-        'Nothing to change; see pero agents edit --help for the options\n',
+        "Agent broken isn't loaded: data/Settings/Agents/Broken.md has errors; pero check lists them\n",
     });
-    expect(
-      await agents(
-        'edit',
-        'notes',
-        '--provider',
-        'codex',
-        '--effort',
-        'high',
-        '--working-directory',
-        'own',
-        '--shared-instructions',
-      ),
-    ).toMatchObject({
-      code: 0,
-      stdout: `Changed Agent notes: codex, default model, high effort, working in ${own}\n`,
-    });
-    expect(
-      await agents(
-        'edit',
-        'notes',
-        '--follow-default',
-        '--no-effort',
-        '--title',
-        'Notes',
-      ),
-    ).toMatchObject({
-      code: 0,
-      stdout: `Changed Agent notes: codex, default model, default effort, working in ${vault} (default)\n`,
-    });
-    expect(await agents('show', 'nobody')).toMatchObject({
+    expect(await ws('agents', 'show', 'nobody')).toMatchObject({
       code: 1,
       stderr: 'No Agent named nobody\n',
     });
 
-    expect(await agents('disable', 'coder')).toMatchObject({
-      code: 0,
-      stdout:
-        'Disabled Agent coder. Its Channels get no answer until pero agents enable coder.\n',
-    });
-    const settings = (...args: string[]) =>
-      pero(withDataDir('settings', ...args), { cwd });
-    expect(await settings('set', 'main-agent', 'coder')).toMatchObject({
-      code: 1,
-      stderr:
-        'Agent coder is disabled; enable it first with pero agents enable coder\n',
-    });
-    expect(await settings('set', 'main-agent', 'nobody')).toMatchObject({
-      code: 1,
-      stderr: 'No Agent named nobody\n',
-    });
-    rmSync(own, { recursive: true });
-    expect(await agents('enable', 'coder')).toMatchObject({
-      code: 1,
-      stderr: `Working directory ${own} does not exist\n`,
-    });
-    mkdirSync(own);
-    expect(await agents('enable', 'coder')).toMatchObject({
-      code: 0,
-      stdout: `Enabled Agent coder: codex, default model, ultra effort, working in ${own}\n`,
-    });
+    const settings = await ws('settings');
+    expect(settings).toMatchObject({ code: 0, stderr: '' });
+    expect(settings.stdout).toContain(
+      [
+        'data/Settings/Pero.md',
+        '  provider                claude (default)',
+        '  claude-model            (provider default)',
+        '  claude-effort           high',
+      ].join('\n'),
+    );
+    expect(settings.stdout).toMatch(/^ {2}timezone +Europe\/Berlin$/m);
+    expect(settings.stdout).toMatch(/^ {2}\(body\) +Be brief\.$/m);
+    expect(settings.stdout).toContain(
+      `.pero/config.yaml\n  data                    ${join(workspace, 'data')}\n`,
+    );
 
-    expect(await settings('set', 'main-agent', 'coder')).toMatchObject({
-      code: 0,
-      stdout:
-        'main-agent is now coder\nIt answers General topics and direct chats onboarded from now on; existing Channels keep their Agent.\n',
-    });
-    expect((await agents()).stdout).toMatch(/^coder \* +codex /m);
-    expect(await agents('disable', 'coder')).toMatchObject({
-      code: 0,
-      stderr: expect.stringContaining(
-        'Warning: coder is the main Agent, so General topics and direct chats get no answer either',
-      ),
-    });
-    expect(await settings('unset', 'main-agent')).toMatchObject({
-      code: 0,
-      stdout: expect.stringMatching(/^main-agent is now \(not set: main\)\n/),
-    });
-  });
+    // An edit to Pero.md applies within a rescan.
+    writeFileSync(
+      join(settingsFolder, 'Pero.md'),
+      '---\nclaude-model: opus\nclaude-effort: high\n---\nBe brief.\n',
+    );
+    await vi.waitFor(
+      async () =>
+        expect((await ws('agents', 'show', 'main')).stdout).toContain(
+          '  model                opus (Pero.md)\n',
+        ),
+      { timeout: 15_000, interval: 500 },
+    );
+    expect((await ws('stop')).code).toBe(0);
+  }, 30_000);
 
   it('lists, shows, assigns, disables, and enables Channels, and prints their history', async () => {
     const channels = (...args: string[]) =>
@@ -725,14 +643,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     api.chats.set(String(forum.id), forum);
     expect((await pero(withDataDir('run'))).code).toBe(0);
     mkdirSync(join(tmp, 'vault'));
-    await pero(
-      withDataDir(
-        'settings',
-        'set',
-        'default-working-directory',
-        join(tmp, 'vault'),
-      ),
-    );
+    await control().call('settings.update', {
+      defaultWorkingDirectory: join(tmp, 'vault'),
+    });
     await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
       input: `${TOKEN}\n`,
     });
@@ -768,7 +681,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toMatch(/^ {2}next turn +starts its first Session$/m);
     expect(show.stdout).toMatch(/^ {2}history +1 message, the latest at /m);
 
-    await pero(withDataDir('agents', 'create', 'chef'));
+    await control().call('agents.create', { name: 'chef' });
     const described = 'Channel 1 (telegram -1001234567890:42 "Groceries")';
     expect(await channels('assign', '1', 'chef')).toMatchObject({
       code: 0,
@@ -865,11 +778,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const vault = join(tmp, 'vault');
     mkdirSync(vault);
-    await pero(
-      withDataDir('settings', 'set', 'default-working-directory', vault),
-    );
-    await pero(withDataDir('settings', 'set', 'timezone', 'Europe/Berlin'));
-    await pero(withDataDir('agents', 'create', 'coach'));
+    await control().call('settings.update', {
+      defaultWorkingDirectory: vault,
+      timezone: 'Europe/Berlin',
+    });
+    await control().call('agents.create', { name: 'coach' });
     const workflows = (...args: string[]) =>
       pero(withDataDir('workflows', ...args));
     const triggers = (...args: string[]) =>
@@ -1035,12 +948,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '',
       ].join('\n'),
     });
-    await pero(withDataDir('agents', 'disable', 'coach'));
+    await control().call('agents.edit', {
+      name: 'coach',
+      change: { enabled: false },
+    });
     expect(await workflows('enable', 'evening-review')).toMatchObject({
       code: 0,
       stdout: 'Enabled Workflow evening-review: runs Agent coach, 1 Trigger\n',
       stderr:
-        'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.\n',
+        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).\n',
     });
     expect(await workflows('show', 'evening-review')).toMatchObject({
       code: 0,
@@ -1053,7 +969,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '  history   none',
         '  state     enabled',
         '',
-        'Warning: Agent coach is disabled, so this Workflow cannot run until pero agents enable coach.',
+        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
         '',
         'Triggers',
         '  ID  SCHEDULE                  NEXT RUN  STATE',
@@ -1068,7 +984,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     ).toMatchObject({
       code: 1,
       stderr:
-        'Agent coach is disabled; enable it first with pero agents enable coach\n',
+        'Agent coach is disabled; enable it first (enabled: true in its note)\n',
     });
   });
 
@@ -1079,10 +995,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(run.code).toBe(0);
     const vault = join(tmp, 'vault');
     mkdirSync(vault);
-    await pero(
-      withDataDir('settings', 'set', 'default-working-directory', vault),
-    );
-    await pero(withDataDir('agents', 'create', 'coach'));
+    await control().call('settings.update', { defaultWorkingDirectory: vault });
+    await control().call('agents.create', { name: 'coach' });
     await pero(
       withDataDir(
         'workflows',
@@ -1155,10 +1069,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(withDataDir('run'), echo)).code).toBe(0);
     const vault = join(tmp, 'vault');
     mkdirSync(vault);
-    await pero(
-      withDataDir('settings', 'set', 'default-working-directory', vault),
-    );
-    await pero(withDataDir('agents', 'create', 'coach'));
+    await control().call('settings.update', { defaultWorkingDirectory: vault });
+    await control().call('agents.create', { name: 'coach' });
     await pero(
       withDataDir(
         'workflows',
@@ -1281,34 +1193,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
-  it('keeps message history for as many days as the owner sets', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const settings = (...args: string[]) =>
-      pero(withDataDir('settings', ...args));
-
-    expect((await settings('show')).stdout).toContain(
-      'history-retention-days     (not set: keep all)\n',
-    );
-    expect(await settings('set', 'history-retention-days', '30')).toEqual({
-      code: 0,
-      stdout:
-        'history-retention-days is now 30 days\n' +
-        'Messages older than 30 days are deleted within the hour, and every hour after; runs and Notifications keep their text.\n',
-      stderr: '',
-    });
-    expect(await settings('set', 'history-retention-days', '0')).toMatchObject({
-      code: 1,
-      stderr: 'history-retention-days: Too small: expected number to be >=1\n',
-    });
-    expect(await settings('unset', 'history-retention-days')).toEqual({
-      code: 0,
-      stdout:
-        'history-retention-days is now (not set: keep all)\n' +
-        'All message history is kept from now on.\n',
-      stderr: '',
-    });
-  });
-
   it('sets the Channel history a Workflow reads, and skips a run with none', async () => {
     const run = await pero(withDataDir('run'), {
       env: { PERO_FAKE_RUNTIME: 'echo' },
@@ -1316,10 +1200,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(run.code).toBe(0);
     const vault = join(tmp, 'vault');
     mkdirSync(vault);
-    await pero(
-      withDataDir('settings', 'set', 'default-working-directory', vault),
-    );
-    await pero(withDataDir('agents', 'create', 'coach'));
+    await control().call('settings.update', { defaultWorkingDirectory: vault });
+    await control().call('agents.create', { name: 'coach' });
     const workflows = (...args: string[]) =>
       pero(withDataDir('workflows', ...args));
 
@@ -1444,14 +1326,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     writeFileSync(join(authDir, 'claude'), '');
     mkdirSync(join(tmp, 'vault'));
-    await pero(
-      withDataDir(
-        'settings',
-        'set',
-        'default-working-directory',
-        join(tmp, 'vault'),
-      ),
-    );
+    await control().call('settings.update', {
+      defaultWorkingDirectory: join(tmp, 'vault'),
+    });
     await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
       input: TOKEN,
     });
@@ -1463,7 +1340,14 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stdout: `Pero is already running (pid ${pid}, data directory ${layout.root})\n`,
     });
     const ready = await pero(withDataDir('status'));
-    expect(ready.stdout).toMatch(/Health +ok/);
+    // Only a legacy data directory's own notice keeps it degraded.
+    expect(ready.stdout).toMatch(/Health +degraded/);
+    expect(
+      ready.stdout
+        .split('\n')
+        .filter((line) => / degraded /.test(line))
+        .map((line) => line.trim().split(/ +/)[0]),
+    ).toEqual(['settings']);
     expect(ready.stdout).toMatch(/claude +ok +Signed in \(claude\.ai, pro\)/);
     expect(ready.stdout).toContain(
       'codex     unconfigured  Not signed in — run codex login (on a headless host: codex login --device-auth) (not in use)',
@@ -1471,14 +1355,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(ready.stdout).not.toContain('owner@example.com');
 
     // Codex becomes the provider in use; Claude no longer counts.
-    await pero(withDataDir('settings', 'set', 'default-provider', 'codex'));
+    await control().call('settings.update', { defaultProvider: 'codex' });
     const switched = await pero(withDataDir('run'));
     expect(switched.stdout).toContain(
       '  codex: Not signed in — run codex login (on a headless host: codex login --device-auth), then pero run to check again',
     );
     expect(switched.stdout).not.toContain('claude:');
-    expect((await pero(withDataDir('status'))).stdout).toMatch(
-      /Health +degraded/,
+    // Required now: no longer marked not in use.
+    expect((await pero(withDataDir('status'))).stdout).toContain(
+      'codex     unconfigured  Not signed in — run codex login (on a headless host: codex login --device-auth)\n',
     );
   });
 
@@ -1486,7 +1371,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     for (const args of [
       ['settings'],
       ['settings', 'show'],
-      ['settings', 'set', 'timezone', 'UTC'],
+      ['settings', 'unset', 'telegram-bot-token'],
     ]) {
       expect(await pero(withDataDir(...args))).toMatchObject({
         code: 1,
@@ -1887,31 +1772,24 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
     expect((await pero(withDataDir('run'))).code).toBe(0);
-    expect(
-      (
-        await pero(
-          withDataDir('agents', 'create', 'coder', '--working-directory', own),
-        )
-      ).code,
-    ).toBe(0);
-    const settings = [
-      ['default-working-directory', vault],
-      ['timezone', 'Europe/Lisbon'],
-      ['claude.model', 'claude-opus-5-5'],
-      ['history-carryover', '20'],
-    ];
-    for (const [key, value] of settings) {
-      expect(
-        (await pero(withDataDir('settings', 'set', key!, value!))).code,
-      ).toBe(0);
-    }
-    for (const [key, input] of [
-      ['shared-instructions', 'Be brief.\n'],
-      ['telegram-bot-token', `${TOKEN}\n`],
-    ]) {
-      const set = await pero(withDataDir('settings', 'set', key!), { input });
-      expect(set.code).toBe(0);
-    }
+    await control().call('agents.create', {
+      name: 'coder',
+      workingDirectory: own,
+    });
+    await control().call('settings.update', {
+      defaultWorkingDirectory: vault,
+      timezone: 'Europe/Lisbon',
+      providerDefaults: { claude: { model: 'claude-opus-5-5' } },
+      historyCarryover: 20,
+      sharedInstructions: 'Be brief.',
+    });
+    const set = await pero(
+      withDataDir('settings', 'set', 'telegram-bot-token'),
+      {
+        input: `${TOKEN}\n`,
+      },
+    );
+    expect(set.code).toBe(0);
     const before = await pero(withDataDir('settings'));
 
     // Taken while the daemon runs, so recent writes are still in the WAL.

@@ -8,6 +8,8 @@ import {
 import { telegramChatIdSchema } from '../config/host-config.js';
 import { settingsChangeSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
+import { VALUE_ORIGINS } from '../settings-files/origins.js';
+import { NEW_TOPICS } from '../settings-files/schemas.js';
 import {
   HISTORY_MESSAGES,
   triggerAddSchema,
@@ -103,6 +105,19 @@ export const settingsViewSchema = z.object({
      */
     source: z.enum(TOKEN_SOURCES).nullable(),
   }),
+  /**
+   * In a workspace, where the settings are: `Pero.md` and `config.yaml`,
+   * relative to the workspace when inside it; null in a legacy data
+   * directory, whose settings are in its database.
+   */
+  files: z.object({ pero: z.string(), config: z.string() }).nullable(),
+  /** What a topic no Agent claims gets; null in a legacy data directory. */
+  newTopics: z.enum(NEW_TOPICS).nullable(),
+  /**
+   * The properties `Pero.md` sets; the others are Pero's own defaults.
+   * Null in a legacy data directory.
+   */
+  setInPero: z.array(z.string()).nullable(),
 });
 
 export type SettingsView = z.infer<typeof settingsViewSchema>;
@@ -189,6 +204,30 @@ export const agentViewSchema = z.object({
   enabled: z.boolean(),
   /** Whether it is the Agent primary Channels get when onboarded. */
   main: z.boolean(),
+  /**
+   * The note that defines it, relative to the workspace when inside it;
+   * null in a legacy data directory.
+   */
+  file: z.string().nullable(),
+  /** Titles of the topics it claims. */
+  topics: z.array(z.string()),
+  /**
+   * Where its values come from: the note, `Pero.md`, or Pero's defaults;
+   * null in a legacy data directory.
+   */
+  origins: z
+    .object({
+      provider: z.enum(VALUE_ORIGINS),
+      model: z.enum(VALUE_ORIGINS),
+      effort: z.enum(VALUE_ORIGINS),
+      permissions: z.enum(VALUE_ORIGINS),
+      workingDirectory: z.enum(['note', 'data']),
+    })
+    .nullable(),
+  /** Its note's errors, while its last good version stays in use. */
+  errors: z.array(
+    z.object({ property: z.string().nullable(), message: z.string() }),
+  ),
 });
 
 export type AgentView = z.infer<typeof agentViewSchema>;
@@ -250,6 +289,8 @@ export const channelViewSchema = z.object({
   /** The name of the Agent it is assigned. */
   agent: z.string(),
   agentEnabled: z.boolean(),
+  /** False when no note defines that Agent, so nothing answers here. */
+  agentDefined: z.boolean(),
   enabled: z.boolean(),
   createdAt: z.iso.datetime(),
 });
@@ -257,8 +298,11 @@ export const channelViewSchema = z.object({
 export type ChannelView = z.infer<typeof channelViewSchema>;
 
 export const channelDetailsSchema = channelViewSchema.extend({
-  /** What the next turn with its Agent does with its Session. */
-  nextTurn: nextTurnSchema,
+  /**
+   * What the next turn with its Agent does with its Session; null when no
+   * note defines that Agent.
+   */
+  nextTurn: nextTurnSchema.nullable(),
   /** How many messages its history holds. */
   messages: z.int().nonnegative(),
   /** When the latest of them was sent; null when there is none. */
