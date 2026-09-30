@@ -1089,6 +1089,24 @@ describe('Workflow Runs and the executor', () => {
       });
     });
 
+    it('starts a renamed note on a history window of its own', async () => {
+      await say('I goed home');
+      await historyWorkflow();
+      await runReview();
+
+      await ws.removeWorkflow('review');
+      await ws.workflow(
+        'weekly',
+        { agent: 'coach', history: true },
+        'Review:\n{{history}}',
+      );
+      const { id } = await runs.start('weekly');
+      await executor.idle();
+
+      expect(claude.requests.at(-1)!.input).toContain('User: I goed home');
+      expect(await windowOf(id)).toMatchObject({ afterId: null, count: 1 });
+    });
+
     it('reads the last 24 hours on its first run', async () => {
       await say('Yesterday morning');
       await say('Just now');

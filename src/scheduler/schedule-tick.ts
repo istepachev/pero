@@ -3,11 +3,15 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Like } from 'typeorm';
-import { Definitions } from '../definitions/definitions.js';
+import {
+  Definitions,
+  type WorkflowDefinition,
+} from '../definitions/definitions.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import {
@@ -17,6 +21,10 @@ import {
   scheduleFingerprint,
 } from '../triggers/schedule.js';
 import { SCHEDULE_KEY_PATTERN, scheduleKey } from '../workflows/run-keys.js';
+import {
+  type CancelledRun,
+  cancelWaitingRunsWithin,
+} from '../workflows/waiting-runs.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import {
   advanceScheduleWithin,
@@ -44,15 +52,13 @@ type Fired =
   | { kind: 'coalesced'; runId: number; skipped: number }
   | {
       kind: 'held';
-      /** A Workflow disabled on purpose, rather than a missing piece. */
-      paused: boolean;
       /** What keeps it from running, such as `Agent coach is disabled`. */
       problem: string;
     }
   | { kind: 'duplicate'; triggerKey: string }
   /** Due at the same time as another schedule of its Workflow. */
   | { kind: 'shared'; runId: number }
-  /** No longer defined: its state was dropped. */
+  /** No longer defined, or its Workflow disabled: its state was dropped. */
   | { kind: 'dropped' };
 
 /** A schedule that came due, and what that did. */
@@ -71,10 +77,14 @@ interface FiredSchedule {
  * has come due one short transaction that creates its run and advances it,
  * so a time missed while Pero was down is found on the next tick after
  * startup.
+ *
+ * The rows are also brought in line at startup, before the executor picks
+ * up waiting runs, and each time the definitions change, so an edited note
+ * applies without waiting for a tick.
  */
 @Injectable()
 export class ScheduleTick
-  implements OnApplicationBootstrap, BeforeApplicationShutdown
+  implements OnModuleInit, OnApplicationBootstrap, BeforeApplicationShutdown
 {
   private readonly logger = new Logger('Scheduler');
   /** The tick under way, if any. */
@@ -82,12 +92,29 @@ export class ScheduleTick
   private stopping = false;
   /** Schedules whose first time could not be computed, already logged. */
   private failing = new Set<string>();
+  /** The reconciling the latest change of the definitions started. */
+  private reconciling: Promise<void> = Promise.resolve();
+  private stopListening: (() => void) | null = null;
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
     private readonly definitions: Definitions,
   ) {}
+
+  /**
+   * Brings the saved schedules in line with the definitions, cancelling
+   * the waiting runs of Workflows that are gone or disabled. The
+   * executor's `onModuleInit` settles first, and its
+   * `onApplicationBootstrap` after, so it starts only runs that remain.
+   * From then on, each change of the definitions does the same.
+   */
+  async onModuleInit(): Promise<void> {
+    this.stopListening = this.definitions.onChange(() =>
+      this.definitionsChanged(),
+    );
+    await this.reconcileLogged();
+  }
 
   /** Catches up at once, rather than a tick interval after startup. */
   onApplicationBootstrap(): Promise<void> {
@@ -97,7 +124,9 @@ export class ScheduleTick
   /** Lets a tick under way finish before the database closes. */
   async beforeApplicationShutdown(): Promise<void> {
     this.stopping = true;
+    this.stopListening?.();
     await this.current;
+    await this.reconciling;
   }
 
   @Interval('schedule-tick', SCHEDULE_TICK_MS)
@@ -114,6 +143,7 @@ export class ScheduleTick
    * and the trigger key leaves one run per time however often it comes due.
    */
   async tick(now: Date = new Date()): Promise<void> {
+    await this.reconciling;
     await this.reconcile(now);
     const due = await dueSchedules(this.dataSource.manager, now);
     let queued = false;
@@ -151,29 +181,69 @@ export class ScheduleTick
     return this.current;
   }
 
-  /** Gives each defined schedule a row, and drops the rest. */
+  /**
+   * Settles once the definitions' latest change has been applied to the
+   * saved schedules and waiting runs.
+   */
+  reconciled(): Promise<void> {
+    return this.reconciling;
+  }
+
+  /** Reconciles after any reconciling under way, unless stopping. */
+  private definitionsChanged(): void {
+    if (this.stopping) return;
+    this.reconciling = this.reconciling.then(() => this.reconcileLogged());
+  }
+
+  /** Reconciles as of now; never throws. */
+  private async reconcileLogged(): Promise<void> {
+    try {
+      await this.reconcile(new Date());
+    } catch (error) {
+      this.logger.error(
+        `Could not bring the schedules in line with the Workflow notes: ${describe(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Gives each schedule of an enabled Workflow a row, first due after
+   * `now`, and drops the rest; cancels the runs waiting to start of
+   * Workflows that are gone, and those their schedule queued of Workflows
+   * that are disabled. The definitions are read in the transaction, so a
+   * run queued meanwhile is judged by definitions at least as new.
+   */
   private async reconcile(now: Date): Promise<void> {
-    const defined: DefinedSchedule[] = (
-      await this.definitions.workflows()
-    ).flatMap((workflow) =>
-      workflow.schedules.map((schedule) => ({
-        workflow: workflow.name,
-        schedule,
-      })),
+    const { reconciled, cancelled, disabled } = await inTransaction(
+      this.dataSource,
+      async (manager) => {
+        const workflows = await this.definitions.workflows();
+        const defined: DefinedSchedule[] = workflows
+          .filter((workflow) => workflow.enabled)
+          .flatMap((workflow) =>
+            workflow.schedules.map((schedule) => ({
+              workflow: workflow.name,
+              schedule,
+            })),
+          );
+        return {
+          reconciled: await reconcileSchedulesWithin(manager, defined, now),
+          cancelled: await cancelWaitingRunsWithin(manager, workflows),
+          disabled: disabledNames(workflows),
+        };
+      },
     );
-    const reconciled = await inTransaction(this.dataSource, (manager) =>
-      reconcileSchedulesWithin(manager, defined, now),
-    );
-    this.reportReconciled(reconciled);
+    this.reportReconciled(reconciled, disabled);
+    this.reportCancelled(cancelled);
   }
 
   /**
    * Advances schedule row `id` past `now` and queues the run its due time
    * starts, unless it is no longer due. A schedule no longer defined,
-   * such as one of a Workflow that is gone, loses its row. One whose
-   * Workflow is disabled, or whose Agent is disabled or gone, gets no run,
-   * and the time passes; a scheduled run of its Workflow still waiting to
-   * start takes the new times into its skipped count instead.
+   * such as one of a Workflow that is gone or disabled, loses its row. One
+   * whose Agent is disabled or gone gets no run, and the time passes; a
+   * scheduled run of its Workflow still waiting to start takes the new
+   * times into its skipped count instead.
    */
   private async fireWithin(
     manager: EntityManager,
@@ -189,7 +259,8 @@ export class ScheduleTick
       workflow?.schedules.find(
         (candidate) => scheduleFingerprint(candidate) === row.fingerprint,
       ) ?? null;
-    if (workflow === null || schedule === null) {
+    // Reconciling drops these first; a change can land in between.
+    if (workflow === null || schedule === null || !workflow.enabled) {
       await dropScheduleWithin(manager, id);
       return { workflow: name, schedule, result: { kind: 'dropped' } };
     }
@@ -198,14 +269,12 @@ export class ScheduleTick
     const skipped = countOccurrences(schedule, due, now, MAX_SKIPPED_COUNT);
     const nextRunAt = nextOccurrence(schedule, now);
     const agent = await this.definitions.agent(workflow.agent);
-    if (!workflow.enabled || agent === null || !agent.enabled) {
+    if (agent === null || !agent.enabled) {
       await advanceScheduleWithin(manager, id, { nextRunAt });
       return fired({
         kind: 'held',
-        paused: !workflow.enabled,
-        problem: !workflow.enabled
-          ? `Workflow ${name} is disabled`
-          : agent === null
+        problem:
+          agent === null
             ? `Agent ${workflow.agent} no longer exists`
             : `Agent ${agent.name} is disabled`,
       });
@@ -288,12 +357,7 @@ export class ScheduleTick
         );
         break;
       case 'held':
-        // A disabled Workflow is paused on purpose; a disabled Agent may not be.
-        if (fired.paused) {
-          this.logger.debug(`${which} came due, but ${fired.problem}; no run`);
-        } else {
-          this.logger.warn(`${which} came due, but ${fired.problem}; no run`);
-        }
+        this.logger.warn(`${which} came due, but ${fired.problem}; no run`);
         break;
       case 'duplicate':
         this.logger.warn(
@@ -307,14 +371,20 @@ export class ScheduleTick
         break;
       case 'dropped':
         this.logger.log(
-          `${which} is no longer defined; its saved times are dropped`,
+          `${which} is no longer defined, or its Workflow is disabled; its saved times are dropped`,
         );
         break;
     }
   }
 
-  /** Logs new and dropped schedules, and each failure once. */
-  private reportReconciled({ added, dropped, failed }: Reconciled): void {
+  /**
+   * Logs new and dropped schedules, and each failure once. `disabled`
+   * names the Workflows that are disabled, lower case.
+   */
+  private reportReconciled(
+    { added, dropped, failed }: Reconciled,
+    disabled: ReadonlySet<string>,
+  ): void {
     for (const { workflow, schedule, nextRunAt } of added) {
       this.logger.log(
         `Workflow ${workflow} runs on the schedule ${describeSchedule(schedule)}, ${nextRunAt === null ? 'which never comes due' : `next at ${nextRunAt.toISOString()}`}`,
@@ -322,7 +392,9 @@ export class ScheduleTick
     }
     for (const { workflow } of dropped) {
       this.logger.log(
-        `A schedule of Workflow ${workflow} is no longer defined; its saved times are dropped`,
+        disabled.has(workflow.toLowerCase())
+          ? `Workflow ${workflow} is disabled; the saved times of its schedule are dropped`
+          : `A schedule of Workflow ${workflow} is no longer defined; its saved times are dropped`,
       );
     }
     const failing = new Set<string>();
@@ -336,6 +408,23 @@ export class ScheduleTick
     }
     this.failing = failing;
   }
+
+  private reportCancelled(cancelled: readonly CancelledRun[]): void {
+    for (const { runId, workflow, reason } of cancelled) {
+      this.logger.log(
+        `Run ${runId} of Workflow ${workflow} cancelled before it started: ${reason}`,
+      );
+    }
+  }
+}
+
+/** The names of the disabled Workflows among `workflows`, lower case. */
+function disabledNames(workflows: readonly WorkflowDefinition[]): Set<string> {
+  return new Set(
+    workflows
+      .filter((workflow) => !workflow.enabled)
+      .map((workflow) => workflow.name.toLowerCase()),
+  );
 }
 
 /** `schedule` for the log, such as `0 9 * * * (Europe/Berlin)`. */
