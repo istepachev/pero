@@ -12,17 +12,25 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
-import { TriggersService } from '../triggers/triggers.service.js';
-import { WorkflowViews } from './workflow-views.service.js';
+import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
 import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
 
-describe('WorkflowsService and WorkflowViews', () => {
+// The tables a legacy installation holds its Workflows in, which notes
+// have replaced; they go in plan step 9.4.
+describe('WorkflowsService', () => {
   let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let workflows: WorkflowsService;
-  let views: WorkflowViews;
+  let sqlite: SqliteDefinitions;
+
+  /** The Workflow named `name`, as the tables hold it. */
+  async function details(name: string) {
+    const workflow = await sqlite.workflow(name);
+    if (workflow === null) throw new Error(`No Workflow named ${name}`);
+    return workflow;
+  }
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-workflows-');
@@ -40,7 +48,7 @@ describe('WorkflowsService and WorkflowViews', () => {
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     ws.use(moduleRef);
     workflows = moduleRef.get(WorkflowsService);
-    views = moduleRef.get(WorkflowViews);
+    sqlite = moduleRef.get(SqliteDefinitions);
   });
 
   afterEach(async () => {
@@ -56,20 +64,19 @@ describe('WorkflowsService and WorkflowViews', () => {
       inputTemplate: "Review today's chats.",
     });
 
-    const details = await views.details('evening-review');
-    expect(details).toMatchObject({
+    expect(await details('evening-review')).toEqual({
       name: 'evening-review',
       title: 'Evening review',
       agent: 'coach',
-      agentEnabled: true,
-      inputTemplate: "Review today's chats.",
-      enabled: true,
+      input: "Review today's chats.",
+      history: null,
+      targets: [],
       maxAttempts: 1,
-      triggerCount: 0,
-      triggers: [],
+      schedules: [],
+      enabled: true,
     });
-    expect(await views.list()).toEqual([
-      expect.objectContaining({ name: 'evening-review', triggerCount: 0 }),
+    expect(await sqlite.workflows()).toEqual([
+      expect.objectContaining({ name: 'evening-review' }),
     ]);
   });
 
@@ -90,7 +97,7 @@ describe('WorkflowsService and WorkflowViews', () => {
         'Agent coach is disabled; enable it first (enabled: true in its note)',
       ),
     );
-    expect(await views.list()).toEqual([]);
+    expect(await sqlite.workflows()).toEqual([]);
   });
 
   it('refuses a name that is taken, in any case', async () => {
@@ -121,14 +128,14 @@ describe('WorkflowsService and WorkflowViews', () => {
       agent: 'editor',
       inputTemplate: 'Go on',
     });
-    expect(await views.details('review')).toMatchObject({
+    expect(await details('review')).toMatchObject({
       title: 'Review',
       agent: 'editor',
-      inputTemplate: 'Go on',
+      input: 'Go on',
     });
 
     await workflows.edit('review', { title: null });
-    expect((await views.details('review')).title).toBeNull();
+    expect((await details('review')).title).toBeNull();
 
     await expect(workflows.edit('review', { agent: 'idle' })).rejects.toThrow(
       InvalidInputError,
@@ -139,7 +146,7 @@ describe('WorkflowsService and WorkflowViews', () => {
     await expect(workflows.edit('missing', { title: 'x' })).rejects.toThrow(
       new NotFoundError('No Workflow named missing'),
     );
-    expect((await views.details('review')).agent).toBe('editor');
+    expect((await details('review')).agent).toBe('editor');
   });
 
   it('sets how many times a run may start, from 1 to 10', async () => {
@@ -149,10 +156,10 @@ describe('WorkflowsService and WorkflowViews', () => {
       inputTemplate: 'Go',
       maxAttempts: 3,
     });
-    expect((await views.details('review')).maxAttempts).toBe(3);
+    expect((await details('review')).maxAttempts).toBe(3);
 
     await workflows.edit('review', { maxAttempts: 1 });
-    expect((await views.details('review')).maxAttempts).toBe(1);
+    expect((await details('review')).maxAttempts).toBe(1);
 
     await expect(workflows.edit('review', { maxAttempts: 0 })).rejects.toThrow(
       new InvalidInputError('maxAttempts: must be at least 1'),
@@ -170,7 +177,7 @@ describe('WorkflowsService and WorkflowViews', () => {
     ).rejects.toThrow(
       new InvalidInputError('maxAttempts: must be a whole number'),
     );
-    expect((await views.details('review')).maxAttempts).toBe(1);
+    expect((await details('review')).maxAttempts).toBe(1);
   });
 
   it('sets, changes, and clears the Channel history its runs read', async () => {
@@ -188,7 +195,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       agent: 'coach',
       inputTemplate: 'Go',
     });
-    expect((await views.details('plain')).history).toBeNull();
+    expect((await details('plain')).history).toBeNull();
 
     await workflows.create({
       name: 'review',
@@ -196,7 +203,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       inputTemplate: 'Review {{history}}',
       history: {},
     });
-    expect((await views.details('review')).history).toEqual({
+    expect((await details('review')).history).toEqual({
       channels: 'all',
       messages: 'people',
       hours: null,
@@ -208,7 +215,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       history: { channels: [channel], hours: 12 },
     });
     await workflows.edit('review', { history: { runWhenEmpty: true } });
-    expect((await views.details('review')).history).toEqual({
+    expect((await details('review')).history).toEqual({
       channels: [channel],
       messages: 'people',
       hours: 12,
@@ -232,10 +239,10 @@ describe('WorkflowsService and WorkflowViews', () => {
     ).rejects.toThrow(InvalidInputError);
 
     await workflows.edit('review', { history: null });
-    expect((await views.details('review')).history).toBeNull();
+    expect((await details('review')).history).toBeNull();
     // Without any history, edits start from the defaults.
     await workflows.edit('review', { history: { messages: 'all' } });
-    expect((await views.details('review')).history).toEqual({
+    expect((await details('review')).history).toEqual({
       channels: 'all',
       messages: 'all',
       hours: null,
@@ -251,49 +258,11 @@ describe('WorkflowsService and WorkflowViews', () => {
     });
 
     await workflows.edit('review', { enabled: false });
-    expect((await views.details('review')).enabled).toBe(false);
+    expect((await details('review')).enabled).toBe(false);
 
     await ws.editAgent('Coach', { enabled: false });
     await workflows.edit('review', { enabled: true });
-    expect(await views.details('review')).toMatchObject({
-      enabled: true,
-      agentEnabled: false,
-    });
-  });
-
-  it('counts and lists Triggers with the Workflow', async () => {
-    await workflows.create({
-      name: 'review',
-      agent: 'coach',
-      inputTemplate: 'Go',
-    });
-    await workflows.create({
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Go',
-    });
-    const triggers = moduleRef.get(TriggersService);
-    await triggers.add({ workflow: 'review', kind: 'manual' });
-    await triggers.add({
-      workflow: 'review',
-      kind: 'schedule',
-      cron: '0 21 * * *',
-      timezone: 'UTC',
-    });
-
-    expect(
-      (await views.list()).map(({ name, triggerCount }) => [
-        name,
-        triggerCount,
-      ]),
-    ).toEqual([
-      ['brief', 0],
-      ['review', 2],
-    ]);
-    expect((await views.details('review')).triggers).toEqual([
-      expect.objectContaining({ kind: 'manual', cron: null }),
-      expect.objectContaining({ kind: 'schedule', cron: '0 21 * * *' }),
-    ]);
+    expect((await details('review')).enabled).toBe(true);
   });
 
   it('adds and removes the Channels a Workflow notifies', async () => {
@@ -317,27 +286,14 @@ describe('WorkflowsService and WorkflowViews', () => {
       agent: 'coach',
       inputTemplate: 'Go',
     });
-    expect((await views.details('review')).targets).toEqual([]);
+    expect((await details('review')).targets).toEqual([]);
 
     expect(await workflows.notify('Review', direct!.id)).toMatchObject({
       changed: true,
     });
     expect((await workflows.notify('review', topic!.id)).changed).toBe(true);
     expect((await workflows.notify('review', topic!.id)).changed).toBe(false);
-    expect((await views.details('review')).targets).toEqual([
-      {
-        id: topic!.id,
-        integrationKind: 'telegram',
-        key: '-100777:7',
-        title: 'English',
-      },
-      {
-        id: direct!.id,
-        integrationKind: 'telegram',
-        key: '1234',
-        title: null,
-      },
-    ]);
+    expect((await details('review')).targets).toEqual([topic!.id, direct!.id]);
 
     expect((await workflows.stopNotifying('review', topic!.id)).changed).toBe(
       true,
@@ -345,9 +301,7 @@ describe('WorkflowsService and WorkflowViews', () => {
     expect((await workflows.stopNotifying('review', topic!.id)).changed).toBe(
       false,
     );
-    expect((await views.details('review')).targets.map(({ id }) => id)).toEqual(
-      [direct!.id],
-    );
+    expect((await details('review')).targets).toEqual([direct!.id]);
 
     await expect(workflows.notify('review', 99)).rejects.toThrow(
       new NotFoundError('No Channel with ID 99; pero channels ls lists them'),

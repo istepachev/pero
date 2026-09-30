@@ -13,13 +13,13 @@ import type {
   RunDetails,
   RunView,
 } from '../control/protocol.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
 import {
   Definitions,
   requireAgent,
   requireWorkflow,
   type WorkflowDefinition,
 } from '../definitions/definitions.js';
+import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import {
   NOTIFICATION_RELATIONS,
   notificationView,
@@ -28,17 +28,15 @@ import { Notification } from '../persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import {
-  manualTriggerWithin,
-  markTriggerRunWithin,
-} from '../triggers/triggers.service.js';
-import {
   historyReadSchema,
   historyWindowSchema,
 } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { queueRetryWithin, retryKey } from './retry-run.js';
+import { manualKey } from './run-keys.js';
 import { runsWorkflowNameWithin } from './workflow-filter.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
+import { missingWorkflow } from './workflow-views.service.js';
 
 /**
  * Queues Workflow Runs started or retried by hand, cancels runs, and reads
@@ -52,43 +50,32 @@ export class WorkflowRuns {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
+    private readonly notes: SettingsNotes,
   ) {}
 
   /**
-   * Queues a run of the Workflow named `name` through its manual Trigger
-   * and wakes the executor. The Workflow, its Agent, and the Trigger must
-   * be enabled. A run queued while another of the Workflow is running
-   * waits for it.
+   * Queues a run of the Workflow named `name` and wakes the executor. Any
+   * Workflow runs by hand, whatever its `trigger`, and even while it is
+   * disabled, which only stops it running by itself; its Agent must be
+   * enabled. A run queued while another of the Workflow is running waits
+   * for it.
    */
   async start(name: string): Promise<RunView> {
     const run = await inTransaction(this.dataSource, async (manager) => {
-      const workflow = await requireWorkflow(this.definitions, name);
+      const workflow = await this.definitions.workflow(name);
+      if (workflow === null) throw missingWorkflow(this.notes, name);
       await this.requireRunnable(workflow);
-      const workflowId = await this.ids.workflowId(workflow.name);
-      const trigger = await manualTriggerWithin(manager, workflowId);
-      if (trigger === null) {
-        throw new InvalidInputError(
-          `Workflow ${workflow.name} has no manual Trigger; add one with pero triggers add ${workflow.name} --manual`,
-        );
-      }
-      if (!trigger.enabled) {
-        throw new InvalidInputError(
-          `The manual Trigger of Workflow ${workflow.name} is disabled; enable it with pero triggers enable ${trigger.id}`,
-        );
-      }
       const runs = manager.getRepository(WorkflowRun);
       const { id } = await runs.save(
         runs.create({
           workflowName: workflow.name,
-          triggerId: trigger.id,
+          triggerId: null,
           // Each start by hand is its own occurrence.
-          triggerKey: `manual:${randomUUID()}`,
+          triggerKey: manualKey(randomUUID()),
           status: 'pending',
           attempt: 1,
         }),
       );
-      await markTriggerRunWithin(manager, trigger.id, new Date());
       return runView(await runs.findOneByOrFail({ id }));
     });
     this.logger.log(`Run ${run.id} of Workflow ${run.workflow} queued`);
@@ -138,7 +125,7 @@ export class WorkflowRuns {
    * Queues failed, interrupted, or cancelled run `id` again, as a new run
    * with the next attempt that reads the same history window, and wakes the
    * executor. The owner decides, so the Workflow's attempts do not limit
-   * it, but the Workflow and its Agent must be enabled. A run has one
+   * it, nor does its being disabled, but its Agent must be enabled. A run has one
    * retry: `ConflictError` names it once it exists, and refuses a run that
    * has not finished or that completed.
    */
@@ -182,13 +169,8 @@ export class WorkflowRuns {
     return result;
   }
 
-  /** Refuses to queue a run of `workflow` unless it and its Agent are enabled. */
+  /** Refuses to queue a run of `workflow` unless its Agent is enabled. */
   private async requireRunnable(workflow: WorkflowDefinition): Promise<void> {
-    if (!workflow.enabled) {
-      throw new InvalidInputError(
-        `Workflow ${workflow.name} is disabled; enable it first with pero workflows enable ${workflow.name}`,
-      );
-    }
     const agent = await requireAgent(this.definitions, workflow.agent);
     if (!agent.enabled) {
       throw new InvalidInputError(

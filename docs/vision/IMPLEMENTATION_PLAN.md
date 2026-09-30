@@ -482,6 +482,15 @@ A migration drops `agents` and `settings`. It must keep what `pero migrate` read
 - **`pero workflows ls`/`show`** show the note path, the schedule as cron, the next run, and the resolved Channels.
 - **`pero workflows run`** works for any Workflow, with no manual Trigger needed.
 - **Stubs:** `pero workflows create`/`edit`/`enable`/`disable`/`notify` and `pero triggers …`.
+- **Found while building:**
+  - **The daemon's snapshot resolves references,** as `pero check` through the daemon does: against the Channels Pero has seen in the allowed chats (`src/settings-notes/allowed-channels.ts`). They are looked up again on each scan, and when they change the snapshot is built again (`SettingsReloader.setTopics`), though no note changed. A topic Pero sees for the first time is found within one scan.
+  - **A Workflow whose reference doesn't resolve is left out,** like any note with errors. This includes a topic Pero hasn't seen and a chat that is no longer allowed. `status` counts it and `check` lists it. `pero workflows show` and `run` name its note. The last good version only covers errors within the note, so it doesn't apply here; 9.3 reports these errors in Telegram.
+  - **Resolved Channels go in the snapshot** (`WorkflowDefinition.resolved`): targets in `channel` order and history Channels, each by ID and each once. `FileDefinitions` serves only Workflows whose references resolved, and no longer reads SQLite.
+  - **`enabled: false` stops a Workflow running by itself,** as the [configuration reference](./CONFIGURATION.md#workflow-notes) says. Its schedule gets no runs and its interrupted runs aren't retried, but it still runs and retries by hand. A run its schedule queued fails once the Workflow is disabled. A run started by hand, or a retry, still runs.
+  - **A run by hand has no Trigger:** its `trigger_id` is null and its key is `manual:<uuid>`. `src/workflows/run-keys.ts` builds the keys.
+  - **A Notification is headed by the note's title,** its file name.
+  - **The control endpoint drops** `workflows.create`/`edit`/`notify` and `triggers.*`. `src/cli/workflow-options.ts` and `src/cli/option-names.ts` are removed here rather than in 9.4, since nothing uses them. `TriggersService` and the create and edit parts of `WorkflowsService` stay until 9.4, but nothing at runtime uses them; the runtime helpers of `triggers.service.ts` are gone.
+  - **Specs write Workflow notes** (`TestWorkspace.workflow`). A note has one schedule, so the scheduler's specs for several schedules per Workflow define them through a spy.
 
 **Done when:**
 - The weekly-report note from the [overview](./README.md#a-workspace-in-five-notes) runs by hand, answered by the Health Agent, and posts to Health.

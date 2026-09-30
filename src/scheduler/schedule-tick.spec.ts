@@ -4,16 +4,15 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import { Workflow } from '../persistence/entities/workflow.entity.js';
+import { Definitions } from '../definitions/definitions.js';
 import { dataSourceOptions } from '../persistence/data-source-options.js';
 import { openDatabase } from '../persistence/open-database.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
-import { scheduleFingerprint } from '../triggers/schedule.js';
+import { type Schedule, scheduleFingerprint } from '../triggers/schedule.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
@@ -68,28 +67,42 @@ describe('ScheduleTick', () => {
   });
 
   /**
-   * A Workflow `name` with one schedule Trigger, next due at `due`; the
-   * Trigger's ID.
+   * A Workflow note `name` on the schedule `cron`, next due at `due`: the
+   * scheduler gives it its saved times first, as its next tick would.
    */
   async function scheduled(
     name: string,
     due: string | Date,
     cron = '0 * * * *',
     timezone = 'UTC',
-  ): Promise<number> {
-    await workflows.create({
-      name,
-      agent: 'coach',
-      inputTemplate: `Run ${name}.`,
-    });
-    const { id } = await triggers.add({
-      workflow: name,
-      kind: 'schedule',
-      cron,
-      timezone,
-    });
+  ): Promise<void> {
+    await ws.workflow(name, { agent: 'coach', cron, timezone });
+    await reconcile();
     await setDue(name, due);
-    return id;
+  }
+
+  /** Gives each schedule its saved times, and queues nothing. */
+  function reconcile(): Promise<void> {
+    return scheduler.tick(new Date(0));
+  }
+
+  /**
+   * Makes the definitions give Workflow `name` the schedules `schedules`
+   * instead of its note's, as no note can.
+   */
+  function defineSchedules(name: string, schedules: Schedule[]): void {
+    const definitions = moduleRef.get(Definitions);
+    const workflows = definitions.workflows.bind(definitions);
+    const workflow = definitions.workflow.bind(definitions);
+    vi.spyOn(definitions, 'workflows').mockImplementation(async () =>
+      (await workflows()).map((defined) =>
+        defined.name === name ? { ...defined, schedules } : defined,
+      ),
+    );
+    vi.spyOn(definitions, 'workflow').mockImplementation(async (wanted) => {
+      const defined = await workflow(wanted);
+      return defined?.name === name ? { ...defined, schedules } : defined;
+    });
   }
 
   /** Makes the one schedule of Workflow `workflow` next due at `due`. */
@@ -268,7 +281,23 @@ describe('ScheduleTick', () => {
   });
 
   it('neither loses nor repeats a run across the schedule state migration', async () => {
-    const id = await scheduled('brief', new Date());
+    // The release before kept schedules as Triggers; the note says the same.
+    await workflows.create({
+      name: 'brief',
+      agent: 'coach',
+      inputTemplate: 'Run brief.',
+    });
+    const { id } = await triggers.add({
+      workflow: 'brief',
+      kind: 'schedule',
+      cron: '0 * * * *',
+      timezone: 'UTC',
+    });
+    await ws.workflow('brief', {
+      agent: 'coach',
+      cron: '0 * * * *',
+      timezone: 'UTC',
+    });
     await moduleRef.close();
     // As the release before left it, down since the top of the hour two
     // hours ago: the run before that queued by its Trigger, and the
@@ -348,15 +377,14 @@ describe('ScheduleTick', () => {
 
   it('passes times with no run while the Workflow or its Agent is disabled', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
-    const { id: workflowId } = await workflows.get('brief');
 
-    await ds.getRepository(Workflow).update(workflowId, { enabled: false });
+    await ws.editWorkflow('brief', { enabled: false });
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     expect((await state('brief')).nextRunAt).toEqual(
       new Date('2026-09-28T11:00:00Z'),
     );
 
-    await ds.getRepository(Workflow).update(workflowId, { enabled: true });
+    await ws.editWorkflow('brief', { enabled: true });
     await ws.editAgent('Coach', { enabled: false });
     const warn = vi.spyOn(Logger.prototype, 'warn').mockReturnValue();
     await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
@@ -379,10 +407,9 @@ describe('ScheduleTick', () => {
     });
   });
 
-  it('drops the saved times of a disabled Trigger, which starts nothing', async () => {
-    const id = await scheduled('brief', '2026-09-28T10:00:00Z');
-    // Behind the service's back, so only the tick can notice.
-    await ds.getRepository(Trigger).update(id, { enabled: false });
+  it('drops the saved times of a schedule turned manual, which starts nothing', async () => {
+    await scheduled('brief', '2026-09-28T10:00:00Z');
+    await ws.editWorkflow('brief', { trigger: 'manual' });
 
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
 
@@ -391,18 +418,10 @@ describe('ScheduleTick', () => {
   });
 
   it('drops the saved times of a schedule that is removed', async () => {
-    const removed = await scheduled('removed', '2026-09-28T10:00:00Z');
-    const deleted = await scheduled('deleted', '2026-09-28T10:00:00Z');
+    await scheduled('removed', '2026-09-28T10:00:00Z');
     await scheduled('kept', '2026-09-28T10:00:00Z');
 
-    await triggers.remove(removed);
-    expect((await allStates()).map((row) => row.workflowName)).toEqual([
-      'deleted',
-      'kept',
-    ]);
-
-    // Behind the service's back, so only the tick can notice.
-    await ds.getRepository(Trigger).delete(deleted);
+    await ws.removeWorkflow('removed');
     const log = vi.spyOn(Logger.prototype, 'log');
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     await executor.idle();
@@ -412,16 +431,14 @@ describe('ScheduleTick', () => {
     ]);
     expect((await allRuns()).map((run) => run.workflowName)).toEqual(['kept']);
     expect(log).toHaveBeenCalledWith(
-      'A schedule of Workflow deleted is no longer defined; its saved times are dropped',
+      'A schedule of Workflow removed is no longer defined; its saved times are dropped',
     );
   });
 
   it('starts a changed schedule afresh, catching nothing up', async () => {
-    const id = await scheduled('brief', '2026-09-28T10:00:00Z');
+    await scheduled('brief', '2026-09-28T10:00:00Z');
     // Changed while it was overdue, as a note may be while Pero is down.
-    await ds
-      .getRepository(Trigger)
-      .update(id, { config: { cron: '30 * * * *' } });
+    await ws.editWorkflow('brief', { cron: '30 * * * *' });
 
     await scheduler.tick(new Date('2026-09-28T13:10:00Z'));
 
@@ -462,12 +479,10 @@ describe('ScheduleTick', () => {
 
   it('keeps the times of each schedule of a Workflow with several', async () => {
     await scheduled('brief', '2026-09-28T09:00:00Z', '0 9 * * *');
-    await triggers.add({
-      workflow: 'brief',
-      kind: 'schedule',
-      cron: '0 18 * * *',
-      timezone: 'UTC',
-    });
+    defineSchedules('brief', [
+      { cron: '0 9 * * *', timezone: 'UTC' },
+      { cron: '0 18 * * *', timezone: 'UTC' },
+    ]);
 
     await scheduler.tick(new Date('2026-09-28T09:00:01Z'));
     await executor.idle();
@@ -493,12 +508,11 @@ describe('ScheduleTick', () => {
 
   it('queues one run for schedules of a Workflow due at the same time', async () => {
     await scheduled('brief', '2026-09-28T09:00:00Z', '0 9 * * *');
-    await triggers.add({
-      workflow: 'brief',
-      kind: 'schedule',
-      cron: '0 9 * * 1',
-      timezone: 'UTC',
-    });
+    defineSchedules('brief', [
+      { cron: '0 9 * * *', timezone: 'UTC' },
+      { cron: '0 9 * * 1', timezone: 'UTC' },
+    ]);
+    await reconcile();
     await ds
       .getRepository(ScheduleState)
       .update(
@@ -518,11 +532,9 @@ describe('ScheduleTick', () => {
 
   it('keeps starting other schedules when one cannot be computed', async () => {
     const error = vi.spyOn(Logger.prototype, 'error').mockReturnValue();
-    const broken = await scheduled('broken', '2026-09-28T10:00:00Z');
+    await scheduled('broken', '2026-09-28T10:00:00Z');
     await scheduled('fine', '2026-09-28T10:00:00Z');
-    await ds
-      .getRepository(Trigger)
-      .update(broken, { config: { cron: 'not a cron' } });
+    defineSchedules('broken', [{ cron: 'not a cron', timezone: 'UTC' }]);
 
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     await scheduler.tick(new Date('2026-09-28T10:00:11Z'));

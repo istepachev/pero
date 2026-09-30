@@ -25,6 +25,8 @@ import {
 import type { RunDetails } from '../src/control/protocol.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
+import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
+import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import {
   type RuntimeRequest,
   RuntimeError,
@@ -233,7 +235,6 @@ describe('Restore drill (e2e)', () => {
       workflows: await Promise.all(
         workflows.map(({ name }) => client.call('workflows.get', { name })),
       ),
-      triggers: (await client.call('triggers.list', {})).triggers,
       // Titles seen in messages are kept in memory only, so a direct
       // chat's comes back with its next message, not with the backup.
       allowed: (await client.call('telegram.chats')).allowed.map(
@@ -293,25 +294,18 @@ describe('Restore drill (e2e)', () => {
     for (const [chat, topic] of CHANNELS) {
       expect(await say(chat, topic, 'Hello')).toBe('echo: Hello');
     }
-    await client.call('workflows.create', {
-      name: 'english',
-      title: 'English review',
-      agent: 'english',
-      inputTemplate: 'Suggest better English for: {{history}}',
-      maxAttempts: 2,
-      history: {},
-    });
-    await client.call('triggers.add', {
-      workflow: 'english',
-      kind: 'schedule',
-      cron: '0 21 * * *',
-    });
-    await client.call('triggers.add', { workflow: 'english', kind: 'manual' });
-    await client.call('workflows.notify', {
-      name: 'english',
-      channel: await channelId(FORUM, ENGLISH),
-      notify: true,
-    });
+    writeFileSync(
+      join(settings, 'Workflows', 'English.md'),
+      '---\nhour: 21\nchannel: English\nagent: english\nhistory: true\nmax-attempts: 2\n---\nSuggest better English for: {{history}}\n',
+    );
+    await daemon!.app.get(SettingsNotes).refresh();
+    // Its schedule gets its saved times, which the backup keeps.
+    await daemon!.app.get(ScheduleTick).tick();
+    expect(
+      (await client.call('workflows.get', { name: 'english' })).channels,
+    ).toEqual([
+      expect.objectContaining({ id: await channelId(FORUM, ENGLISH) }),
+    ]);
     expect((await runEnglish()).history).toMatchObject({ count: 4 });
 
     const before = await definitions();
@@ -372,7 +366,7 @@ describe('Restore drill (e2e)', () => {
       expect(request.input).toEqual(
         topic === ENGLISH
           ? expect.stringMatching(
-              /^\[Posted in this chat by Workflows since the last message here\]\n.* Workflow english: English review\n.*\n\nBack 0$/s,
+              /^\[Posted in this chat by Workflows since the last message here\]\n.* Workflow english: English\n.*\n\nBack 0$/s,
             )
           : text,
       );

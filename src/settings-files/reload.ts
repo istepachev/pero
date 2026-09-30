@@ -6,6 +6,7 @@ import {
   type SettingsSnapshot,
   type SnapshotContext,
   type SnapshotNote,
+  type TopicLookup,
 } from './snapshot.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -13,7 +14,10 @@ import {
 /** What one rescan changed. */
 export interface SettingsReload {
   snapshot: SettingsSnapshot;
-  /** Notes that changed, appeared, or were removed, by path. */
+  /**
+   * Notes that changed, appeared, or were removed, by path; none when only
+   * the topics references resolve against did.
+   */
   changed: string[];
   /** Errors the previous snapshot didn't have. */
   appeared: SettingsError[];
@@ -51,11 +55,22 @@ interface NoteState {
 export class SettingsReloader {
   private readonly notes = new Map<string, NoteState>();
   private snapshot: SettingsSnapshot | null = null;
+  /** Whether the next rescan rebuilds the snapshot, notes changed or not. */
+  private stale = false;
 
   constructor(
     private readonly settingsFolder: string,
-    private readonly context: SnapshotContext,
+    private context: SnapshotContext,
   ) {}
+
+  /**
+   * Resolves Workflow references with `topics` from the next rescan on,
+   * which rebuilds the snapshot even when no note changed.
+   */
+  setTopics(topics: TopicLookup): void {
+    this.context = { ...this.context, topics };
+    this.stale = true;
+  }
 
   /** The snapshot in use; null before the first rescan. */
   current(): SettingsSnapshot | null {
@@ -124,7 +139,8 @@ export class SettingsReloader {
       }
     }
 
-    if (!first && changed.size === 0) return null;
+    if (!first && !this.stale && changed.size === 0) return null;
+    this.stale = false;
     const previous = this.snapshot;
     this.snapshot = buildSnapshot(this.snapshotNotes(), this.context);
     const before = previous?.errors ?? [];

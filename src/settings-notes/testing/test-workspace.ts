@@ -29,8 +29,8 @@ interface TestNote {
 
 /**
  * A workspace in a temporary folder for tests, with its settings folder
- * in `data/Settings`: `Pero.md` and Agent notes are written here, and a
- * booted module reads them again after each write.
+ * in `data/Settings`: `Pero.md`, Agent, and Workflow notes are written
+ * here, and a booted module reads them again after each write.
  */
 export class TestWorkspace {
   /** The workspace. */
@@ -141,6 +141,41 @@ export class TestWorkspace {
     return this.note(agentFile(title), properties, body, false);
   }
 
+  /**
+   * Writes the Workflow note `Workflows/<title>.md`, which defines the
+   * Workflow named after `title`, with `properties` and `body`, the input
+   * each run sends.
+   */
+  workflow(
+    title: string,
+    properties: TestNoteProperties = {},
+    body = `Run ${title}.`,
+  ): Promise<void> {
+    return this.note(workflowFile(title), properties, body, true);
+  }
+
+  /** Changes the Workflow note of `title`, keeping its other properties. */
+  editWorkflow(
+    title: string,
+    properties: TestNoteProperties,
+    body?: string,
+  ): Promise<void> {
+    return this.note(workflowFile(title), properties, body, false);
+  }
+
+  /** Deletes the Workflow note of `title`. */
+  removeWorkflow(title: string): Promise<void> {
+    return this.remove(workflowFile(title));
+  }
+
+  /**
+   * Scans the notes again, as the next tick would: for Channels a Workflow
+   * names that Pero has seen since.
+   */
+  async rescan(): Promise<void> {
+    await this.module?.get(SettingsNotes).rescan();
+  }
+
   /** Deletes the workspace. */
   delete(): void {
     rmSync(this.root, { recursive: true, force: true });
@@ -171,4 +206,8 @@ export class TestWorkspace {
 
 function agentFile(title: string): string {
   return posix.join(NOTE_FOLDERS.agent, `${title}.md`);
+}
+
+function workflowFile(title: string): string {
+  return posix.join(NOTE_FOLDERS.workflow, `${title}.md`);
 }

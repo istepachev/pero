@@ -3,10 +3,13 @@ import {
   agentHint,
   channelHint,
   findAgentNote,
+  findWorkflowNote,
   legacyHint,
   SETTING_HOMES,
   settingHint,
   shownPath,
+  triggerHint,
+  workflowHint,
 } from './note-hints.js';
 
 const FILES = {
@@ -61,6 +64,73 @@ describe('note hints', () => {
     );
     expect(agentHint('edit', 'coach', null, FILES)).toBe(
       'Agents are configured in notes now, and no note is named coach: add data/Settings/Agents/coach.md (Agents/_Template.md shows the properties).',
+    );
+  });
+
+  it('finds a Workflow note by name or title, in subfolders too', () => {
+    const files = [
+      'Agents/Weekly Report.md',
+      'Workflows/Health/Weekly Report.md',
+    ];
+    expect(findWorkflowNote(files, 'weekly-report')).toBe(
+      'Workflows/Health/Weekly Report.md',
+    );
+    expect(findWorkflowNote(files, 'Weekly Report')).toBe(
+      'Workflows/Health/Weekly Report.md',
+    );
+    expect(findWorkflowNote(files, 'report')).toBeNull();
+  });
+
+  it('names the note to edit instead of each Workflow command', () => {
+    const note = 'Workflows/Report.md';
+    const prefix = 'Workflows are configured in notes now';
+    expect(workflowHint('edit', 'report', note, FILES)).toBe(
+      `${prefix}: edit data/Settings/Workflows/Report.md.`,
+    );
+    expect(workflowHint('enable', 'report', note, FILES)).toBe(
+      `${prefix}: set enabled: true in data/Settings/Workflows/Report.md.`,
+    );
+    expect(workflowHint('disable', 'report', note, FILES)).toBe(
+      `${prefix}: set enabled: false in data/Settings/Workflows/Report.md, which stops its schedule; pero workflows run still runs it.`,
+    );
+    expect(workflowHint('notify', 'report', note, FILES)).toBe(
+      `${prefix}: add the topic's title to channel in data/Settings/Workflows/Report.md; pero channels ls shows each topic's title.`,
+    );
+    expect(workflowHint('stop-notifying', 'report', note, FILES)).toBe(
+      `${prefix}: take the topic's title out of channel in data/Settings/Workflows/Report.md; pero channels ls shows each topic's title.`,
+    );
+    expect(workflowHint('create', 'report', note, FILES)).toBe(
+      `${prefix}, and data/Settings/Workflows/Report.md already defines report; edit it there.`,
+    );
+    expect(workflowHint('create', 'Brief', null, FILES)).toBe(
+      `${prefix}: add data/Settings/Workflows/Brief.md: its text is what each run asks the Agent, and hour and channel say when it runs and where it posts.`,
+    );
+    expect(workflowHint('notify', 'brief', null, FILES)).toMatch(
+      new RegExp(
+        `^${prefix}, and no note is named brief: add data/Settings/Workflows/brief.md: `,
+      ),
+    );
+  });
+
+  it('says what to do instead of each Trigger command', () => {
+    const prefix = 'Workflows run on the schedules their notes set now';
+    expect(triggerHint('list', null, null, FILES)).toBe(
+      `${prefix}: pero workflows ls shows each schedule and its next run.`,
+    );
+    expect(triggerHint('add', 'report', 'Workflows/Report.md', FILES)).toBe(
+      `${prefix}: set hour, day, and minute, or cron, in data/Settings/Workflows/Report.md; any Workflow runs by hand with pero workflows run <name>.`,
+    );
+    expect(triggerHint('add', 'brief', null, FILES)).toBe(
+      `${prefix}, and no note is named brief: add data/Settings/Workflows/brief.md with hour, day, and minute, or cron; any Workflow runs by hand with pero workflows run <name>.`,
+    );
+    expect(triggerHint('disable', null, null, FILES)).toBe(
+      `${prefix}: set trigger: manual in the Workflow's note to stop its schedule; pero workflows ls shows each Workflow's note.`,
+    );
+    expect(triggerHint('remove', null, null, FILES)).toBe(
+      triggerHint('disable', null, null, FILES),
+    );
+    expect(triggerHint('enable', null, null, FILES)).toBe(
+      `${prefix}: set trigger: schedule and enabled: true in the Workflow's note; pero workflows ls shows each Workflow's note.`,
     );
   });
 

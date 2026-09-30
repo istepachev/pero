@@ -11,9 +11,6 @@ import { VALUE_ORIGINS } from '../settings-files/origins.js';
 import { NEW_TOPICS } from '../settings-files/schemas.js';
 import {
   HISTORY_MESSAGES,
-  triggerAddSchema,
-  workflowCreateSchema,
-  workflowEditSchema,
   workflowReferenceSchema,
 } from '../config/workflow-input.js';
 import {
@@ -23,7 +20,6 @@ import {
   MESSAGE_ORIGINS,
   NOTIFICATION_STATUSES,
   RUN_STATUSES,
-  TRIGGER_KINDS,
 } from '../persistence/entities/sql.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -336,54 +332,8 @@ export const DEFAULT_HISTORY_MESSAGES = 20;
 
 const channelIdSchema = z.int().positive();
 
-/** A Workflow as `pero workflows ls` lists it. */
-export const workflowViewSchema = z.object({
-  name: z.string(),
-  title: z.string().nullable(),
-  /** The name of the Agent its runs use. */
-  agent: z.string(),
-  agentEnabled: z.boolean(),
-  /** The input each run sends to the Agent. */
-  inputTemplate: z.string(),
-  enabled: z.boolean(),
-  /** How many times a run may start in all; see `Workflow.maxAttempts`. */
-  maxAttempts: z.int(),
-  /** The Channel history its runs read; null when they read none. */
-  history: z
-    .object({
-      channels: z.union([z.literal('all'), z.array(z.int())]),
-      messages: z.enum(HISTORY_MESSAGES),
-      /** A fixed window in hours; null reads since the previous run. */
-      hours: z.int().nullable(),
-      runWhenEmpty: z.boolean(),
-    })
-    .nullable(),
-  /** How many Triggers it has, enabled or not. */
-  triggerCount: z.int().nonnegative(),
-});
-
-export type WorkflowView = z.infer<typeof workflowViewSchema>;
-
-/** A Trigger of a Workflow. */
-export const triggerViewSchema = z.object({
-  id: z.int(),
-  /** The name of the Workflow it starts. */
-  workflow: z.string(),
-  kind: z.enum(TRIGGER_KINDS),
-  /** A schedule's cron expression; null for other kinds. */
-  cron: z.string().nullable(),
-  /** A schedule's IANA time zone; null for other kinds. */
-  timezone: z.string().nullable(),
-  /** When a schedule is next due; null until it is scheduled. */
-  nextRunAt: z.iso.datetime().nullable(),
-  lastRunAt: z.iso.datetime().nullable(),
-  enabled: z.boolean(),
-});
-
-export type TriggerView = z.infer<typeof triggerViewSchema>;
-
-/** A Channel a Workflow notifies of its finished runs. */
-export const notificationTargetSchema = z.object({
+/** A Channel a Workflow names: where it posts, or whose history it reads. */
+export const workflowChannelSchema = z.object({
   /** The Channel's ID. */
   id: z.int(),
   integrationKind: z.enum(INTEGRATION_KINDS),
@@ -392,18 +342,68 @@ export const notificationTargetSchema = z.object({
   title: z.string().nullable(),
 });
 
-export type NotificationTargetView = z.infer<typeof notificationTargetSchema>;
+export type WorkflowChannelView = z.infer<typeof workflowChannelSchema>;
 
-export const workflowDetailsSchema = workflowViewSchema.extend({
-  /** Oldest first. */
-  triggers: z.array(triggerViewSchema),
-  /** By Channel ID. */
-  targets: z.array(notificationTargetSchema),
+/** A Channel a Notification goes to. */
+export const notificationTargetSchema = workflowChannelSchema;
+
+export type NotificationTargetView = WorkflowChannelView;
+
+/** A schedule a Workflow runs on by itself, with where it stands. */
+export const workflowScheduleSchema = z.object({
+  cron: z.string(),
+  /** The IANA time zone it follows. */
+  timezone: z.string(),
+  /** When it is next due; null until Pero schedules it, or if it never is. */
+  nextRunAt: z.iso.datetime().nullable(),
+  /** When it last queued a run; null if it never has. */
+  lastRunAt: z.iso.datetime().nullable(),
 });
 
-export type WorkflowDetails = z.infer<typeof workflowDetailsSchema>;
+export type WorkflowScheduleView = z.infer<typeof workflowScheduleSchema>;
 
-const triggerIdSchema = z.int().positive();
+/** A Workflow as `pero workflows ls` and `show` show it. */
+export const workflowViewSchema = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  /**
+   * Its note, relative to the workspace when inside it; null in a legacy
+   * data directory.
+   */
+  file: z.string().nullable(),
+  /** The name of the Agent its runs use. */
+  agent: z.string(),
+  agentEnabled: z.boolean(),
+  /** The input each run sends to the Agent. */
+  inputTemplate: z.string(),
+  /** False stops it running by itself; it still runs by hand. */
+  enabled: z.boolean(),
+  /** How many times a run may start in all. */
+  maxAttempts: z.int(),
+  /** When it runs by itself; empty when it runs only by hand. */
+  schedules: z.array(workflowScheduleSchema),
+  /** Where each run's answer is posted, by ID. */
+  channels: z.array(workflowChannelSchema),
+  /** The Channel history its runs read; null when they read none. */
+  history: z
+    .object({
+      channels: z.union([z.literal('all'), z.array(workflowChannelSchema)]),
+      messages: z.enum(HISTORY_MESSAGES),
+      /** A fixed window in hours; null reads since the previous run. */
+      hours: z.int().nullable(),
+      runWhenEmpty: z.boolean(),
+    })
+    .nullable(),
+  /**
+   * Its note's errors, for which its last good version is in use; empty in
+   * a legacy data directory.
+   */
+  errors: z.array(
+    z.object({ property: z.string().nullable(), message: z.string() }),
+  ),
+});
+
+export type WorkflowView = z.infer<typeof workflowViewSchema>;
 
 /** Statuses a Workflow Run does not leave. */
 export const FINISHED_RUN_STATUSES = [
@@ -604,37 +604,10 @@ export const CONTROL_OPERATIONS = {
   },
   'workflows.get': {
     params: z.strictObject({ name: workflowReferenceSchema }),
-    result: workflowDetailsSchema,
-  },
-  'workflows.create': {
-    params: workflowCreateSchema,
-    result: workflowDetailsSchema,
-  },
-  /** Also enables and disables a Workflow. */
-  'workflows.edit': {
-    params: z.strictObject({
-      name: workflowReferenceSchema,
-      change: workflowEditSchema,
-    }),
-    result: workflowDetailsSchema,
+    result: workflowViewSchema,
   },
   /**
-   * Makes a Workflow notify a Channel of its finished runs, or stop;
-   * `changed` is false when there was nothing to do.
-   */
-  'workflows.notify': {
-    params: z.strictObject({
-      name: workflowReferenceSchema,
-      channel: channelIdSchema,
-      notify: z.boolean(),
-    }),
-    result: z.object({
-      workflow: workflowDetailsSchema,
-      changed: z.boolean(),
-    }),
-  },
-  /**
-   * Queues a run of a Workflow through its manual Trigger; the executor
+   * Queues a run of a Workflow, whatever its `trigger`; the executor
    * starts it once a slot is free.
    */
   'workflows.run': {
@@ -697,21 +670,6 @@ export const CONTROL_OPERATIONS = {
   'notifications.retry': {
     params: z.strictObject({ id: notificationIdSchema }),
     result: notificationDetailsSchema,
-  },
-  /** Every Trigger, or one Workflow's, by ID. */
-  'triggers.list': {
-    params: z.strictObject({ workflow: workflowReferenceSchema.optional() }),
-    result: z.object({ triggers: z.array(triggerViewSchema) }),
-  },
-  'triggers.add': { params: triggerAddSchema, result: triggerViewSchema },
-  /** Runs it created are kept, with no Trigger. */
-  'triggers.remove': {
-    params: z.strictObject({ id: triggerIdSchema }),
-    result: triggerViewSchema,
-  },
-  'triggers.setEnabled': {
-    params: z.strictObject({ id: triggerIdSchema, enabled: z.boolean() }),
-    result: triggerViewSchema,
   },
   /**
    * Writes a backup of the data directory to an absolute path, with the

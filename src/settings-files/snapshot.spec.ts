@@ -115,6 +115,7 @@ You are my health coach.`,
       schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       channels: ['Health'],
       history: null,
+      resolved: null,
       maxAttempts: 1,
       enabled: true,
       input: 'Create a weekly report.',
@@ -501,6 +502,26 @@ permissions: bypass
       expect(agentOf('7')).toBe('health');
       expect(agentOf('General')).toBe('main');
       expect(agentOf('8')).toBe('main');
+    });
+
+    it('gives the Channels found by ID, each once', () => {
+      const result = snapshot(
+        {
+          'Agents/Health.md': '---\ntopics: [Health]\n---',
+          'Workflows/Report.md':
+            '---\nchannel: [Health, 8, General, 7, health]\nhistory: true\nhistory-channels: [8, Health]\n---\nGo',
+          'Workflows/All.md': '---\nhistory: true\n---\nGo',
+        },
+        { topics },
+      );
+      expect(result.workflows.get('report')!.resolved).toEqual({
+        targets: [3, 8, 1, 7],
+        history: [8, 3],
+      });
+      expect(result.workflows.get('all')!.resolved).toEqual({
+        targets: [],
+        history: 'all',
+      });
     });
 
     it('reports titles and IDs that match no topic, or several', () => {

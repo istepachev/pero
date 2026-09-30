@@ -1,59 +1,50 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
-  NotificationTargetView,
   RunView,
-  TriggerView,
-  WorkflowDetails,
+  WorkflowChannelView,
   WorkflowView,
 } from '../control/protocol.js';
 import {
   agentWarning,
-  describeScheduledTrigger,
-  describeTrigger,
-  formatNotify,
-  formatTriggerList,
   formatWorkflowDetails,
   formatWorkflowList,
   runOutcome,
 } from './format-workflows.js';
 
+const english: WorkflowChannelView = {
+  id: 5,
+  integrationKind: 'telegram',
+  key: '-100777:7',
+  title: 'English',
+};
+
+const direct: WorkflowChannelView = {
+  id: 9,
+  integrationKind: 'telegram',
+  key: '1234',
+  title: null,
+};
+
 const review: WorkflowView = {
   name: 'evening-review',
   title: 'Evening review',
+  file: 'data/Settings/Workflows/Evening review.md',
   agent: 'coach',
   agentEnabled: true,
   inputTemplate: "Review today's chats.\nSuggest one improvement.",
   enabled: true,
   maxAttempts: 1,
+  schedules: [
+    {
+      cron: '0 21 * * *',
+      timezone: 'Europe/Berlin',
+      nextRunAt: '2026-09-28T19:00:00.000Z',
+      lastRunAt: null,
+    },
+  ],
+  channels: [english],
   history: null,
-  triggerCount: 2,
-};
-
-const schedule: TriggerView = {
-  id: 3,
-  workflow: 'evening-review',
-  kind: 'schedule',
-  cron: '0 21 * * *',
-  timezone: 'Europe/Berlin',
-  nextRunAt: null,
-  lastRunAt: null,
-  enabled: true,
-};
-
-const manual: TriggerView = {
-  ...schedule,
-  id: 4,
-  kind: 'manual',
-  cron: null,
-  timezone: null,
-  enabled: false,
-};
-
-const english: NotificationTargetView = {
-  id: 5,
-  integrationKind: 'telegram',
-  key: '-100777:7',
-  title: 'English',
+  errors: [],
 };
 
 describe('Workflow formatting', () => {
@@ -68,55 +59,72 @@ describe('Workflow formatting', () => {
     process.env.TZ = zone;
   });
 
-  it('lists Workflows with their Agent, Triggers, and state', () => {
+  it('lists Workflows with their Agent, schedule, next run, Channels, and note', () => {
     expect(
       formatWorkflowList([
-        { ...review, name: 'brief', agentEnabled: false, triggerCount: 0 },
-        review,
+        {
+          ...review,
+          name: 'brief',
+          file: 'data/Settings/Workflows/Brief.md',
+          agentEnabled: false,
+          schedules: [],
+          channels: [],
+          errors: [{ property: 'channel', message: 'no topic titled "x"' }],
+        },
+        { ...review, channels: [english, direct] },
+        { ...review, name: 'paused', enabled: false },
       ]),
     ).toBe(
       [
-        'NAME            AGENT             TRIGGERS  STATE',
-        'brief           coach (disabled)  0         enabled',
-        'evening-review  coach             2         enabled',
+        'NAME            AGENT             SCHEDULE                    NEXT RUN          CHANNELS            STATE     NOTE',
+        'brief !         coach (disabled)  by hand                     —                 —                   enabled   data/Settings/Workflows/Brief.md',
+        'evening-review  coach             0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English, Channel 9  enabled   data/Settings/Workflows/Evening review.md',
+        'paused          coach             0 21 * * * (Europe/Berlin)  —                 English             disabled  data/Settings/Workflows/Evening review.md',
+        '',
+        '! its note has errors, so its last good version is in use; pero check lists them',
       ].join('\n'),
     );
   });
 
-  it('says how to create the first Workflow', () => {
-    expect(formatWorkflowList([])).toBe(
-      'No Workflows yet. Create one with pero workflows create <name> --agent <agent> --input <text>.',
+  it('lists the Workflows of a legacy data directory without notes', () => {
+    expect(formatWorkflowList([{ ...review, file: null }])).toBe(
+      [
+        'NAME            AGENT  SCHEDULE                    NEXT RUN          CHANNELS  STATE',
+        'evening-review  coach  0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English   enabled',
+      ].join('\n'),
     );
   });
 
-  it('shows a Workflow with its Triggers and the Channels it notifies', () => {
-    const details: WorkflowDetails = {
-      ...review,
-      triggers: [
-        { ...schedule, nextRunAt: '2026-09-28T19:00:00.000Z' },
-        { ...schedule, id: 5, enabled: false },
-        manual,
-      ],
-      targets: [english, { ...english, id: 9, key: '1234', title: null }],
-    };
+  it('says where to add the first Workflow', () => {
+    expect(formatWorkflowList([])).toBe(
+      'No Workflows yet. Add a note to the Workflows folder in the settings folder.',
+    );
+  });
 
-    expect(formatWorkflowDetails(details)).toBe(
+  it('shows a Workflow with its note, schedule, and the Channels it posts to', () => {
+    expect(
+      formatWorkflowDetails({
+        ...review,
+        channels: [english, direct],
+        schedules: [
+          { ...review.schedules[0]!, lastRunAt: '2026-09-27T19:00:00.000Z' },
+        ],
+      }),
+    ).toBe(
       [
         'Workflow evening-review "Evening review"',
+        '  note      data/Settings/Workflows/Evening review.md',
         '  agent     coach',
         "  input     Review today's chats. (2 lines)",
+        '  schedule  0 21 * * * (Europe/Berlin)',
+        '  next run  2026-09-29 00:00',
+        '  last run  2026-09-28 00:00',
         '  runs      one at a time',
         '  attempts  1 (a run Pero stops is not started again)',
         '  history   none',
         '  state     enabled',
         '',
-        'Triggers',
-        '  ID  SCHEDULE                  NEXT RUN          STATE',
-        '  3   0 21 * * * Europe/Berlin  2026-09-29 00:00  enabled',
-        '  5   0 21 * * * Europe/Berlin  —                 disabled',
-        '  4   manual                    —                 disabled',
-        '',
-        'Notifies',
+        'Posts to',
         '  ID  CHANNEL             TITLE',
         '  5   telegram -100777:7  English',
         '  9   telegram 1234       —',
@@ -124,95 +132,49 @@ describe('Workflow formatting', () => {
     );
   });
 
-  it('says how to add a Trigger and warns about a disabled Agent', () => {
+  it("shows a Workflow's errors, and warns about a disabled Agent", () => {
     expect(
       formatWorkflowDetails({
         ...review,
         title: null,
+        file: null,
         agentEnabled: false,
+        enabled: false,
         maxAttempts: 3,
+        schedules: [],
+        channels: [],
         history: {
-          channels: [3, 5],
+          channels: [english, direct],
           messages: 'all',
           hours: 12,
           runWhenEmpty: true,
         },
-        triggerCount: 0,
-        triggers: [],
-        targets: [],
+        errors: [
+          { property: 'channel', message: 'no topic titled "Helth"' },
+          { property: null, message: 'the note has no text' },
+        ],
       }),
     ).toBe(
       [
         'Workflow evening-review',
         '  agent     coach (disabled)',
         "  input     Review today's chats. (2 lines)",
+        '  schedule  none: it runs by hand, with pero workflows run',
         '  runs      one at a time',
         '  attempts  up to 3 (a run Pero stops starts again when Pero does)',
-        '  history   all messages in Channels 3, 5 from the last 12 hours; runs even when there are none',
-        '  state     enabled',
+        '  history   all messages in English, Channel 9 from the last 12 hours; runs even when there are none',
+        '  state     disabled: it runs only by hand, with pero workflows run',
         '',
-        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
+        'Its note has errors, so its last good version is in use:',
+        '  channel: no topic titled "Helth"',
+        '  the note has no text',
         '',
-        'No Trigger yet: pero triggers add evening-review --cron "<expression>" or --manual.',
+        'Warning: Agent coach is disabled or has no note, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
         '',
-        'Notifies no Channel: pero workflows notify evening-review <channel> posts its answers there.',
+        'Posts to no Channel: name a topic in channel in its note to post its answers there.',
       ].join('\n'),
     );
     expect(agentWarning(review)).toBeNull();
-  });
-
-  it('says what notify changed', () => {
-    const notifying: WorkflowDetails = {
-      ...review,
-      triggers: [],
-      targets: [english],
-    };
-    const none: WorkflowDetails = { ...notifying, targets: [] };
-
-    expect(formatNotify(notifying, 5, true, true)).toBe(
-      'Workflow evening-review now notifies Channel 5 (telegram -100777:7 "English"): each answer, and each run that fails, is posted there.',
-    );
-    expect(formatNotify(notifying, 5, true, false)).toBe(
-      'Workflow evening-review already notifies Channel 5 (telegram -100777:7 "English").',
-    );
-    expect(formatNotify(none, 5, false, true)).toBe(
-      'Workflow evening-review no longer notifies Channel 5.',
-    );
-    expect(formatNotify(none, 5, false, false)).toBe(
-      'Workflow evening-review did not notify Channel 5.',
-    );
-  });
-
-  it('lists Triggers with their Workflow', () => {
-    expect(formatTriggerList([schedule, manual])).toBe(
-      [
-        'ID  WORKFLOW        SCHEDULE                  NEXT RUN  STATE',
-        '3   evening-review  0 21 * * * Europe/Berlin  none      enabled',
-        '4   evening-review  manual                    —         disabled',
-      ].join('\n'),
-    );
-    expect(formatTriggerList([])).toBe(
-      'No Triggers yet. Add one with pero triggers add <workflow> --cron "0 9 * * *" or --manual.',
-    );
-  });
-
-  it('describes a Trigger in one line', () => {
-    expect(describeTrigger(schedule)).toBe(
-      'Trigger 3 of evening-review (0 21 * * * Europe/Berlin)',
-    );
-    expect(describeTrigger(manual)).toBe(
-      'Trigger 4 of evening-review (manual)',
-    );
-    expect(
-      describeScheduledTrigger({
-        ...schedule,
-        nextRunAt: '2026-09-28T19:00:00.000Z',
-      }),
-    ).toBe(
-      'Trigger 3 of evening-review (0 21 * * * Europe/Berlin), next run 2026-09-29 00:00',
-    );
-    expect(describeScheduledTrigger(schedule)).toBe(describeTrigger(schedule));
-    expect(describeScheduledTrigger(manual)).toBe(describeTrigger(manual));
   });
 
   it("gives a finished run's answer, or why there is none", () => {

@@ -106,23 +106,31 @@ Codex runs each turn without a way to ask you, so the permission modes map to it
 
 ## Workflows
 
-A Workflow is work an Agent does on its own: the Agent, and the input each run sends it. Triggers start it, on a cron schedule in a time zone or by hand.
+A Workflow is work an Agent does on its own: a note in the settings folder's `Workflows/` folder, whose text is the input each run sends the Agent. Its properties say when it runs and where its answer goes; the note's file name is its title, and its name is that title as a slug (`Evening review.md` is `evening-review`).
+
+```markdown
+---
+hour: 21
+agent: coach
+channel: Coaching
+max-attempts: 2
+---
+Review today's chats.
+```
+
+`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, or with `trigger: manual`, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./vision/CONFIGURATION.md#workflow-notes) lists every property.
 
 ```sh
-pero workflows create evening-review --agent coach --input "Review today's chats"
-pero triggers add evening-review --cron "0 21 * * *"   # 21:00 in the timezone setting
-pero workflows show evening-review                      # its Agent, input, and Triggers
-pero triggers add evening-review --manual               # allow runs by hand
-pero workflows run evening-review                       # run it now and print the answer
-pero workflows edit evening-review --max-attempts 2     # start a run Pero stopped once more
-pero workflows disable evening-review                   # keep it, and its Triggers, without running
+pero workflows                      # each Workflow's schedule, next run, and Channels
+pero workflows show evening-review  # its note, Agent, input, and schedule
+pero workflows run evening-review   # run it now, whatever its schedule, and print the answer
 ```
 
 ### Schedules and runs
 
 A schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run when it starts again, which records how many it stands for; so do times that come due while the previous run of the same schedule is still waiting to start. A schedule whose Workflow or Agent is disabled passes its times without a run. Each run starts a provider conversation of its own, apart from every Channel's Session and history, with the Agent's settings as they were when the run started. At most `max-concurrent-runs` run at once (default 2), and one at a time per Workflow.
 
-A run Pero stops before it finishes, by crashing or through `pero stop` once the shutdown timeout has passed, is recorded `interrupted` when Pero starts again. Its Agent may already have changed files, so it is not started again unless the Workflow allows more than one attempt (`--max-attempts <n>`, at most 10); then it is queued again as a new run with the next attempt number, until it has started that often.
+A run Pero stops before it finishes, by crashing or through `pero stop` once the shutdown timeout has passed, is recorded `interrupted` when Pero starts again. Its Agent may already have changed files, so it is not started again unless the Workflow allows more than one attempt (`max-attempts`, at most 10); then it is queued again as a new run with the next attempt number, until it has started that often.
 
 ```sh
 pero runs            # the latest runs
@@ -131,21 +139,25 @@ pero runs retry 7    # run a failed, interrupted, or cancelled run 7 again
 pero runs cancel 7   # cancel run 7
 ```
 
-`pero runs cancel <id>` cancels a run: one waiting to start never does, and a running one has its Agent's turn stopped. `pero runs retry <id>` queues a failed, interrupted, or cancelled run again as a new run with the next attempt, whatever `--max-attempts` allows, reading the same Channel history.
+`pero runs cancel <id>` cancels a run: one waiting to start never does, and a running one has its Agent's turn stopped. `pero runs retry <id>` queues a failed, interrupted, or cancelled run again as a new run with the next attempt, whatever `max-attempts` allows, reading the same Channel history.
 
 ### Reading chat history
 
-A Workflow can read Channel history as its input, so an Agent can review your chats on a schedule. With `--history`, each run puts a transcript of what people wrote in every Channel since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `--history-channels 3,5` reads only those Channels, `--history-messages all` adds the Agents' replies, and `--history-hours <n>` reads a fixed window instead. A run with no messages to read completes without its Agent unless `--run-when-empty` is given. The longest transcripts keep their newest messages and say how many older ones they left out.
+A Workflow can read Channel history as its input, so an Agent can review your chats on a schedule. With `history: true`, each run puts a transcript of what people wrote in every Channel since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `history-channels` reads only the topics it names, `history-messages: all` adds the Agents' replies, and `history-hours` reads a fixed window instead. A run with no messages to read completes without its Agent unless `run-when-empty: true` is set. The longest transcripts keep their newest messages and say how many older ones they left out.
 
-```sh
-pero workflows create english --agent english-coach --history --input "Suggest better English for: {{history}}"
-pero triggers add english --cron "0 21 * * *"   # review the day's chats every evening
-pero workflows notify english 5                 # post its suggestions to Channel 5
+```markdown
+---
+hour: 21
+agent: english-coach
+history: true
+channel: English
+---
+Suggest better English for: {{history}}
 ```
 
 ### Notifications
 
-`pero workflows notify <workflow> <channel>` (a Channel ID from `pero channels`) makes each run that finishes leave a Notification for that Channel, holding the Agent's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one. `--remove` stops it.
+Each topic a Workflow's `channel` names gets a Notification of each run that finishes, holding the Agent's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one. `channel` names a topic by its title, `<chat title>/<topic title>` when allowed groups share it, `General` for a group's General topic, or a Channel ID from `pero channels` for a direct chat. A title must be one Pero has seen in an allowed chat: until then the note has an error, which `pero status` and `pero check` report.
 
 Notifications are recorded together with the run's final status and delivered to the Channel within seconds. While Telegram can't be reached, delivery retries with a growing wait for about a day before the Notification is marked failed. A Notification to a chat that is no longer allowed fails at once. A delivered Notification joins the Channel's history as a `workflow` message, and the next message you send there reaches the Agent with it, so you can reply to it: ask about a suggestion right where it was posted.
 

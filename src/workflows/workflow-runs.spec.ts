@@ -22,13 +22,13 @@ import {
   InvalidInputError,
   NotFoundError,
 } from '../common/errors.js';
-import type { WorkflowHistoryPatch } from '../config/workflow-input.js';
+import { HostConfigService } from '../host-config/host-config.service.js';
+import type { TestNoteProperties } from '../settings-notes/testing/test-workspace.js';
 import { Definitions } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
@@ -37,14 +37,11 @@ import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import type { RuntimeRequest } from '../runtimes/agent-runtime.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
-import { TriggersModule } from '../triggers/triggers.module.js';
-import { TriggersService } from '../triggers/triggers.service.js';
 import type { HistoryRead } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
-import { WorkflowsService } from './workflows.service.js';
 
 const OWNER = privateChat('1234');
 const HOME = groupChat('-100777', 'Home');
@@ -54,8 +51,6 @@ describe('Workflow Runs and the executor', () => {
   let vault: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let workflows: WorkflowsService;
-  let triggers: TriggersService;
   let runs: WorkflowRuns;
   let executor: WorkflowExecutor;
   let claude: FakeAgentRuntime;
@@ -68,7 +63,6 @@ describe('Workflow Runs and the executor', () => {
         ws.hostConfig(),
         ChannelsModule,
         WorkflowsModule,
-        TriggersModule,
       ],
     })
       .overrideProvider(AGENT_RUNTIMES)
@@ -77,8 +71,6 @@ describe('Workflow Runs and the executor', () => {
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     ws.use(moduleRef);
-    workflows = moduleRef.get(WorkflowsService);
-    triggers = moduleRef.get(TriggersService);
     runs = moduleRef.get(WorkflowRuns);
     executor = moduleRef.get(WorkflowExecutor);
   }
@@ -99,14 +91,18 @@ describe('Workflow Runs and the executor', () => {
     ws.delete();
   });
 
-  /** A Workflow of `agent` that can be run by hand. */
+  /** A Workflow of `agent`, run by hand. */
   async function manualWorkflow(
     name: string,
     input = `Run ${name}.`,
     agent = 'coach',
   ): Promise<void> {
-    await workflows.create({ name, agent, inputTemplate: input });
-    await triggers.add({ workflow: name, kind: 'manual' });
+    await ws.workflow(name, { agent }, input);
+  }
+
+  /** Changes `properties` of the note of Workflow `name`. */
+  function edit(name: string, properties: TestNoteProperties): Promise<void> {
+    return ws.editWorkflow(name, properties);
   }
 
   function run(id: number): Promise<RunView> {
@@ -284,7 +280,7 @@ describe('Workflow Runs and the executor', () => {
       },
       'Be brief.',
     );
-    await workflows.edit('brief', { inputTemplate: 'Second input.' });
+    await ws.editWorkflow('brief', {}, 'Second input.');
     held.release();
     await executor.idle();
 
@@ -428,11 +424,10 @@ describe('Workflow Runs and the executor', () => {
 
     it('records a run left running by a crash interrupted', async () => {
       await manualWorkflow('brief');
-      const workflow = await workflows.get('brief');
       const repo = ds.getRepository(WorkflowRun);
       const { id } = await repo.save(
         repo.create({
-          workflowName: workflow.name,
+          workflowName: 'brief',
           triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
@@ -453,7 +448,7 @@ describe('Workflow Runs and the executor', () => {
 
     it('retries an interrupted run as a new run while the Workflow allows more attempts', async () => {
       await manualWorkflow('brief');
-      await workflows.edit('brief', { maxAttempts: 2 });
+      await edit('brief', { 'max-attempts': 2 });
       const { id } = await stopMidRun('brief');
       const { triggerId } = await run(id);
 
@@ -480,7 +475,7 @@ describe('Workflow Runs and the executor', () => {
 
     it('stops retrying once a run has had its attempts', async () => {
       await manualWorkflow('brief');
-      await workflows.edit('brief', { maxAttempts: 2 });
+      await edit('brief', { 'max-attempts': 2 });
       const { id } = await stopMidRun('brief');
       // The retry is stopped as well.
       const held = claude.hold();
@@ -506,10 +501,10 @@ describe('Workflow Runs and the executor', () => {
     it('does not retry while the Workflow or its Agent is disabled', async () => {
       await manualWorkflow('a');
       await manualWorkflow('b');
-      await workflows.edit('a', { maxAttempts: 3 });
-      await workflows.edit('b', { maxAttempts: 3 });
+      await edit('a', { 'max-attempts': 3 });
+      await edit('b', { 'max-attempts': 3 });
       const a = await stopMidRun('a');
-      await workflows.edit('a', { enabled: false });
+      await edit('a', { enabled: false });
       await restart();
       const b = await stopMidRun('b');
       await ws.editAgent('Coach', { enabled: false });
@@ -527,7 +522,7 @@ describe('Workflow Runs and the executor', () => {
 
     it('queues one retry however often it recovers a run', async () => {
       await manualWorkflow('brief');
-      await workflows.edit('brief', { maxAttempts: 2 });
+      await edit('brief', { 'max-attempts': 2 });
       const { id } = await stopMidRun('brief');
       await restart();
       const [, retry] = await allRuns();
@@ -618,34 +613,65 @@ describe('Workflow Runs and the executor', () => {
     });
   });
 
-  it('fails a queued run whose Workflow was disabled before it started', async () => {
+  it('fails a run its schedule queued once the Workflow is disabled, but runs one started by hand', async () => {
     await ws.editPero({ 'max-concurrent-runs': 1 });
     await manualWorkflow('a');
     await manualWorkflow('b');
     const held = claude.hold();
     await runs.start('a');
+    const repo = ds.getRepository(WorkflowRun);
+    const scheduled = await repo.save(
+      repo.create({
+        workflowName: 'b',
+        triggerId: null,
+        triggerKey: 'schedule:b:2026-01-01T09:00:00.000Z',
+        status: 'pending',
+        attempt: 1,
+      }),
+    );
+    const byHand = await runs.start('b');
+    await held.started;
+
+    await edit('b', { enabled: false });
+    held.release();
+    await executor.idle();
+
+    expect(await run(scheduled.id)).toMatchObject({
+      status: 'failed',
+      startedAt: null,
+      error: 'Workflow b was disabled before the run started',
+    });
+    expect(await run(byHand.id)).toMatchObject({ status: 'completed' });
+    expect(claude.requests).toHaveLength(2);
+  });
+
+  it('fails a queued run whose Agent was disabled before it started', async () => {
+    await ws.editPero({ 'max-concurrent-runs': 1 });
+    await manualWorkflow('a');
+    await manualWorkflow('b', undefined, 'main');
+    const held = claude.hold();
+    await runs.start('a');
     const b = await runs.start('b');
     await held.started;
 
-    await workflows.edit('b', { enabled: false });
+    await ws.editAgent('Main', { enabled: false });
     held.release();
     await executor.idle();
 
     expect(await run(b.id)).toMatchObject({
       status: 'failed',
       startedAt: null,
-      error: 'Workflow b was disabled before the run started',
+      error: 'Agent main was disabled before the run started',
     });
     expect(claude.requests).toHaveLength(1);
   });
 
   it('starts runs left pending when Pero last stopped', async () => {
     await manualWorkflow('brief');
-    const workflow = await workflows.get('brief');
     const repo = ds.getRepository(WorkflowRun);
     const { id } = await repo.save(
       repo.create({
-        workflowName: workflow.name,
+        workflowName: 'brief',
         triggerId: null,
         triggerKey: 'manual:left-over',
         status: 'pending',
@@ -661,8 +687,23 @@ describe('Workflow Runs and the executor', () => {
   });
 
   describe('notifications', () => {
-    /** A Channel `workflow` notifies. */
+    /** The Channels each Workflow's note names in `channel`. */
+    const targets = new Map<string, number[]>();
+
+    beforeEach(() => {
+      targets.clear();
+    });
+
+    /** Makes the note of `workflow` name Channel `id` in `channel`. */
+    async function notify(workflow: string, id: number): Promise<void> {
+      const ids = [...(targets.get(workflow) ?? []), id];
+      targets.set(workflow, ids);
+      await edit(workflow, { channel: ids });
+    }
+
+    /** A Channel `workflow` notifies, in a chat that is allowed. */
     async function target(workflow: string, key = '1234'): Promise<number> {
+      moduleRef.get(HostConfigService).allow(key, null);
       const channels = ds.getRepository(Channel);
       const { id } = await channels.save(
         channels.create({
@@ -672,7 +713,7 @@ describe('Workflow Runs and the executor', () => {
           title: null,
         }),
       );
-      await workflows.notify(workflow, id);
+      await notify(workflow, id);
       return id;
     }
 
@@ -704,7 +745,7 @@ describe('Workflow Runs and the executor', () => {
           status: 'pending',
           attempt: 0,
           providerMessageId: null,
-          payload: { text: 'Workflow brief\n\necho: Summarize the day.' },
+          payload: { text: 'brief\n\necho: Summarize the day.' },
         }),
         expect.objectContaining({ channelId: second, status: 'pending' }),
       ]);
@@ -766,11 +807,10 @@ describe('Workflow Runs and the executor', () => {
     it('commits the final status and the Notifications together', async () => {
       await manualWorkflow('brief');
       await target('brief');
-      const workflow = await workflows.get('brief');
       const repo = ds.getRepository(WorkflowRun);
       const { id } = await repo.save(
         repo.create({
-          workflowName: workflow.name,
+          workflowName: 'brief',
           triggerId: null,
           triggerKey: 'manual:together',
           status: 'running',
@@ -798,7 +838,7 @@ describe('Workflow Runs and the executor', () => {
     it('posts why a run failed, including one refused before it started', async () => {
       await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
-      await manualWorkflow('b');
+      await manualWorkflow('b', undefined, 'main');
       await target('a');
       await target('b', '-100777');
       claude.failNext();
@@ -808,7 +848,7 @@ describe('Workflow Runs and the executor', () => {
       await runs.start('a');
       const b = await runs.start('b');
       await held.started;
-      await workflows.edit('b', { enabled: false });
+      await ws.editAgent('Main', { enabled: false });
       held.release();
       await executor.idle();
 
@@ -816,14 +856,14 @@ describe('Workflow Runs and the executor', () => {
         `Run ${a.id} of Workflow a failed: The model is overloaded`,
       ]);
       expect(texts(await notificationsOf(b.id))).toEqual([
-        `Run ${b.id} of Workflow b failed: Workflow b was disabled before the run started`,
+        `Run ${b.id} of Workflow b failed: Agent main was disabled before the run started`,
       ]);
     });
 
     it('posts an interrupted run only when it is not retried, and its retry when that finishes', async () => {
       await manualWorkflow('once');
       await manualWorkflow('twice');
-      await workflows.edit('twice', { maxAttempts: 2 });
+      await edit('twice', { 'max-attempts': 2 });
       await target('once');
       await target('twice', '-100777');
       const repo = ds.getRepository(WorkflowRun);
@@ -856,21 +896,19 @@ describe('Workflow Runs and the executor', () => {
       });
       expect(retry.status).toBe('completed');
       expect(texts(await notificationsOf(retry.id))).toEqual([
-        'Workflow twice\n\necho: Run twice.',
+        'twice\n\necho: Run twice.',
       ]);
     });
 
     it('posts nothing for a cancelled or skipped run', async () => {
       await manualWorkflow('brief');
       await target('brief');
-      await workflows.create({
-        name: 'review',
-        agent: 'coach',
-        inputTemplate: 'Review {{history}}',
-        history: {},
-      });
-      await triggers.add({ workflow: 'review', kind: 'manual' });
-      await workflows.notify('review', await target('brief', '-100777'));
+      await ws.workflow(
+        'review',
+        { agent: 'coach', history: true },
+        'Review {{history}}',
+      );
+      await notify('review', await target('brief', '-100777'));
       const held = claude.hold();
       const running = await runs.start('brief');
       const pending = await runs.start('brief');
@@ -971,17 +1009,18 @@ describe('Workflow Runs and the executor', () => {
       ).id;
     }
 
-    /** `review`, which reads history with `history`, run by hand. */
+    /**
+     * `review`, which reads history with the `history-…` properties
+     * `history` gives, run by hand.
+     */
     async function historyWorkflow(
-      history: WorkflowHistoryPatch = {},
+      history: TestNoteProperties = {},
     ): Promise<void> {
-      await workflows.create({
-        name: 'review',
-        agent: 'coach',
-        inputTemplate: 'Review:\n{{history}}',
-        history,
-      });
-      await triggers.add({ workflow: 'review', kind: 'manual' });
+      await ws.workflow(
+        'review',
+        { agent: 'coach', history: true, ...history },
+        'Review:\n{{history}}',
+      );
     }
 
     /**
@@ -1068,7 +1107,7 @@ describe('Workflow Runs and the executor', () => {
 
     it('reads a fixed window of hours on every run', async () => {
       await say('Once');
-      await historyWorkflow({ hours: 1 });
+      await historyWorkflow({ 'history-hours': 1 });
 
       expect((await runReview()).input).toContain('User: Once');
       const second = await runReview();
@@ -1080,7 +1119,10 @@ describe('Workflow Runs and the executor', () => {
       await say('In English');
       await say('Buy milk', '8');
       const english = await channelId(`${HOME.key}:7`);
-      await historyWorkflow({ channels: [english], messages: 'all' });
+      await historyWorkflow({
+        'history-channels': [english],
+        'history-messages': 'all',
+      });
 
       const { input, window } = await runReview();
 
@@ -1108,7 +1150,7 @@ describe('Workflow Runs and the executor', () => {
 
     it('completes a run with an empty window without its Agent, and reads after it next time', async () => {
       await say('Before the Workflow');
-      await historyWorkflow({ hours: null });
+      await historyWorkflow({ 'history-hours': null });
       // The first window is taken, so the next is empty.
       await runReview();
 
@@ -1130,7 +1172,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('runs the Agent on an empty window when the Workflow asks to', async () => {
-      await historyWorkflow({ runWhenEmpty: true });
+      await historyWorkflow({ 'run-when-empty': true });
 
       const { view, input } = await runReview();
 
@@ -1153,8 +1195,7 @@ describe('Workflow Runs and the executor', () => {
     it('gives a retry the window of the run it retries, ahead of runs queued before it', async () => {
       await say('Before the crash');
       await historyWorkflow();
-      await workflows.edit('review', { maxAttempts: 2 });
-      const workflow = await workflows.get('review');
+      await edit('review', { 'max-attempts': 2 });
       const messages = ds.getRepository(Message);
       const crashedUntil = (
         await messages.findOneByOrFail({ text: 'Before the crash' })
@@ -1164,7 +1205,7 @@ describe('Workflow Runs and the executor', () => {
       // Queued first, so only the retry's attempt puts that ahead of it.
       const queued = await repo.save(
         repo.create({
-          workflowName: workflow.name,
+          workflowName: 'review',
           triggerId: null,
           triggerKey: 'manual:queued',
           status: 'pending',
@@ -1173,7 +1214,7 @@ describe('Workflow Runs and the executor', () => {
       );
       const crashed = await repo.save(
         repo.create({
-          workflowName: workflow.name,
+          workflowName: 'review',
           triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
@@ -1264,7 +1305,7 @@ describe('Workflow Runs and the executor', () => {
     it('shows the history a run read', async () => {
       await say('One');
       await say('Two');
-      await historyWorkflow({ messages: 'all' });
+      await historyWorkflow({ 'history-messages': 'all' });
 
       const { view } = await runReview();
 
@@ -1380,26 +1421,27 @@ describe('Workflow Runs and the executor', () => {
       await executor.idle();
     });
 
-    it('refuses while the Workflow or its Agent is disabled', async () => {
+    it('retries a disabled Workflow, but not while its Agent is disabled', async () => {
       await manualWorkflow('brief');
       claude.failNext();
       const { id } = await runs.start('brief');
       await executor.idle();
+      claude.failNext();
+      const other = await runs.start('brief');
+      await executor.idle();
 
-      await workflows.edit('brief', { enabled: false });
-      await expect(runs.retry(id)).rejects.toThrow(
-        new InvalidInputError(
-          'Workflow brief is disabled; enable it first with pero workflows enable brief',
-        ),
-      );
-      await workflows.edit('brief', { enabled: true });
+      await edit('brief', { enabled: false });
+      const { run: retry } = await runs.retry(id);
+      await executor.idle();
+      expect(await run(retry.id)).toMatchObject({ status: 'completed' });
+
       await ws.editAgent('Coach', { enabled: false });
-      await expect(runs.retry(id)).rejects.toThrow(
+      await expect(runs.retry(other.id)).rejects.toThrow(
         new InvalidInputError(
           'Agent coach is disabled; enable it first (enabled: true in its note)',
         ),
       );
-      expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
+      expect(await ds.getRepository(WorkflowRun).count()).toBe(3);
     });
   });
 
@@ -1440,62 +1482,54 @@ describe('Workflow Runs and the executor', () => {
       await expect(runs.start('nope')).rejects.toThrow(NotFoundError);
     });
 
-    it('refuses a Workflow without a manual Trigger', async () => {
-      await workflows.create({
-        name: 'brief',
-        agent: 'coach',
-        inputTemplate: 'Go.',
-      });
-      await triggers.add({
-        workflow: 'brief',
-        kind: 'schedule',
-        cron: '@daily',
-      });
+    it('runs any Workflow, whatever its trigger', async () => {
+      await ws.workflow('brief', { agent: 'coach', hour: 9 }, 'Go.');
+      await ws.workflow('quiet', { trigger: 'manual', hour: 9 }, 'Hush.');
 
-      await expect(runs.start('brief')).rejects.toThrow(
-        new InvalidInputError(
-          'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual',
-        ),
-      );
-      expect(await ds.getRepository(WorkflowRun).count()).toBe(0);
+      const scheduled = await runs.start('BRIEF');
+      const manual = await runs.start('quiet');
+      await executor.idle();
+
+      expect(await run(scheduled.id)).toMatchObject({
+        workflow: 'brief',
+        triggerId: null,
+        status: 'completed',
+        result: 'echo: Go.',
+      });
+      expect(await run(manual.id)).toMatchObject({
+        workflow: 'quiet',
+        status: 'completed',
+      });
     });
 
-    it('refuses while the manual Trigger, the Workflow, or its Agent is disabled', async () => {
+    it('runs a disabled Workflow, but not while its Agent is disabled', async () => {
       await manualWorkflow('brief');
-      const [manual] = await triggers.list('brief');
 
-      await triggers.setEnabled(manual!.id, false);
-      await expect(runs.start('brief')).rejects.toThrow(
-        `The manual Trigger of Workflow brief is disabled; enable it with pero triggers enable ${manual!.id}`,
-      );
-      await triggers.setEnabled(manual!.id, true);
-
-      await workflows.edit('brief', { enabled: false });
-      await expect(runs.start('brief')).rejects.toThrow(
-        'Workflow brief is disabled; enable it first with pero workflows enable brief',
-      );
-      await workflows.edit('brief', { enabled: true });
+      await edit('brief', { enabled: false });
+      const run1 = await runs.start('brief');
+      await executor.idle();
+      expect(await run(run1.id)).toMatchObject({ status: 'completed' });
 
       await ws.editAgent('Coach', { enabled: false });
       await expect(runs.start('brief')).rejects.toThrow(
         'Agent coach is disabled; enable it first (enabled: true in its note)',
       );
-      expect(await ds.getRepository(WorkflowRun).count()).toBe(0);
+      await ws.removeWorkflow('brief');
+      await expect(runs.start('brief')).rejects.toThrow(
+        new NotFoundError('No Workflow named brief'),
+      );
+      expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
     });
 
-    it('gives each run its own trigger key and records when the Trigger last ran', async () => {
+    it('gives each run its own trigger key', async () => {
       await manualWorkflow('brief');
 
       const first = await runs.start('brief');
       const second = await runs.start('brief');
       await executor.idle();
 
+      expect(first.triggerKey).toMatch(/^manual:[0-9a-f-]{36}$/);
       expect(first.triggerKey).not.toBe(second.triggerKey);
-      const trigger = await ds
-        .getRepository(Trigger)
-        .findOneByOrFail({ kind: 'manual' });
-      expect(first.triggerId).toBe(trigger.id);
-      expect(trigger.lastRunAt).not.toBeNull();
     });
 
     it('refuses an unknown run ID', async () => {

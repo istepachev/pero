@@ -1,18 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
+import { channelTopicLookup } from '../settings-notes/channel-topics.js';
 import type { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import {
   buildSnapshot,
   type SettingsSnapshot,
 } from '../settings-files/snapshot.js';
-import type { WorkflowDefinition } from './definitions.js';
 import { FileDefinitions } from './file-definitions.js';
-import type { SqliteDefinitions } from './sqlite-definitions.js';
 
 const FOLDERS = {
   workspace: '/home/me/workspace',
   dataFolder: '/home/me/workspace/data',
   settingsFolder: '/home/me/workspace/data/Settings',
 };
+
+/** The Channels Pero has seen in the allowed chats. */
+const TOPICS = channelTopicLookup([
+  { id: 1, key: '-100777', title: 'Home' },
+  { id: 2, key: '-100777:5', title: 'Health' },
+  { id: 3, key: '-100777:6', title: 'English' },
+  { id: 4, key: '1234', title: null },
+]);
 
 function snapshotOf(files: Record<string, string>): SettingsSnapshot {
   return buildSnapshot(
@@ -22,27 +29,15 @@ function snapshotOf(files: Record<string, string>): SettingsSnapshot {
       dataFolder: FOLDERS.dataFolder,
       homeDir: '/home/me',
       hostTimeZone: 'UTC',
+      topics: TOPICS,
     },
   );
 }
-
-const REPORT: WorkflowDefinition = {
-  name: 'report',
-  title: null,
-  agent: 'health',
-  input: 'Report.',
-  history: null,
-  targets: [],
-  maxAttempts: 1,
-  schedules: [],
-  enabled: true,
-};
 
 /** `FileDefinitions` over the notes `files`; `change` swaps them. */
 function definitionsOf(files: Record<string, string> | null) {
   let snapshot = files === null ? null : snapshotOf(files);
   const notesListeners = new Set<() => void>();
-  const sqliteListeners = new Set<() => void>();
   const ready = vi.fn(() => Promise.resolve(snapshot));
   const notes = {
     ready,
@@ -52,24 +47,12 @@ function definitionsOf(files: Record<string, string> | null) {
       return () => notesListeners.delete(listener);
     },
   } as unknown as SettingsNotes;
-  const sqlite = {
-    workflow: (name: string) =>
-      Promise.resolve(name === 'report' ? REPORT : null),
-    workflows: () => Promise.resolve([REPORT]),
-    onChange: (listener: () => void) => {
-      sqliteListeners.add(listener);
-      return () => sqliteListeners.delete(listener);
-    },
-  } as unknown as SqliteDefinitions;
   return {
-    definitions: new FileDefinitions(notes, sqlite),
+    definitions: new FileDefinitions(notes),
     ready,
     change: (next: Record<string, string>) => {
       snapshot = snapshotOf(next);
       for (const listener of notesListeners) listener();
-    },
-    sqliteChanged: () => {
-      for (const listener of sqliteListeners) listener();
     },
   };
 }
@@ -163,22 +146,60 @@ describe('FileDefinitions', () => {
     expect(ready).toHaveBeenCalled();
   });
 
-  it('takes Workflows from SQLite', async () => {
-    const { definitions } = definitionsOf({});
-    expect(await definitions.workflow('report')).toBe(REPORT);
-    expect(await definitions.workflows()).toEqual([REPORT]);
+  it('gives each Workflow its note with the Channels it names by ID', async () => {
+    const { definitions } = definitionsOf({
+      'Pero.md': '---\ntimezone: Europe/Berlin\n---',
+      'Agents/Health.md': '---\ntopics: Health\n---\nCoach me.',
+      'Workflows/Weekly report.md':
+        '---\nday: sunday\nhour: 12\nchannel: [Health, Home/General, 4]\nhistory: true\nhistory-channels: [English, Health]\nhistory-hours: 24\nmax-attempts: 2\n---\nWrite the weekly report.',
+      'Workflows/Brief.md':
+        '---\ntrigger: manual\nhour: 9\nenabled: false\n---\nBrief me.',
+    });
+    expect(await definitions.workflow('WEEKLY-REPORT')).toEqual({
+      name: 'weekly-report',
+      title: 'Weekly report',
+      agent: 'health',
+      input: 'Write the weekly report.',
+      history: {
+        channels: [2, 3],
+        messages: 'people',
+        hours: 24,
+        runWhenEmpty: false,
+      },
+      targets: [2, 1, 4],
+      maxAttempts: 2,
+      schedules: [{ cron: '0 12 * * 0', timezone: 'Europe/Berlin' }],
+      enabled: true,
+    });
+    expect(await definitions.workflow('brief')).toMatchObject({
+      agent: 'main',
+      history: null,
+      targets: [],
+      schedules: [],
+      enabled: false,
+    });
+    expect(
+      (await definitions.workflows()).map((workflow) => workflow.name),
+    ).toEqual(['brief', 'weekly-report']);
+    expect(await definitions.workflow('nope')).toBeNull();
   });
 
-  it('tells listeners of changed notes and changed Workflows', async () => {
-    const { definitions, change, sqliteChanged } = definitionsOf({});
+  it('leaves out a Workflow whose topic Pero has not seen', async () => {
+    const { definitions } = definitionsOf({
+      'Workflows/Report.md': '---\nchannel: Helth\n---\nReport.',
+    });
+    expect(await definitions.workflow('report')).toBeNull();
+    expect(await definitions.workflows()).toEqual([]);
+  });
+
+  it('tells listeners of changed notes', async () => {
+    const { definitions, change } = definitionsOf({});
     const listener = vi.fn();
     const stop = definitions.onChange(listener);
     change({ 'Agents/Main.md': 'Hi' });
-    sqliteChanged();
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(1);
     stop();
     change({});
-    sqliteChanged();
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,124 +1,110 @@
 import type {
   RunView,
-  TriggerView,
-  WorkflowDetails,
+  WorkflowChannelView,
+  WorkflowScheduleView,
   WorkflowView,
 } from '../control/protocol.js';
-import { describeChannel, localDateTime } from './format-channels.js';
+import { localDateTime } from './format-channels.js';
 import { table } from './format-status.js';
 import { preview } from './preview.js';
 
 /** `pero workflows ls`: one row per Workflow. */
 export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
   if (workflows.length === 0) {
-    return (
-      'No Workflows yet. Create one with pero workflows create <name> ' +
-      '--agent <agent> --input <text>.'
-    );
+    return 'No Workflows yet. Add a note to the Workflows folder in the settings folder.';
   }
-  return table([
-    ['NAME', 'AGENT', 'TRIGGERS', 'STATE'],
+  const notes = workflows.some((workflow) => workflow.file !== null);
+  const lines = table([
+    [
+      'NAME',
+      'AGENT',
+      'SCHEDULE',
+      'NEXT RUN',
+      'CHANNELS',
+      'STATE',
+      ...(notes ? ['NOTE'] : []),
+    ],
     ...workflows.map((workflow) => [
-      workflow.name,
+      `${workflow.name}${workflow.errors.length > 0 ? ' !' : ''}`,
       agent(workflow),
-      String(workflow.triggerCount),
+      workflow.schedules.map(schedule).join('; ') || 'by hand',
+      workflow.schedules.map((one) => nextRun(workflow, one)).join('; ') || '—',
+      workflow.channels.map(channelLabel).join(', ') || '—',
       state(workflow.enabled),
+      ...(notes ? [workflow.file ?? '—'] : []),
     ]),
-  ]).join('\n');
-}
-
-/** `pero workflows show`: the definition, then its Triggers. */
-export function formatWorkflowDetails(workflow: WorkflowDetails): string {
-  const lines = [
-    `Workflow ${workflow.name}${workflow.title === null ? '' : ` "${workflow.title}"`}`,
-    ...table([
-      ['agent', agent(workflow)],
-      ['input', preview(workflow.inputTemplate)],
-      ['runs', 'one at a time'],
-      ['attempts', attempts(workflow.maxAttempts)],
-      ['history', history(workflow.history)],
-      ['state', state(workflow.enabled)],
-    ]).map((row) => `  ${row}`),
-  ];
-  const warning = agentWarning(workflow);
-  if (warning !== null) lines.push('', warning);
-  lines.push('');
-  if (workflow.triggers.length === 0) {
+  ]);
+  if (workflows.some((workflow) => workflow.errors.length > 0)) {
     lines.push(
-      `No Trigger yet: pero triggers add ${workflow.name} --cron "<expression>" or --manual.`,
-    );
-  } else {
-    lines.push(
-      'Triggers',
-      ...triggerTable(workflow.triggers, false).map((row) => `  ${row}`),
-    );
-  }
-  lines.push('');
-  if (workflow.targets.length === 0) {
-    lines.push(
-      `Notifies no Channel: pero workflows notify ${workflow.name} <channel> posts its answers there.`,
-    );
-  } else {
-    lines.push(
-      'Notifies',
-      ...table([
-        ['ID', 'CHANNEL', 'TITLE'],
-        ...workflow.targets.map((target) => [
-          String(target.id),
-          `${target.integrationKind} ${target.key}`,
-          target.title ?? '—',
-        ]),
-      ]).map((row) => `  ${row}`),
+      '',
+      '! its note has errors, so its last good version is in use; pero check lists them',
     );
   }
   return lines.join('\n');
 }
 
-/** `pero workflows notify`: what changed, and what the Channel now gets. */
-export function formatNotify(
-  workflow: WorkflowDetails,
-  channelId: number,
-  notify: boolean,
-  changed: boolean,
-): string {
-  const target = workflow.targets.find(({ id }) => id === channelId);
-  const channel =
-    target === undefined ? `Channel ${channelId}` : describeChannel(target);
-  if (!notify) {
-    return changed
-      ? `Workflow ${workflow.name} no longer notifies ${channel}.`
-      : `Workflow ${workflow.name} did not notify ${channel}.`;
-  }
-  return changed
-    ? `Workflow ${workflow.name} now notifies ${channel}: each answer, and each run that fails, is posted there.`
-    : `Workflow ${workflow.name} already notifies ${channel}.`;
-}
-
-/** `pero triggers ls`: one row per Trigger. */
-export function formatTriggerList(triggers: readonly TriggerView[]): string {
-  if (triggers.length === 0) {
-    return (
-      'No Triggers yet. Add one with pero triggers add <workflow> ' +
-      '--cron "0 9 * * *" or --manual.'
+/** `pero workflows show`: the definition, then the Channels it posts to. */
+export function formatWorkflowDetails(workflow: WorkflowView): string {
+  const lines = [
+    `Workflow ${workflow.name}${workflow.title === null ? '' : ` "${workflow.title}"`}`,
+    ...table([
+      ...(workflow.file === null ? [] : [['note', workflow.file]]),
+      ['agent', agent(workflow)],
+      ['input', preview(workflow.inputTemplate)],
+      ...(workflow.schedules.length === 0
+        ? [['schedule', 'none: it runs by hand, with pero workflows run']]
+        : workflow.schedules.flatMap((one) => [
+            ['schedule', schedule(one)],
+            ['next run', nextRun(workflow, one)],
+            [
+              'last run',
+              one.lastRunAt === null
+                ? 'never'
+                : localDateTime(new Date(one.lastRunAt)),
+            ],
+          ])),
+      ['runs', 'one at a time'],
+      ['attempts', attempts(workflow.maxAttempts)],
+      ['history', history(workflow.history)],
+      [
+        'state',
+        workflow.enabled
+          ? 'enabled'
+          : 'disabled: it runs only by hand, with pero workflows run',
+      ],
+    ]).map((row) => `  ${row}`),
+  ];
+  if (workflow.errors.length > 0) {
+    lines.push(
+      '',
+      'Its note has errors, so its last good version is in use:',
+      ...workflow.errors.map(
+        ({ property, message }) =>
+          `  ${property === null ? '' : `${property}: `}${message}`,
+      ),
     );
   }
-  return triggerTable(triggers, true).join('\n');
-}
-
-/** `Trigger 3 of daily-brief (0 9 * * * Europe/Berlin)`, for one-liners. */
-export function describeTrigger(trigger: TriggerView): string {
-  return `Trigger ${trigger.id} of ${trigger.workflow} (${schedule(trigger)})`;
-}
-
-/**
- * `Trigger 3 of daily-brief (0 9 * * * Europe/Berlin), next run 2026-09-29
- * 09:00`, for a schedule that has one.
- */
-export function describeScheduledTrigger(trigger: TriggerView): string {
-  const described = describeTrigger(trigger);
-  return trigger.kind === 'schedule' && trigger.nextRunAt !== null
-    ? `${described}, next run ${localDateTime(new Date(trigger.nextRunAt))}`
-    : described;
+  const warning = agentWarning(workflow);
+  if (warning !== null) lines.push('', warning);
+  lines.push('');
+  if (workflow.channels.length === 0) {
+    lines.push(
+      'Posts to no Channel: name a topic in channel in its note to post its answers there.',
+    );
+  } else {
+    lines.push(
+      'Posts to',
+      ...table([
+        ['ID', 'CHANNEL', 'TITLE'],
+        ...workflow.channels.map((channel) => [
+          String(channel.id),
+          `${channel.integrationKind} ${channel.key}`,
+          channel.title ?? '—',
+        ]),
+      ]).map((row) => `  ${row}`),
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -160,7 +146,7 @@ function history(config: WorkflowView['history']): string {
   const channels =
     config.channels === 'all'
       ? 'all Channels'
-      : `${config.channels.length === 1 ? 'Channel' : 'Channels'} ${config.channels.join(', ')}`;
+      : config.channels.map(channelLabel).join(', ');
   const window =
     config.hours === null
       ? 'since the previous run'
@@ -175,44 +161,26 @@ function history(config: WorkflowView['history']): string {
 export function agentWarning(workflow: WorkflowView): string | null {
   if (workflow.agentEnabled) return null;
   return (
-    `Warning: Agent ${workflow.agent} is disabled, so this Workflow cannot ` +
-    `run until it is enabled again (enabled: true in its note).`
+    `Warning: Agent ${workflow.agent} is disabled or has no note, so this ` +
+    'Workflow cannot run until it is enabled again (enabled: true in its note).'
   );
 }
 
-function triggerTable(
-  triggers: readonly TriggerView[],
-  withWorkflow: boolean,
-): string[] {
-  return table([
-    [
-      'ID',
-      ...(withWorkflow ? ['WORKFLOW'] : []),
-      'SCHEDULE',
-      'NEXT RUN',
-      'STATE',
-    ],
-    ...triggers.map((trigger) => [
-      String(trigger.id),
-      ...(withWorkflow ? [trigger.workflow] : []),
-      schedule(trigger),
-      nextRun(trigger),
-      state(trigger.enabled),
-    ]),
-  ]);
+/** `0 12 * * 0 (Europe/Berlin)`. */
+function schedule(one: WorkflowScheduleView): string {
+  return `${one.cron} (${one.timezone})`;
 }
 
-function schedule(trigger: TriggerView): string {
-  return trigger.kind === 'schedule'
-    ? `${trigger.cron} ${trigger.timezone}`
-    : 'manual';
-}
-
-function nextRun(trigger: TriggerView): string {
-  if (trigger.kind !== 'schedule' || !trigger.enabled) return '—';
-  return trigger.nextRunAt === null
+function nextRun(workflow: WorkflowView, one: WorkflowScheduleView): string {
+  if (!workflow.enabled) return '—';
+  return one.nextRunAt === null
     ? 'none'
-    : localDateTime(new Date(trigger.nextRunAt));
+    : localDateTime(new Date(one.nextRunAt));
+}
+
+/** A topic by its title, or a Channel without one by its ID. */
+function channelLabel(channel: WorkflowChannelView): string {
+  return channel.title ?? `Channel ${channel.id}`;
 }
 
 function agent(workflow: WorkflowView): string {

@@ -27,6 +27,7 @@ import {
 import { finishRun } from './finish-run.js';
 import { readHistoryWindow } from './history-window.js';
 import { queueRetryWithin } from './retry-run.js';
+import { isScheduled } from './run-keys.js';
 
 /** A run the executor has claimed and marked `running`. */
 interface ClaimedRun {
@@ -253,9 +254,10 @@ export class WorkflowExecutor
    * Claims the oldest pending run of a Workflow with none running, if a
    * slot is free, and snapshots what it executes with, fixing its history
    * window. Retries go first, so a run queued before one reads after its
-   * window. A run whose Workflow or Agent was disabled, or is gone, since
-   * it was queued fails instead, and one whose window has no messages completes without
-   * its Agent unless the Workflow asks to run anyway.
+   * window. A run whose Workflow is gone, or whose Agent was disabled or
+   * is gone, since it was queued fails instead, as does one its schedule
+   * queued once the Workflow is disabled; one whose window has no messages
+   * completes without its Agent unless the Workflow asks to run anyway.
    */
   private async claimWithin(
     manager: EntityManager,
@@ -283,16 +285,14 @@ export class WorkflowExecutor
       if (run === null) return null;
       const name = run.workflowName;
       const { workflow, agent } = await this.definitionsOf(name);
-      if (
-        workflow === null ||
-        !workflow.enabled ||
-        agent === null ||
-        !agent.enabled
-      ) {
+      // A disabled Workflow still runs by hand.
+      const paused =
+        workflow !== null && !workflow.enabled && isScheduled(run.triggerKey);
+      if (workflow === null || paused || agent === null || !agent.enabled) {
         const refused =
           workflow === null
             ? `Workflow ${name} no longer exists`
-            : !workflow.enabled
+            : paused
               ? `Workflow ${name} was disabled before the run started`
               : agent === null
                 ? `Agent ${workflow.agent} no longer exists`
