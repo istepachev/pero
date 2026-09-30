@@ -303,7 +303,7 @@ export function planNotes(
     const parts = enabled.map((trigger, index) => ({
       name: `${workflow.name}-${index + 1}`,
       title: `${base} ${index + 1}`,
-      trigger: trigger.id,
+      trigger,
     }));
     for (const part of parts) {
       if (workflowNames.has(part.name) || slugify(part.title) !== part.name) {
@@ -311,15 +311,16 @@ export function planNotes(
           `Workflow ${workflow.name} has ${parts.length} schedules, and would become one Workflow each, but ${part.name} can't be the name of one: ${workflowNames.has(part.name) ? 'another Workflow has it' : 'the name is too long'}. Rename one of them first.`,
         );
       }
-      write(
-        part.title,
-        scheduleProperties(
-          enabled.find((trigger) => trigger.id === part.trigger)!,
-          defaults.timezone,
-        ),
-      );
+      write(part.title, scheduleProperties(part.trigger, defaults.timezone));
     }
-    splits.push({ workflow: workflow.name, parts });
+    splits.push({
+      workflow: workflow.name,
+      parts: parts.map(({ name, title, trigger }) => ({
+        name,
+        title,
+        schedule: { cron: trigger.cron!, timezone: trigger.timezone! },
+      })),
+    });
     notices.push(
       `Workflow ${workflow.name} has ${parts.length} schedules, and a note holds one: it is ${parts.map((part) => part.name).join(', ')} now. Its past runs keep the name ${workflow.name}.`,
     );

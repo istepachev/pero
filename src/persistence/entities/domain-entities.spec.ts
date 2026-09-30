@@ -4,12 +4,11 @@ import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionService } from '../../sessions/session.service.js';
-import { scheduleFingerprint } from '../../triggers/schedule.js';
+import { scheduleFingerprint } from '../../scheduler/schedule.js';
 import { dataSourceOptions } from '../data-source-options.js';
 import { MIGRATIONS } from '../migrations/index.js';
 import { openDatabase } from '../open-database.js';
 import { inTransaction } from '../transaction.js';
-import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
 import { LegacyChannelAgent } from './legacy-channel-agent.entity.js';
@@ -17,27 +16,31 @@ import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
 import { ScheduleState } from './schedule-state.entity.js';
 import { Session } from './session.entity.js';
-import { Trigger } from './trigger.entity.js';
-import { WorkflowNotificationTarget } from './workflow-notification-target.entity.js';
 import { WorkflowRun } from './workflow-run.entity.js';
-import { Workflow } from './workflow.entity.js';
 
-const DOMAIN_TABLES = [
-  'allowed_chats',
+/** The tables of state: what Pero records as it runs. */
+const STATE_TABLES = [
   'channels',
   'inbound_updates',
-  'legacy_agents',
-  'legacy_channel_agents',
-  'legacy_settings',
   'messages',
   'notifications',
   'schedules',
   'sessions',
-  'triggers',
-  'workflow_notification_targets',
   'workflow_runs',
-  'workflows',
 ];
+
+/** What legacy data directories defined, kept for `pero migrate`. */
+const LEGACY_TABLES = [
+  'legacy_agents',
+  'legacy_allowed_chats',
+  'legacy_channel_agents',
+  'legacy_settings',
+  'legacy_triggers',
+  'legacy_workflow_notification_targets',
+  'legacy_workflows',
+];
+
+const DOMAIN_TABLES = [...STATE_TABLES, ...LEGACY_TABLES];
 
 // Beyond Number.MAX_SAFE_INTEGER, so a numeric round trip would change them.
 const CHAT_ID = '-1009007199254740993';
@@ -62,6 +65,26 @@ async function updateSettings(
     `UPDATE "${table}" SET ${columns.join(', ')} WHERE "id" = 1`,
     Object.values(values),
   );
+}
+
+/** Workflow `id`, as `legacy_workflows` holds it. */
+async function workflowRow(
+  ds: DataSource,
+  id: number,
+): Promise<Record<string, unknown>> {
+  const [row] = await ds.query<Record<string, unknown>[]>(
+    `SELECT * FROM "legacy_workflows" WHERE "id" = ?`,
+    [id],
+  );
+  return row!;
+}
+
+/** How many rows `table` holds. */
+async function count(ds: DataSource, table: string): Promise<number> {
+  const [{ rows }] = await ds.query<{ rows: number }[]>(
+    `SELECT count(*) AS "rows" FROM "${table}"`,
+  );
+  return rows;
 }
 
 /** The settings row, as `legacy_settings` holds it. */
@@ -103,21 +126,18 @@ async function seed(ds: DataSource) {
     provider: agent.provider,
     workingDirectory: '/home/owner/vault',
   });
-  const workflow = await ds.getRepository(Workflow).save({
-    name: 'daily-brief',
-    title: null,
-    agentName: agent.name,
-    inputTemplate: 'Summarize today.',
-  });
-  const trigger = await ds.getRepository(Trigger).save({
-    workflowId: workflow.id,
-    kind: 'schedule',
-    config: { cron: '0 8 * * *' },
-    timezone: 'Europe/Berlin',
-    lastRunAt: null,
-  });
+  const [workflow] = await ds.query<{ id: number; name: string }[]>(
+    `INSERT INTO "legacy_workflows" ("name", "agent_name", "input_template") ` +
+      `VALUES ('daily-brief', ?, 'Summarize today.') RETURNING "id", "name"`,
+    [agent!.name],
+  );
+  const [trigger] = await ds.query<{ id: number }[]>(
+    `INSERT INTO "legacy_triggers" ("workflow_id", "kind", "config_json", "timezone") ` +
+      `VALUES (?, 'schedule', '{"cron":"0 8 * * *"}', 'Europe/Berlin') RETURNING "id"`,
+    [workflow!.id],
+  );
   const schedule = await ds.getRepository(ScheduleState).save({
-    workflowName: workflow.name,
+    workflowName: workflow!.name,
     fingerprint: scheduleFingerprint({
       cron: '0 8 * * *',
       timezone: 'Europe/Berlin',
@@ -126,8 +146,7 @@ async function seed(ds: DataSource) {
     lastRunAt: new Date('2026-09-27T06:00:00.000Z'),
   });
   const run = await ds.getRepository(WorkflowRun).save({
-    workflowName: workflow.name,
-    triggerId: trigger.id,
+    workflowName: workflow!.name,
     triggerKey: 'schedule:2026-09-27T06:00:00Z',
     status: 'completed',
     executionConfig: { provider: 'claude', workingDirectory: '/vault' },
@@ -136,10 +155,11 @@ async function seed(ds: DataSource) {
     result: { text: 'Done.' },
     errorText: null,
   });
-  const target = await ds.getRepository(WorkflowNotificationTarget).save({
-    workflowId: workflow.id,
-    channelId: channel.id,
-  });
+  await ds.query(
+    `INSERT INTO "legacy_workflow_notification_targets" ("workflow_id", "channel_id") ` +
+      `VALUES (?, ?)`,
+    [workflow!.id, channel.id],
+  );
   const notification = await ds.getRepository(Notification).save({
     workflowRunId: run.id,
     channelId: channel.id,
@@ -151,12 +171,11 @@ async function seed(ds: DataSource) {
     integrationKind: 'telegram',
     externalUpdateId: UPDATE_ID,
   });
-  const allowedChat = await ds.getRepository(AllowedChat).save({
-    integrationKind: 'telegram',
-    chatKey: CHAT_ID,
-    kind: 'group',
-    title: 'Household',
-  });
+  await ds.query(
+    `INSERT INTO "legacy_allowed_chats" ("integration_kind", "chat_key", "kind", "title") ` +
+      `VALUES ('telegram', ?, 'group', 'Household')`,
+    [CHAT_ID],
+  );
   const message = await ds.getRepository(Message).save({
     channelId: channel.id,
     agentName: agent.name,
@@ -171,15 +190,13 @@ async function seed(ds: DataSource) {
   return {
     agent: agent!,
     message,
-    allowedChat,
     channel,
     route,
     session,
-    workflow,
-    trigger,
+    workflow: workflow!,
+    trigger: trigger!,
     schedule,
     run,
-    target,
     notification,
     update,
   };
@@ -190,15 +207,17 @@ async function readAll(ds: DataSource) {
   return {
     settings: await ds.query(`SELECT * FROM "legacy_settings"`),
     agents: await ds.query(`SELECT * FROM "legacy_agents"`),
-    allowedChats: await ds.getRepository(AllowedChat).find(),
+    allowedChats: await ds.query(`SELECT * FROM "legacy_allowed_chats"`),
     channels: await ds.getRepository(Channel).find(),
     routes: await ds.getRepository(LegacyChannelAgent).find(),
     sessions: await ds.getRepository(Session).find(),
-    workflows: await ds.getRepository(Workflow).find(),
-    triggers: await ds.getRepository(Trigger).find(),
+    workflows: await ds.query(`SELECT * FROM "legacy_workflows"`),
+    triggers: await ds.query(`SELECT * FROM "legacy_triggers"`),
     schedules: await ds.getRepository(ScheduleState).find(),
     runs: await ds.getRepository(WorkflowRun).find(),
-    targets: await ds.getRepository(WorkflowNotificationTarget).find(),
+    targets: await ds.query(
+      `SELECT * FROM "legacy_workflow_notification_targets"`,
+    ),
     notifications: await ds.getRepository(Notification).find(),
     updates: await ds.getRepository(InboundUpdate).find(),
     messages: await ds.getRepository(Message).find(),
@@ -243,10 +262,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, default permissions, message history,
     // the allowlist, the Session resume migration, then the domain tables.
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 15; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -268,10 +287,10 @@ describe('domain entities', () => {
     });
     const seeded = await seed(db);
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, the allowlist, then the Session resume migration.
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 14; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -313,10 +332,10 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, then the allowlist.
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 13; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -351,10 +370,10 @@ describe('domain entities', () => {
       history_carryover: 10,
     });
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, then
     // message history.
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 12; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -382,9 +401,9 @@ describe('domain entities', () => {
       default_permissions: 'bypass',
     });
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 11; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -419,8 +438,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -452,13 +472,14 @@ describe('domain entities', () => {
   it('keeps Workflows and their runs through the attempts migration and back', async () => {
     const db = await open();
     const { workflow, run, notification } = await seed(db);
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({ maxAttempts: 1 });
-    await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      max_attempts: 1,
+    });
+    await db.query(`UPDATE "legacy_workflows" SET "max_attempts" = 3`);
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -482,39 +503,27 @@ describe('domain entities', () => {
     ]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({ name: workflow.name, maxAttempts: 1 });
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      name: workflow.name,
+      max_attempts: 1,
+    });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
   it('keeps Workflows and their runs through the history migration and back', async () => {
     const db = await open();
     const { workflow, run } = await seed(db);
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({ history: null });
-    await db.getRepository(Workflow).update(workflow.id, {
-      history: {
-        channels: [3, 1],
-        messages: 'all',
-        hours: 24,
-        runWhenEmpty: true,
-      },
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      history_json: null,
     });
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({
-      history: {
-        channels: [1, 3],
-        messages: 'all',
-        hours: 24,
-        runWhenEmpty: true,
-      },
-    });
+    await db.query(
+      `UPDATE "legacy_workflows" SET "history_json" = ` +
+        `'{"channels":[1,3],"messages":"all","hours":24,"runWhenEmpty":true}'`,
+    );
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -531,9 +540,10 @@ describe('domain entities', () => {
     ]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({ name: workflow.name, history: null });
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      name: workflow.name,
+      history_json: null,
+    });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -555,8 +565,9 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
-    // Legacy definitions, Channel routes, schedule state, names in state, history retention, then Notification
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, history retention, then Notification
     // delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -606,7 +617,8 @@ describe('domain entities', () => {
       history_retention_days: 30,
     });
 
-    // Legacy definitions, Channel routes, schedule state, names in state, then history retention.
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, names in state, then history retention.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -636,7 +648,7 @@ describe('domain entities', () => {
     // 0.1.0 shipped every migration up to history retention.
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -4),
+      migrations: MIGRATIONS.slice(0, -5),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -690,19 +702,15 @@ describe('domain entities', () => {
     ]);
     expect(
       await db.query(
-        `SELECT "id", "workflow_name", "trigger_id", "trigger_key" FROM "workflow_runs"`,
+        `SELECT "id", "workflow_name", "trigger_key" FROM "workflow_runs"`,
       ),
-    ).toEqual([
-      {
-        id: 1,
-        workflow_name: 'brief',
-        trigger_id: 1,
-        trigger_key: 'manual:first',
-      },
-    ]);
+    ).toEqual([{ id: 1, workflow_name: 'brief', trigger_key: 'manual:first' }]);
     expect(
-      await db.query(`SELECT "id", "name", "agent_name" FROM "workflows"`),
+      await db.query(
+        `SELECT "id", "name", "agent_name" FROM "legacy_workflows"`,
+      ),
     ).toEqual([{ id: 1, name: 'brief', agent_name: 'main' }]);
+    expect(await count(db, 'legacy_triggers')).toBe(1);
     expect(await db.getRepository(LegacyChannelAgent).find()).toEqual([
       { channelId: 1, agentName: 'coach', enabled: true },
     ]);
@@ -724,7 +732,8 @@ describe('domain entities', () => {
     const db = await open();
     const { agent, session, message, workflow, run } = await seed(db);
 
-    // Legacy definitions, Channel routes, schedule state, then names in state.
+    // Legacy Workflows, legacy definitions, Channel routes, schedule state, then names in state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -766,16 +775,16 @@ describe('domain entities', () => {
     expect(
       await db.getRepository(WorkflowRun).findOneByOrFail({ id: run.id }),
     ).toMatchObject({ workflowName: 'daily-brief' });
-    expect(
-      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
-    ).toMatchObject({ agentName: 'assistant' });
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      agent_name: 'assistant',
+    });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
   it('moves the times of enabled schedules into their own table', async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -3),
+      migrations: MIGRATIONS.slice(0, -4),
     });
     const trigger = (
       cron: string,
@@ -823,17 +832,18 @@ describe('domain entities', () => {
       },
     ]);
     const columns = await db.query<{ name: string }[]>(
-      `SELECT "name" FROM pragma_table_info('triggers')`,
+      `SELECT "name" FROM pragma_table_info('legacy_triggers')`,
     );
     expect(columns.map((column) => column.name)).not.toContain('next_run_at');
-    expect(await db.getRepository(Trigger).count()).toBe(4);
+    expect(await count(db, 'legacy_triggers')).toBe(4);
   });
 
   it('gives schedule times back to their Triggers and migrates again', async () => {
     const db = await open();
     const { trigger, schedule } = await seed(db);
 
-    // Legacy definitions, Channel routes, then schedule state.
+    // Legacy Workflows, legacy definitions, Channel routes, then schedule state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -864,7 +874,7 @@ describe('domain entities', () => {
   it("moves each Channel's Agent and state into the legacy table", async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -2),
+      migrations: MIGRATIONS.slice(0, -3),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -916,6 +926,7 @@ describe('domain entities', () => {
 
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
+    await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('legacy_channel_agents');
     expect(
       await db.query(`SELECT "id", "agent_id", "enabled" FROM "channels"`),
@@ -935,7 +946,7 @@ describe('domain entities', () => {
   it('keeps the Agents and settings, whole, in legacy tables', async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -1),
+      migrations: MIGRATIONS.slice(0, -2),
     });
     await old.query(
       `INSERT INTO "agents" ("name", "provider", "provider_options", "tool_policy_json", "working_directory") ` +
@@ -979,6 +990,7 @@ describe('domain entities', () => {
     const { agent } = await seed(db);
 
     await db.undoLastMigration({ transaction: 'each' });
+    await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).toEqual(
       expect.arrayContaining(['agents', 'settings']),
     );
@@ -992,6 +1004,140 @@ describe('domain entities', () => {
 
     await db.runMigrations({ transaction: 'each' });
     expect(await settingsRow(db)).toMatchObject({ main_agent_id: agent.id });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('holds only state, beside the legacy tables pero migrate reads', async () => {
+    const db = await open();
+    expect(
+      (await tables(db)).filter(
+        (table) =>
+          !['migrations', 'sqlite_sequence'].includes(table) &&
+          !table.startsWith('legacy_'),
+      ),
+    ).toEqual(STATE_TABLES);
+    expect((await tables(db)).filter((t) => t.startsWith('legacy_'))).toEqual(
+      LEGACY_TABLES,
+    );
+  });
+
+  it('keeps the Workflows, their Triggers and targets, and allowed chats, whole, in legacy tables', async () => {
+    const old = await openDatabase({
+      ...dataSourceOptions(database),
+      migrations: MIGRATIONS.slice(0, -1),
+    });
+    for (const sql of [
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json") ` +
+        `VALUES ('telegram', '42', '{"chatId":"42"}')`,
+      `INSERT INTO "workflows" ("name", "agent_name", "input_template", "max_attempts") ` +
+        `VALUES ('brief', 'coach', 'Sum up.', 2)`,
+      `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone") ` +
+        `VALUES (1, 'schedule', '{"cron":"0 8 * * *"}', 'Europe/Berlin')`,
+      `INSERT INTO "workflow_notification_targets" ("workflow_id", "channel_id") VALUES (1, 1)`,
+      `INSERT INTO "allowed_chats" ("integration_kind", "chat_key", "kind", "title") ` +
+        `VALUES ('telegram', '42', 'private', 'Owner')`,
+      `INSERT INTO "workflow_runs" ("workflow_name", "trigger_id", "trigger_key", "status") ` +
+        `VALUES ('brief', 1, 'schedule:brief:2026-09-28T06:00:00.000Z', 'completed')`,
+      `INSERT INTO "notifications" ("workflow_run_id", "channel_id", "payload", "status") ` +
+        `VALUES (1, 1, '{"text":"Done."}', 'delivered')`,
+    ]) {
+      await old.query(sql);
+    }
+    await old.destroy();
+
+    const db = await open();
+    for (const table of [
+      'workflows',
+      'triggers',
+      'workflow_notification_targets',
+      'allowed_chats',
+    ]) {
+      expect(await tables(db)).not.toContain(table);
+    }
+    expect(
+      await db.query(
+        `SELECT "id", "name", "agent_name", "max_attempts" FROM "legacy_workflows"`,
+      ),
+    ).toEqual([{ id: 1, name: 'brief', agent_name: 'coach', max_attempts: 2 }]);
+    expect(
+      await db.query(
+        `SELECT "workflow_id", "config_json", "timezone" FROM "legacy_triggers"`,
+      ),
+    ).toEqual([
+      {
+        workflow_id: 1,
+        config_json: '{"cron":"0 8 * * *"}',
+        timezone: 'Europe/Berlin',
+      },
+    ]);
+    expect(
+      await db.query(`SELECT * FROM "legacy_workflow_notification_targets"`),
+    ).toEqual([{ workflow_id: 1, channel_id: 1 }]);
+    expect(
+      await db.query(`SELECT "chat_key", "title" FROM "legacy_allowed_chats"`),
+    ).toEqual([{ chat_key: '42', title: 'Owner' }]);
+    // Runs keep everything but their Trigger, and their Notifications.
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('workflow_runs')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain('trigger_id');
+    expect(await db.getRepository(WorkflowRun).find()).toEqual([
+      expect.objectContaining({
+        id: 1,
+        workflowName: 'brief',
+        triggerKey: 'schedule:brief:2026-09-28T06:00:00.000Z',
+        status: 'completed',
+      }),
+    ]);
+    expect(await db.getRepository(Notification).count()).toBe(1);
+    // Removing a Trigger no longer touches runs.
+    await db.query(`DELETE FROM "legacy_triggers"`);
+    expect(await db.getRepository(WorkflowRun).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('gives the Workflow tables and allowed chats back, and migrates again', async () => {
+    const db = await open();
+    const { workflow, trigger, run, channel } = await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).toEqual(
+      expect.arrayContaining([
+        'workflows',
+        'triggers',
+        'workflow_notification_targets',
+        'allowed_chats',
+      ]),
+    );
+    expect(await db.query(`SELECT "id", "name" FROM "workflows"`)).toEqual([
+      { id: workflow.id, name: workflow.name },
+    ]);
+    expect(
+      await db.query(`SELECT "id", "workflow_id" FROM "triggers"`),
+    ).toEqual([{ id: trigger.id, workflow_id: workflow.id }]);
+    expect(
+      await db.query(`SELECT * FROM "workflow_notification_targets"`),
+    ).toEqual([{ workflow_id: workflow.id, channel_id: channel.id }]);
+    expect(await db.query(`SELECT "chat_key" FROM "allowed_chats"`)).toEqual([
+      { chat_key: CHAT_ID },
+    ]);
+    // Runs get their Trigger column back, empty.
+    expect(
+      await db.query(`SELECT "id", "trigger_id" FROM "workflow_runs"`),
+    ).toEqual([{ id: run.id, trigger_id: null }]);
+    await rejectsWith(
+      db.query(`UPDATE "workflow_runs" SET "trigger_id" = 999`),
+      'SQLITE_CONSTRAINT_FOREIGNKEY',
+    );
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(await workflowRow(db, workflow.id)).toMatchObject({
+      name: workflow.name,
+    });
+    expect(
+      await db.getRepository(WorkflowRun).findOneByOrFail({ id: run.id }),
+    ).toMatchObject({ workflowName: workflow.name });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -1091,11 +1237,10 @@ describe('domain entities', () => {
         'SQLITE_CONSTRAINT_UNIQUE',
       );
       await rejectsWith(
-        db.getRepository(Workflow).insert({
-          name: 'daily-brief',
-          agentName: seeded.agent.name,
-          inputTemplate: 'Again.',
-        }),
+        db.query(
+          `INSERT INTO "legacy_workflows" ("name", "agent_name", "input_template") ` +
+            `VALUES ('daily-brief', 'assistant', 'Again.')`,
+        ),
         'SQLITE_CONSTRAINT_UNIQUE',
       );
     });
@@ -1113,11 +1258,11 @@ describe('domain entities', () => {
 
     it('allows each chat once per integration', async () => {
       await rejectsWith(
-        db.getRepository(AllowedChat).insert({
-          integrationKind: 'telegram',
-          chatKey: seeded.allowedChat.chatKey,
-          kind: 'private',
-        }),
+        db.query(
+          `INSERT INTO "legacy_allowed_chats" ("integration_kind", "chat_key", "kind") ` +
+            `VALUES ('telegram', ?, 'private')`,
+          [CHAT_ID],
+        ),
         'SQLITE_CONSTRAINT_UNIQUE',
       );
     });
@@ -1132,13 +1277,8 @@ describe('domain entities', () => {
         'SQLITE_CONSTRAINT_UNIQUE',
       );
 
-      const other = await db.getRepository(Workflow).save({
-        name: 'weekly-review',
-        agentName: seeded.agent.name,
-        inputTemplate: 'Review the week.',
-      });
       await runs.insert({
-        workflowName: other.name,
+        workflowName: 'weekly-review',
         triggerKey: seeded.run.triggerKey,
       });
     });
@@ -1195,10 +1335,11 @@ describe('domain entities', () => {
         'SQLITE_CONSTRAINT_UNIQUE',
       );
       await rejectsWith(
-        db.getRepository(WorkflowNotificationTarget).insert({
-          workflowId: seeded.workflow.id,
-          channelId: seeded.channel.id,
-        }),
+        db.query(
+          `INSERT INTO "legacy_workflow_notification_targets" ("workflow_id", "channel_id") ` +
+            `VALUES (?, ?)`,
+          [seeded.workflow.id, seeded.channel.id],
+        ),
         'SQLITE_CONSTRAINT_PRIMARYKEY',
       );
     });
@@ -1232,27 +1373,21 @@ describe('domain entities', () => {
           `"working_directory") VALUES ('${s.agent.name}', ${MISSING}, 'claude', '/x')`,
       ],
       [
-        'triggers.workflow_id',
+        'legacy_triggers.workflow_id',
         () =>
-          `INSERT INTO "triggers" ("workflow_id", "kind", "config_json") ` +
+          `INSERT INTO "legacy_triggers" ("workflow_id", "kind", "config_json") ` +
           `VALUES (${MISSING}, 'manual', '{}')`,
       ],
       [
-        'workflow_runs.trigger_id',
+        'legacy_workflow_notification_targets.workflow_id',
         (s) =>
-          `INSERT INTO "workflow_runs" ("workflow_name", "trigger_id", ` +
-          `"trigger_key") VALUES ('${s.workflow.name}', ${MISSING}, 'x')`,
-      ],
-      [
-        'workflow_notification_targets.workflow_id',
-        (s) =>
-          `INSERT INTO "workflow_notification_targets" ("workflow_id", ` +
+          `INSERT INTO "legacy_workflow_notification_targets" ("workflow_id", ` +
           `"channel_id") VALUES (${MISSING}, ${s.channel.id})`,
       ],
       [
-        'workflow_notification_targets.channel_id',
+        'legacy_workflow_notification_targets.channel_id',
         (s) =>
-          `INSERT INTO "workflow_notification_targets" ("workflow_id", ` +
+          `INSERT INTO "legacy_workflow_notification_targets" ("workflow_id", ` +
           `"channel_id") VALUES (${s.workflow.id}, ${MISSING})`,
       ],
       [
@@ -1310,13 +1445,13 @@ describe('domain entities', () => {
     });
 
     it('keeps the runs of a Workflow that is gone, by its name', async () => {
-      await db.getRepository(Workflow).delete(seeded.workflow.id);
+      await db.query(`DELETE FROM "legacy_workflows"`);
 
       expect(
         await db
           .getRepository(WorkflowRun)
           .findOneByOrFail({ id: seeded.run.id }),
-      ).toMatchObject({ workflowName: 'daily-brief', triggerId: null });
+      ).toMatchObject({ workflowName: 'daily-brief' });
       expect(await db.getRepository(Notification).count()).toBe(1);
     });
 
@@ -1330,30 +1465,17 @@ describe('domain entities', () => {
       await db.getRepository(WorkflowRun).update(seeded.run.id, {
         workflowName: 'gone',
       });
-      await db.getRepository(Workflow).update(seeded.workflow.id, {
-        agentName: 'gone',
-      });
+      await db.query(`UPDATE "legacy_workflows" SET "agent_name" = 'gone'`);
       expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
-    });
-
-    it('keeps a run when its Trigger is removed', async () => {
-      await db.getRepository(Trigger).delete(seeded.trigger.id);
-
-      const run = await db
-        .getRepository(WorkflowRun)
-        .findOneByOrFail({ id: seeded.run.id });
-      expect(run.triggerId).toBeNull();
     });
 
     it('removes the rows a run or Workflow owns along with it', async () => {
       await db.getRepository(WorkflowRun).delete(seeded.run.id);
       expect(await db.getRepository(Notification).count()).toBe(0);
 
-      await db.getRepository(Workflow).delete(seeded.workflow.id);
-      expect(await db.getRepository(Trigger).count()).toBe(0);
-      expect(await db.getRepository(WorkflowNotificationTarget).count()).toBe(
-        0,
-      );
+      await db.query(`DELETE FROM "legacy_workflows"`);
+      expect(await count(db, 'legacy_triggers')).toBe(0);
+      expect(await count(db, 'legacy_workflow_notification_targets')).toBe(0);
       expect(await db.getRepository(Channel).count()).toBe(1);
     });
   });
@@ -1370,12 +1492,12 @@ describe('domain entities', () => {
       `UPDATE "legacy_agents" SET "provider" = 'gpt'`,
       `UPDATE "legacy_agents" SET "tool_policy_json" = '['`,
       `UPDATE "channels" SET "integration_kind" = 'slack'`,
-      `UPDATE "allowed_chats" SET "integration_kind" = 'slack'`,
-      `UPDATE "allowed_chats" SET "kind" = 'channel'`,
+      `UPDATE "legacy_allowed_chats" SET "integration_kind" = 'slack'`,
+      `UPDATE "legacy_allowed_chats" SET "kind" = 'channel'`,
       `UPDATE "sessions" SET "status" = 'paused'`,
       `UPDATE "sessions" SET "provider" = 'gpt'`,
-      `UPDATE "workflows" SET "concurrency_policy" = 'parallel'`,
-      `UPDATE "triggers" SET "kind" = 'webhook'`,
+      `UPDATE "legacy_workflows" SET "concurrency_policy" = 'parallel'`,
+      `UPDATE "legacy_triggers" SET "kind" = 'webhook'`,
       `UPDATE "workflow_runs" SET "status" = 'done'`,
       `UPDATE "workflow_runs" SET "attempt" = 0`,
       `UPDATE "workflow_runs" SET "result_json" = '{'`,
@@ -1407,7 +1529,7 @@ describe('domain entities', () => {
       '',
       'a'.repeat(65),
     ])('rejects the non-slug name %j', async (name) => {
-      for (const table of ['legacy_agents', 'workflows']) {
+      for (const table of ['legacy_agents', 'legacy_workflows']) {
         await rejectsWith(
           db.query(`UPDATE "${table}" SET "name" = ?`, [name]),
           'SQLITE_CONSTRAINT_CHECK',

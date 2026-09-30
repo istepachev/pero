@@ -108,7 +108,7 @@ The daemon has no HTTP listener. When a Channel needs webhooks, add NestJS's [Fa
 
 ## 6. Scheduler and executor
 
-`@nestjs/schedule` runs one periodic poller; [Nest's scheduling guide](https://docs.nestjs.com/application/task-scheduling) describes the package. User schedules live in `triggers` (cron expression and timezone), and where each stands in `schedules`, keyed by Workflow name and a fingerprint of the schedule, with its `next_run_at`. The poller creates pending Workflow Runs in a transaction and advances `next_run_at`. The executor reads pending runs, applies the global concurrency limit and one active run per Workflow, and updates run status. After restart it recovers pending and interrupted runs according to policy.
+`@nestjs/schedule` runs one periodic poller; [Nest's scheduling guide](https://docs.nestjs.com/application/task-scheduling) describes the package. User schedules live in Workflow notes (a cron expression or a time of day, and a time zone), and where each stands in `schedules`, keyed by Workflow name and a fingerprint of the schedule, with its `next_run_at`. The poller creates pending Workflow Runs in a transaction and advances `next_run_at`. The executor reads pending runs, applies the global concurrency limit and one active run per Workflow, and updates run status. After restart it recovers pending and interrupted runs according to policy.
 
 The in-process executor is deliberately disposable: its contents can be rebuilt from SQLite. It must not be the sole store of work. A Redis queue is an optional later change once there are multiple processes or hosts.
 

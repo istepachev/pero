@@ -428,7 +428,6 @@ describe('Workflow Runs and the executor', () => {
       const { id } = await repo.save(
         repo.create({
           workflowName: 'brief',
-          triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
           attempt: 1,
@@ -450,14 +449,12 @@ describe('Workflow Runs and the executor', () => {
       await manualWorkflow('brief');
       await edit('brief', { 'max-attempts': 2 });
       const { id } = await stopMidRun('brief');
-      const { triggerId } = await run(id);
 
       await restart();
 
       const [original, retry] = await allRuns();
       expect(retry).toMatchObject({
         workflowName: original!.workflowName,
-        triggerId,
         triggerKey: `retry:${id}`,
         attempt: 2,
         status: 'completed',
@@ -623,7 +620,6 @@ describe('Workflow Runs and the executor', () => {
     const scheduled = await repo.save(
       repo.create({
         workflowName: 'b',
-        triggerId: null,
         triggerKey: 'schedule:b:2026-01-01T09:00:00.000Z',
         status: 'pending',
         attempt: 1,
@@ -672,7 +668,6 @@ describe('Workflow Runs and the executor', () => {
     const { id } = await repo.save(
       repo.create({
         workflowName: 'brief',
-        triggerId: null,
         triggerKey: 'manual:left-over',
         status: 'pending',
         attempt: 1,
@@ -760,8 +755,7 @@ describe('Workflow Runs and the executor', () => {
       const { id } = await runs.start('brief');
       await executor.idle();
 
-      // Nothing deletes a Workflow yet; deleting its note will.
-      await ds.query(`DELETE FROM "workflows" WHERE "name" = 'brief'`);
+      await ws.removeWorkflow('brief');
 
       expect(await runs.get(id)).toMatchObject({
         workflow: 'brief',
@@ -811,7 +805,6 @@ describe('Workflow Runs and the executor', () => {
       const { id } = await repo.save(
         repo.create({
           workflowName: 'brief',
-          triggerId: null,
           triggerKey: 'manual:together',
           status: 'running',
           attempt: 1,
@@ -872,7 +865,6 @@ describe('Workflow Runs and the executor', () => {
           await repo.save(
             repo.create({
               workflowName: workflow,
-              triggerId: null,
               triggerKey: 'manual:crashed',
               status: 'running',
               attempt: 1,
@@ -1224,7 +1216,6 @@ describe('Workflow Runs and the executor', () => {
       const queued = await repo.save(
         repo.create({
           workflowName: 'review',
-          triggerId: null,
           triggerKey: 'manual:queued',
           status: 'pending',
           attempt: 1,
@@ -1233,7 +1224,6 @@ describe('Workflow Runs and the executor', () => {
       const crashed = await repo.save(
         repo.create({
           workflowName: 'review',
-          triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
           attempt: 1,
@@ -1350,7 +1340,6 @@ describe('Workflow Runs and the executor', () => {
         attempt: 2,
         triggerKey: `retry:${id}`,
       });
-      expect(retry.triggerId).toBe((await run(id)).triggerId);
       expect(alsoReadBy).toBeNull();
       await executor.idle();
 
@@ -1379,7 +1368,6 @@ describe('Workflow Runs and the executor', () => {
       const interrupted = await ds.getRepository(WorkflowRun).save(
         ds.getRepository(WorkflowRun).create({
           workflowName: 'a',
-          triggerId: null,
           triggerKey: 'manual:interrupted',
           status: 'interrupted',
           attempt: 1,
@@ -1397,7 +1385,6 @@ describe('Workflow Runs and the executor', () => {
       expect(await run(interruptedRetry.run.id)).toMatchObject({
         workflow: 'a',
         status: 'completed',
-        triggerId: null,
       });
     });
 
@@ -1510,7 +1497,6 @@ describe('Workflow Runs and the executor', () => {
 
       expect(await run(scheduled.id)).toMatchObject({
         workflow: 'brief',
-        triggerId: null,
         status: 'completed',
         result: 'echo: Go.',
       });

@@ -26,7 +26,7 @@ interface ScheduleRow {
 }
 
 /**
- * `scheduleFingerprint` in src/triggers/schedule.ts as this migration
+ * `scheduleFingerprint` in src/scheduler/schedule.ts as this migration
  * shipped, kept here so later changes there cannot change what it wrote.
  */
 function fingerprint(cron: string, timezone: string): string {

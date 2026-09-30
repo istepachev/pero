@@ -110,12 +110,12 @@ telegram:
 - **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
 - **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
 
-The database holds:
-- **Settings:** the installation defaults, including shared instructions, and the default working directory, which follows `data` in `config.yaml`.
+The database holds only state; Agents, Workflows, and the defaults are notes:
 - **Telegram:** the inbound updates already handled.
-- **Agents, Channels, and Sessions:** each Agent's settings, each Channel's Agent, and the provider session ID each Session resumes.
+- **Channels and Sessions:** each Channel Pero has seen, with its topic's title, and the provider session ID each Session resumes.
 - **Message history:** the text of each Channel (see below).
-- **Workflows, Triggers, and Notifications:** the definitions, each Workflow Run with its answer or error, and each Notification with its delivery state.
+- **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
+- **What a legacy data directory defined:** its Agents, settings, Workflows, Triggers, and each Channel's Agent, kept in `legacy_` tables only for `pero migrate`.
 
 Outside the data directory:
 - **Working folders:** the data folder and each Agent's own folder. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.

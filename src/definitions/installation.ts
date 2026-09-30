@@ -1,35 +1,26 @@
 import type { DataSource } from 'typeorm';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
-import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
-import { Workflow } from '../persistence/entities/workflow.entity.js';
-import { scheduleFingerprint } from '../triggers/schedule.js';
-import { DefinitionIds } from './definition-ids.js';
+import { type Schedule, scheduleFingerprint } from '../scheduler/schedule.js';
 import type {
   AgentDefinition,
   Defaults,
   WorkflowDefinition,
 } from './definitions.js';
-import { readLegacyDefinitions } from './legacy-definitions.js';
-import { SqliteDefinitions } from './sqlite-definitions.js';
+import {
+  type LegacyTrigger,
+  readLegacyAllowedChats,
+  readLegacyDefinitions,
+  readLegacyTriggers,
+  readLegacyWorkflows,
+} from './legacy-definitions.js';
 
 // What `pero migrate` reads from a legacy installation's database, and the
 // one change it makes to its copy. It runs in the CLI, outside Nest.
 
 /** A Trigger of a Workflow, whatever its kind and whether it is enabled. */
-export interface InstallationTrigger {
-  id: number;
-  /** The name of its Workflow. */
-  workflow: string;
-  kind: 'schedule' | 'manual';
-  /** A schedule's cron expression; null for a manual Trigger. */
-  cron: string | null;
-  timezone: string | null;
-  enabled: boolean;
-}
+export type InstallationTrigger = LegacyTrigger;
 
 /** A Channel Pero has seen, with the Agent it is assigned to. */
 export interface InstallationChannel {
@@ -66,12 +57,6 @@ export async function readInstallation(
   dataSource: DataSource,
 ): Promise<Installation> {
   const legacy = await readLegacyDefinitions(dataSource);
-  const ids = new DefinitionIds(dataSource);
-  const workflowNames = await ids.workflowNames();
-
-  const triggers = await dataSource
-    .getRepository(Trigger)
-    .find({ order: { id: 'ASC' } });
   const channels = await dataSource.getRepository(Channel).find({
     where: { integrationKind: 'telegram' },
     order: { id: 'ASC' },
@@ -83,25 +68,14 @@ export async function readInstallation(
       route,
     ]),
   );
-  const allowedChats = await dataSource.getRepository(AllowedChat).find({
-    where: { integrationKind: 'telegram' },
-    order: { id: 'ASC' },
-  });
+  const allowedChats = await readLegacyAllowedChats(dataSource);
 
   return {
     defaults: legacy.defaults,
     agents: legacy.agents,
     mainAgent: legacy.mainAgent,
-    workflows: await new SqliteDefinitions(dataSource).workflows(),
-    triggers: triggers.map((trigger) => ({
-      id: trigger.id,
-      workflow: workflowNames.get(trigger.workflowId)!,
-      kind: trigger.kind,
-      cron:
-        typeof trigger.config.cron === 'string' ? trigger.config.cron : null,
-      timezone: trigger.timezone,
-      enabled: trigger.enabled,
-    })),
+    workflows: await readLegacyWorkflows(dataSource),
+    triggers: await readLegacyTriggers(dataSource),
     channels: channels.map((channel) => ({
       id: channel.id,
       key: channel.externalKey,
@@ -119,16 +93,15 @@ export async function readInstallation(
 /** A Workflow with several schedules, and the Workflows it becomes. */
 export interface ScheduleSplit {
   workflow: string;
-  /** One per schedule: the first also takes the Workflow's other Triggers. */
-  parts: { name: string; title: string; trigger: number }[];
+  /** One per schedule. */
+  parts: { name: string; title: string; schedule: Schedule }[];
 }
 
 /**
- * Splits each Workflow in `splits` into one Workflow per schedule, as its
- * notes do: each part gets a copy of the Workflow with its notification
- * targets, its one schedule Trigger, and that schedule's saved times, so
- * no run is missed or repeated. The Workflow's other Triggers go to the
- * first part. Past runs keep the old name. All in one transaction.
+ * Gives each part of each Workflow in `splits` its schedule's saved times,
+ * so no run is missed or repeated once its note defines it: the times of
+ * the Workflow's schedule move to the part's name. Past runs keep the old
+ * name. All in one transaction.
  */
 export async function splitWorkflowSchedules(
   dataSource: DataSource,
@@ -136,57 +109,17 @@ export async function splitWorkflowSchedules(
 ): Promise<void> {
   if (splits.length === 0) return;
   await dataSource.transaction(async (manager) => {
-    const workflows = manager.getRepository(Workflow);
-    const triggers = manager.getRepository(Trigger);
-    const targets = manager.getRepository(WorkflowNotificationTarget);
     const states = manager.getRepository(ScheduleState);
-
     for (const split of splits) {
-      const original = await workflows.findOneByOrFail({
-        name: split.workflow,
-      });
-      const channels = await targets.findBy({ workflowId: original.id });
-      const own = await triggers.findBy({ workflowId: original.id });
-      for (const [index, part] of split.parts.entries()) {
-        const { id: workflowId } = await workflows.save(
-          workflows.create({
-            name: part.name,
-            title: part.title,
-            agentName: original.agentName,
-            inputTemplate: original.inputTemplate,
-            history: original.history,
-            enabled: original.enabled,
-            concurrencyPolicy: original.concurrencyPolicy,
-            maxAttempts: original.maxAttempts,
-          }),
-        );
-        if (channels.length > 0) {
-          await targets.insert(
-            channels.map(({ channelId }) => ({ workflowId, channelId })),
-          );
-        }
-        const moved = own.filter((trigger) =>
-          index === 0
-            ? !split.parts.some((other) => other.trigger === trigger.id) ||
-              trigger.id === part.trigger
-            : trigger.id === part.trigger,
-        );
-        for (const trigger of moved) {
-          await triggers.update(trigger.id, { workflowId });
-        }
-        const schedule = own.find((trigger) => trigger.id === part.trigger)!;
+      for (const part of split.parts) {
         await states.update(
           {
             workflowName: split.workflow,
-            fingerprint: scheduleFingerprint({
-              cron: schedule.config.cron as string,
-              timezone: schedule.timezone!,
-            }),
+            fingerprint: scheduleFingerprint(part.schedule),
           },
           { workflowName: part.name },
         );
       }
-      await workflows.delete(original.id);
     }
   });
 }

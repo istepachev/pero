@@ -418,8 +418,6 @@ export const runViewSchema = z.object({
   id: z.int(),
   /** The name of the Workflow it runs. */
   workflow: z.string(),
-  /** The Trigger that started it; null once that Trigger is removed. */
-  triggerId: z.int().nullable(),
   triggerKey: z.string(),
   status: z.enum(RUN_STATUSES),
   attempt: z.int(),

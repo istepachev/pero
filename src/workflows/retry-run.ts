@@ -15,10 +15,7 @@ export function retryKey(runId: number): string {
  */
 export async function queueRetryWithin(
   manager: EntityManager,
-  run: Pick<
-    WorkflowRun,
-    'id' | 'workflowName' | 'triggerId' | 'attempt' | 'executionConfig'
-  >,
+  run: Pick<WorkflowRun, 'id' | 'workflowName' | 'attempt' | 'executionConfig'>,
 ): Promise<number> {
   const runs = manager.getRepository(WorkflowRun);
   const triggerKey = retryKey(run.id);
@@ -28,7 +25,6 @@ export async function queueRetryWithin(
     .insert()
     .values({
       workflowName: run.workflowName,
-      triggerId: run.triggerId,
       triggerKey,
       status: 'pending',
       attempt: run.attempt + 1,

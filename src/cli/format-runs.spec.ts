@@ -5,7 +5,6 @@ import { formatRunDetails, formatRunList, startedBy } from './format-runs.js';
 const RUN: RunDetails = {
   id: 7,
   workflow: 'brief',
-  triggerId: 2,
   triggerKey: 'manual:6f1c',
   status: 'completed',
   attempt: 1,

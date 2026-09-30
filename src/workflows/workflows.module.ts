@@ -5,12 +5,11 @@ import { HistoryModule } from '../history/history.module.js';
 import { WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowViews } from './workflow-views.service.js';
-import { WorkflowsService } from './workflows.service.js';
 
-/** Workflow definitions, their runs, and the executor that runs them. */
+/** Workflows as the CLI sees them, their runs, and the executor. */
 @Module({
   imports: [AgentsModule, DefinitionsModule, HistoryModule],
-  providers: [WorkflowsService, WorkflowViews, WorkflowRuns, WorkflowExecutor],
-  exports: [WorkflowsService, WorkflowViews, WorkflowRuns, WorkflowExecutor],
+  providers: [WorkflowViews, WorkflowRuns, WorkflowExecutor],
+  exports: [WorkflowViews, WorkflowRuns, WorkflowExecutor],
 })
 export class WorkflowsModule {}

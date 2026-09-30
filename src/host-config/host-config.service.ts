@@ -21,10 +21,12 @@ import {
   resolveSettingsFolder,
 } from '../config/host-config.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
-import { legacyDataFolder } from '../definitions/legacy-definitions.js';
+import {
+  deleteLegacyAllowedChats,
+  legacyDataFolder,
+  readLegacyAllowedChats,
+} from '../definitions/legacy-definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
-import { inTransaction } from '../persistence/transaction.js';
 
 export const HOST_CONFIG_OPTIONS = Symbol('HOST_CONFIG_OPTIONS');
 
@@ -57,7 +59,7 @@ export interface HostConfigOptions {
  *
  * It also carries a legacy installation over: a missing file starts from
  * the default working directory `legacy_settings` kept, and rows in
- * `allowed_chats` move into the file.
+ * `legacy_allowed_chats` move into the file.
  */
 @Injectable()
 export class HostConfigService implements OnModuleInit {
@@ -318,22 +320,19 @@ export class HostConfigService implements OnModuleInit {
   }
 
   /**
-   * Moves the rows of the `allowed_chats` table into the file: each chat
+   * Moves the rows of the `legacy_allowed_chats` table into the file: each chat
    * not listed yet is added, then the rows are deleted. A crash between
    * the two only means adding the same chats again.
    */
   private async importAllowedChats(): Promise<void> {
-    const repo = this.dataSource.getRepository(AllowedChat);
-    const rows = await repo.find({
-      where: { integrationKind: 'telegram' },
-      order: { id: 'ASC' },
-    });
+    const rows = await readLegacyAllowedChats(this.dataSource);
     if (rows.length === 0) return;
     this.edit((document) => {
       for (const row of rows) allowChat(document, row.chatKey, row.title);
     });
-    await inTransaction(this.dataSource, (manager) =>
-      manager.getRepository(AllowedChat).delete(rows.map((row) => row.id)),
+    await deleteLegacyAllowedChats(
+      this.dataSource,
+      rows.map((row) => row.id),
     );
     this.logger.log(
       `Moved ${rows.length} allowed chat${rows.length === 1 ? '' : 's'} into ${this.options.file}`,

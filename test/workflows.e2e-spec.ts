@@ -350,7 +350,6 @@ describe('Workflows from notes (e2e)', () => {
     const queued = await client.call('workflows.run', { name: 'brief' });
     expect(queued).toMatchObject({
       workflow: 'brief',
-      triggerId: null,
       attempt: 1,
     });
     await vi.waitFor(async () => {
@@ -450,7 +449,6 @@ describe('Workflows from notes (e2e)', () => {
     await vi.waitFor(async () => {
       expect(await client.call('runs.get', { id: 1 })).toMatchObject({
         workflow: 'hourly',
-        triggerId: null,
         triggerKey: `schedule:hourly:${due.toISOString()}`,
         // The three hours since; the first missed time is the run itself.
         skippedCount: 3,
@@ -565,7 +563,6 @@ describe('Workflows from notes (e2e)', () => {
         await client.call('runs.get', { id: queued.id + 1 }),
       ).toMatchObject({
         workflow: 'brief',
-        triggerId: queued.triggerId,
         triggerKey: `retry:${queued.id}`,
         attempt: 2,
         status: 'completed',

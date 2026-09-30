@@ -541,6 +541,13 @@ When a note becomes broken, Pero posts one message per broken version (keyed by 
 
 A migration drops `workflows`, `triggers`, `workflow_notification_targets`, and `allowed_chats`. Remove `TriggersService`, the create and edit parts of `WorkflowsService`, `SqliteDefinitions`, and `src/cli/workflow-options.ts`.
 
+- **Found while building:**
+  - **The tables are renamed, not dropped,** as in 8.5: `legacy_workflows`, `legacy_triggers`, `legacy_workflow_notification_targets`, and `legacy_allowed_chats`, whole and without entities. A newer daemon may migrate a legacy database before its owner runs `pero migrate`, which reads its Workflows from them, and startup still moves a row left in `legacy_allowed_chats` into `config.yaml`. `src/definitions/legacy-definitions.ts` reads them with plain SQL, and a spec keeps every other file from naming them. So the schema holds only state, beside the `legacy_` tables that go with legacy data directories after 0.2.0.
+  - **Runs stop naming their Trigger:** `workflow_runs.trigger_id` goes, since nothing had set it since 9.1, and with it `triggerId` in `runs.get` and `runs.list`. `workflow_runs` is rebuilt before `triggers` is renamed, so no foreign key follows it.
+  - **A legacy data directory has no Workflows either:** `LegacyDataDirDefinitions` replaces `SqliteDefinitions`, with no Agents or Workflows and the defaults `legacy_settings` holds. `DefinitionIds` goes with the IDs it mapped.
+  - **`pero migrate`'s schedule split only moves saved times:** a Workflow with several schedules no longer becomes several rows in the copy's tables, which nothing reads; each part's schedule takes the Workflow's saved times, under the part's name.
+  - **`WorkflowsService` and `TriggersService` go whole,** with `TriggersModule`, the create, edit, and Trigger input schemas, `slugSchema`, `titleSchema`, and `withoutUndefined`. `src/triggers/schedule.ts` moves to `src/scheduler/schedule.ts`.
+
 **Done when:**
 - The schema holds only state (`channels`, `sessions`, `messages`, `workflow_runs`, `notifications`, `schedules`, `inbound_updates`).
 - The full suite passes.

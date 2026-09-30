@@ -12,11 +12,8 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
-import { type Schedule, scheduleFingerprint } from '../triggers/schedule.js';
-import { TriggersModule } from '../triggers/triggers.module.js';
-import { TriggersService } from '../triggers/triggers.service.js';
+import { type Schedule, scheduleFingerprint } from './schedule.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
-import { WorkflowsService } from '../workflows/workflows.service.js';
 import { MAX_SKIPPED_COUNT, ScheduleTick } from './schedule-tick.js';
 import { SchedulerModule } from './scheduler.module.js';
 
@@ -26,8 +23,6 @@ describe('ScheduleTick', () => {
   let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let triggers: TriggersService;
-  let workflows: WorkflowsService;
   let executor: WorkflowExecutor;
   let scheduler: ScheduleTick;
   let claude: FakeAgentRuntime;
@@ -37,7 +32,6 @@ describe('ScheduleTick', () => {
       imports: [
         PersistenceModule.forRoot({ database: ws.database }),
         ws.hostConfig(),
-        TriggersModule,
         SchedulerModule,
       ],
     })
@@ -46,8 +40,6 @@ describe('ScheduleTick', () => {
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    triggers = moduleRef.get(TriggersService);
-    workflows = moduleRef.get(WorkflowsService);
     executor = moduleRef.get(WorkflowExecutor);
     scheduler = moduleRef.get(ScheduleTick);
     ws.use(moduleRef);
@@ -153,7 +145,6 @@ describe('ScheduleTick', () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       workflowName: 'brief',
-      triggerId: null,
       triggerKey: `schedule:brief:2026-09-28T10:00:00.000Z`,
       status: 'completed',
       attempt: 1,
@@ -291,17 +282,6 @@ describe('ScheduleTick', () => {
 
   it('neither loses nor repeats a run across the schedule state migration', async () => {
     // The release before kept schedules as Triggers; the note says the same.
-    await workflows.create({
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Run brief.',
-    });
-    const { id } = await triggers.add({
-      workflow: 'brief',
-      kind: 'schedule',
-      cron: '0 * * * *',
-      timezone: 'UTC',
-    });
     await ws.workflow('brief', {
       agent: 'coach',
       cron: '0 * * * *',
@@ -317,14 +297,20 @@ describe('ScheduleTick', () => {
     const sqlTime = (date: Date) =>
       date.toISOString().replace('T', ' ').replace('Z', '');
     const offline = await openDatabase(dataSourceOptions(ws.database));
-    // Legacy definitions, Channel routes, then schedule state.
-    await offline.undoLastMigration({ transaction: 'each' });
-    await offline.undoLastMigration({ transaction: 'each' });
-    await offline.undoLastMigration({ transaction: 'each' });
-    await offline.query(
-      `UPDATE "triggers" SET "next_run_at" = ?, "last_run_at" = ? WHERE "id" = ?`,
-      [sqlTime(due), sqlTime(before), id],
-    );
+    // Legacy Workflows, legacy definitions, Channel routes, then schedule
+    // state.
+    for (let step = 0; step < 4; step++) {
+      await offline.undoLastMigration({ transaction: 'each' });
+    }
+    const [{ id: workflowId }] = (await offline.query(
+      `INSERT INTO "workflows" ("name", "agent_name", "input_template") ` +
+        `VALUES ('brief', 'coach', 'Run brief.') RETURNING "id"`,
+    )) as [{ id: number }];
+    const [{ id }] = (await offline.query(
+      `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone", "next_run_at", "last_run_at") ` +
+        `VALUES (?, 'schedule', '{"cron":"0 * * * *"}', 'UTC', ?, ?) RETURNING "id"`,
+      [workflowId, sqlTime(due), sqlTime(before)],
+    )) as [{ id: number }];
     await offline.query(
       `INSERT INTO "workflow_runs" ("workflow_name", "trigger_id", "trigger_key", "status") ` +
         `VALUES ('brief', ?, ?, 'completed')`,

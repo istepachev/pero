@@ -4,13 +4,10 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  JoinColumn,
-  ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
 import { oneOf, RUN_STATUSES, type RunStatus } from './sql.js';
-import { Trigger } from './trigger.entity.js';
 
 export { RUN_STATUSES, type RunStatus };
 
@@ -21,7 +18,6 @@ export { RUN_STATUSES, type RunStatus };
   unique: true,
 })
 @Index('IDX_workflow_runs_status', ['status', 'createdAt'])
-@Index('IDX_workflow_runs_trigger_id', ['triggerId'])
 @Check('CHK_workflow_runs_status', oneOf('status', RUN_STATUSES))
 @Check('CHK_workflow_runs_attempt', `"attempt" >= 1`)
 @Check(
@@ -36,17 +32,6 @@ export class WorkflowRun {
   /** The name of the Workflow it runs. */
   @Column({ name: 'workflow_name', type: 'text' })
   workflowName: string;
-
-  /** The Trigger that created the run; null once removed, or if none did. */
-  @Column({ name: 'trigger_id', type: 'integer', nullable: true })
-  triggerId: number | null;
-
-  @ManyToOne(() => Trigger, { onDelete: 'SET NULL' })
-  @JoinColumn({
-    name: 'trigger_id',
-    foreignKeyConstraintName: 'FK_workflow_runs_trigger_id',
-  })
-  trigger?: Trigger | null;
 
   /** Deduplication key of the occurrence that created the run. */
   @Column({ name: 'trigger_key', type: 'text' })
