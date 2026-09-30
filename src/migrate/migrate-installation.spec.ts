@@ -32,7 +32,7 @@ import type {
   SettingsSnapshot,
   TopicLookup,
 } from '../settings-files/snapshot.js';
-import { scheduleFingerprint } from '../triggers/schedule.js';
+import { scheduleFingerprint } from '../scheduler/schedule.js';
 import { migrateInstallation } from './migrate-installation.js';
 
 let tmp: string;
@@ -139,7 +139,7 @@ async function legacyDataDir(
   const database = join(source, 'pero.sqlite');
   const old = await openDatabase({
     ...dataSourceOptions(database),
-    migrations: MIGRATIONS.slice(0, -4),
+    migrations: MIGRATIONS.slice(0, -5),
   });
   const rows = [
     agent('main', 'Main', 'claude', { model: 'opus', effort: 'high' }),
@@ -342,25 +342,37 @@ function fromDatabase(installation: Installation, allowed: Set<string>) {
         )
         .map((each) => [each.title!.toLowerCase(), each.agent]),
     ),
-    workflows: installation.workflows.map((each) => ({
-      name: each.name,
-      agent: each.agent,
-      input: trimmed(each.input),
-      targets: each.targets.filter(served),
-      history:
-        each.history === null
-          ? null
-          : {
-              ...each.history,
-              channels:
-                each.history.channels === 'all'
-                  ? 'all'
-                  : each.history.channels.filter(served),
-            },
-      maxAttempts: each.maxAttempts,
-      schedules: each.schedules,
-      enabled: each.enabled,
-    })),
+    // A Workflow with several schedules is one per schedule in notes.
+    workflows: installation.workflows
+      .flatMap((each) =>
+        each.schedules.length > 1
+          ? each.schedules.map((schedule, index) => ({
+              ...each,
+              name: `${each.name}-${index + 1}`,
+              schedules: [schedule],
+            }))
+          : [each],
+      )
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
+      .map((each) => ({
+        name: each.name,
+        agent: each.agent,
+        input: trimmed(each.input),
+        targets: each.targets.filter(served),
+        history:
+          each.history === null
+            ? null
+            : {
+                ...each.history,
+                channels:
+                  each.history.channels === 'all'
+                    ? 'all'
+                    : each.history.channels.filter(served),
+              },
+        maxAttempts: each.maxAttempts,
+        schedules: each.schedules,
+        enabled: each.enabled,
+      })),
   };
 }
 
@@ -637,18 +649,6 @@ describe('migrateInstallation', () => {
           }),
           next_run_at: '2026-09-30 18:30:00.000',
         },
-      ]);
-      expect(
-        await dataSource.query(
-          `SELECT "w"."name", "t"."kind", "t"."enabled" FROM "triggers" "t" JOIN "workflows" "w" ON "w"."id" = "t"."workflow_id" ORDER BY "t"."id"`,
-        ),
-      ).toEqual([
-        { name: 'weekly-report-1', kind: 'schedule', enabled: 1 },
-        { name: 'weekly-report-2', kind: 'schedule', enabled: 1 },
-        { name: 'weekly-report-1', kind: 'manual', enabled: 1 },
-        { name: 'weekly-report-1', kind: 'schedule', enabled: 0 },
-        { name: 'digest', kind: 'schedule', enabled: 1 },
-        { name: 'paused', kind: 'schedule', enabled: 0 },
       ]);
       expect(await dataSource.query(`PRAGMA foreign_key_check`)).toEqual([]);
     } finally {

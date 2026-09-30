@@ -69,7 +69,6 @@ export class WorkflowRuns {
       const { id } = await runs.save(
         runs.create({
           workflowName: workflow.name,
-          triggerId: null,
           // Each start by hand is its own occurrence.
           triggerKey: manualKey(randomUUID()),
           status: 'pending',
@@ -275,7 +274,6 @@ export function runView(run: WorkflowRun): RunView {
   return {
     id: run.id,
     workflow: run.workflowName,
-    triggerId: run.triggerId,
     triggerKey: run.triggerKey,
     status: run.status,
     attempt: run.attempt,

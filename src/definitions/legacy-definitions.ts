@@ -4,11 +4,19 @@ import {
   providerOptionsSchema,
 } from '../config/provider-options.js';
 import { PERMISSION_MODES, toolPolicySchema } from '../config/tool-policy.js';
-import type { AgentDefinition, Defaults } from './definitions.js';
+import { workflowHistorySchema } from '../config/workflow-input.js';
+import type { Schedule } from '../scheduler/schedule.js';
+import type {
+  AgentDefinition,
+  Defaults,
+  WorkflowDefinition,
+} from './definitions.js';
 
-// What a legacy data directory's `settings` and `agents` tables held, kept
-// as `legacy_settings` and `legacy_agents` for `pero migrate` since plan
-// step 8.5. Read with plain SQL: no entity maps them any more.
+// What a legacy data directory's definition tables held, kept for `pero
+// migrate` under a `legacy_` name: `settings` and `agents` since plan step
+// 8.5; `workflows`, `triggers`, `workflow_notification_targets`, and
+// `allowed_chats` since 9.4. Read with plain SQL: no entity maps them any
+// more.
 
 /** Anything that runs SQL: a DataSource, an EntityManager. */
 export interface Queryable {
@@ -81,6 +89,135 @@ export async function legacyDataFolder(db: Queryable): Promise<string | null> {
     `SELECT "default_working_directory" AS "folder" FROM "legacy_settings"`,
   )) as { folder: string | null }[];
   return rows[0]?.folder ?? null;
+}
+
+/** A Trigger of a Workflow, whatever its kind and whether it is enabled. */
+export interface LegacyTrigger {
+  id: number;
+  /** The name of its Workflow. */
+  workflow: string;
+  kind: 'schedule' | 'manual';
+  /** A schedule's cron expression; null for a manual Trigger. */
+  cron: string | null;
+  timezone: string | null;
+  enabled: boolean;
+}
+
+/** A chat the `allowed_chats` table allowed. */
+export interface LegacyAllowedChat {
+  id: number;
+  chatKey: string;
+  /** The chat's name as last seen; null if none was. */
+  title: string | null;
+}
+
+interface WorkflowRow {
+  id: number;
+  name: string;
+  title: string | null;
+  agent_name: string;
+  input_template: string;
+  history_json: string | null;
+  max_attempts: number;
+  enabled: number;
+}
+
+interface TriggerRow {
+  id: number;
+  workflow: string;
+  kind: string;
+  config_json: string;
+  timezone: string | null;
+  enabled: number;
+}
+
+/**
+ * The Workflows the legacy tables of the database `db` define, by name,
+ * each with its notification targets and enabled schedules.
+ */
+export async function readLegacyWorkflows(
+  db: Queryable,
+): Promise<WorkflowDefinition[]> {
+  const rows = (await db.query(
+    `SELECT * FROM "legacy_workflows" ORDER BY "name"`,
+  )) as WorkflowRow[];
+  const targets = (await db.query(
+    `SELECT "workflow_id", "channel_id" FROM "legacy_workflow_notification_targets" ` +
+      `ORDER BY "workflow_id", "channel_id"`,
+  )) as { workflow_id: number; channel_id: number }[];
+  const triggers = await readLegacyTriggers(db);
+  return rows.map((row) => ({
+    name: row.name,
+    title: row.title,
+    agent: row.agent_name,
+    input: row.input_template,
+    history:
+      row.history_json === null
+        ? null
+        : workflowHistorySchema.parse(JSON.parse(row.history_json)),
+    targets: targets
+      .filter((target) => target.workflow_id === row.id)
+      .map((target) => target.channel_id),
+    maxAttempts: row.max_attempts,
+    schedules: triggers.flatMap((trigger): Schedule[] =>
+      trigger.workflow === row.name &&
+      trigger.kind === 'schedule' &&
+      trigger.enabled &&
+      // Every schedule has both; `pero triggers add` saw to it.
+      trigger.cron !== null &&
+      trigger.timezone !== null
+        ? [{ cron: trigger.cron, timezone: trigger.timezone }]
+        : [],
+    ),
+    enabled: row.enabled !== 0,
+  }));
+}
+
+/** Every Trigger the legacy tables of the database `db` hold, oldest first. */
+export async function readLegacyTriggers(
+  db: Queryable,
+): Promise<LegacyTrigger[]> {
+  const rows = (await db.query(
+    `SELECT "t"."id", "w"."name" AS "workflow", "t"."kind", "t"."config_json", ` +
+      `"t"."timezone", "t"."enabled" FROM "legacy_triggers" "t" ` +
+      `JOIN "legacy_workflows" "w" ON "w"."id" = "t"."workflow_id" ORDER BY "t"."id"`,
+  )) as TriggerRow[];
+  return rows.map((row) => {
+    const config = JSON.parse(row.config_json) as { cron?: unknown };
+    return {
+      id: row.id,
+      workflow: row.workflow,
+      kind: oneOf(['schedule', 'manual'] as const, row.kind, 'kind'),
+      cron: typeof config.cron === 'string' ? config.cron : null,
+      timezone: row.timezone,
+      enabled: row.enabled !== 0,
+    };
+  });
+}
+
+/**
+ * The Telegram chats the `allowed_chats` table of the database `db` still
+ * allows, oldest first: those not yet moved into `config.yaml`.
+ */
+export async function readLegacyAllowedChats(
+  db: Queryable,
+): Promise<LegacyAllowedChat[]> {
+  return (await db.query(
+    `SELECT "id", "chat_key" AS "chatKey", "title" FROM "legacy_allowed_chats" ` +
+      `WHERE "integration_kind" = 'telegram' ORDER BY "id"`,
+  )) as LegacyAllowedChat[];
+}
+
+/** Deletes the chats `ids` from the `allowed_chats` table of `db`. */
+export async function deleteLegacyAllowedChats(
+  db: Queryable,
+  ids: readonly number[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  await db.query(
+    `DELETE FROM "legacy_allowed_chats" WHERE "id" IN (${ids.map(() => '?').join(', ')})`,
+    [...ids],
+  );
 }
 
 /** The folder an Agent works in: its own, otherwise the shared default. */

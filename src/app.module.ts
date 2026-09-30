@@ -15,7 +15,6 @@ import { RuntimeOptionsModule } from './runtimes/runtimes.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { SettingsNotesModule } from './settings-notes/settings-notes.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
-import { TriggersModule } from './triggers/triggers.module.js';
 import { WorkflowsModule } from './workflows/workflows.module.js';
 
 export interface AppOptions {
@@ -50,7 +49,6 @@ export class AppModule {
         AgentsModule,
         ChannelsModule,
         WorkflowsModule,
-        TriggersModule,
         ScheduleModule.forRoot(),
         SchedulerModule,
         SettingsNotesModule,

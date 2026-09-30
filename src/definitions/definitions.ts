@@ -6,7 +6,7 @@ import type {
 } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
 import type { WorkflowHistory } from '../config/workflow-input.js';
-import type { Schedule } from '../triggers/schedule.js';
+import type { Schedule } from '../scheduler/schedule.js';
 
 /** Installation defaults that Agents and Pero's own limits follow. */
 export interface Defaults {
@@ -126,9 +126,9 @@ export type Route =
 
 /**
  * What Pero is configured to run: the defaults, the Agents, and the
- * Workflows. Read-only; notes, or the create and edit services, change the
- * definitions, and `onChange` says when they have. Runtime code reads
- * definitions only through this, whatever holds them.
+ * Workflows. Read-only; the owner's edits of notes change the definitions,
+ * and `onChange` says when they have. Runtime code reads definitions only
+ * through this.
  */
 export abstract class Definitions {
   abstract defaults(): Promise<Defaults>;

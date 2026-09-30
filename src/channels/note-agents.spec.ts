@@ -22,7 +22,6 @@ import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
-import { WorkflowsService } from '../workflows/workflows.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelRouter } from './channel-router.js';
 import { ChannelTurns } from './channel-stages.js';
@@ -414,25 +413,5 @@ describe('Topic routing by notes in a workspace', () => {
       );
       expect(answeredBy()).toEqual(['health', 'coach']);
     });
-  });
-
-  it('lets a Workflow use an Agent only a note defines', async () => {
-    const workflows = moduleRef.get(WorkflowsService);
-    await expect(
-      workflows.create({
-        name: 'report',
-        agent: 'Health',
-        inputTemplate: 'Report.',
-      }),
-    ).resolves.toMatchObject({ agentName: 'health' });
-    await expect(
-      workflows.create({
-        name: 'old',
-        agent: 'retired',
-        inputTemplate: 'Report.',
-      }),
-    ).rejects.toThrow(
-      'Agent retired is disabled; enable it first (enabled: true in its note)',
-    );
   });
 });

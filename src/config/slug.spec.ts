@@ -1,46 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SLUG_MAX_LENGTH, slugify, slugSchema, titleSchema } from './slug.js';
-
-describe('slugSchema', () => {
-  it('accepts lowercase words joined by single hyphens', () => {
-    for (const value of ['assistant', 'daily-brief', 'q3-review-2026', '7']) {
-      expect(slugSchema.parse(value)).toBe(value);
-    }
-    expect(slugSchema.safeParse('a'.repeat(SLUG_MAX_LENGTH)).success).toBe(
-      true,
-    );
-  });
-
-  it('lowercases input before checking it', () => {
-    expect(slugSchema.parse('Daily-Brief')).toBe('daily-brief');
-    expect(slugSchema.parse('Q3-REVIEW')).toBe('q3-review');
-  });
-
-  it('rejects anything else', () => {
-    for (const value of [
-      '',
-      'Daily Brief',
-      'daily brief',
-      'daily_brief',
-      '-daily',
-      'daily-',
-      'daily--brief',
-      'дневник',
-      'ДНЕВНИК',
-      'a'.repeat(SLUG_MAX_LENGTH + 1),
-    ]) {
-      expect(slugSchema.safeParse(value).success).toBe(false);
-    }
-  });
-});
-
-describe('titleSchema', () => {
-  it('keeps any text as given', () => {
-    for (const value of ['Daily brief', '  Spaced  ', '', 'Дневник 📓', null]) {
-      expect(titleSchema.parse(value)).toBe(value);
-    }
-  });
-});
+import { SLUG_MAX_LENGTH, slugify } from './slug.js';
 
 describe('slugify', () => {
   it('turns text into a slug', () => {
@@ -82,8 +41,9 @@ describe('slugify', () => {
       `${'ab '.repeat(40)}`,
       'Ёлка-2026',
     ]) {
-      const slug = slugify(value);
-      expect(slugSchema.parse(slug)).toBe(slug);
+      const slug = slugify(value)!;
+      expect(slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+      expect(slug.length).toBeLessThanOrEqual(SLUG_MAX_LENGTH);
     }
   });
 });

@@ -11,7 +11,6 @@ import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
-import { WorkflowsService } from '../workflows/workflows.service.js';
 import { HistoryRetention, RETENTION_BATCH_SIZE } from './history-retention.js';
 import { HistoryRetentionModule } from './history-retention.module.js';
 
@@ -120,14 +119,8 @@ describe('HistoryRetention', () => {
   });
 
   it("deletes a delivered Notification's message, keeping the Notification and its run", async () => {
-    await moduleRef.get(WorkflowsService).create({
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Go.',
-    });
     const run = await ds.getRepository(WorkflowRun).save({
       workflowName: 'brief',
-      triggerId: null,
       triggerKey: 'manual:old',
       status: 'completed',
       attempt: 1,

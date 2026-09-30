@@ -9,7 +9,6 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { SettingsNotesModule } from '../settings-notes/settings-notes.module.js';
 import { WorkspaceChecks } from '../settings-notes/workspace-checks.service.js';
-import { TriggersModule } from '../triggers/triggers.module.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
 
@@ -34,7 +33,6 @@ export class ControlModule {
         ChannelsModule,
         WorkflowsModule,
         NotificationsModule,
-        TriggersModule,
         SettingsNotesModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],

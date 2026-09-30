@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dataSourceOptions } from './data-source-options.js';
-import { Workflow } from './entities/workflow.entity.js';
+import { WorkflowRun } from './entities/workflow-run.entity.js';
 import { openDatabase } from './open-database.js';
 import { inTransaction } from './transaction.js';
 
@@ -16,12 +16,10 @@ describe('inTransaction', () => {
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-db-'));
     ds = await openDatabase(dataSourceOptions(join(tmp, 'pero.sqlite')));
-    ({ id } = await ds.getRepository(Workflow).save({
-      name: 'brief',
-      title: null,
-      agentName: 'coach',
-      inputTemplate: 'Go',
-      history: null,
+    ({ id } = await ds.getRepository(WorkflowRun).save({
+      workflowName: 'brief',
+      triggerKey: 'manual:1',
+      attempt: 1,
     }));
   });
 
@@ -30,18 +28,18 @@ describe('inTransaction', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Reads the attempts, yields, then writes them back plus one. */
+  /** Reads the attempt, yields, then writes it back plus one. */
   async function increment(run: typeof inTransaction) {
     return run(ds, async (manager) => {
-      const repo = manager.getRepository(Workflow);
-      const { maxAttempts } = await repo.findOneByOrFail({ id });
+      const repo = manager.getRepository(WorkflowRun);
+      const { attempt } = await repo.findOneByOrFail({ id });
       await new Promise((resolve) => setTimeout(resolve, 5));
-      await repo.update(id, { maxAttempts: maxAttempts + 1 });
+      await repo.update(id, { attempt: attempt + 1 });
     });
   }
 
-  function workflow(): Promise<Workflow> {
-    return ds.getRepository(Workflow).findOneByOrFail({ id });
+  function workflowRun(): Promise<WorkflowRun> {
+    return ds.getRepository(WorkflowRun).findOneByOrFail({ id });
   }
 
   it('shows why it exists: TypeORM overlaps transactions on SQLite', async () => {
@@ -62,18 +60,20 @@ describe('inTransaction', () => {
       increment(inTransaction),
     ]);
 
-    expect((await workflow()).maxAttempts).toBe(4);
+    expect((await workflowRun()).attempt).toBe(4);
   });
 
   it('keeps going after a transaction fails, which rolls back', async () => {
     const failed = inTransaction(ds, async (manager) => {
-      await manager.getRepository(Workflow).update(id, { title: 'Failed' });
+      await manager
+        .getRepository(WorkflowRun)
+        .update(id, { errorText: 'Failed' });
       throw new Error('boom');
     });
     const next = increment(inTransaction);
 
     await expect(failed).rejects.toThrow('boom');
     await next;
-    expect(await workflow()).toMatchObject({ title: null, maxAttempts: 2 });
+    expect(await workflowRun()).toMatchObject({ errorText: null, attempt: 2 });
   });
 });

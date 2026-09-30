@@ -203,18 +203,18 @@ describe('pero migrate (e2e)', () => {
       }
       const workflow = db
         .prepare(
-          `INSERT INTO "workflows" ("name", "title", "agent_name", "input_template") ` +
+          `INSERT INTO "legacy_workflows" ("name", "title", "agent_name", "input_template") ` +
             `VALUES ('english', 'English review', 'english', 'Suggest better English.')`,
         )
         .run().lastInsertRowid;
       for (const cron of ['0 21 * * *', '30 7 * * 1-5']) {
         db.prepare(
-          `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone") ` +
+          `INSERT INTO "legacy_triggers" ("workflow_id", "kind", "config_json", "timezone") ` +
             `VALUES (?, 'schedule', ?, 'Europe/Lisbon')`,
         ).run(workflow, JSON.stringify({ cron }));
       }
       db.prepare(
-        `INSERT INTO "workflow_notification_targets" ("workflow_id", "channel_id") VALUES (?, ?)`,
+        `INSERT INTO "legacy_workflow_notification_targets" ("workflow_id", "channel_id") VALUES (?, ?)`,
       ).run(workflow, channel(`${FORUM.id}:${ENGLISH}`));
     } finally {
       db.close();

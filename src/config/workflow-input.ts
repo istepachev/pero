@@ -1,8 +1,5 @@
 import { CronPattern } from 'croner';
 import { z } from 'zod';
-import { withoutUndefined } from '../common/without-undefined.js';
-import { timeZoneSchema } from './settings-input.js';
-import { slugSchema, titleSchema } from './slug.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -48,14 +45,6 @@ export const cronSchema = z
     return cron;
   });
 
-/** Names an existing Agent, in any case. */
-const agentReferenceSchema = z.string().trim().min(1, 'must not be empty');
-
-/** The input each run sends to the Agent. */
-const inputTemplateSchema = z
-  .string()
-  .refine((text) => text.trim() !== '', 'must not be empty');
-
 /** The most times a Workflow may start one run. */
 export const MAX_ATTEMPTS_LIMIT = 10;
 
@@ -89,7 +78,11 @@ const historyChannelsSchema = z.union(
   { error: 'must be all, or the IDs of one or more Channels' },
 );
 
-const historyFields = {
+/**
+ * The Channel history a Workflow's runs read as input, as a note's
+ * `history-*` properties give it and a legacy data directory stored it.
+ */
+export const workflowHistorySchema = z.strictObject({
   channels: historyChannelsSchema,
   /** `people`: only what people wrote; `all`: the Agents' replies too. */
   messages: z.enum(HISTORY_MESSAGES),
@@ -105,93 +98,12 @@ const historyFields = {
     .nullable(),
   /** Run the Agent even when the window has no messages. */
   runWhenEmpty: z.boolean(),
-};
-
-/**
- * The Channel history a Workflow's runs read as input, stored in
- * `workflows.history_json`.
- */
-export const workflowHistorySchema = z.strictObject(historyFields);
+});
 
 export type WorkflowHistory = z.output<typeof workflowHistorySchema>;
-
-/** A history input with only the defaults. */
-export const DEFAULT_WORKFLOW_HISTORY: WorkflowHistory = {
-  channels: 'all',
-  messages: 'people',
-  hours: null,
-  runWhenEmpty: false,
-};
-
-/**
- * Changes to a history input; an omitted field keeps its value, or takes
- * the default when the Workflow reads no history yet.
- */
-export const workflowHistoryPatchSchema = z
-  .strictObject(historyFields)
-  .partial();
-
-export type WorkflowHistoryPatch = z.input<typeof workflowHistoryPatchSchema>;
-
-/** `current`, or the defaults when null, with the fields `patch` sets. */
-export function patchHistory(
-  current: WorkflowHistory | null,
-  patch: z.output<typeof workflowHistoryPatchSchema>,
-): WorkflowHistory {
-  return {
-    ...(current ?? DEFAULT_WORKFLOW_HISTORY),
-    ...withoutUndefined(patch),
-  };
-}
-
-/** A new Workflow; its Agent must exist and be enabled. */
-export const workflowCreateSchema = z.strictObject({
-  name: slugSchema,
-  title: titleSchema.optional(),
-  agent: agentReferenceSchema,
-  inputTemplate: inputTemplateSchema,
-  maxAttempts: workflowMaxAttemptsSchema.optional(),
-  /** Omitted, runs read no history. */
-  history: workflowHistoryPatchSchema.optional(),
-});
-
-/** Changes to a Workflow; an omitted field keeps its value. */
-export const workflowEditSchema = z.strictObject({
-  title: titleSchema.optional(),
-  agent: agentReferenceSchema.optional(),
-  inputTemplate: inputTemplateSchema.optional(),
-  maxAttempts: workflowMaxAttemptsSchema.optional(),
-  enabled: z.boolean().optional(),
-  /** Null stops runs reading history. */
-  history: workflowHistoryPatchSchema.nullable().optional(),
-});
 
 /** Names an existing Workflow, in any case. */
 export const workflowReferenceSchema = z
   .string()
   .trim()
   .min(1, 'must not be empty');
-
-/**
- * A new Trigger for a Workflow. A schedule without a time zone takes the
- * installation's, copied when it is added.
- */
-export const triggerAddSchema = z.discriminatedUnion('kind', [
-  z.strictObject({
-    workflow: workflowReferenceSchema,
-    kind: z.literal('schedule'),
-    cron: cronSchema,
-    timezone: timeZoneSchema.optional(),
-  }),
-  z.strictObject({
-    workflow: workflowReferenceSchema,
-    kind: z.literal('manual'),
-  }),
-]);
-
-export type WorkflowCreate = z.input<typeof workflowCreateSchema>;
-export type WorkflowEdit = z.input<typeof workflowEditSchema>;
-export type TriggerAdd = z.input<typeof triggerAddSchema>;
-
-/** What a schedule Trigger stores in `config_json`. */
-export const scheduleConfigSchema = z.object({ cron: z.string() });

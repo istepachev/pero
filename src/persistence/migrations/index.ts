@@ -13,6 +13,7 @@ import { StateByName1790700000000 } from './1790700000000-StateByName.js';
 import { ScheduleState1790710000000 } from './1790710000000-ScheduleState.js';
 import { ChannelRoutes1790720000000 } from './1790720000000-ChannelRoutes.js';
 import { LegacyDefinitions1790730000000 } from './1790730000000-LegacyDefinitions.js';
+import { LegacyWorkflows1790740000000 } from './1790740000000-LegacyWorkflows.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -34,4 +35,5 @@ export const MIGRATIONS = [
   ScheduleState1790710000000,
   ChannelRoutes1790720000000,
   LegacyDefinitions1790730000000,
+  LegacyWorkflows1790740000000,
 ];

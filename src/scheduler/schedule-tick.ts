@@ -19,7 +19,7 @@ import {
   nextOccurrence,
   type Schedule,
   scheduleFingerprint,
-} from '../triggers/schedule.js';
+} from './schedule.js';
 import { SCHEDULE_KEY_PATTERN, scheduleKey } from '../workflows/run-keys.js';
 import {
   type CancelledRun,
@@ -312,7 +312,6 @@ export class ScheduleTick
       .insert()
       .values({
         workflowName: name,
-        triggerId: null,
         triggerKey,
         status: 'pending',
         attempt: 1,

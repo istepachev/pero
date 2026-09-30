@@ -5,7 +5,7 @@ import { Cron } from 'croner';
 // wall-clock time (kept in a Date's UTC fields); this module turns wall-clock
 // times into instants with its own daylight-saving policy.
 
-/** A schedule Trigger's rule: a cron expression in an IANA time zone. */
+/** A Workflow's schedule: a cron expression in an IANA time zone. */
 export interface Schedule {
   cron: string;
   timezone: string;

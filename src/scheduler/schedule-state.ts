@@ -4,7 +4,7 @@ import {
   nextOccurrence,
   type Schedule,
   scheduleFingerprint,
-} from '../triggers/schedule.js';
+} from './schedule.js';
 
 // The `schedules` rows: where each defined schedule stands. The schedules
 // themselves come from `Definitions`; a row is keyed by its Workflow's name
@@ -29,20 +29,17 @@ export interface Reconciled {
 /**
  * Makes the rows match the schedules `defined`: a schedule without a row
  * gets one, next due at its first time after `now`, and a row whose
- * schedule is gone is dropped. With `workflow`, only that Workflow's rows
- * are compared. Overlapping calls are safe: a row inserted twice is
+ * schedule is gone is dropped. Overlapping calls are safe: a row inserted twice is
  * inserted once.
  */
 export async function reconcileSchedulesWithin(
   manager: EntityManager,
   defined: readonly DefinedSchedule[],
   now: Date,
-  workflow?: string,
 ): Promise<Reconciled> {
   const repo = manager.getRepository(ScheduleState);
   const rows = await repo.find({
     select: { id: true, workflowName: true, fingerprint: true },
-    where: workflow === undefined ? {} : { workflowName: workflow },
   });
   const existing = new Set(
     rows.map((row) => stateKey(row.workflowName, row.fingerprint)),
@@ -51,7 +48,6 @@ export async function reconcileSchedulesWithin(
   const result: Reconciled = { added: [], dropped: [], failed: [] };
 
   for (const { workflow: name, schedule } of defined) {
-    if (workflow !== undefined && name !== workflow) continue;
     const fingerprint = scheduleFingerprint(schedule);
     const key = stateKey(name, fingerprint);
     if (wanted.has(key)) continue;

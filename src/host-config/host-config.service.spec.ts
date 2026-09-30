@@ -17,7 +17,6 @@ import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/bootstrap-config.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { HostConfigModule } from './host-config.module.js';
 import {
@@ -92,6 +91,18 @@ describe('HostConfigService', () => {
       [folder],
     );
 
+  /** Adds a chat a legacy installation allowed but hasn't moved yet. */
+  const allowLegacyChat = (
+    dataSource: DataSource,
+    chatKey: string,
+    title: string | null,
+  ) =>
+    dataSource.query(
+      `INSERT INTO "legacy_allowed_chats" ("integration_kind", "chat_key", "kind", "title") ` +
+        `VALUES ('telegram', ?, ?, ?)`,
+      [chatKey, chatKey.startsWith('-') ? 'group' : 'private', title],
+    );
+
   it('creates config.yaml with the data folder once, in a new workspace', async () => {
     await start();
 
@@ -110,20 +121,8 @@ describe('HostConfigService', () => {
     mkdirSync(vault);
     await withDatabase(async (dataSource) => {
       await setLegacyFolder(dataSource, vault);
-      await dataSource.getRepository(AllowedChat).insert([
-        {
-          integrationKind: 'telegram',
-          chatKey: '-1009007199254740993',
-          kind: 'group',
-          title: 'Home',
-        },
-        {
-          integrationKind: 'telegram',
-          chatKey: '123456789',
-          kind: 'private',
-          title: null,
-        },
-      ]);
+      await allowLegacyChat(dataSource, '-1009007199254740993', 'Home');
+      await allowLegacyChat(dataSource, '123456789', null);
     });
 
     const service = await start();
@@ -138,7 +137,9 @@ describe('HostConfigService', () => {
       '    - id: -1009007199254740993\n      title: Home\n    - id: 123456789\n',
     );
     const dataSource = moduleRef!.get<DataSource>(getDataSourceToken());
-    expect(await dataSource.getRepository(AllowedChat).count()).toBe(0);
+    expect(
+      await dataSource.query(`SELECT * FROM "legacy_allowed_chats"`),
+    ).toEqual([]);
     expect(dataFolder()).toBe(vault);
 
     // Denied by hand, it stays denied on the next start.
@@ -150,14 +151,7 @@ describe('HostConfigService', () => {
   it('adds rows found later, such as from a restored database, to the file', async () => {
     await start();
     await moduleRef!.close();
-    await withDatabase((dataSource) =>
-      dataSource.getRepository(AllowedChat).insert({
-        integrationKind: 'telegram',
-        chatKey: '42',
-        kind: 'private',
-        title: null,
-      }),
-    );
+    await withDatabase((dataSource) => allowLegacyChat(dataSource, '42', null));
 
     const service = await start();
 

@@ -181,7 +181,6 @@ describe('Workflow formatting', () => {
     const run: RunView = {
       id: 7,
       workflow: 'evening-review',
-      triggerId: 4,
       triggerKey: 'manual:0f8c',
       status: 'completed',
       attempt: 1,
