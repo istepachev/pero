@@ -1,6 +1,6 @@
 # Pero user guide
 
-How Pero behaves once it is installed: first-run setup and settings, Telegram, Agents and their permissions, and Workflows. For installing, upgrading, backups, and running Pero as a service, see [Operating Pero](./OPERATIONS.md); for every command and option, see the [CLI reference](./CLI.md).
+How Pero behaves once it is installed: first-run setup and settings, Telegram, Agents and their permissions, and Workflows. Every file and property is in [Configuring Pero](./CONFIGURATION.md); for installing, upgrading, backups, and running Pero as a service, see [Operating Pero](./OPERATIONS.md); for every command and option, see the [CLI reference](./CLI.md).
 
 ## Running Pero
 
@@ -76,21 +76,29 @@ Pero keeps each Channel's message history until you set `history-retention-days`
 
 ## Agents
 
-```sh
-pero agents                     # every Agent, with its provider, model, folder, and permissions
-pero agents show notes          # its settings and Channels
-pero agents create coach --provider claude --instructions "You are my running coach."
-pero agents edit coach --provider codex --working-directory ~/training
-pero agents disable coach
+An Agent is a note in the settings folder's `Agents/` folder: its text is the Agent's instructions, and its properties choose its topics, provider, model, effort, permissions, and folder. Anything it leaves out comes from `Pero.md`, whose own text is placed before every Agent's instructions. To add an Agent, add a note; to change one, edit it; to silence one, set `enabled: false`. The [configuration reference](./CONFIGURATION.md#agent-notes) lists every property.
+
+```markdown
+---
+topics: [Running]
+provider: codex
+working-directory: projects/training
+---
+You are my running coach. My plan is in Plan.md.
 ```
 
-An Agent without its own folder follows the default working directory. Changing an Agent's provider or folder makes its next turn in each Channel start a fresh Session that carries over the Channel's recent messages; model, effort, and instructions apply from the next turn of the same Session.
+```sh
+pero agents                     # every Agent, with its note, topics, provider, model, folder, and permissions
+pero agents show coach          # its values and where each comes from, its Channels, and its note's errors
+```
+
+An Agent without `working-directory` works in the data folder. Changing an Agent's provider or folder makes its next turn in each Channel start a fresh Session that carries over the Channel's recent messages; model, effort, and instructions apply from the next turn of the same Session.
 
 ### Claude Agents
 
 Claude Agents run Claude Code through the Claude Agent SDK, signed in with the Claude Code sign-in of the account running Pero (`claude auth login`). Pero never passes `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on, so a key in Pero's environment cannot switch you to API billing. An Agent works in its folder like Claude Code does: Claude Code's own system prompt with the Agent's instructions appended, and your user, project, and local Claude Code settings, so the folder's `CLAUDE.md`, skills, and MCP servers apply. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.
 
-Each Agent's tools run under one of two permission modes, copied from `default-permissions` when it is created:
+Each Agent's tools run under one of two permission modes, its note's `permissions`, or `Pero.md`'s:
 
 - `ask` (the default): reading and editing files in the Agent's folder runs freely, except editing the settings folder (in a workspace) and Claude Code's, Git's, and the shell's own files there, such as `.claude/` and `.git/`, even through a symlink or a `../` path; those edits, and any other tool that needs permission, such as a shell command or a web fetch, ask in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history. A Workflow run has no one to ask, so it is refused such tools and can't change the settings folder. Allow rules in your own Claude Code settings still apply before Pero is asked.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
@@ -99,7 +107,7 @@ Each Agent's tools run under one of two permission modes, copied from `default-p
 
 Codex Agents run Codex through the Codex SDK, which bundles its own Codex CLI, signed in with the ChatGPT sign-in of the account running Pero (`codex login`, or `codex login --device-auth` on a headless host). Pero never passes `OPENAI_API_KEY` or `CODEX_API_KEY` on and forces the ChatGPT sign-in, so neither an environment variable nor a stored API-key login can switch you to API billing. An Agent works in its folder like the Codex CLI does: your `~/.codex/config.toml` and the folder's `AGENTS.md` apply, and the Agent's instructions are added as developer instructions. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.
 
-Codex works only in a Git repository. For a folder that is not one, such as a notes vault, run `git init` there, or let the Agent skip the check with `pero agents edit <name> --skip-git-repo-check`; until then its turns are refused with that advice.
+Codex works only in a Git repository. For a folder that is not one, such as a notes vault, run `git init` there, or let the Agent skip the check with `skip-git-repo-check: true` in its note; until then its turns are refused with that advice.
 
 Codex runs each turn without a way to ask you, so the permission modes map to its sandbox instead:
 
@@ -120,7 +128,7 @@ max-attempts: 2
 Review today's chats.
 ```
 
-`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, or with `trigger: manual`, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./vision/CONFIGURATION.md#workflow-notes) lists every property.
+`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, or with `trigger: manual`, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./CONFIGURATION.md#workflow-notes) lists every property.
 
 ```sh
 pero workflows                      # each Workflow's schedule, next run, and Channels

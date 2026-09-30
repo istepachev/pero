@@ -2,15 +2,18 @@
 
 ## User experience
 
-The intended installation and daily control surface is one globally installed npm executable:
+Installation and daily control go through one globally installed npm executable:
 
 ```sh
 npm install -g @perokit/pero
-pero run
+pero init ~/workspace
+cd ~/workspace && pero run
 pero status
 pero agents ls
 pero stop
 ```
+
+The CLI keeps what files can't do: start, stop, inspect, check, run a Workflow by hand, back up, and restore. Agents, Workflows, and the installation defaults are notes in the workspace, as [Configuring Pero](./CONFIGURATION.md) describes, so no command creates or edits them; the commands that did in 0.1 remain as stubs that name the file to edit instead, until a later release removes them.
 
 The package is `@perokit/pero`, published under the `perokit` npm organization from [github.com/perokit/pero](https://github.com/perokit/pero). The unscoped `pero` package name is already taken, so Pero ships as a public scoped package while keeping the terminal command `pero`. npm [scopes](https://docs.npmjs.com/about-scopes/) allow the same package suffix in a separate namespace, and the [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) chooses the executable name independently:
 
@@ -29,11 +32,11 @@ Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access 
 | Command | Expected behavior |
 |---|---|
 | `pero init [dir]` | Make `dir` (default: `--workspace`, then the current folder) a workspace, writing only what is missing: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the settings folder (`data/Settings/` unless `config.yaml` says otherwise) `Pero.md`, `Agents/Main.md`, `Agents/_Template.md`, and an empty `Workflows/`. It never overwrites a file, so it fills in a cloned workspace; it prints what it created, updated, and kept. It refuses the home folder, whose `.pero` is the legacy data directory. Runs without the daemon. |
-| `pero check` | Check what Pero reads from the workspace without opening its database: `config.yaml` (including that a `data` folder it names exists), that `.env` is owner-only and not tracked or unignored by Git, and every note in the settings folder (`Pero.md`, `Agents/`, `Workflows/`) against the [configuration reference](./vision/CONFIGURATION.md). Errors are printed under each file, relative to the workspace, with the property at fault. Exits 1 on any error, so it can run in CI on a workspace repository; `--json` prints the result for tools. With Pero running it asks the daemon, which also checks the topic titles in Workflow `channel` and `history-channels` against the topics it has seen in the allowed chats (a title matching no topic lists the ones there are; one matching several asks for `<chat title>/<topic title>`). Without Pero, those titles are checked for syntax only, and it says so. Nothing reads the notes yet: they take effect in a later release. A legacy data directory has no notes and is refused. |
+| `pero check` | Check what Pero reads from the workspace without opening its database: `config.yaml` (including that a `data` folder it names exists), that `.env` is owner-only and not tracked or unignored by Git, and every note in the settings folder (`Pero.md`, `Agents/`, `Workflows/`) against the [configuration reference](./CONFIGURATION.md). Errors are printed under each file, relative to the workspace, with the property at fault. Exits 1 on any error, so it can run in CI on a workspace repository; `--json` prints the result for tools. With Pero running it asks the daemon, which also checks the topic titles in Workflow `channel` and `history-channels` against the topics it has seen in the allowed chats (a title matching no topic lists the ones there are; one matching several asks for `<chat title>/<topic title>`). Without Pero, those titles are checked for syntax only, and it says so. A legacy data directory has no notes and is refused. |
 | `pero run` | Ensure one background Pero process is running for the selected workspace. With no workspace found (and no legacy `~/.pero`), it offers on a terminal to make one as `pero init` does, in the current folder or `~/workspace` from home; without a terminal it prints the `pero init` to run and exits 1. On first use, create local directories and guide the owner through missing setup. Return only after startup and readiness succeed. Repeated calls report the existing process. |
 | `pero run --foreground` | Run the same daemon attached to the terminal for debugging or an external service manager. |
 | `pero stop` | Ask the running daemon to stop intake, cancel or finish active work within a bounded period, close the database, and exit. Report when it is already stopped. A Workflow Run stopped mid-way is recorded `interrupted` on the next start, and retried there if its Workflow allows another attempt. |
-| `pero status` | Show process state, version, data directory, health, and whether Telegram and each configured Agent Runtime are available. Exit with status 3 when Pero is stopped. |
+| `pero status` | Show process state, version, the workspace (or the data directory, marked `(legacy)`), health, and each component: Telegram, each Agent Runtime, `config` (`config.yaml`), and `settings` (the notes, counting those with errors). Exit with status 3 when Pero is stopped. |
 | `pero logs` | Show the most recent entries of `logs/pero.log` (`-n <count>`, default 50) as readable lines in local time; `--follow` streams new entries and `--json` prints the raw JSON lines. Reads files only, so it works whether or not the daemon is running; it points to `logs/daemon.out` rather than streaming it. |
 | `pero settings show` | Show the installation settings. In a workspace: the `Pero.md` properties in effect, each marked `(default)` when `Pero.md` doesn't set it, its body (the shared instructions), `config.yaml`'s data folder, and where the Telegram bot token comes from (only as set or not set). In a legacy data directory: that it has no Agents until `pero migrate`, and the bot token. `pero settings` alone does the same. |
 | `pero settings set telegram-bot-token` | Store the Telegram bot token through the daemon. It prompts on a terminal or reads stdin, and is refused as an argument, so it never lands in shell history. Every other key is a stub that exits 1 and names the file to edit instead: its property in `Pero.md` (`default-provider` is `provider`, `claude.model` is `claude-model`, `default-permissions` is `permissions`, and so on; `shared-instructions` is the body), or `data` in `.pero/config.yaml` for `default-working-directory`. In a legacy data directory it says to run `pero migrate`. |
@@ -84,29 +87,35 @@ The recommended path gives each Agent its own topic in one private group:
 1. Create a bot with [@BotFather](https://t.me/BotFather) and give Pero its token (`pero run` asks for it).
 2. Create a group, turn on **Topics** in its settings, and add the bot as an administrator. No specific administrator right is needed; without administrator rights Telegram shows the bot only commands, mentions, and replies.
 3. Allow the group. An interactive `pero run` waits for the bot to be added or messaged and offers to allow that chat; otherwise the bot answers the group with its chat ID, and `pero telegram allow <chat-id>` allows it. Turn on topics before allowing the group: that change gives the group a new chat ID. Pero follows the change if it happens later.
-4. Create a topic per Agent. Pero creates an Agent named after the topic, with the installation defaults, and posts a welcome there; in a workspace the Agent answers once a note of that name, such as `Agents/Groceries.md`, defines it, and editing that note changes its instructions, provider, or folder. The General topic talks to the main Agent (`main` unless `main-agent` names another).
+4. Create a topic per Agent. Pero writes the topic's Agent note, such as `Agents/Groceries.md` from `Agents/_Template.md`, with `topics` set to the topic's title, and posts a welcome there; editing that note changes its instructions, provider, or folder. With `new-topics: main-agent` in `Pero.md`, the main Agent answers new topics instead. The General topic talks to the main Agent (`Main.md` unless `main-agent` names another).
 
 A direct chat with the bot works as well, alone or next to the group: message the bot and allow the user ID it replies with. It has no topics and talks to the main Agent, in a Session of its own.
 
 ```text
-~/.pero/
-├── pero.sqlite         # settings, definitions, runtime state, and message history
-├── logs/
-│   ├── pero.log         # daemon logs, JSON lines
-│   └── daemon.out       # raw stdout/stderr of a daemon started by `pero run`
-├── run/                 # local control endpoint and process metadata
-└── secrets/             # owner-only local secrets when needed
+~/workspace/
+├── .env                 # the Telegram bot token; owner-only, Git-ignored
+├── .pero/
+│   ├── config.yaml      # the data folder and the allowed chats
+│   ├── pero.sqlite      # runtime state and message history
+│   ├── logs/
+│   │   ├── pero.log     # daemon logs, JSON lines
+│   │   └── daemon.out   # raw stdout/stderr of a daemon started by `pero run`
+│   └── run/             # local control endpoint and process metadata
+└── data/
+    └── Settings/        # Pero.md, Agents/, and Workflows/
 ```
 
-Provider subscription credentials remain in the provider CLIs' own stores under the same OS account. The Telegram bot token is a separate secret: obtain it during setup or from the service environment and store it in owner-only local secret storage when persistence is needed. Never place provider credentials or Telegram tokens in Agent/Workflow rows or diagnostic output.
+A legacy data directory has the same files directly in `~/.pero/`, with `secrets/telegram-bot-token` in place of `.env`, and no notes.
+
+Provider subscription credentials remain in the provider CLIs' own stores under the same OS account. The Telegram bot token is a separate secret, in `.env` or the service environment. Never place provider credentials or Telegram tokens in notes, database rows, or diagnostic output.
 
 ## Process and command boundaries
 
-The npm executable is a thin command entry point: `bin/pero.js` loads the compiled [nest-commander](https://nest-commander.jhunt.dev/) CLI, which runs `CommandFactory.run(CliModule)`. `CliModule` imports only what commands need, not the full daemon `AppModule`, so commands start quickly without booting Telegram, the scheduler, or provider SDKs. `pero run` launches the NestJS daemon as a separate background process with logs redirected to local files, then waits for a readiness response. Node's [detached subprocess documentation](https://nodejs.org/docs/latest-v24.x/api/child_process.html#optionsdetached) describes the required detached/unreferenced process and disconnected standard I/O behavior. The daemon owns Telegram intake, scheduling, execution, notification delivery, and exclusive access to SQLite. A private local control endpoint serves lifecycle and management requests from the CLI; it must be accessible only to the owner account. The CLI never opens the database or loads TypeORM: it is a client of the control endpoint, sharing request schemas with the daemon. The one exception is `pero migrate`, which loads TypeORM only when it runs, to migrate and read a copy of a legacy database no daemon uses. This keeps a single writer, lets the daemon update its in-memory state (schedules, Sessions, Channel routing) directly when definitions change, and ensures only the daemon runs migrations.
+The npm executable is a thin command entry point: `bin/pero.js` loads the compiled [nest-commander](https://nest-commander.jhunt.dev/) CLI, which runs `CommandFactory.run(CliModule)`. `CliModule` imports only what commands need, not the full daemon `AppModule`, so commands start quickly without booting Telegram, the scheduler, or provider SDKs. `pero run` launches the NestJS daemon as a separate background process with logs redirected to local files, then waits for a readiness response. Node's [detached subprocess documentation](https://nodejs.org/docs/latest-v24.x/api/child_process.html#optionsdetached) describes the required detached/unreferenced process and disconnected standard I/O behavior. The daemon owns Telegram intake, scheduling, execution, notification delivery, and exclusive access to SQLite. A private local control endpoint serves lifecycle and management requests from the CLI; it must be accessible only to the owner account. The CLI never opens the database or loads TypeORM: it is a client of the control endpoint, sharing request schemas with the daemon. The one exception is `pero migrate`, which loads TypeORM only when it runs, to migrate and read a copy of a legacy database no daemon uses. This keeps a single writer and ensures only the daemon runs migrations. Commands that need no database, such as `init`, `check` without Pero, and `telegram allow`/`deny` while Pero is stopped, read and write the workspace's files themselves.
 
 Once the database is open and migrated, the daemon must start and report ready even when settings are missing or invalid. A bad Telegram token, a signed-out provider CLI, or an invalid Agent folder marks that component degraded in `pero status` instead of failing startup, so the owner can always fix configuration with ordinary commands. Only file-level maintenance that requires a stopped daemon, such as restoring a backup or migrating a data directory, runs without it.
 
-Permit only one daemon per data directory. Use an exclusive runtime lock and verify a live control endpoint before treating stored process metadata as current; a PID alone can be stale or reused. `pero stop` uses the control endpoint for graceful shutdown instead of killing whatever happens to have a saved PID. Database migrations happen before the daemon reports ready. `pero run` reports startup failures, printing the daemon's own output from `logs/daemon.out` and where to find the logs.
+Permit only one daemon per workspace (or legacy data directory). Use an exclusive runtime lock and verify a live control endpoint before treating stored process metadata as current; a PID alone can be stale or reused. `pero stop` uses the control endpoint for graceful shutdown instead of killing whatever happens to have a saved PID. Database migrations happen before the daemon reports ready. `pero run` reports startup failures, printing the daemon's own output from `logs/daemon.out` and where to find the logs.
 
 `pero run` keeps the process alive after the invoking terminal exits. Automatic startup after login or reboot is a separate service-manager feature, not implied by this command. The foreground mode provides a stable entry point for launchd, systemd, or another supervisor if the owner chooses one later. Upgrading the global npm package does not replace a running process; restart Pero to use the new version, with migrations run on startup.
 

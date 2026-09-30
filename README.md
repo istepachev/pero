@@ -9,7 +9,8 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 - **It works where your files are.** Agents work in a folder you choose, such as a notes vault or a Git repository. They read and edit files there the way Claude Code or Codex does, with your `CLAUDE.md`, `AGENTS.md`, skills, and MCP servers.
 - **It works while you're away.** Workflows run on a schedule, can read what you talked about during the day, and post their results to the topic you choose. You can reply to them right there.
 - **You stay in control.** By default, an Agent asks before running a command. Pero posts the request in the chat with Allow and Deny buttons. Only chats you allow can reach your Agents.
-- **Easy to run.** Pero is one npm package and one background process, with its data in a single SQLite file. You don't need Docker, a database server, or an open network port, and a single command backs everything up.
+- **Configured by notes.** Each Agent and Workflow is a Markdown note: its text is the prompt, and its properties set the model, schedule, and topic. Edit them in Obsidian on your phone, commit them to Git, or clone them onto a new server. Changes apply within seconds.
+- **Easy to run.** Pero is one npm package and one background process, with its state in a single SQLite file. You don't need Docker, a database server, or an open network port, and a single command backs everything up.
 
 ## What you need
 
@@ -37,9 +38,11 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
 4. **Allow the group.** Write anything in it. `pero run` offers to allow that chat. You can also allow it later with the command the bot replies with: `pero telegram allow <chat-id>`.
 
-5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic. The General topic talks to your main Agent.
+5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic: a note Pero writes in `data/Settings/Agents/`, whose text is the Agent's instructions. The General topic talks to your main Agent, `Agents/Main.md`.
 
 You can also message the bot directly and allow your user ID the same way. That chat talks to your main Agent, too.
+
+To start from a complete setup instead, with a Health Agent and two Workflows, copy the [example workspace](./examples/workspace/).
 
 ### Tip: use an Obsidian vault
 
@@ -57,11 +60,26 @@ Codex Agents only work inside a Git repository. If you sync with Git, the vault 
 pero status                # is Pero running, and is everything connected?
 pero logs -f               # follow the logs
 pero agents                # your Agents, their provider, model, and folder
-pero agents edit notes --provider codex --model gpt-5.5
 pero channels              # topics and chats, and which Agent answers in each
-pero settings              # installation-wide settings
+pero settings              # the defaults in effect
+pero check                 # any mistakes in the notes?
 pero stop
 ```
+
+### Agents are notes
+
+To change an Agent, edit its note. `data/Settings/Agents/Health.md` answers in the Health topic with its own model:
+
+```markdown
+---
+topics: [Health]
+provider: codex
+model: gpt-5.5
+---
+You are my health coach. My training log is in Health/Log.md.
+```
+
+Defaults for every Agent, such as the provider, model, and time zone, are properties of `data/Settings/Pero.md`, and its text is instructions every Agent shares. Pero reads the notes every 10 seconds, so the next message uses your edit. A note with a mistake doesn't stop Pero: it keeps the note's last good version, and tells you in the chat what's wrong. [Configuring Pero](./docs/CONFIGURATION.md) lists every property.
 
 ### Scheduled workflows
 
@@ -90,9 +108,24 @@ pero backup ~/backups/pero.tgz     # while Pero runs; --include-data adds the da
 pero restore ~/backups/pero.tgz    # into a workspace without a database, such as a fresh clone, while Pero is stopped
 ```
 
+### Upgrading from 0.1
+
+Pero 0.1 kept its Agents and Workflows in its database in `~/.pero`. Pero 0.2 reads them from notes, and `pero migrate` writes those notes for you, leaving `~/.pero` as it was:
+
+```sh
+pero backup ~/backups/pero-0.1.tgz   # with 0.1 still running
+pero stop
+npm install -g @perokit/pero
+pero migrate ~/workspace
+cd ~/workspace && pero run
+```
+
+[Operating Pero](./docs/OPERATIONS.md#upgrading-from-01) explains each step and what to check afterwards.
+
 ## Learn more
 
-- [User guide](./docs/USER_GUIDE.md): Telegram, Agents and permissions, Workflows, and settings in detail
+- [User guide](./docs/USER_GUIDE.md): Telegram, Agents and permissions, and Workflows in detail
+- [Configuring Pero](./docs/CONFIGURATION.md): the workspace, and every file and property
 - [Operating Pero](./docs/OPERATIONS.md): running as a service, upgrades, credentials, data, backup, and moving to a new machine
 - [CLI reference](./docs/CLI.md): every command and option
 - [Development](./docs/DEVELOPMENT.md): building, testing, and contributing to Pero

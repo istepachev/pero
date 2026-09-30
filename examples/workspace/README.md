@@ -21,4 +21,4 @@ Replace the chat ID in `.pero/config.yaml` with your group's first, or run `pero
 | `data/Settings/Workflows/Weekly health report.md` | Sundays at 12:00, a report from the training log, posted to Health |
 | `data/Settings/Workflows/Evening review.md` | Every evening at 21:00, what the day's chats left open, posted to General |
 
-A Workflow's `channel` names a topic by its title, and Pero must have seen the topic first: write something in Health and General before the Workflows run. The [configuration reference](../../docs/vision/CONFIGURATION.md) describes every file and property.
+A Workflow's `channel` names a topic by its title, and Pero must have seen the topic first: write something in Health and General before the Workflows run. [Configuring Pero](../../docs/CONFIGURATION.md) describes every file and property.

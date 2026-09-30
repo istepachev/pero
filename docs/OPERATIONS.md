@@ -1,6 +1,6 @@
 # Operating Pero
 
-How to install and upgrade Pero, where its credentials and data live, what its message history keeps, and how to back it up and bring it back on another machine.
+How to install and upgrade Pero, including from 0.1, where its credentials and data live, what its message history keeps, and how to back it up and bring it back on another machine.
 
 ## Install and upgrade
 
@@ -47,9 +47,59 @@ pero stop && pero run
 
 A running Pero keeps the version it started with until it is restarted.
 
+### Upgrading from 0.1
+
+Pero 0.1 kept its Agents, Workflows, and settings in the database of its data directory, `~/.pero` (or the one `--data-dir` or `PERO_HOME` names), and changed them through commands. Pero 0.2 runs in a workspace and reads them from notes ([Configuring Pero](./CONFIGURATION.md)). A 0.2 Pero started on a data directory has no Agents and says to migrate it. `pero migrate` converts one into the other while Pero is stopped, and leaves the data directory as it was, so 0.1 stays a fallback.
+
+1. **Back up with 0.1,** while it runs, then stop it, or its service:
+
+   ```sh
+   pero backup ~/backups/pero-0.1.tgz
+   pero stop                          # or: systemctl --user stop pero
+   ```
+
+2. **Install 0.2:**
+
+   ```sh
+   npm install -g @perokit/pero
+   ```
+
+   Don't `pero run` it before migrating: on the data directory, it would answer no topic, and would migrate the database there to a schema 0.1 can't read.
+
+3. **Migrate** into a new workspace. Add `--data-dir <dir>` for a data directory other than `~/.pero`:
+
+   ```sh
+   pero migrate ~/workspace
+   ```
+
+   It copies the database while holding the data directory's lock, and writes:
+   - `.pero/config.yaml`, with the old default working directory as the data folder and the allowed chats;
+   - `Settings/Pero.md` in the data folder, from the installation settings, with the shared instructions as its body;
+   - a note per Agent, with its instructions as the body, only the properties that differ from `Pero.md`, and `topics` listing the titles of the topics it answered;
+   - a note per Workflow, with its input as the body, its schedule as `day`, `hour`, and `minute` (or `cron`), and the topics it notified as `channel`;
+   - the rest of `pero init`'s skeleton, the bot token in `.env`, and the database in `.pero/`, last.
+
+   Names are kept, so every Session, message, and run carries on, and schedules keep their saved times, so no run is missed or repeated. The command lists what notes say differently, such as a disabled Channel (its topic now goes to the Agent that claims it) or a Workflow with several schedules (one note per schedule, `Evening review 1.md` and `Evening review 2.md`). It ends with `pero check` and exits 1 on problems. When two topics with the same title were answered by different Agents, it stops before writing anything: rename one of them in Telegram while 0.1 runs, then migrate again.
+
+4. **Start Pero** from the workspace, and check it:
+
+   ```sh
+   cd ~/workspace && pero run
+   pero status
+   pero agents          # each Agent, its note, and its topics
+   pero channels        # the Agent each topic goes to now
+   pero workflows       # each Workflow's schedule and next run
+   ```
+
+   A service needs the workspace too: `ExecStart=/usr/bin/env pero run --foreground --workspace %h/workspace`, as [above](#install-and-upgrade).
+
+Pero 0.1's setup proposed the folder it was started from as the working folder, or `~/workspace` from the home folder. When the old working folder is `~/workspace`, `pero migrate ~/workspace` makes it the workspace itself, with `data: .`, and the notes go in `~/workspace/Settings/`. The Agents then work in the workspace root, next to `.env` and `.pero/config.yaml`, so they can read the bot token and edit the allowed chats. To keep those out of their folder, migrate into a folder of its own instead, such as `pero migrate ~/pero`: `config.yaml` then names `~/workspace` as the data folder. Commands find that workspace from inside it, or everywhere with `export PERO_WORKSPACE="$HOME/pero"` in your shell profile.
+
+Once 0.2 works, move `~/.pero` aside (`mv ~/.pero ~/pero-0.1`): a command run outside any workspace otherwise still finds it. To go back to 0.1, stop 0.2, move `~/.pero` back, and `npm install -g @perokit/pero@0.1`; what happened since the upgrade stays in the workspace.
+
 ## Configuration
 
-Almost everything is configured with `pero settings` while Pero runs (see the [user guide](./USER_GUIDE.md#first-run-setup-and-settings)). A few settings are read when Pero starts, from its command line and environment:
+Agents, Workflows, and the installation defaults are notes in the workspace, and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Pero applies edits to them while it runs. A few settings are read when Pero starts, from its command line and environment:
 
 | Setting | Source | Default |
 |---|---|---|
@@ -79,10 +129,10 @@ The Telegram bot token is Pero's one secret. It comes from `PERO_TELEGRAM_BOT_TO
 
 ## Data layout
 
-Everything Pero owns is in its data directory: a workspace's `.pero/`, or `~/.pero` unless `--data-dir` or `PERO_HOME` names another:
+Everything Pero owns is in its state directory: a workspace's `.pero/`, or a legacy data directory (`~/.pero` unless `--data-dir` or `PERO_HOME` names another):
 
 ```text
-~/.pero/                 # owner-only
+~/workspace/.pero/       # owner-only
 ├── pero.sqlite          # the database; pero.sqlite-wal and -shm beside it while Pero runs
 ├── logs/
 │   ├── pero.log         # daemon logs, JSON lines, without message text
@@ -182,7 +232,7 @@ pero run
 
 ### Moving to a fresh machine
 
-The drill below brings back every definition, and every Session resumes where it stopped. `test/restore.e2e-spec.ts` runs the same steps with the fake Bot API and the echo runtime.
+The drill below brings back the workspace from Git and Pero's state from its backup, and every Session resumes where it stopped. `test/restore.e2e-spec.ts` runs the same steps with the fake Bot API and the echo runtime.
 
 1. **Stop Pero on the old machine** (`pero stop`, or stop its service), and take a last backup before that with `pero backup`. The two must never poll the same bot at once.
 2. **Install Pero** on the new machine, the same version or a newer one, under an account with the **same home directory path** as before, so that the folders and provider stores keep their paths.
