@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { HealthModule } from '../health/health.module.js';
+import { SettingsModule } from '../settings/settings.module.js';
 import {
   HOST_CONFIG_OPTIONS,
   HostConfigService,
@@ -16,7 +17,7 @@ export class HostConfigModule {
     return {
       module: HostConfigModule,
       global: true,
-      imports: [HealthModule],
+      imports: [HealthModule, SettingsModule],
       providers: [
         { provide: HOST_CONFIG_OPTIONS, useValue: options },
         HostConfigService,

@@ -24,11 +24,8 @@ import {
 import { validateWorkingDirectory } from '../config/working-directory.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { SettingsService } from '../settings/settings.service.js';
 
 export const HOST_CONFIG_OPTIONS = Symbol('HOST_CONFIG_OPTIONS');
 
@@ -82,12 +79,12 @@ export class HostConfigService implements OnModuleInit {
   constructor(
     @Inject(HOST_CONFIG_OPTIONS) private readonly options: HostConfigOptions,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly settings: SettingsService,
     private readonly health: ComponentHealth,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const settings = this.dataSource.getRepository(Settings);
-    const current = await settings.findOneByOrFail({ id: SETTINGS_ID });
+    const current = await this.settings.get();
     this.config =
       readHostConfig(this.options.file) ??
       this.create(current.defaultWorkingDirectory);
@@ -95,7 +92,7 @@ export class HostConfigService implements OnModuleInit {
 
     const folder = await this.checkDataFolder();
     if (folder !== null && folder !== current.defaultWorkingDirectory) {
-      await settings.update(SETTINGS_ID, { defaultWorkingDirectory: folder });
+      await this.settings.setDataFolder(folder);
       this.logger.log(
         `Data folder is ${folder}` +
           (current.defaultWorkingDirectory === null

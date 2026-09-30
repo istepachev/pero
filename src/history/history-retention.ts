@@ -8,10 +8,7 @@ import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { Message } from '../persistence/entities/message.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+import { Definitions } from '../definitions/definitions.js';
 import { inTransaction } from '../persistence/transaction.js';
 
 /** How often older messages are looked for. */
@@ -37,7 +34,10 @@ export class HistoryRetention
   private current: Promise<void> | null = null;
   private stopping = false;
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: Definitions,
+  ) {}
 
   /** Not awaited, so a long first pass does not hold up readiness. */
   onApplicationBootstrap(): void {
@@ -61,9 +61,7 @@ export class HistoryRetention
    * unset.
    */
   async prune(now: Date = new Date()): Promise<number> {
-    const { historyRetentionDays: days } = await this.dataSource
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
+    const { historyRetentionDays: days } = await this.definitions.defaults();
     if (days === null) return 0;
     const cutoff = new Date(now.getTime() - days * DAY_MS);
     let deleted = 0;

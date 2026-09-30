@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   composeInstructions,
   effectiveWorkingDirectory,
+  resolveAgent,
 } from './agent-resolution.js';
 
 describe('effectiveWorkingDirectory', () => {
@@ -32,7 +33,7 @@ describe('composeInstructions', () => {
   it('puts the shared instructions before the Agent’s own', () => {
     expect(
       composeInstructions(
-        { instructions: 'Track spending.', useSharedInstructions: true },
+        { instructions: 'Track spending.', sharedInstructions: true },
         shared,
       ),
     ).toBe('Answer in English.\n\nTrack spending.');
@@ -41,7 +42,7 @@ describe('composeInstructions', () => {
   it('leaves the shared instructions out when the Agent opts out', () => {
     expect(
       composeInstructions(
-        { instructions: 'Track spending.', useSharedInstructions: false },
+        { instructions: 'Track spending.', sharedInstructions: false },
         shared,
       ),
     ).toBe('Track spending.');
@@ -50,19 +51,19 @@ describe('composeInstructions', () => {
   it('uses whichever part exists, and nothing when neither does', () => {
     expect(
       composeInstructions(
-        { instructions: null, useSharedInstructions: true },
+        { instructions: null, sharedInstructions: true },
         shared,
       ),
     ).toBe('Answer in English.');
     expect(
       composeInstructions(
-        { instructions: 'Track spending.', useSharedInstructions: true },
+        { instructions: 'Track spending.', sharedInstructions: true },
         { sharedInstructions: null },
       ),
     ).toBe('Track spending.');
     expect(
       composeInstructions(
-        { instructions: '  ', useSharedInstructions: true },
+        { instructions: '  ', sharedInstructions: true },
         { sharedInstructions: '' },
       ),
     ).toBe('');
@@ -71,9 +72,43 @@ describe('composeInstructions', () => {
   it('trims each part so they meet at one blank line', () => {
     expect(
       composeInstructions(
-        { instructions: '\nTrack spending.\n', useSharedInstructions: true },
+        { instructions: '\nTrack spending.\n', sharedInstructions: true },
         { sharedInstructions: 'Answer in English.\n\n' },
       ),
     ).toBe('Answer in English.\n\nTrack spending.');
+  });
+});
+
+describe('resolveAgent', () => {
+  it('composes the instructions and keeps the row ID state refers to', () => {
+    expect(
+      resolveAgent(
+        7,
+        {
+          name: 'coach',
+          title: null,
+          provider: 'codex',
+          providerOptions: { model: 'gpt-5', effort: 'high' },
+          permissions: 'bypass',
+          workingDirectory: '/vault',
+          ownWorkingDirectory: null,
+          instructions: 'Track spending.',
+          sharedInstructions: true,
+          skipGitRepoCheck: true,
+          enabled: false,
+        },
+        { sharedInstructions: 'Answer in English.' },
+      ),
+    ).toEqual({
+      id: 7,
+      name: 'coach',
+      provider: 'codex',
+      providerOptions: { model: 'gpt-5', effort: 'high' },
+      workingDirectory: '/vault',
+      instructions: 'Answer in English.\n\nTrack spending.',
+      toolPolicy: { permissions: 'bypass' },
+      codexSkipGitRepoCheck: true,
+      enabled: false,
+    });
   });
 });

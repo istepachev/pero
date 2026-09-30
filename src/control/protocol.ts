@@ -190,8 +190,6 @@ export const agentViewSchema = z.object({
   enabled: z.boolean(),
   /** Whether it is the Agent primary Channels get when onboarded. */
   main: z.boolean(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
 });
 
 export type AgentView = z.infer<typeof agentViewSchema>;

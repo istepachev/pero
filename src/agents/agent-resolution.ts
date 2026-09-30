@@ -1,10 +1,47 @@
-import type { Agent } from '../persistence/entities/agent.entity.js';
-import type { Settings } from '../persistence/entities/settings.entity.js';
+import type { Provider, ProviderOptions } from '../config/provider-options.js';
+import type { ToolPolicy } from '../config/tool-policy.js';
+import type { AgentDefinition, Defaults } from '../definitions/definitions.js';
+
+/** What a runtime needs from an Agent, with defaults already applied. */
+export interface ResolvedAgent {
+  id: number;
+  name: string;
+  provider: Provider;
+  providerOptions: ProviderOptions;
+  workingDirectory: string;
+  instructions: string;
+  toolPolicy: ToolPolicy;
+  /** Whether a Codex Agent may work in a folder outside a Git repository. */
+  codexSkipGitRepoCheck: boolean;
+  enabled: boolean;
+}
+
+/**
+ * `agent` as a runtime runs it, with the shared instructions composed in.
+ * `id` is its row's, which state still refers to it by.
+ */
+export function resolveAgent(
+  id: number,
+  agent: AgentDefinition,
+  defaults: Pick<Defaults, 'sharedInstructions'>,
+): ResolvedAgent {
+  return {
+    id,
+    name: agent.name,
+    provider: agent.provider,
+    providerOptions: agent.providerOptions,
+    workingDirectory: agent.workingDirectory,
+    instructions: composeInstructions(agent, defaults),
+    toolPolicy: { permissions: agent.permissions },
+    codexSkipGitRepoCheck: agent.skipGitRepoCheck,
+    enabled: agent.enabled,
+  };
+}
 
 /** The folder an Agent works in: its own, otherwise the shared default. */
 export function effectiveWorkingDirectory(
-  agent: Pick<Agent, 'workingDirectory'>,
-  settings: Pick<Settings, 'defaultWorkingDirectory'>,
+  agent: { workingDirectory: string | null },
+  settings: { defaultWorkingDirectory: string | null },
 ): string {
   const folder = agent.workingDirectory ?? settings.defaultWorkingDirectory;
   // Creation and edits refuse to follow an unset default, so this means a
@@ -23,11 +60,11 @@ export function effectiveWorkingDirectory(
  * parts are left out.
  */
 export function composeInstructions(
-  agent: Pick<Agent, 'instructions' | 'useSharedInstructions'>,
-  settings: Pick<Settings, 'sharedInstructions'>,
+  agent: { instructions: string | null; sharedInstructions: boolean },
+  defaults: { sharedInstructions: string | null },
 ): string {
   const parts = [
-    agent.useSharedInstructions ? settings.sharedInstructions : null,
+    agent.sharedInstructions ? defaults.sharedInstructions : null,
     agent.instructions,
   ];
   return parts

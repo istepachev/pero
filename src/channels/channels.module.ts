@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AgentsModule } from '../agents/agents.module.js';
+import { DefinitionsModule } from '../definitions/definitions.module.js';
 import { HistoryModule } from '../history/history.module.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
 import { AgentChannelTurns } from './agent-channel-turns.js';
@@ -24,7 +25,7 @@ import {
  * Agents, and Channel management; adapters connect to it.
  */
 @Module({
-  imports: [AgentsModule, HistoryModule, SessionsModule],
+  imports: [AgentsModule, DefinitionsModule, HistoryModule, SessionsModule],
   providers: [
     ChannelRouter,
     ChannelSender,

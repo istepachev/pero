@@ -16,6 +16,7 @@ import {
   settingsUpdateSchema,
 } from '../config/settings-input.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
+import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import {
   SETTINGS_ID,
@@ -26,7 +27,10 @@ import { inTransaction } from '../persistence/transaction.js';
 /** Reads and changes the installation defaults and limits. */
 @Injectable()
 export class SettingsService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: SqliteDefinitions,
+  ) {}
 
   get(): Promise<Settings> {
     return this.dataSource
@@ -48,7 +52,7 @@ export class SettingsService {
         ? undefined
         : await validateWorkingDirectory(defaultWorkingDirectory);
 
-    return inTransaction(this.dataSource, async (manager) => {
+    const updated = await inTransaction(this.dataSource, async (manager) => {
       const repo = manager.getRepository(Settings);
       const current = await repo.findOneByOrFail({ id: SETTINGS_ID });
       const changes: Partial<Omit<Settings, 'mainAgent'>> =
@@ -80,6 +84,21 @@ export class SettingsService {
       }
       return repo.findOneByOrFail({ id: SETTINGS_ID });
     });
+    this.definitions.changed();
+    return updated;
+  }
+
+  /**
+   * Records `folder`, the data folder `config.yaml` names, as the default
+   * working directory. Unchecked: the caller has checked it.
+   */
+  async setDataFolder(folder: string): Promise<void> {
+    await inTransaction(this.dataSource, (manager) =>
+      manager
+        .getRepository(Settings)
+        .update(SETTINGS_ID, { defaultWorkingDirectory: folder }),
+    );
+    this.definitions.changed();
   }
 
   /** The main Agent's name; null while none is chosen. */
