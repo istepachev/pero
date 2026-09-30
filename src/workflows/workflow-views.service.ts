@@ -1,86 +1,78 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
+import { type DataSource, In } from 'typeorm';
 import type {
   NotificationTargetView,
-  TriggerView,
   WorkflowDetails,
   WorkflowView,
 } from '../control/protocol.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
-import type { Channel } from '../persistence/entities/channel.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
-import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
-import { Workflow } from '../persistence/entities/workflow.entity.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import {
+  type AgentDefinition,
+  Definitions,
+  requireWorkflow,
+  type WorkflowDefinition,
+} from '../definitions/definitions.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { findWorkflow } from './workflows.service.js';
+import {
+  triggerCountsWithin,
+  triggerViewsWithin,
+} from '../triggers/triggers.service.js';
 
 /** Workflows as the CLI shows them: their Agent and their Triggers. */
 @Injectable()
 export class WorkflowViews {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
+  ) {}
 
   /** Every Workflow, by name. */
-  list(): Promise<WorkflowView[]> {
-    return inTransaction(this.dataSource, async (manager) => {
-      const workflows = await manager.getRepository(Workflow).find({
-        relations: { agent: true },
-        order: { name: 'ASC' },
-      });
-      const counts = await triggerCounts(manager);
-      return workflows.map((workflow) =>
-        // The foreign key guarantees the Agent.
-        workflowView(workflow, workflow.agent!, counts.get(workflow.id) ?? 0),
-      );
-    });
+  async list(): Promise<WorkflowView[]> {
+    const workflows = await this.definitions.workflows();
+    const agents = new Map(
+      (await this.definitions.agents()).map((agent) => [agent.name, agent]),
+    );
+    const names = await this.ids.workflowNames();
+    const counts = new Map<string, number>();
+    for (const [id, count] of await triggerCountsWithin(
+      this.dataSource.manager,
+    )) {
+      const name = names.get(id);
+      if (name !== undefined) counts.set(name, count);
+    }
+    return workflows.map((workflow) =>
+      workflowView(
+        workflow,
+        agents.get(workflow.agent) ?? null,
+        counts.get(workflow.name) ?? 0,
+      ),
+    );
   }
 
   /**
    * The Workflow named `name` with its Triggers and the Channels it
    * notifies; `NotFoundError` if none.
    */
-  details(name: string): Promise<WorkflowDetails> {
+  async details(name: string): Promise<WorkflowDetails> {
+    const workflow = await requireWorkflow(this.definitions, name);
+    const agent = await this.definitions.agent(workflow.agent);
+    const id = await this.ids.workflowId(workflow.name);
     return inTransaction(this.dataSource, async (manager) => {
-      const workflow = await findWorkflow(manager, name);
-      const agent = await manager
-        .getRepository(Agent)
-        .findOneByOrFail({ id: workflow.agentId });
-      const triggers = await manager
-        .getRepository(Trigger)
-        .find({ where: { workflowId: workflow.id }, order: { id: 'ASC' } });
-      const targets = await manager
-        .getRepository(WorkflowNotificationTarget)
-        .find({
-          where: { workflowId: workflow.id },
-          relations: { channel: true },
-          order: { channelId: 'ASC' },
-        });
+      const triggers = await triggerViewsWithin(manager, id, workflow.name);
+      const channels = await manager.getRepository(Channel).find({
+        where: { id: In(workflow.targets) },
+        order: { id: 'ASC' },
+      });
       return {
         ...workflowView(workflow, agent, triggers.length),
-        triggers: triggers.map((trigger) => triggerView(trigger, workflow)),
-        // The foreign key guarantees each Channel.
-        targets: targets.map(({ channel }) => targetView(channel!)),
+        triggers,
+        targets: channels.map(targetView),
       };
     });
   }
-}
-
-/** A Trigger as the CLI shows it, with the Workflow it starts. */
-export function triggerView(
-  trigger: Trigger,
-  workflow: Pick<Workflow, 'name'>,
-): TriggerView {
-  const { cron } = trigger.config;
-  return {
-    id: trigger.id,
-    workflow: workflow.name,
-    kind: trigger.kind,
-    cron: typeof cron === 'string' ? cron : null,
-    timezone: trigger.timezone,
-    nextRunAt: trigger.nextRunAt?.toISOString() ?? null,
-    lastRunAt: trigger.lastRunAt?.toISOString() ?? null,
-    enabled: trigger.enabled,
-  };
 }
 
 function targetView(channel: Channel): NotificationTargetView {
@@ -94,35 +86,19 @@ function targetView(channel: Channel): NotificationTargetView {
 }
 
 function workflowView(
-  workflow: Workflow,
-  agent: Agent,
+  workflow: WorkflowDefinition,
+  agent: AgentDefinition | null,
   triggerCount: number,
 ): WorkflowView {
   return {
     name: workflow.name,
     title: workflow.title,
-    agent: agent.name,
-    agentEnabled: agent.enabled,
-    inputTemplate: workflow.inputTemplate,
+    agent: workflow.agent,
+    agentEnabled: agent?.enabled ?? false,
+    inputTemplate: workflow.input,
     enabled: workflow.enabled,
-    concurrencyPolicy: workflow.concurrencyPolicy,
     maxAttempts: workflow.maxAttempts,
     history: workflow.history,
     triggerCount,
-    createdAt: workflow.createdAt.toISOString(),
-    updatedAt: workflow.updatedAt.toISOString(),
   };
-}
-
-async function triggerCounts(
-  manager: EntityManager,
-): Promise<Map<number, number>> {
-  const rows = await manager
-    .getRepository(Trigger)
-    .createQueryBuilder('t')
-    .select('t.workflowId', 'workflowId')
-    .addSelect('COUNT(*)', 'count')
-    .groupBy('t.workflowId')
-    .getRawMany<{ workflowId: number; count: number }>();
-  return new Map(rows.map((row) => [row.workflowId, Number(row.count)]));
 }

@@ -17,7 +17,6 @@ import {
 } from '../config/workflow-input.js';
 import {
   CHAT_KINDS,
-  CONCURRENCY_POLICIES,
   INTEGRATION_KINDS,
   MESSAGE_DIRECTIONS,
   MESSAGE_ORIGINS,
@@ -302,7 +301,6 @@ export const workflowViewSchema = z.object({
   /** The input each run sends to the Agent. */
   inputTemplate: z.string(),
   enabled: z.boolean(),
-  concurrencyPolicy: z.enum(CONCURRENCY_POLICIES),
   /** How many times a run may start in all; see `Workflow.maxAttempts`. */
   maxAttempts: z.int(),
   /** The Channel history its runs read; null when they read none. */
@@ -317,8 +315,6 @@ export const workflowViewSchema = z.object({
     .nullable(),
   /** How many Triggers it has, enabled or not. */
   triggerCount: z.int().nonnegative(),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
 });
 
 export type WorkflowView = z.infer<typeof workflowViewSchema>;

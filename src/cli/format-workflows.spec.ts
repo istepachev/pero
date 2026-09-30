@@ -24,12 +24,9 @@ const review: WorkflowView = {
   agentEnabled: true,
   inputTemplate: "Review today's chats.\nSuggest one improvement.",
   enabled: true,
-  concurrencyPolicy: 'serial',
   maxAttempts: 1,
   history: null,
   triggerCount: 2,
-  createdAt: '2026-09-28T09:00:00.000Z',
-  updatedAt: '2026-09-28T09:00:00.000Z',
 };
 
 const schedule: TriggerView = {

@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
+import type { WorkflowDefinition } from '../definitions/definitions.js';
 import { createRunNotifications } from '../notifications/run-notifications.js';
 import {
   type RunStatus,
@@ -28,25 +29,25 @@ export interface RunFinish {
  * same transaction, so they commit together. Every run ends through here.
  * Creating Notifications runs in a savepoint of its own: should it fail,
  * the run is recorded without them, so a Notification never keeps a run
- * `running`. `retried` says an interrupted run has a retry queued.
+ * `running`. They go to the Channels `workflow`, the run's Workflow as it
+ * is defined now, notifies; none when it is gone. `retried` says an
+ * interrupted run has a retry queued.
  */
 export async function finishRun(
   manager: EntityManager,
   runId: number,
+  workflow: WorkflowDefinition | null,
   fields: RunFinish,
   { retried = false }: { retried?: boolean } = {},
 ): Promise<void> {
   const runs = manager.getRepository(WorkflowRun);
   await runs.update(runId, { finishedAt: new Date(), ...fields });
-  const run = await runs.findOneOrFail({
-    where: { id: runId },
-    relations: { workflow: true },
-  });
+  if (workflow === null) return;
+  const run = await runs.findOneByOrFail({ id: runId });
   try {
     // A nested transaction is a savepoint on SQLite.
     await manager.transaction((inner) =>
-      // The foreign key guarantees the Workflow.
-      createRunNotifications(inner, run, run.workflow!, retried),
+      createRunNotifications(inner, run, workflow, retried),
     );
   } catch (error) {
     logger.error(

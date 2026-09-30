@@ -13,16 +13,24 @@ import type {
   RunDetails,
   RunView,
 } from '../control/protocol.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import {
+  Definitions,
+  requireAgent,
+  requireWorkflow,
+  type WorkflowDefinition,
+} from '../definitions/definitions.js';
 import {
   NOTIFICATION_RELATIONS,
   notificationView,
 } from '../notifications/notification-views.service.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import {
+  manualTriggerWithin,
+  markTriggerRunWithin,
+} from '../triggers/triggers.service.js';
 import {
   historyReadSchema,
   historyWindowSchema,
@@ -30,7 +38,6 @@ import {
 import { finishRun } from './finish-run.js';
 import { queueRetryWithin, retryKey } from './retry-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
-import { findWorkflow } from './workflows.service.js';
 
 /**
  * Queues Workflow Runs started or retried by hand, cancels runs, and reads
@@ -43,6 +50,8 @@ export class WorkflowRuns {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /**
@@ -53,25 +62,10 @@ export class WorkflowRuns {
    */
   async start(name: string): Promise<RunView> {
     const run = await inTransaction(this.dataSource, async (manager) => {
-      const workflow = await findWorkflow(manager, name);
-      if (!workflow.enabled) {
-        throw new InvalidInputError(
-          `Workflow ${workflow.name} is disabled; enable it first with pero workflows enable ${workflow.name}`,
-        );
-      }
-      const agent = await manager
-        .getRepository(Agent)
-        .findOneByOrFail({ id: workflow.agentId });
-      if (!agent.enabled) {
-        throw new InvalidInputError(
-          `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
-        );
-      }
-      const triggers = manager.getRepository(Trigger);
-      const trigger = await triggers.findOneBy({
-        workflowId: workflow.id,
-        kind: 'manual',
-      });
+      const workflow = await requireWorkflow(this.definitions, name);
+      await this.requireRunnable(workflow);
+      const workflowId = await this.ids.workflowId(workflow.name);
+      const trigger = await manualTriggerWithin(manager, workflowId);
       if (trigger === null) {
         throw new InvalidInputError(
           `Workflow ${workflow.name} has no manual Trigger; add one with pero triggers add ${workflow.name} --manual`,
@@ -85,7 +79,7 @@ export class WorkflowRuns {
       const runs = manager.getRepository(WorkflowRun);
       const { id } = await runs.save(
         runs.create({
-          workflowId: workflow.id,
+          workflowId,
           triggerId: trigger.id,
           // Each start by hand is its own occurrence.
           triggerKey: `manual:${randomUUID()}`,
@@ -93,7 +87,7 @@ export class WorkflowRuns {
           attempt: 1,
         }),
       );
-      await triggers.update(trigger.id, { lastRunAt: new Date() });
+      await markTriggerRunWithin(manager, trigger.id, new Date());
       return runView(await runs.findOneByOrFail({ id }), workflow);
     });
     this.logger.log(`Run ${run.id} of Workflow ${run.workflow} queued`);
@@ -114,7 +108,10 @@ export class WorkflowRuns {
       const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
       if (run.status === 'pending') {
-        await finishRun(manager, id, {
+        const workflow = await this.definitions.workflow(
+          await this.ids.workflowName(run.workflowId),
+        );
+        await finishRun(manager, id, workflow, {
           status: 'cancelled',
           errorText: CANCELLED,
         });
@@ -149,13 +146,9 @@ export class WorkflowRuns {
   async retry(id: number): Promise<ControlResult<'runs.retry'>> {
     const result = await inTransaction(this.dataSource, async (manager) => {
       const runs = manager.getRepository(WorkflowRun);
-      const run = await runs.findOne({
-        where: { id },
-        relations: { workflow: true },
-      });
+      const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
-      // The foreign key guarantees the Workflow.
-      const workflow = run.workflow!;
+      const name = await this.ids.workflowName(run.workflowId);
       if (run.status === 'pending' || run.status === 'running') {
         throw new ConflictError(
           `Run ${id} has not finished (${run.status}); pero runs cancel ${id} cancels it`,
@@ -163,11 +156,11 @@ export class WorkflowRuns {
       }
       if (run.status === 'completed') {
         throw new ConflictError(
-          `Run ${id} completed; pero workflows run ${workflow.name} starts another`,
+          `Run ${id} completed; pero workflows run ${name} starts another`,
         );
       }
       const existing = await runs.findOneBy({
-        workflowId: workflow.id,
+        workflowId: run.workflowId,
         triggerKey: retryKey(id),
       });
       if (existing !== null) {
@@ -175,19 +168,8 @@ export class WorkflowRuns {
           `Run ${id} is already retried by run ${existing.id}; retry that one instead`,
         );
       }
-      if (!workflow.enabled) {
-        throw new InvalidInputError(
-          `Workflow ${workflow.name} is disabled; enable it first with pero workflows enable ${workflow.name}`,
-        );
-      }
-      const agent = await manager
-        .getRepository(Agent)
-        .findOneByOrFail({ id: workflow.agentId });
-      if (!agent.enabled) {
-        throw new InvalidInputError(
-          `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
-        );
-      }
+      const workflow = await requireWorkflow(this.definitions, name);
+      await this.requireRunnable(workflow);
       const retryId = await queueRetryWithin(manager, run);
       return {
         run: runView(await runs.findOneByOrFail({ id: retryId }), workflow),
@@ -201,13 +183,28 @@ export class WorkflowRuns {
     return result;
   }
 
+  /** Refuses to queue a run of `workflow` unless it and its Agent are enabled. */
+  private async requireRunnable(workflow: WorkflowDefinition): Promise<void> {
+    if (!workflow.enabled) {
+      throw new InvalidInputError(
+        `Workflow ${workflow.name} is disabled; enable it first with pero workflows enable ${workflow.name}`,
+      );
+    }
+    const agent = await requireAgent(this.definitions, workflow.agent);
+    if (!agent.enabled) {
+      throw new InvalidInputError(
+        `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
+      );
+    }
+  }
+
   /** The latest runs that match `filter`, newest first. */
   list(filter: ParsedControlParams<'runs.list'>): Promise<RunView[]> {
     return inTransaction(this.dataSource, async (manager) => {
       const where: FindOptionsWhere<WorkflowRun> = {};
       if (filter.status !== undefined) where.status = filter.status;
       if (filter.workflow !== undefined) {
-        where.workflowId = (await findWorkflow(manager, filter.workflow)).id;
+        where.workflowId = await this.ids.workflowId(filter.workflow);
       }
       const runs = await manager.getRepository(WorkflowRun).find({
         where,
@@ -215,7 +212,7 @@ export class WorkflowRuns {
         order: { id: 'DESC' },
         take: filter.limit,
       });
-      // The foreign key guarantees each Workflow.
+      // Joined for its name only; the foreign key guarantees it.
       return runs.map((run) => runView(run, run.workflow!));
     });
   }
@@ -292,10 +289,7 @@ async function alsoReadBy(
 }
 
 /** A run as the CLI shows it. */
-export function runView(
-  run: WorkflowRun,
-  workflow: Pick<Workflow, 'name'>,
-): RunView {
+export function runView(run: WorkflowRun, workflow: { name: string }): RunView {
   const text = run.result?.text;
   return {
     id: run.id,

@@ -5,6 +5,7 @@ import type {
   ProviderOptions,
 } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
+import type { WorkflowHistory } from '../config/workflow-input.js';
 
 /** Installation defaults that Agents and Pero's own limits follow. */
 export interface Defaults {
@@ -48,11 +49,29 @@ export interface AgentDefinition {
   enabled: boolean;
 }
 
+/** A Workflow as it runs. */
+export interface WorkflowDefinition {
+  name: string;
+  /** Display name; null shows `name`. */
+  title: string | null;
+  /** The name of the Agent that runs it. */
+  agent: string;
+  /** What each run sends the Agent. */
+  input: string;
+  /** The Channel history each run reads; null reads none. */
+  history: WorkflowHistory | null;
+  /** The Channels, by ID, told of each run that finishes. */
+  targets: number[];
+  /** How many times a run of it may start in all. */
+  maxAttempts: number;
+  enabled: boolean;
+}
+
 /**
- * What Pero is configured to run: the defaults and the Agents. Read-only;
- * the create and edit services change the definitions, and `onChange`
- * says when they have. Runtime code reads definitions only through this,
- * whatever holds them.
+ * What Pero is configured to run: the defaults, the Agents, and the
+ * Workflows. Read-only; the create and edit services change the
+ * definitions, and `onChange` says when they have. Runtime code reads
+ * definitions only through this, whatever holds them.
  */
 export abstract class Definitions {
   abstract defaults(): Promise<Defaults>;
@@ -65,6 +84,12 @@ export abstract class Definitions {
 
   /** The Agent primary Channels get; null while none is chosen. */
   abstract mainAgent(): Promise<AgentDefinition | null>;
+
+  /** The Workflow named `name`, in any case; null if none. */
+  abstract workflow(name: string): Promise<WorkflowDefinition | null>;
+
+  /** Every Workflow, by name. */
+  abstract workflows(): Promise<WorkflowDefinition[]>;
 
   /**
    * Calls `listener` after the definitions may have changed; returns a
@@ -81,4 +106,14 @@ export async function requireAgent(
   const agent = await definitions.agent(name);
   if (agent === null) throw new NotFoundError(`No Agent named ${name}`);
   return agent;
+}
+
+/** The Workflow named `name`; `NotFoundError` if none. */
+export async function requireWorkflow(
+  definitions: Definitions,
+  name: string,
+): Promise<WorkflowDefinition> {
+  const workflow = await definitions.workflow(name);
+  if (workflow === null) throw new NotFoundError(`No Workflow named ${name}`);
+  return workflow;
 }

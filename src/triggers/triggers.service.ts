@@ -1,6 +1,11 @@
 import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { type DataSource, type EntityManager, IsNull } from 'typeorm';
+import {
+  type DataSource,
+  type EntityManager,
+  IsNull,
+  LessThanOrEqual,
+} from 'typeorm';
 import {
   ConflictError,
   InvalidInputError,
@@ -16,9 +21,8 @@ import {
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { triggerView } from '../workflows/workflow-views.service.js';
 import { findWorkflow } from '../workflows/workflows.service.js';
-import { nextOccurrence } from './schedule.js';
+import { nextOccurrence, type Schedule } from './schedule.js';
 
 /**
  * Adds, removes, and switches the Triggers that start Workflows. An enabled
@@ -178,4 +182,137 @@ function nextRun(trigger: Trigger, after: Date): Date | null {
   const { cron } = trigger.config;
   if (typeof cron !== 'string' || trigger.timezone === null) return null;
   return nextOccurrence({ cron, timezone: trigger.timezone }, after);
+}
+
+/** A Trigger as the CLI shows it, with the Workflow it starts. */
+export function triggerView(
+  trigger: Trigger,
+  workflow: Pick<Workflow, 'name'>,
+): TriggerView {
+  const { cron } = trigger.config;
+  return {
+    id: trigger.id,
+    workflow: workflow.name,
+    kind: trigger.kind,
+    cron: typeof cron === 'string' ? cron : null,
+    timezone: trigger.timezone,
+    nextRunAt: trigger.nextRunAt?.toISOString() ?? null,
+    lastRunAt: trigger.lastRunAt?.toISOString() ?? null,
+    enabled: trigger.enabled,
+  };
+}
+
+// The Trigger rows that runtime code reads and advances, until plan step
+// 7.3 moves schedule state into a table of its own and 9.1 lets any
+// Workflow run by hand.
+
+/** The Triggers of Workflow `workflowId`, named `workflow`, by ID. */
+export async function triggerViewsWithin(
+  manager: EntityManager,
+  workflowId: number,
+  workflow: string,
+): Promise<TriggerView[]> {
+  const triggers = await manager
+    .getRepository(Trigger)
+    .find({ where: { workflowId }, order: { id: 'ASC' } });
+  return triggers.map((trigger) => triggerView(trigger, { name: workflow }));
+}
+
+/** How many Triggers each Workflow has, by Workflow ID. */
+export async function triggerCountsWithin(
+  manager: EntityManager,
+): Promise<Map<number, number>> {
+  const rows = await manager
+    .getRepository(Trigger)
+    .createQueryBuilder('t')
+    .select('t.workflowId', 'workflowId')
+    .addSelect('COUNT(*)', 'count')
+    .groupBy('t.workflowId')
+    .getRawMany<{ workflowId: number; count: number }>();
+  return new Map(rows.map((row) => [row.workflowId, Number(row.count)]));
+}
+
+/** The manual Trigger of Workflow `workflowId`; null if it has none. */
+export async function manualTriggerWithin(
+  manager: EntityManager,
+  workflowId: number,
+): Promise<{ id: number; enabled: boolean } | null> {
+  return manager.getRepository(Trigger).findOne({
+    select: { id: true, enabled: true },
+    where: { workflowId, kind: 'manual' },
+  });
+}
+
+/** Records that Trigger `id` started a run at `at`. */
+export async function markTriggerRunWithin(
+  manager: EntityManager,
+  id: number,
+  at: Date,
+): Promise<void> {
+  await manager.getRepository(Trigger).update(id, { lastRunAt: at });
+}
+
+/** The enabled schedule Triggers due by `now`, soonest first. */
+export async function dueScheduleIds(
+  manager: EntityManager,
+  now: Date,
+): Promise<number[]> {
+  const due = await manager.getRepository(Trigger).find({
+    select: { id: true },
+    where: { kind: 'schedule', enabled: true, nextRunAt: LessThanOrEqual(now) },
+    order: { nextRunAt: 'ASC', id: 'ASC' },
+  });
+  return due.map(({ id }) => id);
+}
+
+/** A schedule Trigger that has come due. */
+export interface DueSchedule {
+  id: number;
+  workflowId: number;
+  /** The time it came due for. */
+  due: Date;
+  schedule: Schedule;
+}
+
+/**
+ * Schedule Trigger `id`, read afresh, if it is still enabled and due by
+ * `now`; null otherwise.
+ */
+export async function dueScheduleWithin(
+  manager: EntityManager,
+  id: number,
+  now: Date,
+): Promise<DueSchedule | null> {
+  const trigger = await manager.getRepository(Trigger).findOneBy({ id });
+  if (
+    trigger === null ||
+    trigger.kind !== 'schedule' ||
+    !trigger.enabled ||
+    trigger.nextRunAt === null ||
+    trigger.nextRunAt > now
+  ) {
+    return null;
+  }
+  return {
+    id,
+    workflowId: trigger.workflowId,
+    due: trigger.nextRunAt,
+    schedule: {
+      cron: String(trigger.config.cron),
+      // Every schedule has one; see `TriggersService.add`.
+      timezone: trigger.timezone!,
+    },
+  };
+}
+
+/**
+ * Moves schedule Trigger `id` on to `nextRunAt`, and records `lastRunAt`
+ * when it started a run.
+ */
+export async function advanceScheduleWithin(
+  manager: EntityManager,
+  id: number,
+  times: { nextRunAt: Date | null; lastRunAt?: Date },
+): Promise<void> {
+  await manager.getRepository(Trigger).update(id, times);
 }

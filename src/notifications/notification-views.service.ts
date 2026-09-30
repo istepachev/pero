@@ -9,10 +9,10 @@ import type {
   NotificationView,
   ParsedControlParams,
 } from '../control/protocol.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { findWorkflow } from '../workflows/workflows.service.js';
 import {
   MAX_DELIVERY_ATTEMPTS,
   NotificationDelivery,
@@ -34,6 +34,7 @@ export class NotificationViews {
     private readonly allowedChats: AllowedChatsService,
     private readonly delivery: NotificationDelivery,
     private readonly health: ComponentHealth,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /** The latest Notifications that match `filter`, newest first. */
@@ -46,8 +47,9 @@ export class NotificationViews {
       if (filter.channel !== undefined) where.channelId = filter.channel;
       if (filter.run !== undefined) where.workflowRunId = filter.run;
       if (filter.workflow !== undefined) {
-        const { id } = await findWorkflow(manager, filter.workflow);
-        where.workflowRun = { workflowId: id };
+        where.workflowRun = {
+          workflowId: await this.ids.workflowId(filter.workflow),
+        };
       }
       const notifications = await manager.getRepository(Notification).find({
         where,

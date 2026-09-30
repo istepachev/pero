@@ -270,16 +270,6 @@ export class AgentsService {
       resolveRow(manager, await findAgent(manager, name)),
     );
   }
-
-  /** `resolve` by ID, inside the caller's transaction. */
-  async resolveWithin(
-    manager: EntityManager,
-    id: number,
-  ): Promise<ResolvedAgent> {
-    const agent = await manager.getRepository(Agent).findOneBy({ id });
-    if (agent === null) throw new NotFoundError(`No Agent with ID ${id}`);
-    return resolveRow(manager, agent);
-  }
 }
 
 async function resolveRow(

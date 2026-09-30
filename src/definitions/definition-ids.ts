@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { NotFoundError } from '../common/errors.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import { Workflow } from '../persistence/entities/workflow.entity.js';
 
 /**
  * Between the IDs state still refers to definitions by and their names.
@@ -36,6 +37,35 @@ export class DefinitionIds {
   async agentNames(): Promise<Map<number, string>> {
     const rows = await this.dataSource
       .getRepository(Agent)
+      .find({ select: { id: true, name: true } });
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  /** The name of the Workflow with row ID `id`; `NotFoundError` if none. */
+  async workflowName(id: number): Promise<string> {
+    const row = await this.dataSource
+      .getRepository(Workflow)
+      .findOne({ select: { name: true }, where: { id } });
+    if (row === null) throw new NotFoundError(`No Workflow with ID ${id}`);
+    return row.name;
+  }
+
+  /**
+   * The row ID of the Workflow named `name`, in any case; `NotFoundError`
+   * if none.
+   */
+  async workflowId(name: string): Promise<number> {
+    const row = await this.dataSource
+      .getRepository(Workflow)
+      .findOne({ select: { id: true }, where: { name: name.toLowerCase() } });
+    if (row === null) throw new NotFoundError(`No Workflow named ${name}`);
+    return row.id;
+  }
+
+  /** Every Workflow's name, by row ID. */
+  async workflowNames(): Promise<Map<number, string>> {
+    const rows = await this.dataSource
+      .getRepository(Workflow)
       .find({ select: { id: true, name: true } });
     return new Map(rows.map((row) => [row.id, row.name]));
   }

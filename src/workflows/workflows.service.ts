@@ -17,6 +17,7 @@ import {
   workflowCreateSchema,
   workflowEditSchema,
 } from '../config/workflow-input.js';
+import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
 import type { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
@@ -25,11 +26,15 @@ import { inTransaction } from '../persistence/transaction.js';
 
 /**
  * Creates and edits Workflow definitions. A Workflow is never deleted, only
- * disabled, since its runs refer to it.
+ * disabled, since its runs refer to it. Runtime code reads them through
+ * `Definitions`; the reads here serve the CLI's edits and tests.
  */
 @Injectable()
 export class WorkflowsService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly definitions: SqliteDefinitions,
+  ) {}
 
   get(name: string): Promise<Workflow> {
     return findWorkflow(this.dataSource.manager, name);
@@ -38,7 +43,7 @@ export class WorkflowsService {
   /** Creates a Workflow for an existing, enabled Agent. */
   async create(input: WorkflowCreate): Promise<Workflow> {
     const fields = parseInput(workflowCreateSchema, input);
-    return inTransaction(this.dataSource, async (manager) => {
+    return this.committing(async (manager) => {
       const workflows = manager.getRepository(Workflow);
       if (await workflows.existsBy({ name: fields.name })) {
         throw new ConflictError(
@@ -72,7 +77,7 @@ export class WorkflowsService {
    */
   async edit(name: string, input: WorkflowEdit): Promise<Workflow> {
     const patch = parseInput(workflowEditSchema, input);
-    return inTransaction(this.dataSource, async (manager) => {
+    return this.committing(async (manager) => {
       const workflows = manager.getRepository(Workflow);
       const workflow = await findWorkflow(manager, name);
       const agentId =
@@ -106,7 +111,7 @@ export class WorkflowsService {
    * disabled Workflow or Channel may be a target.
    */
   notify(name: string, channelId: number): Promise<TargetChange> {
-    return inTransaction(this.dataSource, async (manager) => {
+    return this.committing(async (manager) => {
       const workflow = await findWorkflow(manager, name);
       const channel = await existingChannel(manager, channelId);
       const targets = manager.getRepository(WorkflowNotificationTarget);
@@ -124,7 +129,7 @@ export class WorkflowsService {
    * Notifications so far are kept. `changed` is false when it did not.
    */
   stopNotifying(name: string, channelId: number): Promise<TargetChange> {
-    return inTransaction(this.dataSource, async (manager) => {
+    return this.committing(async (manager) => {
       const workflow = await findWorkflow(manager, name);
       const channel = await existingChannel(manager, channelId);
       const { affected } = await manager
@@ -132,6 +137,18 @@ export class WorkflowsService {
         .delete({ workflowId: workflow.id, channelId: channel.id });
       return { workflow, channel, changed: (affected ?? 0) > 0 };
     });
+  }
+
+  /**
+   * Runs `work` in a transaction, then tells readers of the definitions
+   * once it has committed.
+   */
+  private async committing<T>(
+    work: (manager: EntityManager) => Promise<T>,
+  ): Promise<T> {
+    const result = await inTransaction(this.dataSource, work);
+    this.definitions.changed();
+    return result;
   }
 }
 
