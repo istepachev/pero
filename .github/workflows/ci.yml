@@ -32,6 +32,9 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+      # The example workspace, as committed, has no configuration errors.
+      - name: Check the example workspace
+        run: node bin/pero.js check --workspace examples/workspace
       - run: npm test
       - run: npm run test:e2e
       - name: CLI smoke test

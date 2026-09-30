@@ -577,6 +577,13 @@ A CI job runs `pero check` on it. An e2e test copies it, writes `.env`, and runs
 - Editing a note changes the answer.
 - The weekly report runs on a mocked clock and posts to Health.
 
+- **Found while building:**
+  - **The example is a workspace as `pero init` leaves it,** with `.gitignore` listing `.env` and `.pero/.gitignore`, so it can be copied or cloned as it is. The two Workflows are `Weekly health report.md`, as in the [overview](./README.md#a-workspace-in-five-notes), and `Evening review.md`: at 21:00, the main Agent reads the day's chats and posts what was left open to General. `README.md` says how to start from it.
+  - **The CI step runs `pero check --workspace examples/workspace`** after the build in the test job, on every OS and Node version of the matrix. Pero isn't running there, so topic titles are checked for syntax only. The e2e test also runs it on the committed folder and checks that it writes nothing there.
+  - **The fake group is the one `config.yaml` allows,** read from the copy, so the test edits nothing but `.env`. It checks the example as committed, and the placeholder chat ID works as it is.
+  - **The mocked clock is the scheduler's:** `ScheduleTick.tick` takes the time, and the test passes it the next run time the note gives, a Sunday at 12:00 in `Pero.md`'s time zone. Faking `Date` for the whole daemon would also stop the timers and polling it relies on. Delivery is ticked the same way, instead of waiting for its 5-second interval.
+  - **Once General is seen too, `pero check` through the daemon has no problems:** every `channel` in the example resolves. Until then, each Workflow is left out as 9.1 describes. They were broken at startup, so they are only logged, not posted (9.3).
+
 **Done when:** the job and the e2e test pass on the CI matrix.
 
 ### 10.2 Docs
