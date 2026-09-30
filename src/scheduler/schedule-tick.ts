@@ -6,12 +6,17 @@ import {
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { type DataSource, type EntityManager, LessThanOrEqual } from 'typeorm';
-import { Agent } from '../persistence/entities/agent.entity.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
+import type { DataSource, EntityManager } from 'typeorm';
+import { DefinitionIds } from '../definitions/definition-ids.js';
+import { Definitions } from '../definitions/definitions.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { countOccurrences, nextOccurrence } from '../triggers/schedule.js';
+import {
+  advanceScheduleWithin,
+  dueScheduleIds,
+  dueScheduleWithin,
+} from '../triggers/triggers.service.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 
 /** How often the scheduler looks for schedules that have come due. */
@@ -31,8 +36,10 @@ type Fired =
   | {
       kind: 'held';
       workflow: string;
-      reason: 'workflow' | 'agent';
-      agent: string;
+      /** A Workflow disabled on purpose, rather than a missing piece. */
+      paused: boolean;
+      /** What keeps it from running, such as `Agent coach is disabled`. */
+      problem: string;
     }
   | { kind: 'duplicate'; workflow: string; triggerKey: string };
 
@@ -54,6 +61,8 @@ export class ScheduleTick
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
   ) {}
 
   /** Catches up at once, rather than a tick interval after startup. */
@@ -79,17 +88,9 @@ export class ScheduleTick
    * leaves one run per time however often it comes due.
    */
   async tick(now: Date = new Date()): Promise<void> {
-    const due = await this.dataSource.getRepository(Trigger).find({
-      select: { id: true },
-      where: {
-        kind: 'schedule',
-        enabled: true,
-        nextRunAt: LessThanOrEqual(now),
-      },
-      order: { nextRunAt: 'ASC', id: 'ASC' },
-    });
+    const due = await dueScheduleIds(this.dataSource.manager, now);
     let queued = false;
-    for (const { id } of due) {
+    for (const id of due) {
       if (this.stopping) return;
       try {
         const fired = await inTransaction(this.dataSource, (manager) =>
@@ -125,49 +126,44 @@ export class ScheduleTick
   /**
    * Advances Trigger `id` past `now` and queues the run its due time
    * starts, unless it is no longer due. A Workflow or Agent that is
-   * disabled gets no run, and the time passes; a run of this Trigger still
-   * waiting to start takes the new times into its skipped count instead.
+   * disabled or gone gets no run, and the time passes; a run of this
+   * Trigger still waiting to start takes the new times into its skipped
+   * count instead.
    */
   private async fireWithin(
     manager: EntityManager,
     id: number,
     now: Date,
   ): Promise<Fired | null> {
-    const triggers = manager.getRepository(Trigger);
-    const trigger = await triggers.findOne({
-      where: { id },
-      relations: { workflow: true },
-    });
-    if (
-      trigger === null ||
-      trigger.kind !== 'schedule' ||
-      !trigger.enabled ||
-      trigger.nextRunAt === null ||
-      trigger.nextRunAt > now
-    ) {
-      return null;
-    }
-    const due = trigger.nextRunAt;
-    const schedule = {
-      cron: String(trigger.config.cron),
-      // Every schedule has one; see `TriggersService.add`.
-      timezone: trigger.timezone!,
-    };
+    const trigger = await dueScheduleWithin(manager, id, now);
+    if (trigger === null) return null;
+    const { due, schedule } = trigger;
     const skipped = countOccurrences(schedule, due, now, MAX_SKIPPED_COUNT);
     const nextRunAt = nextOccurrence(schedule, now);
-    // The foreign key guarantees the Workflow and its Agent.
-    const workflow = trigger.workflow!;
-    const agent = await manager
-      .getRepository(Agent)
-      .findOneByOrFail({ id: workflow.agentId });
+    const name = await this.ids.workflowName(trigger.workflowId);
+    const workflow = await this.definitions.workflow(name);
+    const agent =
+      workflow === null ? null : await this.definitions.agent(workflow.agent);
 
-    if (!workflow.enabled || !agent.enabled) {
-      await triggers.update(id, { nextRunAt });
+    if (
+      workflow === null ||
+      !workflow.enabled ||
+      agent === null ||
+      !agent.enabled
+    ) {
+      await advanceScheduleWithin(manager, id, { nextRunAt });
       return {
         kind: 'held',
-        workflow: workflow.name,
-        reason: workflow.enabled ? 'agent' : 'workflow',
-        agent: agent.name,
+        workflow: name,
+        paused: workflow?.enabled === false,
+        problem:
+          workflow === null
+            ? `Workflow ${name} no longer exists`
+            : !workflow.enabled
+              ? `Workflow ${name} is disabled`
+              : agent === null
+                ? `Agent ${workflow.agent} no longer exists`
+                : `Agent ${agent.name} is disabled`,
       };
     }
 
@@ -182,7 +178,7 @@ export class ScheduleTick
         MAX_SKIPPED_COUNT,
       );
       await runs.update(waiting.id, { skippedCount: total });
-      await triggers.update(id, { nextRunAt });
+      await advanceScheduleWithin(manager, id, { nextRunAt });
       return {
         kind: 'coalesced',
         runId: waiting.id,
@@ -198,7 +194,7 @@ export class ScheduleTick
       .createQueryBuilder()
       .insert()
       .values({
-        workflowId: workflow.id,
+        workflowId: trigger.workflowId,
         triggerId: id,
         triggerKey,
         status: 'pending',
@@ -208,7 +204,7 @@ export class ScheduleTick
       .orIgnore()
       .execute();
     const runId = inserted.identifiers[0]?.id as number | undefined;
-    await triggers.update(id, {
+    await advanceScheduleWithin(manager, id, {
       nextRunAt,
       ...(runId === undefined ? {} : { lastRunAt: now }),
     });
@@ -235,13 +231,13 @@ export class ScheduleTick
         break;
       case 'held':
         // A disabled Workflow is paused on purpose; a disabled Agent may not be.
-        if (fired.reason === 'workflow') {
+        if (fired.paused) {
           this.logger.debug(
-            `Schedule Trigger ${id} came due, but Workflow ${fired.workflow} is disabled; no run`,
+            `Schedule Trigger ${id} came due, but ${fired.problem}; no run`,
           );
         } else {
           this.logger.warn(
-            `Schedule Trigger ${id} of Workflow ${fired.workflow} came due, but Agent ${fired.agent} is disabled; no run`,
+            `Schedule Trigger ${id} of Workflow ${fired.workflow} came due, but ${fired.problem}; no run`,
           );
         }
         break;

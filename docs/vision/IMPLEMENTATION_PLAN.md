@@ -274,11 +274,13 @@ Joins from state rows that only turn an ID into a name for display, such as a me
 
 ### 7.1b The `Definitions` interface: Workflows
 
-Add `workflow(name)` and `workflows()`. A Workflow's definition names its Agent and holds its input, history input, notification targets, attempts, and whether it's enabled; schedules come in 7.3. `TriggersService` keeps the `triggers` rows, which are state as much as definitions, until 7.3 replaces them. Route the rest through `Definitions`:
+Add `workflow(name)` and `workflows()`. A Workflow's definition names its Agent and holds its input, history input, notification targets (Channel IDs, since Channels are state), attempts, and whether it's enabled; schedules come in 7.3. `DefinitionIds` maps Workflow row IDs, which runs still hold until 7.2, to names and back. `TriggersService` keeps the `triggers` rows, which are state as much as definitions, until 7.3 replaces them: `triggers.service.ts` exports the few reads and writes of them that runtime code needs. Route the rest through `Definitions`:
 
 - `WorkflowExecutor`, `WorkflowRuns`, and `ScheduleTick`
-- run notifications
-- the Workflow views, which drop `createdAt` and `updatedAt`
+- run notifications, which go to the Channels the Workflow notifies as it is defined when the run ends
+- the Workflow views, which drop `createdAt`, `updatedAt`, and `concurrencyPolicy` (only `serial` exists, and notes have no such property)
+
+A Workflow or Agent that is gone, which only notes make possible, is treated like a disabled one: its runs fail or aren't retried, and its schedules pass without a run.
 
 **Done when:**
 - No module outside `src/definitions/`, `src/persistence/`, and the create/edit services imports the `Agent`, `Workflow`, `Trigger`, `WorkflowNotificationTarget`, or `Settings` entities.

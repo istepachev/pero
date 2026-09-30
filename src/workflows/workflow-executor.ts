@@ -8,18 +8,18 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
-import { AgentsService } from '../agents/agents.service.js';
-import { MessageHistory } from '../history/message-history.service.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
+import { resolveAgent } from '../agents/agent-resolution.js';
+import { DefinitionIds } from '../definitions/definition-ids.js';
 import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+  type AgentDefinition,
+  Definitions,
+  type WorkflowDefinition,
+} from '../definitions/definitions.js';
+import { MessageHistory } from '../history/message-history.service.js';
 import {
   type RunStatus,
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
-import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import {
   type ExecutionSnapshot,
@@ -87,7 +87,8 @@ export class WorkflowExecutor
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly agents: AgentsService,
+    private readonly definitions: Definitions,
+    private readonly ids: DefinitionIds,
     private readonly agentManager: AgentManager,
     private readonly history: MessageHistory,
   ) {}
@@ -148,24 +149,21 @@ export class WorkflowExecutor
     manager: EntityManager,
     id: number,
   ): Promise<void> {
-    const runs = manager.getRepository(WorkflowRun);
-    const run = await runs.findOne({
-      where: { id },
-      relations: { workflow: true },
-    });
+    const run = await manager.getRepository(WorkflowRun).findOneBy({ id });
     if (run === null || run.status !== 'running') return;
-    // The foreign keys guarantee the Workflow and its Agent.
-    const workflow = run.workflow!;
-    const agent = await manager
-      .getRepository(Agent)
-      .findOneByOrFail({ id: workflow.agentId });
-    const attempts = `${workflow.maxAttempts} ${workflow.maxAttempts === 1 ? 'attempt' : 'attempts'}`;
+    const name = await this.ids.workflowName(run.workflowId);
+    const { workflow, agent } = await this.definitionsOf(name);
     let outcome: string;
     let retried = false;
-    if (run.attempt >= workflow.maxAttempts) {
+    if (workflow === null) {
+      outcome = `not retried: Workflow ${name} no longer exists`;
+    } else if (run.attempt >= workflow.maxAttempts) {
+      const attempts = `${workflow.maxAttempts} ${workflow.maxAttempts === 1 ? 'attempt' : 'attempts'}`;
       outcome = `not retried: Workflow ${workflow.name} allows ${attempts}`;
     } else if (!workflow.enabled) {
       outcome = `not retried: Workflow ${workflow.name} is disabled`;
+    } else if (agent === null) {
+      outcome = `not retried: Agent ${workflow.agent} no longer exists`;
     } else if (!agent.enabled) {
       outcome = `not retried: Agent ${agent.name} is disabled`;
     } else {
@@ -176,12 +174,24 @@ export class WorkflowExecutor
     await finishRun(
       manager,
       run.id,
+      workflow,
       { status: 'interrupted', errorText: `${INTERRUPTED}; ${outcome}` },
       { retried },
     );
     this.logger.warn(
-      `Run ${run.id} of Workflow ${workflow.name} was interrupted; ${outcome}`,
+      `Run ${run.id} of Workflow ${name} was interrupted; ${outcome}`,
     );
+  }
+
+  /** The Workflow named `name` and its Agent, each null if gone. */
+  private async definitionsOf(name: string): Promise<{
+    workflow: WorkflowDefinition | null;
+    agent: AgentDefinition | null;
+  }> {
+    const workflow = await this.definitions.workflow(name);
+    const agent =
+      workflow === null ? null : await this.definitions.agent(workflow.agent);
+    return { workflow, agent };
   }
 
   /**
@@ -245,17 +255,16 @@ export class WorkflowExecutor
    * Claims the oldest pending run of a Workflow with none running, if a
    * slot is free, and snapshots what it executes with, fixing its history
    * window. Retries go first, so a run queued before one reads after its
-   * window. A run whose Workflow or Agent was disabled since it was queued
-   * fails instead, and one whose window has no messages completes without
+   * window. A run whose Workflow or Agent was disabled, or is gone, since
+   * it was queued fails instead, and one whose window has no messages completes without
    * its Agent unless the Workflow asks to run anyway.
    */
   private async claimWithin(
     manager: EntityManager,
   ): Promise<ClaimedRun | null> {
     // Read on every claim, so a changed limit applies without a restart.
-    const { maxConcurrentRuns, timezone } = await manager
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
+    const defaults = await this.definitions.defaults();
+    const { maxConcurrentRuns, timezone } = defaults;
     if (this.stopping || this.active.size >= maxConcurrentRuns) return null;
     const runs = manager.getRepository(WorkflowRun);
     for (;;) {
@@ -274,37 +283,46 @@ export class WorkflowExecutor
         .addOrderBy('run.id', 'ASC')
         .getOne();
       if (run === null) return null;
-      const workflow = await manager
-        .getRepository(Workflow)
-        .findOneByOrFail({ id: run.workflowId });
-      const agent = await this.agents.resolveWithin(manager, workflow.agentId);
-      const refused = !workflow.enabled
-        ? `Workflow ${workflow.name} was disabled before the run started`
-        : !agent.enabled
-          ? `Agent ${agent.name} was disabled before the run started`
-          : null;
-      if (refused !== null) {
-        await finishRun(manager, run.id, {
+      const name = await this.ids.workflowName(run.workflowId);
+      const { workflow, agent } = await this.definitionsOf(name);
+      if (
+        workflow === null ||
+        !workflow.enabled ||
+        agent === null ||
+        !agent.enabled
+      ) {
+        const refused =
+          workflow === null
+            ? `Workflow ${name} no longer exists`
+            : !workflow.enabled
+              ? `Workflow ${name} was disabled before the run started`
+              : agent === null
+                ? `Agent ${workflow.agent} no longer exists`
+                : `Agent ${agent.name} was disabled before the run started`;
+        await finishRun(manager, run.id, workflow, {
           status: 'failed',
           errorText: refused,
         });
-        this.logger.warn(
-          `Run ${run.id} of Workflow ${workflow.name}: ${refused}`,
-        );
+        this.logger.warn(`Run ${run.id} of Workflow ${name}: ${refused}`);
         continue;
       }
+      const resolved = resolveAgent(
+        await this.ids.agentId(agent.name),
+        agent,
+        defaults,
+      );
       const now = new Date();
       const history = await readHistoryWindow(manager, this.history, {
-        workflowId: workflow.id,
+        workflowId: run.workflowId,
         config: workflow.history,
         inherited: run.executionConfig?.history,
-        template: workflow.inputTemplate,
+        template: workflow.input,
         now,
         timeZone: timezone,
       });
       const snapshot = executionSnapshot(
-        agent,
-        history?.input ?? workflow.inputTemplate,
+        resolved,
+        history?.input ?? workflow.input,
         history?.read,
       );
       if (
@@ -313,7 +331,7 @@ export class WorkflowExecutor
         !history.read.runWhenEmpty
       ) {
         // Completed all the same, so the next run reads after its window.
-        await finishRun(manager, run.id, {
+        await finishRun(manager, run.id, workflow, {
           status: 'completed',
           startedAt: now,
           finishedAt: now,
@@ -332,7 +350,7 @@ export class WorkflowExecutor
       });
       return {
         runId: run.id,
-        workflowId: workflow.id,
+        workflowId: run.workflowId,
         workflow: workflow.name,
         snapshot,
       };
@@ -407,8 +425,9 @@ export class WorkflowExecutor
       );
       return;
     }
-    await inTransaction(this.dataSource, (manager) =>
-      finishRun(manager, runId, {
+    await inTransaction(this.dataSource, async (manager) =>
+      // The Channels the Workflow notifies now, not when the run started.
+      finishRun(manager, runId, await this.definitions.workflow(workflow), {
         status: outcome.status,
         ...(outcome.status === 'completed'
           ? {

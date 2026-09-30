@@ -1,9 +1,8 @@
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
+import type { WorkflowDefinition } from '../definitions/definitions.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
-import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import type { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import type { Workflow } from '../persistence/entities/workflow.entity.js';
 
 /** What a Notification delivers: the rendered message. */
 export const notificationPayloadSchema = z.object({ text: z.string().min(1) });
@@ -19,7 +18,7 @@ export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;
  */
 export function notificationText(
   run: Pick<WorkflowRun, 'id' | 'status' | 'result' | 'errorText'>,
-  workflow: Pick<Workflow, 'name' | 'title'>,
+  workflow: Pick<WorkflowDefinition, 'name' | 'title'>,
   retried: boolean,
 ): string | null {
   const label = `Run ${run.id} of Workflow ${workflow.name}`;
@@ -52,14 +51,12 @@ export function notificationText(
 export async function createRunNotifications(
   manager: EntityManager,
   run: WorkflowRun,
-  workflow: Pick<Workflow, 'id' | 'name' | 'title'>,
+  workflow: Pick<WorkflowDefinition, 'name' | 'title' | 'targets'>,
   retried: boolean,
 ): Promise<number> {
   const text = notificationText(run, workflow, retried);
   if (text === null) return 0;
-  const targets = await manager
-    .getRepository(WorkflowNotificationTarget)
-    .find({ where: { workflowId: workflow.id }, order: { channelId: 'ASC' } });
+  const { targets } = workflow;
   if (targets.length === 0) return 0;
   const payload: NotificationPayload = { text };
   await manager
@@ -67,7 +64,7 @@ export async function createRunNotifications(
     .createQueryBuilder()
     .insert()
     .values(
-      targets.map(({ channelId }) => ({
+      targets.map((channelId) => ({
         workflowRunId: run.id,
         channelId,
         status: 'pending' as const,

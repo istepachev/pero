@@ -1,20 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
+import { type DataSource, In } from 'typeorm';
 import { effectiveWorkingDirectory } from '../agents/agent-resolution.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import {
   SETTINGS_ID,
   Settings,
 } from '../persistence/entities/settings.entity.js';
+import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
+import { Workflow } from '../persistence/entities/workflow.entity.js';
 import {
   type AgentDefinition,
   type Defaults,
   Definitions,
+  type WorkflowDefinition,
 } from './definitions.js';
 
 /**
- * The definitions as the `settings` and `agents` tables hold them, read
+ * The definitions as the `settings`, `agents`, `workflows`, and
+ * `workflow_notification_targets` tables hold them, read
  * afresh on every call. It opens no transaction of its own, so it can be
  * read inside a caller's: on SQLite's one connection, those reads see
  * what the transaction has written.
@@ -56,6 +60,24 @@ export class SqliteDefinitions extends Definitions {
     return row === null ? null : agentDefinition(row, settings);
   }
 
+  async workflow(name: string): Promise<WorkflowDefinition | null> {
+    const row = await this.dataSource.getRepository(Workflow).findOne({
+      where: { name: name.toLowerCase() },
+      relations: { agent: true },
+    });
+    if (row === null) return null;
+    return workflowDefinition(row, (await this.targets([row.id])).get(row.id));
+  }
+
+  async workflows(): Promise<WorkflowDefinition[]> {
+    const rows = await this.dataSource.getRepository(Workflow).find({
+      relations: { agent: true },
+      order: { name: 'ASC' },
+    });
+    const targets = await this.targets(rows.map((row) => row.id));
+    return rows.map((row) => workflowDefinition(row, targets.get(row.id)));
+  }
+
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -72,6 +94,23 @@ export class SqliteDefinitions extends Definitions {
         );
       }
     }
+  }
+
+  /** The Channels each of Workflows `ids` notifies, by Workflow ID. */
+  private async targets(ids: number[]): Promise<Map<number, number[]>> {
+    const rows = await this.dataSource
+      .getRepository(WorkflowNotificationTarget)
+      .find({
+        where: { workflowId: In(ids) },
+        order: { workflowId: 'ASC', channelId: 'ASC' },
+      });
+    const targets = new Map<number, number[]>();
+    for (const { workflowId, channelId } of rows) {
+      const channels = targets.get(workflowId) ?? [];
+      channels.push(channelId);
+      targets.set(workflowId, channels);
+    }
+    return targets;
   }
 
   private settings(): Promise<Settings> {
@@ -112,6 +151,28 @@ export function agentDefinition(
     instructions: row.instructions,
     sharedInstructions: row.useSharedInstructions,
     skipGitRepoCheck: row.codexSkipGitRepoCheck,
+    enabled: row.enabled,
+  };
+}
+
+/**
+ * The Workflow in row `row`, loaded with its Agent, which notifies the
+ * Channels `targets`.
+ */
+export function workflowDefinition(
+  row: Workflow,
+  targets: number[] = [],
+): WorkflowDefinition {
+  // The foreign key guarantees the Agent.
+  const agent = row.agent!;
+  return {
+    name: row.name,
+    title: row.title,
+    agent: agent.name,
+    input: row.inputTemplate,
+    history: row.history,
+    targets,
+    maxAttempts: row.maxAttempts,
     enabled: row.enabled,
   };
 }

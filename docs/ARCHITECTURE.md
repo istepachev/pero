@@ -88,7 +88,7 @@ The Channel adapter contract is `start(handlers)`, `stop()`, `send(address, mess
 
 | Module | Owns | Depends on |
 |---|---|---|
-| `DefinitionsModule` | `Definitions`, the read-only view of Agents and defaults runtime code reads; SQLite-backed for now | Persistence |
+| `DefinitionsModule` | `Definitions`, the read-only view of defaults, Agents, and Workflows runtime code reads; SQLite-backed for now | Persistence |
 | `AgentsModule` | Agent definitions, `AgentManager`, runtime selection | Sessions, Runtimes, Tools |
 | `ControlModule` | Owner-only local CLI command endpoint and lifecycle requests | Application services, Persistence |
 | `RuntimesModule` | Runtime interface and Claude/Codex adapters | SDKs, Tools |

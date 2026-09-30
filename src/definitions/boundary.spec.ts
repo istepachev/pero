@@ -6,7 +6,13 @@ import { describe, expect, it } from 'vitest';
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The entities that hold definitions, which runtime code reads through `Definitions`. */
-const DEFINITION_ENTITIES = ['agent', 'settings', 'workflow', 'trigger'];
+const DEFINITION_ENTITIES = [
+  'agent',
+  'settings',
+  'workflow',
+  'trigger',
+  'workflow-notification-target',
+];
 
 /** Where definition entities may be imported: their store and their writers. */
 const ALLOWED = [
@@ -17,12 +23,6 @@ const ALLOWED = [
   /^settings\/settings\.service\.ts$/,
   /^workflows\/workflows\.service\.ts$/,
   /^triggers\/triggers\.service\.ts$/,
-  // Until plan step 7.1b routes the Workflow side through `Definitions`.
-  /^workflows\/workflow-executor\.ts$/,
-  /^workflows\/workflow-runs\.service\.ts$/,
-  /^workflows\/workflow-views\.service\.ts$/,
-  /^scheduler\/schedule-tick\.ts$/,
-  /^notifications\/run-notifications\.ts$/,
 ];
 
 const ENTITY_IMPORT = new RegExp(
@@ -62,6 +62,11 @@ describe('definition entities', () => {
     expect(
       ENTITY_IMPORT.test(
         `from '../../persistence/entities/settings.entity.js'`,
+      ),
+    ).toBe(true);
+    expect(
+      ENTITY_IMPORT.test(
+        `from '../persistence/entities/workflow-notification-target.entity.js'`,
       ),
     ).toBe(true);
     expect(

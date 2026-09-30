@@ -25,6 +25,7 @@ import {
   NotFoundError,
 } from '../common/errors.js';
 import type { WorkflowHistoryPatch } from '../config/workflow-input.js';
+import { Definitions } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
@@ -762,10 +763,12 @@ describe('Workflow Runs and the executor', () => {
 
       await expect(
         inTransaction(ds, async (manager) => {
-          await finishRun(manager, id, {
-            status: 'completed',
-            result: { text: 'Done' },
-          });
+          await finishRun(
+            manager,
+            id,
+            await moduleRef.get(Definitions).workflow('brief'),
+            { status: 'completed', result: { text: 'Done' } },
+          );
           expect(await manager.getRepository(Notification).count()).toBe(1);
           throw new Error('The transaction fails later');
         }),

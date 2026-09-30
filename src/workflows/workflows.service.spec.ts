@@ -76,7 +76,6 @@ describe('WorkflowsService and WorkflowViews', () => {
       agentEnabled: true,
       inputTemplate: "Review today's chats.",
       enabled: true,
-      concurrencyPolicy: 'serial',
       maxAttempts: 1,
       triggerCount: 0,
       triggers: [],
