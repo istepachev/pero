@@ -16,7 +16,8 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /** What a run being claimed reads its history window with. */
 export interface HistoryWindowRequest {
-  workflowId: number;
+  /** The name of the run's Workflow. */
+  workflowName: string;
   /** The Workflow's history input; null when it reads none. */
   config: WorkflowHistory | null;
   /** The window a retry inherits from the run it retries, if any. */
@@ -52,7 +53,7 @@ export async function readHistoryWindow(
     const untilId = await history.latestIdWithin(manager);
     const afterId =
       config.hours === null
-        ? await previousWindowEnd(manager, request.workflowId)
+        ? await previousWindowEnd(manager, request.workflowName)
         : null;
     const hours = config.hours ?? FIRST_WINDOW_HOURS;
     window = {
@@ -74,7 +75,7 @@ export async function readHistoryWindow(
       // The foreign key guarantees the Channel.
       channel: message.channel!.title ?? message.channel!.externalKey,
       speaker:
-        message.origin === 'user' ? 'User' : (message.agent?.name ?? 'Agent'),
+        message.origin === 'user' ? 'User' : (message.agentName ?? 'Agent'),
       text: message.text,
       createdAt: message.createdAt,
     })),
@@ -90,7 +91,7 @@ export async function readHistoryWindow(
  */
 async function previousWindowEnd(
   manager: EntityManager,
-  workflowId: number,
+  workflowName: string,
 ): Promise<number | null> {
   const row = await manager
     .getRepository(WorkflowRun)
@@ -99,7 +100,7 @@ async function previousWindowEnd(
       `MAX(json_extract(run.executionConfig, '$.history.untilId'))`,
       'untilId',
     )
-    .where('run.workflowId = :workflowId', { workflowId })
+    .where('run.workflowName = :workflowName', { workflowName })
     .andWhere('run.status = :status', { status: 'completed' })
     .getRawOne<{ untilId: number | null }>();
   const untilId = row?.untilId ?? null;

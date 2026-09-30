@@ -169,7 +169,7 @@ describe('Channel onboarding', () => {
       expect(await allMessages()).toEqual([
         expect.objectContaining({
           channelId: (await channelFor(topic.key)).id,
-          agentId: null,
+          agentName: null,
           sessionId: null,
           direction: 'out',
           origin: 'pero',

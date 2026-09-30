@@ -37,6 +37,7 @@ import {
 } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { queueRetryWithin, retryKey } from './retry-run.js';
+import { runsWorkflowNameWithin } from './workflow-filter.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 
 /**
@@ -79,7 +80,7 @@ export class WorkflowRuns {
       const runs = manager.getRepository(WorkflowRun);
       const { id } = await runs.save(
         runs.create({
-          workflowId,
+          workflowName: workflow.name,
           triggerId: trigger.id,
           // Each start by hand is its own occurrence.
           triggerKey: `manual:${randomUUID()}`,
@@ -88,7 +89,7 @@ export class WorkflowRuns {
         }),
       );
       await markTriggerRunWithin(manager, trigger.id, new Date());
-      return runView(await runs.findOneByOrFail({ id }), workflow);
+      return runView(await runs.findOneByOrFail({ id }));
     });
     this.logger.log(`Run ${run.id} of Workflow ${run.workflow} queued`);
     void this.executor.wake();
@@ -108,9 +109,7 @@ export class WorkflowRuns {
       const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
       if (run.status === 'pending') {
-        const workflow = await this.definitions.workflow(
-          await this.ids.workflowName(run.workflowId),
-        );
+        const workflow = await this.definitions.workflow(run.workflowName);
         await finishRun(manager, id, workflow, {
           status: 'cancelled',
           errorText: CANCELLED,
@@ -148,7 +147,7 @@ export class WorkflowRuns {
       const runs = manager.getRepository(WorkflowRun);
       const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
-      const name = await this.ids.workflowName(run.workflowId);
+      const name = run.workflowName;
       if (run.status === 'pending' || run.status === 'running') {
         throw new ConflictError(
           `Run ${id} has not finished (${run.status}); pero runs cancel ${id} cancels it`,
@@ -160,7 +159,7 @@ export class WorkflowRuns {
         );
       }
       const existing = await runs.findOneBy({
-        workflowId: run.workflowId,
+        workflowName: run.workflowName,
         triggerKey: retryKey(id),
       });
       if (existing !== null) {
@@ -172,7 +171,7 @@ export class WorkflowRuns {
       await this.requireRunnable(workflow);
       const retryId = await queueRetryWithin(manager, run);
       return {
-        run: runView(await runs.findOneByOrFail({ id: retryId }), workflow),
+        run: runView(await runs.findOneByOrFail({ id: retryId })),
         alsoReadBy: await alsoReadBy(manager, run),
       };
     });
@@ -204,16 +203,18 @@ export class WorkflowRuns {
       const where: FindOptionsWhere<WorkflowRun> = {};
       if (filter.status !== undefined) where.status = filter.status;
       if (filter.workflow !== undefined) {
-        where.workflowId = await this.ids.workflowId(filter.workflow);
+        where.workflowName = await runsWorkflowNameWithin(
+          manager,
+          this.definitions,
+          filter.workflow,
+        );
       }
       const runs = await manager.getRepository(WorkflowRun).find({
         where,
-        relations: { workflow: true },
         order: { id: 'DESC' },
         take: filter.limit,
       });
-      // Joined for its name only; the foreign key guarantees it.
-      return runs.map((run) => runView(run, run.workflow!));
+      return runs.map(runView);
     });
   }
 
@@ -224,13 +225,10 @@ export class WorkflowRuns {
   get(id: number): Promise<RunDetails> {
     return inTransaction(this.dataSource, async (manager) => {
       const runs = manager.getRepository(WorkflowRun);
-      const run = await runs.findOne({
-        where: { id },
-        relations: { workflow: true },
-      });
+      const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
       const retry = await runs.findOneBy({
-        workflowId: run.workflowId,
+        workflowName: run.workflowName,
         triggerKey: retryKey(id),
       });
       const history = historyReadSchema.safeParse(run.executionConfig?.history);
@@ -240,8 +238,7 @@ export class WorkflowRuns {
         order: { id: 'ASC' },
       });
       return {
-        // The foreign key guarantees the Workflow.
-        ...runView(run, run.workflow!),
+        ...runView(run),
         retriedBy: retry?.id ?? null,
         history: history.success
           ? {
@@ -271,7 +268,9 @@ async function alsoReadBy(
     .getRepository(WorkflowRun)
     .createQueryBuilder('run')
     .select('run.id', 'id')
-    .where('run.workflowId = :workflowId', { workflowId: run.workflowId })
+    .where('run.workflowName = :workflowName', {
+      workflowName: run.workflowName,
+    })
     .andWhere('run.id > :id', { id: run.id })
     .andWhere('run.status = :status', { status: 'completed' })
     .andWhere(`json_extract(run.executionConfig, '$.history.count') > 0`)
@@ -289,11 +288,11 @@ async function alsoReadBy(
 }
 
 /** A run as the CLI shows it. */
-export function runView(run: WorkflowRun, workflow: { name: string }): RunView {
+export function runView(run: WorkflowRun): RunView {
   const text = run.result?.text;
   return {
     id: run.id,
-    workflow: workflow.name,
+    workflow: run.workflowName,
     triggerId: run.triggerId,
     triggerKey: run.triggerKey,
     status: run.status,

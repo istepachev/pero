@@ -174,7 +174,8 @@ describe('Channel management (e2e)', () => {
       expect.objectContaining({ channelId: groceries, status: 'active' }),
       expect.objectContaining({ channelId: kitchen, status: 'active' }),
     ]);
-    expect(first!.agentId).not.toBe(second!.agentId);
+    expect(first).toMatchObject({ agentName: 'groceries' });
+    expect(second).toMatchObject({ agentName: 'kitchen' });
 
     const result = await client.call('channels.assign', {
       id: groceries,
@@ -203,18 +204,17 @@ describe('Channel management (e2e)', () => {
 
     // One Agent now, still a Session per Channel.
     expect(await say(KITCHEN, 'Stew')).toBe('echo: Stew');
-    const kitchenAgent = second!.agentId;
     expect(await sessions()).toEqual([
       expect.objectContaining({ id: first!.id, status: 'closed' }),
       expect.objectContaining({
         id: second!.id,
         channelId: kitchen,
-        agentId: kitchenAgent,
+        agentName: 'kitchen',
         status: 'active',
       }),
       expect.objectContaining({
         channelId: groceries,
-        agentId: kitchenAgent,
+        agentName: 'kitchen',
         status: 'active',
       }),
     ]);

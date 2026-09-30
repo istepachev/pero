@@ -26,7 +26,6 @@ type Request = Omit<RuntimeRequest, 'signal'>;
 
 function request(folder: string, overrides: Partial<Request>): Request {
   return {
-    agentId: 1,
     input: '',
     instructions: 'Answer in as few words as possible.',
     providerOptions: { model: 'haiku', effort: 'low' },

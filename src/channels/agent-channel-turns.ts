@@ -50,7 +50,7 @@ export class AgentChannelTurns extends ChannelTurns {
   ): Promise<void> {
     const turn = this.agents.runTurn({
       channelId: channel.id,
-      agentId: channel.agentId,
+      agent: channel.agent.name,
       messageId,
       input: message.content.text,
       approve: this.approvals.approverFor(channel),
@@ -84,7 +84,7 @@ export class AgentChannelTurns extends ChannelTurns {
       text = result.text;
       author = {
         origin: 'agent',
-        agentId: result.agentId,
+        agent: result.agentName,
         sessionId: result.sessionId,
       };
     } catch (error) {

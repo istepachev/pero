@@ -9,7 +9,7 @@ import type {
   NotificationView,
   ParsedControlParams,
 } from '../control/protocol.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
+import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
@@ -17,12 +17,13 @@ import {
   MAX_DELIVERY_ATTEMPTS,
   NotificationDelivery,
 } from './notification-delivery.js';
+import { runsWorkflowNameWithin } from '../workflows/workflow-filter.js';
 import { notificationPayloadSchema } from './run-notifications.js';
 
 /** What a Notification view needs loaded with it. */
 export const NOTIFICATION_RELATIONS = {
   channel: true,
-  workflowRun: { workflow: true },
+  workflowRun: true,
 } as const;
 
 /** Notifications as the CLI shows them, with what delivery needs. */
@@ -34,7 +35,7 @@ export class NotificationViews {
     private readonly allowedChats: AllowedChatsService,
     private readonly delivery: NotificationDelivery,
     private readonly health: ComponentHealth,
-    private readonly ids: DefinitionIds,
+    private readonly definitions: Definitions,
   ) {}
 
   /** The latest Notifications that match `filter`, newest first. */
@@ -48,7 +49,11 @@ export class NotificationViews {
       if (filter.run !== undefined) where.workflowRunId = filter.run;
       if (filter.workflow !== undefined) {
         where.workflowRun = {
-          workflowId: await this.ids.workflowId(filter.workflow),
+          workflowName: await runsWorkflowNameWithin(
+            manager,
+            this.definitions,
+            filter.workflow,
+          ),
         };
       }
       const notifications = await manager.getRepository(Notification).find({
@@ -111,12 +116,12 @@ export class NotificationViews {
  * `NOTIFICATION_RELATIONS`.
  */
 export function notificationView(notification: Notification): NotificationView {
-  // The foreign keys guarantee the Channel, the run, and its Workflow.
+  // The foreign keys guarantee the Channel and the run.
   const channel = notification.channel!;
   return {
     id: notification.id,
     runId: notification.workflowRunId,
-    workflow: notification.workflowRun!.workflow!.name,
+    workflow: notification.workflowRun!.workflowName,
     channel: {
       id: channel.id,
       integrationKind: channel.integrationKind,

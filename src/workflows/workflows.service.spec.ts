@@ -383,15 +383,14 @@ describe('WorkflowsService and WorkflowViews', () => {
     );
   });
 
-  it('keeps an Agent a Workflow uses from being deleted', async () => {
+  it("names its Agent, so it outlives the Agent's row", async () => {
     await workflows.create({
-      name: 'review',
-      agent: 'coach',
+      name: 'Review',
+      agent: 'Coach',
       inputTemplate: 'Go',
     });
 
-    await expect(
-      ds.getRepository(Agent).delete({ name: 'coach' }),
-    ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+    await ds.getRepository(Agent).delete({ name: 'coach' });
+    expect(await workflows.get('review')).toMatchObject({ agentName: 'coach' });
   });
 });

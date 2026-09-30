@@ -153,10 +153,8 @@ describe('Workflow Runs and the executor', () => {
     });
     expect(done.startedAt).not.toBeNull();
     expect(done.finishedAt).not.toBeNull();
-    const coach = await agents.get('coach');
     expect(claude.requests).toHaveLength(1);
     expect(claude.requests[0]).toMatchObject({
-      agentId: coach.id,
       input: 'Summarize the day.',
       workingDirectory: vault,
       toolPolicy: { permissions: 'ask' },
@@ -167,7 +165,6 @@ describe('Workflow Runs and the executor', () => {
       .getRepository(WorkflowRun)
       .findOneByOrFail({ id: queued.id });
     expect(row.executionConfig).toMatchObject({
-      agentId: coach.id,
       agentName: 'coach',
       provider: 'claude',
       workingDirectory: vault,
@@ -348,7 +345,10 @@ describe('Workflow Runs and the executor', () => {
     await executor.idle();
 
     const runRequest = claude.requests[1] as RuntimeRequest;
-    expect(runRequest.agentId).toBe(sessionsBefore[0]!.agentId);
+    expect(
+      (await ds.getRepository(WorkflowRun).findOneByOrFail({ id }))
+        .executionConfig,
+    ).toMatchObject({ agentName: sessionsBefore[0]!.agentName });
     expect(runRequest).not.toHaveProperty('providerSessionId');
     expect(runRequest).not.toHaveProperty('approve');
     // No one is there to approve tools, so they are refused.
@@ -407,7 +407,6 @@ describe('Workflow Runs and the executor', () => {
       await expect(
         moduleRef.get(AgentManager).runIsolated({
           agent: {
-            id: 1,
             name: 'coach',
             provider: 'claude',
             providerOptions: { model: null, effort: null },
@@ -440,7 +439,7 @@ describe('Workflow Runs and the executor', () => {
       const repo = ds.getRepository(WorkflowRun);
       const { id } = await repo.save(
         repo.create({
-          workflowId: workflow.id,
+          workflowName: workflow.name,
           triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
@@ -469,7 +468,7 @@ describe('Workflow Runs and the executor', () => {
 
       const [original, retry] = await allRuns();
       expect(retry).toMatchObject({
-        workflowId: original!.workflowId,
+        workflowName: original!.workflowName,
         triggerId,
         triggerKey: `retry:${id}`,
         attempt: 2,
@@ -653,7 +652,7 @@ describe('Workflow Runs and the executor', () => {
     const repo = ds.getRepository(WorkflowRun);
     const { id } = await repo.save(
       repo.create({
-        workflowId: workflow.id,
+        workflowName: workflow.name,
         triggerId: null,
         triggerKey: 'manual:left-over',
         status: 'pending',
@@ -723,6 +722,33 @@ describe('Workflow Runs and the executor', () => {
       expect(await notificationsOf(other.id)).toEqual([]);
     });
 
+    it('shows a run and its Notifications fully once its Workflow is gone', async () => {
+      await manualWorkflow('brief', 'Summarize the day.');
+      const channel = await target('brief');
+      const { id } = await runs.start('brief');
+      await executor.idle();
+
+      // Nothing deletes a Workflow yet; deleting its note will.
+      await ds.query(`DELETE FROM "workflows" WHERE "name" = 'brief'`);
+
+      expect(await runs.get(id)).toMatchObject({
+        workflow: 'brief',
+        status: 'completed',
+        result: 'echo: Summarize the day.',
+        notifications: [
+          expect.objectContaining({
+            workflow: 'brief',
+            channel: expect.objectContaining({ id: channel }),
+          }),
+        ],
+      });
+      expect(
+        (await runs.list({ workflow: 'Brief', limit: 20 })).map(
+          (listed) => listed.id,
+        ),
+      ).toEqual([id]);
+    });
+
     it('shows the Notifications a run left, with how their delivery stands', async () => {
       await manualWorkflow('brief');
       const channel = await target('brief');
@@ -753,7 +779,7 @@ describe('Workflow Runs and the executor', () => {
       const repo = ds.getRepository(WorkflowRun);
       const { id } = await repo.save(
         repo.create({
-          workflowId: workflow.id,
+          workflowName: workflow.name,
           triggerId: null,
           triggerKey: 'manual:together',
           status: 'running',
@@ -814,7 +840,7 @@ describe('Workflow Runs and the executor', () => {
         (
           await repo.save(
             repo.create({
-              workflowId: (await workflows.get(workflow)).id,
+              workflowName: workflow,
               triggerId: null,
               triggerKey: 'manual:crashed',
               status: 'running',
@@ -1147,7 +1173,7 @@ describe('Workflow Runs and the executor', () => {
       // Queued first, so only the retry's attempt puts that ahead of it.
       const queued = await repo.save(
         repo.create({
-          workflowId: workflow.id,
+          workflowName: workflow.name,
           triggerId: null,
           triggerKey: 'manual:queued',
           status: 'pending',
@@ -1156,7 +1182,7 @@ describe('Workflow Runs and the executor', () => {
       );
       const crashed = await repo.save(
         repo.create({
-          workflowId: workflow.id,
+          workflowName: workflow.name,
           triggerId: null,
           triggerKey: 'manual:crashed',
           status: 'running',
@@ -1302,7 +1328,7 @@ describe('Workflow Runs and the executor', () => {
       await executor.idle();
       const interrupted = await ds.getRepository(WorkflowRun).save(
         ds.getRepository(WorkflowRun).create({
-          workflowId: (await workflows.get('a')).id,
+          workflowName: 'a',
           triggerId: null,
           triggerKey: 'manual:interrupted',
           status: 'interrupted',

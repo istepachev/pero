@@ -9,7 +9,6 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
 import { resolveAgent } from '../agents/agent-resolution.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
 import {
   type AgentDefinition,
   Definitions,
@@ -32,7 +31,7 @@ import { queueRetryWithin } from './retry-run.js';
 /** A run the executor has claimed and marked `running`. */
 interface ClaimedRun {
   runId: number;
-  workflowId: number;
+  /** The name of its Workflow. */
   workflow: string;
   snapshot: ExecutionSnapshot;
 }
@@ -73,8 +72,8 @@ export class WorkflowExecutor
   private readonly logger = new Logger('Workflows');
   /** Each running run until its outcome is recorded, by run ID. */
   private readonly active = new Map<number, Promise<void>>();
-  /** Workflows with a run in `active`. */
-  private readonly busyWorkflows = new Set<number>();
+  /** Workflows with a run in `active`, by name. */
+  private readonly busyWorkflows = new Set<string>();
   /** Cancels each run in `active`, by run ID. */
   private readonly cancels = new Map<number, AbortController>();
   /** Runs the owner cancelled that have not recorded their outcome yet. */
@@ -88,7 +87,6 @@ export class WorkflowExecutor
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
     private readonly agentManager: AgentManager,
     private readonly history: MessageHistory,
   ) {}
@@ -151,7 +149,7 @@ export class WorkflowExecutor
   ): Promise<void> {
     const run = await manager.getRepository(WorkflowRun).findOneBy({ id });
     if (run === null || run.status !== 'running') return;
-    const name = await this.ids.workflowName(run.workflowId);
+    const name = run.workflowName;
     const { workflow, agent } = await this.definitionsOf(name);
     let outcome: string;
     let retried = false;
@@ -273,7 +271,7 @@ export class WorkflowExecutor
         .where('run.status = :status', { status: 'pending' });
       // In memory, not `running` rows: one left by a crash runs no longer.
       if (this.busyWorkflows.size > 0) {
-        query.andWhere('run.workflowId NOT IN (:...busy)', {
+        query.andWhere('run.workflowName NOT IN (:...busy)', {
           busy: [...this.busyWorkflows],
         });
       }
@@ -283,7 +281,7 @@ export class WorkflowExecutor
         .addOrderBy('run.id', 'ASC')
         .getOne();
       if (run === null) return null;
-      const name = await this.ids.workflowName(run.workflowId);
+      const name = run.workflowName;
       const { workflow, agent } = await this.definitionsOf(name);
       if (
         workflow === null ||
@@ -306,14 +304,10 @@ export class WorkflowExecutor
         this.logger.warn(`Run ${run.id} of Workflow ${name}: ${refused}`);
         continue;
       }
-      const resolved = resolveAgent(
-        await this.ids.agentId(agent.name),
-        agent,
-        defaults,
-      );
+      const resolved = resolveAgent(agent, defaults);
       const now = new Date();
       const history = await readHistoryWindow(manager, this.history, {
-        workflowId: run.workflowId,
+        workflowName: run.workflowName,
         config: workflow.history,
         inherited: run.executionConfig?.history,
         template: workflow.input,
@@ -350,7 +344,6 @@ export class WorkflowExecutor
       });
       return {
         runId: run.id,
-        workflowId: run.workflowId,
         workflow: workflow.name,
         snapshot,
       };
@@ -358,7 +351,7 @@ export class WorkflowExecutor
   }
 
   private start(claimed: ClaimedRun): void {
-    this.busyWorkflows.add(claimed.workflowId);
+    this.busyWorkflows.add(claimed.workflow);
     const controller = new AbortController();
     this.cancels.set(claimed.runId, controller);
     const done = this.execute(claimed, controller.signal)
@@ -371,7 +364,7 @@ export class WorkflowExecutor
         this.active.delete(claimed.runId);
         this.cancels.delete(claimed.runId);
         this.cancelRequested.delete(claimed.runId);
-        this.busyWorkflows.delete(claimed.workflowId);
+        this.busyWorkflows.delete(claimed.workflow);
         void this.wake();
       });
     this.active.set(claimed.runId, done);
@@ -388,7 +381,6 @@ export class WorkflowExecutor
     try {
       const { text, providerSessionId } = await this.agentManager.runIsolated({
         agent: {
-          id: snapshot.agentId,
           name: snapshot.agentName,
           provider: snapshot.provider,
           providerOptions: snapshot.providerOptions,

@@ -412,7 +412,6 @@ describe('AgentsService', () => {
         });
 
         expect(await agents.resolve('assistant')).toEqual({
-          id: expect.any(Number),
           name: 'assistant',
           provider: 'codex',
           providerOptions: { model: 'gpt-5.5-codex', effort: 'minimal' },

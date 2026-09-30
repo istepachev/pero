@@ -8,7 +8,6 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Agent } from './agent.entity.js';
 import { Channel } from './channel.entity.js';
 import { Notification } from './notification.entity.js';
 import { Session } from './session.entity.js';
@@ -46,7 +45,7 @@ export {
 )
 @Check(
   'CHK_messages_agent_reply',
-  `"origin" <> 'agent' OR ("agent_id" IS NOT NULL AND "session_id" IS NOT NULL)`,
+  `"origin" <> 'agent' OR ("agent_name" IS NOT NULL AND "session_id" IS NOT NULL)`,
 )
 // A Workflow's message is its delivered Notification, and only that.
 @Check(
@@ -68,18 +67,11 @@ export class Message {
   channel?: Channel;
 
   /**
-   * The Agent the message was to or from; null for Pero's own notices and
-   * a Workflow's.
+   * The name of the Agent the message was to or from; null for Pero's own
+   * notices and a Workflow's.
    */
-  @Column({ name: 'agent_id', type: 'integer', nullable: true })
-  agentId: number | null;
-
-  @ManyToOne(() => Agent, { onDelete: 'RESTRICT' })
-  @JoinColumn({
-    name: 'agent_id',
-    foreignKeyConstraintName: 'FK_messages_agent_id',
-  })
-  agent?: Agent | null;
+  @Column({ name: 'agent_name', type: 'text', nullable: true })
+  agentName: string | null;
 
   /**
    * The Session the message belongs to. A person's message gets it when its

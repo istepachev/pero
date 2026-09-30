@@ -16,12 +16,13 @@ import {
 
 /** Who wrote a message Pero sent: an Agent in its Session, or Pero itself. */
 export type Author =
-  { origin: 'agent'; agentId: number; sessionId: number } | { origin: 'pero' };
+  { origin: 'agent'; agent: string; sessionId: number } | { origin: 'pero' };
 
 /** A person's message to a Channel's Agent. */
 export interface InboundEntry {
   channelId: number;
-  agentId: number;
+  /** The name of the Channel's Agent. */
+  agentName: string;
   externalMessageId: string;
   senderId: string;
   text: string;
@@ -108,7 +109,7 @@ export class MessageHistory {
         ...entry,
         direction: 'out',
         origin: author.origin,
-        agentId: author.origin === 'agent' ? author.agentId : null,
+        agentName: author.origin === 'agent' ? author.agent : null,
         sessionId: author.origin === 'agent' ? author.sessionId : null,
         senderId: null,
       }),
@@ -128,7 +129,7 @@ export class MessageHistory {
       ...entry,
       direction: 'out',
       origin: 'workflow',
-      agentId: null,
+      agentName: null,
       sessionId: null,
       senderId: null,
     });
@@ -165,9 +166,8 @@ export class MessageHistory {
   }
 
   /**
-   * The Channel's latest `limit` messages, oldest first, with the Agent
-   * each was to or from and the Workflow of each Workflow message, inside
-   * the caller's transaction.
+   * The Channel's latest `limit` messages, oldest first, with the Workflow
+   * run of each Workflow message, inside the caller's transaction.
    */
   async latestWithin(
     manager: EntityManager,
@@ -176,10 +176,7 @@ export class MessageHistory {
   ): Promise<Message[]> {
     const latest = await manager.getRepository(Message).find({
       where: { channelId },
-      relations: {
-        agent: true,
-        notification: { workflowRun: { workflow: true } },
-      },
+      relations: { notification: { workflowRun: true } },
       order: { id: 'DESC' },
       take: limit,
     });
@@ -201,9 +198,8 @@ export class MessageHistory {
   }
 
   /**
-   * The messages of `window`, oldest first, with their Channel and the
-   * Agent each was to or from, inside the caller's transaction. Pero's own
-   * notices are left out.
+   * The messages of `window`, oldest first, with their Channel, inside the
+   * caller's transaction. Pero's own notices are left out.
    */
   async windowWithin(
     manager: EntityManager,
@@ -213,7 +209,6 @@ export class MessageHistory {
       .getRepository(Message)
       .createQueryBuilder('message')
       .innerJoinAndSelect('message.channel', 'channel')
-      .leftJoinAndSelect('message.agent', 'agent')
       .where('message.id <= :untilId', { untilId: window.untilId })
       .andWhere('message.origin IN (:...origins)', {
         origins: WINDOW_ORIGINS[window.messages],
@@ -273,10 +268,7 @@ export class MessageHistory {
     }
     // Up to the posted messages, which are already there.
     const latest = await withWorkflow(
-      manager
-        .getRepository(Message)
-        .createQueryBuilder('message')
-        .leftJoinAndSelect('message.agent', 'agent'),
+      manager.getRepository(Message).createQueryBuilder('message'),
     )
       .where('message.channelId = :channelId', { channelId })
       .andWhere('message.id < :beforeId', {
@@ -324,19 +316,18 @@ export class MessageHistory {
   }
 }
 
-/** `query` over messages, with the Workflow each Workflow message came from. */
+/** `query` over messages, with the run each Workflow message came from. */
 function withWorkflow(
   query: SelectQueryBuilder<Message>,
 ): SelectQueryBuilder<Message> {
   return query
     .leftJoinAndSelect('message.notification', 'notification')
-    .leftJoinAndSelect('notification.workflowRun', 'run')
-    .leftJoinAndSelect('run.workflow', 'workflow');
+    .leftJoinAndSelect('notification.workflowRun', 'run');
 }
 
 /** The name of the Workflow whose Notification `message` delivered. */
 export function workflowOf(message: Message): string | null {
-  return message.notification?.workflowRun?.workflow?.name ?? null;
+  return message.notification?.workflowRun?.workflowName ?? null;
 }
 
 /** `message` as a transcript shows it, with who wrote it. */
@@ -350,7 +341,7 @@ function carried(message: Message): CarriedMessage {
       speaker = `Workflow ${workflowOf(message) ?? '?'}`;
       break;
     default:
-      speaker = message.agent?.name ?? 'Agent';
+      speaker = message.agentName ?? 'Agent';
   }
   return { speaker, text: message.text, createdAt: message.createdAt };
 }

@@ -295,7 +295,7 @@ A migration switches state tables from IDs to names:
 - **`workflow_runs`** gets `workflow_name`, and the unique key becomes `(workflow_name, trigger_key)`.
 - **`workflows`** gets `agent_name` in place of `agent_id`. This is a definition table, but its Workflows must survive `agents` being dropped in 8.5, before they move to notes in 9.1.
 
-The new columns are filled from the current rows, and the foreign keys to `agents` and `workflows` go. The execution snapshot (`src/workflows/execution-snapshot.ts`) now also records the input the run sent and the Agent name, so `pero runs show` needs no Workflow row.
+The new columns are filled from the current rows, and the foreign keys to `agents` and `workflows` go. Channels keep `agent_id` until 8.2, and Triggers and notification targets keep `workflow_id` until 7.3 and 9.4; `DefinitionIds` serves only those. The execution snapshot (`src/workflows/execution-snapshot.ts`) drops the Agent's row ID: it already records the input the run sent and the Agent name. `pero runs show` and `ls` need no Workflow row, and `--workflow` in `runs ls` and `notifications ls` matches runs by name, so the runs of a Workflow that is gone still list. A name that neither a Workflow nor any run has is still an error.
 
 **Done when:**
 - The migration is tested against a database from the current release, with Sessions, messages, and runs all mapped.

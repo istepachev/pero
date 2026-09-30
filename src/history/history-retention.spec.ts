@@ -81,7 +81,7 @@ describe('HistoryRetention', () => {
   async function message(text: string, daysAgo: number): Promise<number> {
     const { identifiers } = await ds.getRepository(Message).insert({
       channelId,
-      agentId: null,
+      agentName: null,
       sessionId: null,
       direction: 'in',
       origin: 'user',
@@ -136,9 +136,8 @@ describe('HistoryRetention', () => {
       agent: 'coach',
       inputTemplate: 'Go.',
     });
-    const workflow = await moduleRef.get(WorkflowsService).get('brief');
     const run = await ds.getRepository(WorkflowRun).save({
-      workflowId: workflow.id,
+      workflowName: 'brief',
       triggerId: null,
       triggerKey: 'manual:old',
       status: 'completed',
@@ -156,7 +155,7 @@ describe('HistoryRetention', () => {
     });
     const { identifiers } = await ds.getRepository(Message).insert({
       channelId,
-      agentId: null,
+      agentName: null,
       sessionId: null,
       direction: 'out',
       origin: 'workflow',
@@ -184,7 +183,7 @@ describe('HistoryRetention', () => {
     const count = RETENTION_BATCH_SIZE * 2 + 5;
     const rows = Array.from({ length: count }, (_, index) => ({
       channelId,
-      agentId: null,
+      agentName: null,
       sessionId: null,
       direction: 'in' as const,
       origin: 'user' as const,

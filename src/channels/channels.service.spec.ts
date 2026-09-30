@@ -80,7 +80,7 @@ describe('ChannelsService and ChannelViews', () => {
     const session = await inTransaction(ds, async (manager) => {
       await history.recordInboundWithin(manager, {
         channelId,
-        agentId: agent.id,
+        agentName: agent.name,
         externalMessageId: `in-${text}`,
         senderId: '1',
         text,
@@ -96,7 +96,7 @@ describe('ChannelsService and ChannelViews', () => {
       channelId,
       externalMessageId: `out-${text}`,
       text: `echo: ${text}`,
-      author: { origin: 'agent', agentId: agent.id, sessionId: session.id },
+      author: { origin: 'agent', agent: agent.name, sessionId: session.id },
     });
     return session;
   }
@@ -149,7 +149,7 @@ describe('ChannelsService and ChannelViews', () => {
 
   it('reassigns a Channel, closing its Session so the next turn carries over', async () => {
     const notes = await agents.create({ name: 'notes' });
-    const chef = await agents.create({ name: 'chef' });
+    await agents.create({ name: 'chef' });
     const id = await channel(notes.id, '-100:1');
     const other = await channel(notes.id, '-100:2');
     await turn('notes', id, 'Milk');
@@ -172,7 +172,7 @@ describe('ChannelsService and ChannelViews', () => {
     await turn('chef', id, 'Bread');
     expect(await activeSessions()).toEqual([
       expect.objectContaining({ id: kept.id }),
-      expect.objectContaining({ channelId: id, agentId: chef.id }),
+      expect.objectContaining({ channelId: id, agentName: 'chef' }),
     ]);
   });
 

@@ -267,7 +267,8 @@ describe('Phase 2 end to end (e2e)', () => {
       workingDirectory: vault,
       status: 'active',
     });
-    expect(groceries!.agentId).not.toBe(kitchen!.agentId);
+    expect(groceries).toMatchObject({ agentName: 'groceries' });
+    expect(kitchen).toMatchObject({ agentName: 'kitchen' });
     expect(groceries!.providerSessionId).not.toBe(kitchen!.providerSessionId);
     const followUps = requests('claude').filter((request) =>
       ['Eggs', 'Stew'].includes(request.input),
@@ -302,11 +303,12 @@ describe('Phase 2 end to end (e2e)', () => {
     const [, , general, direct] = await sessions();
     expect(general).toMatchObject({
       channelId: ids[GENERAL_KEY],
+      agentName: 'main',
       status: 'active',
     });
     expect(direct).toMatchObject({
       channelId: ids[DIRECT_KEY],
-      agentId: general!.agentId,
+      agentName: 'main',
       status: 'active',
     });
     expect(direct!.providerSessionId).not.toBe(general!.providerSessionId);

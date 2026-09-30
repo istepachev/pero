@@ -3,8 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SessionService } from '../../sessions/session.service.js';
 import { dataSourceOptions } from '../data-source-options.js';
+import { MIGRATIONS } from '../migrations/index.js';
 import { openDatabase } from '../open-database.js';
+import { inTransaction } from '../transaction.js';
 import { Agent } from './agent.entity.js';
 import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
@@ -57,7 +60,7 @@ async function seed(ds: DataSource) {
     agentId: agent.id,
   });
   const session = await ds.getRepository(Session).save({
-    agentId: agent.id,
+    agentName: agent.name,
     channelId: channel.id,
     providerSessionId: 'provider-session',
     provider: agent.provider,
@@ -66,7 +69,7 @@ async function seed(ds: DataSource) {
   const workflow = await ds.getRepository(Workflow).save({
     name: 'daily-brief',
     title: null,
-    agentId: agent.id,
+    agentName: agent.name,
     inputTemplate: 'Summarize today.',
   });
   const trigger = await ds.getRepository(Trigger).save({
@@ -78,7 +81,7 @@ async function seed(ds: DataSource) {
     lastRunAt: null,
   });
   const run = await ds.getRepository(WorkflowRun).save({
-    workflowId: workflow.id,
+    workflowName: workflow.name,
     triggerId: trigger.id,
     triggerKey: 'schedule:2026-09-27T06:00:00Z',
     status: 'completed',
@@ -111,7 +114,7 @@ async function seed(ds: DataSource) {
   });
   const message = await ds.getRepository(Message).save({
     channelId: channel.id,
-    agentId: agent.id,
+    agentName: agent.name,
     sessionId: session.id,
     direction: 'out',
     origin: 'agent',
@@ -191,10 +194,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // History retention, Notification delivery, history, attempts, skipped
-    // counts, default permissions, message history, the allowlist, the Session
-    // resume migration, then the domain tables.
-    for (let i = 0; i < 10; i++) {
+    // Names in state, history retention, Notification delivery, history,
+    // attempts, skipped counts, default permissions, message history, the
+    // allowlist, the Session resume migration, then the domain tables.
+    for (let i = 0; i < 11; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -216,10 +219,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // History retention, Notification delivery, Workflow history, attempts,
-    // skipped counts, default permissions, message history, the allowlist, then
-    // the Session resume migration.
-    for (let i = 0; i < 9; i++) {
+    // Names in state, history retention, Notification delivery, Workflow
+    // history, attempts, skipped counts, default permissions, message history,
+    // the allowlist, then the Session resume migration.
+    for (let i = 0; i < 10; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -261,9 +264,10 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // History retention, Notification delivery, Workflow history, attempts,
-    // skipped counts, default permissions, message history, then the allowlist.
-    for (let i = 0; i < 8; i++) {
+    // Names in state, history retention, Notification delivery, Workflow
+    // history, attempts, skipped counts, default permissions, message history,
+    // then the allowlist.
+    for (let i = 0; i < 9; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -300,9 +304,10 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // History retention, Notification delivery, Workflow history, attempts,
-    // skipped counts, default permissions, then message history.
-    for (let i = 0; i < 7; i++) {
+    // Names in state, history retention, Notification delivery, Workflow
+    // history, attempts, skipped counts, default permissions, then message
+    // history.
+    for (let i = 0; i < 8; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -332,9 +337,9 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // History retention, Notification delivery, history, attempts, skipped
-    // counts, then default permissions.
-    for (let i = 0; i < 6; i++) {
+    // Names in state, history retention, Notification delivery, history,
+    // attempts, skipped counts, then default permissions.
+    for (let i = 0; i < 7; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -371,8 +376,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // History retention, Notification delivery, history, attempts, then skipped
-    // counts.
+    // Names in state, history retention, Notification delivery, history,
+    // attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -405,7 +411,9 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // History retention, Notification delivery, history, then attempts.
+    // Names in state, history retention, Notification delivery, history, then
+    // attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -456,7 +464,8 @@ describe('domain entities', () => {
       },
     });
 
-    // History retention, Notification delivery, then history.
+    // Names in state, history retention, Notification delivery, then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -483,7 +492,7 @@ describe('domain entities', () => {
       .update(notification.id, { lastError: 'Telegram is unreachable' });
     const delivered = await db.getRepository(Message).save({
       channelId: message.channelId,
-      agentId: null,
+      agentName: null,
       sessionId: null,
       direction: 'out',
       origin: 'workflow',
@@ -493,7 +502,8 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
-    // History retention, then Notification delivery.
+    // Names in state, history retention, then Notification delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = async (table: string) =>
@@ -539,6 +549,8 @@ describe('domain entities', () => {
       historyRetentionDays: 30,
     });
 
+    // Names in state, then history retention.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
       `SELECT "name" FROM pragma_table_info('settings')`,
@@ -556,6 +568,139 @@ describe('domain entities', () => {
     expect(
       await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
     ).toMatchObject({ historyCarryover: 10, historyRetentionDays: null });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('names the Agents and Workflows of a 0.1.0 database, and resumes its Sessions', async () => {
+    // 0.1.0 shipped every migration up to history retention.
+    const old = await openDatabase({
+      ...dataSourceOptions(database),
+      migrations: MIGRATIONS.slice(0, -1),
+    });
+    const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
+    const agentValues = (name: string) =>
+      `'${name}', 'claude', '{"model":null,"effort":null}', '{"permissions":"ask"}'`;
+    for (const sql of [
+      `INSERT INTO "agents" (${agentColumns}) VALUES (${agentValues('main')})`,
+      `INSERT INTO "agents" (${agentColumns}) VALUES (${agentValues('coach')})`,
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "agent_id") ` +
+        `VALUES ('telegram', '42', '{"chatId":"42"}', 2)`,
+      `INSERT INTO "sessions" ("agent_id", "channel_id", "provider_session_id", "provider", "working_directory", "status") ` +
+        `VALUES (2, 1, 'provider-old', 'claude', '/vault', 'closed')`,
+      `INSERT INTO "sessions" ("agent_id", "channel_id", "provider_session_id", "provider", "working_directory") ` +
+        `VALUES (2, 1, 'provider-1', 'claude', '/vault')`,
+      `INSERT INTO "workflows" ("name", "agent_id", "input_template") VALUES ('brief', 1, 'Sum up.')`,
+      `INSERT INTO "triggers" ("workflow_id", "kind", "config_json") VALUES (1, 'manual', '{}')`,
+      `INSERT INTO "workflow_runs" ("workflow_id", "trigger_id", "trigger_key", "status") ` +
+        `VALUES (1, 1, 'manual:first', 'completed')`,
+      `INSERT INTO "notifications" ("workflow_run_id", "channel_id", "payload", "status") ` +
+        `VALUES (1, 1, '{"text":"Done."}', 'delivered')`,
+      `INSERT INTO "messages" ("channel_id", "agent_id", "session_id", "direction", "origin", "external_message_id", "sender_id", "text") ` +
+        `VALUES (1, 2, 2, 'in', 'user', '1', '42', 'Hi')`,
+      `INSERT INTO "messages" ("channel_id", "agent_id", "session_id", "direction", "origin", "external_message_id", "text") ` +
+        `VALUES (1, 2, 2, 'out', 'agent', '2', 'echo: Hi')`,
+      `INSERT INTO "messages" ("channel_id", "direction", "origin", "external_message_id", "text") ` +
+        `VALUES (1, 'out', 'pero', '3', 'Pero here.')`,
+      `INSERT INTO "messages" ("channel_id", "direction", "origin", "external_message_id", "text", "notification_id") ` +
+        `VALUES (1, 'out', 'workflow', '4', 'Done.', 1)`,
+    ]) {
+      await old.query(sql);
+    }
+    await old.destroy();
+
+    const db = await open();
+    expect(
+      await db.query(
+        `SELECT "id", "agent_name", "status" FROM "sessions" ORDER BY "id"`,
+      ),
+    ).toEqual([
+      { id: 1, agent_name: 'coach', status: 'closed' },
+      { id: 2, agent_name: 'coach', status: 'active' },
+    ]);
+    expect(
+      await db.query(
+        `SELECT "id", "agent_name", "origin" FROM "messages" ORDER BY "id"`,
+      ),
+    ).toEqual([
+      { id: 1, agent_name: 'coach', origin: 'user' },
+      { id: 2, agent_name: 'coach', origin: 'agent' },
+      { id: 3, agent_name: null, origin: 'pero' },
+      { id: 4, agent_name: null, origin: 'workflow' },
+    ]);
+    expect(
+      await db.query(
+        `SELECT "id", "workflow_name", "trigger_id", "trigger_key" FROM "workflow_runs"`,
+      ),
+    ).toEqual([
+      {
+        id: 1,
+        workflow_name: 'brief',
+        trigger_id: 1,
+        trigger_key: 'manual:first',
+      },
+    ]);
+    expect(
+      await db.query(`SELECT "id", "name", "agent_name" FROM "workflows"`),
+    ).toEqual([{ id: 1, name: 'brief', agent_name: 'main' }]);
+    expect(await db.getRepository(Notification).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+
+    // The next turn of the Channel's Agent resumes its provider session.
+    const session = await inTransaction(db, (manager) =>
+      new SessionService(db).beginWithin(manager, 1, {
+        name: 'coach',
+        provider: 'claude',
+        workingDirectory: '/vault',
+      }),
+    );
+    expect(session).toMatchObject({ id: 2, providerSessionId: 'provider-1' });
+  });
+
+  it('reverts names in state to IDs and migrates again', async () => {
+    const db = await open();
+    const { agent, session, message, workflow, run } = await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    const columns = async (table: string) =>
+      (
+        await db.query<{ name: string }[]>(
+          `SELECT "name" FROM pragma_table_info('${table}')`,
+        )
+      ).map((column) => column.name);
+    expect(await columns('sessions')).not.toContain('agent_name');
+    expect(await columns('messages')).not.toContain('agent_name');
+    expect(await columns('workflow_runs')).not.toContain('workflow_name');
+    expect(await columns('workflows')).not.toContain('agent_name');
+    expect(await db.query(`SELECT "id", "agent_id" FROM "sessions"`)).toEqual([
+      { id: session.id, agent_id: agent.id },
+    ]);
+    expect(await db.query(`SELECT "id", "agent_id" FROM "messages"`)).toEqual([
+      { id: message.id, agent_id: agent.id },
+    ]);
+    expect(
+      await db.query(`SELECT "id", "workflow_id" FROM "workflow_runs"`),
+    ).toEqual([{ id: run.id, workflow_id: workflow.id }]);
+    expect(await db.query(`SELECT "id", "agent_id" FROM "workflows"`)).toEqual([
+      { id: workflow.id, agent_id: agent.id },
+    ]);
+    await rejectsWith(
+      db.query(`UPDATE "sessions" SET "agent_id" = 999`),
+      'SQLITE_CONSTRAINT_FOREIGNKEY',
+    );
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(
+      await db.getRepository(Session).findOneByOrFail({ id: session.id }),
+    ).toMatchObject({ agentName: 'assistant', status: 'active' });
+    expect(
+      await db.getRepository(Message).findOneByOrFail({ id: message.id }),
+    ).toMatchObject({ agentName: 'assistant' });
+    expect(
+      await db.getRepository(WorkflowRun).findOneByOrFail({ id: run.id }),
+    ).toMatchObject({ workflowName: 'daily-brief' });
+    expect(
+      await db.getRepository(Workflow).findOneByOrFail({ id: workflow.id }),
+    ).toMatchObject({ agentName: 'assistant' });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -656,7 +801,7 @@ describe('domain entities', () => {
       await rejectsWith(
         db.getRepository(Workflow).insert({
           name: 'daily-brief',
-          agentId: seeded.agent.id,
+          agentName: seeded.agent.name,
           inputTemplate: 'Again.',
         }),
         'SQLITE_CONSTRAINT_UNIQUE',
@@ -690,7 +835,7 @@ describe('domain entities', () => {
       const runs = db.getRepository(WorkflowRun);
       await rejectsWith(
         runs.insert({
-          workflowId: seeded.workflow.id,
+          workflowName: seeded.workflow.name,
           triggerKey: seeded.run.triggerKey,
         }),
         'SQLITE_CONSTRAINT_UNIQUE',
@@ -698,11 +843,11 @@ describe('domain entities', () => {
 
       const other = await db.getRepository(Workflow).save({
         name: 'weekly-review',
-        agentId: seeded.agent.id,
+        agentName: seeded.agent.name,
         inputTemplate: 'Review the week.',
       });
       await runs.insert({
-        workflowId: other.id,
+        workflowName: other.name,
         triggerKey: seeded.run.triggerKey,
       });
     });
@@ -720,7 +865,7 @@ describe('domain entities', () => {
     it('allows one active Session per Channel and Agent', async () => {
       const sessions = db.getRepository(Session);
       const next = {
-        agentId: seeded.agent.id,
+        agentName: seeded.agent.name,
         channelId: seeded.channel.id,
         provider: 'codex' as const,
         workingDirectory: '/home/owner/code',
@@ -790,22 +935,10 @@ describe('domain entities', () => {
         () => `UPDATE "settings" SET "main_agent_id" = ${MISSING}`,
       ],
       [
-        'sessions.agent_id',
-        (s) =>
-          `INSERT INTO "sessions" ("agent_id", "channel_id", "provider", ` +
-          `"working_directory") VALUES (${MISSING}, ${s.channel.id}, 'claude', '/x')`,
-      ],
-      [
         'sessions.channel_id',
         (s) =>
-          `INSERT INTO "sessions" ("agent_id", "channel_id", "provider", ` +
-          `"working_directory") VALUES (${s.agent.id}, ${MISSING}, 'claude', '/x')`,
-      ],
-      [
-        'workflows.agent_id',
-        () =>
-          `INSERT INTO "workflows" ("name", "agent_id", "input_template") ` +
-          `VALUES ('x', ${MISSING}, 'x')`,
+          `INSERT INTO "sessions" ("agent_name", "channel_id", "provider", ` +
+          `"working_directory") VALUES ('${s.agent.name}', ${MISSING}, 'claude', '/x')`,
       ],
       [
         'triggers.workflow_id',
@@ -814,16 +947,10 @@ describe('domain entities', () => {
           `VALUES (${MISSING}, 'manual', '{}')`,
       ],
       [
-        'workflow_runs.workflow_id',
-        () =>
-          `INSERT INTO "workflow_runs" ("workflow_id", "trigger_key") ` +
-          `VALUES (${MISSING}, 'x')`,
-      ],
-      [
         'workflow_runs.trigger_id',
         (s) =>
-          `INSERT INTO "workflow_runs" ("workflow_id", "trigger_id", ` +
-          `"trigger_key") VALUES (${s.workflow.id}, ${MISSING}, 'x')`,
+          `INSERT INTO "workflow_runs" ("workflow_name", "trigger_id", ` +
+          `"trigger_key") VALUES ('${s.workflow.name}', ${MISSING}, 'x')`,
       ],
       [
         'workflow_notification_targets.workflow_id',
@@ -848,13 +975,6 @@ describe('domain entities', () => {
         () =>
           `INSERT INTO "messages" ("channel_id", "direction", "origin", ` +
           `"external_message_id", "text") VALUES (${MISSING}, 'out', 'pero', '1', 'x')`,
-      ],
-      [
-        'messages.agent_id',
-        (s) =>
-          `INSERT INTO "messages" ("channel_id", "agent_id", "direction", ` +
-          `"origin", "external_message_id", "text") ` +
-          `VALUES (${s.channel.id}, ${MISSING}, 'in', 'user', '1', 'x')`,
       ],
       [
         'messages.session_id',
@@ -882,7 +1002,7 @@ describe('domain entities', () => {
       await rejectsWith(db.query(sql(seeded)), 'SQLITE_CONSTRAINT_FOREIGNKEY');
     });
 
-    it('keeps Agents, Channels, and Workflows that history refers to', async () => {
+    it('keeps Agents and Channels that history refers to', async () => {
       // SQLite reports ON DELETE RESTRICT as SQLITE_CONSTRAINT_TRIGGER.
       const restricted = /FOREIGN KEY constraint failed/;
       await expect(
@@ -894,9 +1014,33 @@ describe('domain entities', () => {
       await expect(
         db.getRepository(Channel).delete(seeded.channel.id),
       ).rejects.toThrow(restricted);
-      await expect(
-        db.getRepository(Workflow).delete(seeded.workflow.id),
-      ).rejects.toThrow(restricted);
+    });
+
+    it('keeps the runs of a Workflow that is gone, by its name', async () => {
+      await db.getRepository(Workflow).delete(seeded.workflow.id);
+
+      expect(
+        await db
+          .getRepository(WorkflowRun)
+          .findOneByOrFail({ id: seeded.run.id }),
+      ).toMatchObject({ workflowName: 'daily-brief', triggerId: null });
+      expect(await db.getRepository(Notification).count()).toBe(1);
+    });
+
+    it('lets state name Agents and Workflows that no row holds', async () => {
+      await db.getRepository(Session).update(seeded.session.id, {
+        agentName: 'gone',
+      });
+      await db.getRepository(Message).update(seeded.message.id, {
+        agentName: 'gone',
+      });
+      await db.getRepository(WorkflowRun).update(seeded.run.id, {
+        workflowName: 'gone',
+      });
+      await db.getRepository(Workflow).update(seeded.workflow.id, {
+        agentName: 'gone',
+      });
+      expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
     });
 
     it('keeps a run when its Trigger is removed', async () => {
@@ -949,14 +1093,14 @@ describe('domain entities', () => {
       `UPDATE "settings" SET "default_permissions" = 'always'`,
       `UPDATE "messages" SET "direction" = 'sideways'`,
       // A Workflow's message is its delivered Notification, and only that.
-      `UPDATE "messages" SET "origin" = 'workflow', "agent_id" = NULL, "session_id" = NULL`,
+      `UPDATE "messages" SET "origin" = 'workflow', "agent_name" = NULL, "session_id" = NULL`,
       `UPDATE "messages" SET "notification_id" = (SELECT "id" FROM "notifications")`,
       // People write in; Agents, Pero, and Workflows write out.
       `UPDATE "messages" SET "direction" = 'in'`,
       `UPDATE "messages" SET "origin" = 'user'`,
       // An Agent's reply names its Agent and Session.
       `UPDATE "messages" SET "session_id" = NULL`,
-      `UPDATE "messages" SET "agent_id" = NULL`,
+      `UPDATE "messages" SET "agent_name" = NULL`,
     ])('rejects %s', async (sql) => {
       await rejectsWith(db.query(sql), 'SQLITE_CONSTRAINT_CHECK');
     });

@@ -115,7 +115,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         (manager) =>
           this.history.recordInboundWithin(manager, {
             channelId: channel.id,
-            agentId: channel.agentId,
+            agentName: channel.agent.name,
             externalMessageId: message.messageId,
             senderId: message.senderId,
             text: message.content.text,
