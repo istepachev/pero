@@ -41,7 +41,7 @@ Pero runs Claude and Codex with the sign-ins of the OS account its daemon runs a
 
    `PERO_SMOKE_CODEX_MODEL` changes the model the resumed Codex turn switches to (`gpt-5.5` by default).
 
-The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that resuming a conversation Claude Code does not have is reported as lost (so Pero continues in a fresh Session), checks that an `ask` Agent's shell command is refused, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
+The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that resuming a conversation Claude Code does not have is reported as lost (so Pero continues in a fresh Session), checks that an `ask` Agent's shell command is refused, checks that an `ask` Agent writes in its folder but is refused the settings folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
 
 When a test fails:
 - **Signed out:** sign in again as the service account, not as yourself.

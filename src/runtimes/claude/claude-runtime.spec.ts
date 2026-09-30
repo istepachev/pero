@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import {
   AbortError,
@@ -5,7 +8,7 @@ import {
   type Options,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   RuntimeError,
   type RuntimeEvent,
@@ -15,6 +18,7 @@ import {
   ClaudeRuntime,
   type ClaudeQuery,
   NO_APPROVER,
+  NO_SETTINGS_APPROVER,
   summarize,
 } from './claude-runtime.js';
 import {
@@ -200,12 +204,12 @@ describe('ClaudeRuntime', () => {
       expect(calls[0]!.options).not.toHaveProperty('canUseTool');
     });
 
-    it('lets an ask Agent read and edit, and asks about other tools', async () => {
+    it("decides about an ask Agent's tools itself", async () => {
       const { query, calls } = fakeQuery();
 
       await collect(new ClaudeRuntime(query, ENV).execute(request()));
 
-      expect(calls[0]!.options.permissionMode).toBe('acceptEdits');
+      expect(calls[0]!.options.permissionMode).toBe('default');
       expect(calls[0]!.options).not.toHaveProperty(
         'allowDangerouslySkipPermissions',
       );
@@ -269,6 +273,120 @@ describe('ClaudeRuntime', () => {
         behavior: 'deny',
         message: 'Not allowed: asking the owner failed: Telegram is down',
       });
+    });
+  });
+
+  describe('the settings folder', () => {
+    let vault: string;
+    let settings: string;
+    let health: string;
+
+    beforeEach(() => {
+      vault = mkdtempSync(join(tmpdir(), 'pero-claude-runtime-'));
+      settings = join(vault, 'Settings');
+      mkdirSync(join(settings, 'Agents'), { recursive: true });
+      health = join(settings, 'Agents', 'Health.md');
+    });
+
+    afterEach(() => {
+      rmSync(vault, { recursive: true, force: true });
+    });
+
+    function inVault(overrides: Partial<RuntimeRequest> = {}) {
+      return request({
+        workingDirectory: vault,
+        settingsFolder: settings,
+        ...overrides,
+      });
+    }
+
+    it('lets an ask Agent edit a note in its folder without asking', async () => {
+      const approve = vi.fn();
+      const ask = await canUseTool(inVault({ approve }));
+      const input = {
+        file_path: join(vault, 'Groceries.md'),
+        content: '- milk',
+      };
+
+      expect(await ask('Write', input, toolOptions)).toEqual({
+        behavior: 'allow',
+        updatedInput: input,
+      });
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it('asks before an edit under the settings folder, and follows the answer', async () => {
+      const approve = vi
+        .fn()
+        .mockResolvedValueOnce({ allow: true })
+        .mockResolvedValueOnce({ allow: false, reason: 'the owner said no' });
+      const ask = await canUseTool(inVault({ approve }));
+      const input = {
+        file_path: health,
+        old_string: 'ask',
+        new_string: 'bypass',
+      };
+
+      expect(await ask('Edit', input, toolOptions)).toEqual({
+        behavior: 'allow',
+        updatedInput: input,
+      });
+      expect(await ask('Edit', input, toolOptions)).toEqual({
+        behavior: 'deny',
+        message: 'Not allowed: the owner said no',
+      });
+      expect(approve).toHaveBeenCalledWith({
+        tool: 'Edit',
+        summary: `Change Pero's settings: Edit: ${health}`,
+        signal: toolOptions.signal,
+      });
+    });
+
+    it('asks however the path reaches the settings folder', async () => {
+      symlinkSync(join(settings, 'Agents'), join(vault, 'Agents'));
+      const approve = vi.fn().mockResolvedValue({ allow: false, reason: 'no' });
+      const ask = await canUseTool(inVault({ approve }));
+
+      for (const file_path of [
+        join(vault, 'Agents', 'Health.md'),
+        join('..', basename(vault), 'Settings', 'Agents', 'Health.md'),
+        join(vault, 'Notes', '..', 'Settings', 'Agents', 'Health.md'),
+      ]) {
+        await ask('Write', { file_path, content: '' }, toolOptions);
+      }
+
+      expect(approve).toHaveBeenCalledTimes(3);
+    });
+
+    it('refuses an edit under the settings folder when no one can be asked, as in a Workflow run', async () => {
+      const ask = await canUseTool(inVault());
+
+      expect(
+        await ask('Write', { file_path: health, content: '' }, toolOptions),
+      ).toEqual({
+        behavior: 'deny',
+        message: `Not allowed: ${NO_SETTINGS_APPROVER}`,
+      });
+      expect(
+        await ask(
+          'Write',
+          { file_path: join(vault, 'Groceries.md'), content: '' },
+          toolOptions,
+        ),
+      ).toMatchObject({ behavior: 'allow' });
+    });
+
+    it('leaves a bypass Agent free to edit it', async () => {
+      const { query, calls } = fakeQuery();
+
+      await collect(
+        new ClaudeRuntime(query, ENV).execute(
+          inVault({ toolPolicy: { permissions: 'bypass' } }),
+        ),
+      );
+
+      expect(calls[0]!.options.permissionMode).toBe('bypassPermissions');
+      expect(calls[0]!.options).not.toHaveProperty('canUseTool');
     });
   });
 

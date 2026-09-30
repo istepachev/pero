@@ -93,7 +93,7 @@ Claude Agents run Claude Code through the Claude Agent SDK, signed in with the C
 
 Each Agent's tools run under one of two permission modes, copied from `default-permissions` when it is created:
 
-- `ask` (the default): reading and editing files in the Agent's folder runs freely; any other tool that needs permission, such as a shell command or a web fetch, asks in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history.
+- `ask` (the default): reading and editing files in the Agent's folder runs freely, except editing the settings folder (in a workspace) and Claude Code's, Git's, and the shell's own files there, such as `.claude/` and `.git/`, even through a symlink or a `../` path; those edits, and any other tool that needs permission, such as a shell command or a web fetch, ask in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history. A Workflow run has no one to ask, so it is refused such tools and can't change the settings folder. Allow rules in your own Claude Code settings still apply before Pero is asked.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
 
 ### Codex Agents
@@ -104,7 +104,7 @@ Codex works only in a Git repository. For a folder that is not one, such as a no
 
 Codex runs each turn without a way to ask you, so the permission modes map to its sandbox instead:
 
-- `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it).
+- `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it). The sandbox can't leave out a subfolder, so unlike a Claude Agent, a Codex `ask` Agent edits the settings folder without asking when its folder contains it; give a Codex Agent that must not change configuration a `working-directory` outside the settings folder.
 - `bypass`: no sandbox, like `codex --dangerously-bypass-approvals-and-sandbox`.
 
 ## Workflows

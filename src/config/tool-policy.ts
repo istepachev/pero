@@ -4,8 +4,8 @@ import { z } from 'zod';
 
 /**
  * How an Agent's tools are approved. `ask`: reading and editing files in its
- * folder runs freely, and any other tool that needs permission asks the
- * owner in the Channel. `bypass`: every tool runs without asking, like
+ * folder runs freely, except editing Pero's settings folder, and any other
+ * tool that needs permission asks the owner in the Channel. `bypass`: every tool runs without asking, like
  * `claude --dangerously-skip-permissions`.
  */
 export const PERMISSION_MODES = ['ask', 'bypass'] as const;

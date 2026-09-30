@@ -30,6 +30,7 @@ import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 import { AgentsService } from './agents.service.js';
@@ -456,6 +457,36 @@ describe('AgentManager', () => {
     // A turn from the Channel asks there; this one asks `approve`.
     expect(claude.requests[0]!.approve).toBeTypeOf('function');
     expect(claude.requests[1]!.approve).toBe(approve);
+  });
+
+  it("passes the workspace's settings folder to the runtime, in Channels and Workflow runs", async () => {
+    await say(OWNER, 'Hello');
+    expect(claude.requests[0]).not.toHaveProperty('settingsFolder');
+
+    const settingsFolder = join(vault, 'Settings');
+    vi.spyOn(moduleRef.get(SettingsNotes), 'folders').mockReturnValue({
+      workspace: tmp,
+      dataFolder: vault,
+      settingsFolder,
+    });
+    await say(OWNER, 'Again');
+    await moduleRef.get(AgentManager).runIsolated({
+      agent: {
+        name: 'main',
+        provider: 'claude',
+        providerOptions: { model: null, effort: null },
+        workingDirectory: vault,
+        instructions: '',
+        toolPolicy: { permissions: 'ask' },
+        codexSkipGitRepoCheck: false,
+      },
+      input: 'Work',
+      label: 'test',
+    });
+
+    expect(claude.requests[1]!.settingsFolder).toBe(settingsFolder);
+    expect(claude.requests[2]!.settingsFolder).toBe(settingsFolder);
+    expect(claude.requests[2]).not.toHaveProperty('approve');
   });
 
   it("tells the Channel when the Agent's provider has no runtime yet", async () => {
