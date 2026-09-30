@@ -431,6 +431,85 @@ describe('Workflows from notes (e2e)', () => {
     );
   });
 
+  it('applies an edited schedule at once, and cancels the runs a schedule queued once its note is disabled or deleted', async () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    const DAY_MS = 24 * HOUR_MS;
+    /** The next time it is `hour` o'clock in UTC. */
+    const nextAt = (hour: number) => {
+      const today = Math.floor(Date.now() / DAY_MS) * DAY_MS + hour * HOUR_MS;
+      return new Date(today > Date.now() ? today : today + DAY_MS);
+    };
+    const daily = (properties: string[]) =>
+      workflow(
+        'Daily',
+        ['agent: coach', 'timezone: UTC', ...properties],
+        'Plan the day.',
+      );
+    const nextRunAt = async () =>
+      (await client.call('workflows.get', { name: 'daily' })).schedules[0]!
+        .nextRunAt;
+    await daily(['hour: 9']);
+    await start();
+    expect(await nextRunAt()).toBe(nextAt(9).toISOString());
+
+    await daily(['hour: 10']);
+    await daemon!.app.get(ScheduleTick).reconciled();
+    expect(await nextRunAt()).toBe(nextAt(10).toISOString());
+
+    // A run by hand holds the Workflow, so the one its schedule queued waits.
+    const held = claude().hold();
+    const byHand = await client.call('workflows.run', { name: 'daily' });
+    await held.started;
+    const runs = daemon!.app
+      .get<DataSource>(getDataSourceToken())
+      .getRepository(WorkflowRun);
+    const { identifiers } = await runs.insert({
+      workflowName: 'daily',
+      triggerKey: `schedule:daily:${nextAt(10).toISOString()}`,
+      status: 'pending',
+    });
+    const scheduled = identifiers[0]!.id as number;
+
+    await daily(['hour: 10', 'enabled: false']);
+    await daemon!.app.get(ScheduleTick).reconciled();
+    expect(await nextRunAt()).toBeNull();
+    expect(await client.call('runs.get', { id: scheduled })).toMatchObject({
+      status: 'cancelled',
+      error: 'Cancelled before it started: Workflow daily is disabled',
+    });
+    held.release();
+    expect(await waitFinished(byHand.id)).toMatchObject({
+      status: 'completed',
+    });
+
+    // Enabled again, then deleted with a run waiting.
+    await daily(['hour: 10']);
+    await daemon!.app.get(ScheduleTick).reconciled();
+    expect(await nextRunAt()).toBe(nextAt(10).toISOString());
+    const again = claude().hold();
+    const second = await client.call('workflows.run', { name: 'daily' });
+    await again.started;
+    const waiting = await client.call('workflows.run', { name: 'daily' });
+    rmSync(join(workspace, 'data', 'Settings', 'Workflows', 'Daily.md'));
+    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(ScheduleTick).reconciled();
+    expect(await client.call('runs.get', { id: waiting.id })).toMatchObject({
+      status: 'cancelled',
+      startedAt: null,
+      error: 'Cancelled before it started: Workflow daily no longer exists',
+    });
+    // The running one finishes.
+    again.release();
+    expect(await waitFinished(second.id)).toMatchObject({
+      status: 'completed',
+    });
+    expect(
+      await daemon!.app
+        .get<DataSource>(getDataSourceToken())
+        .query(`SELECT * FROM "schedules"`),
+    ).toEqual([]);
+  });
+
   it('records a run Pero stopped as interrupted on the next start, and retries it as its Workflow allows', async () => {
     await start();
     await manualBrief(['max-attempts: 2']);

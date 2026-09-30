@@ -61,6 +61,7 @@ describe('ScheduleTick', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     await moduleRef.close();
     ws.delete();
@@ -103,6 +104,14 @@ describe('ScheduleTick', () => {
       const defined = await workflow(wanted);
       return defined?.name === name ? { ...defined, schedules } : defined;
     });
+  }
+
+  /**
+   * Makes it `time` for the scheduler when it reconciles by itself, as on
+   * a change of the notes.
+   */
+  function at(time: string): void {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(time) });
   }
 
   /** Makes the one schedule of Workflow `workflow` next due at `due`. */
@@ -375,34 +384,27 @@ describe('ScheduleTick', () => {
     ]);
   });
 
-  it('passes times with no run while the Workflow or its Agent is disabled', async () => {
+  it('passes times with no run while its Agent is disabled', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
 
-    await ws.editWorkflow('brief', { enabled: false });
-    await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
-    expect((await state('brief')).nextRunAt).toEqual(
-      new Date('2026-09-28T11:00:00Z'),
-    );
-
-    await ws.editWorkflow('brief', { enabled: true });
     await ws.editAgent('Coach', { enabled: false });
     const warn = vi.spyOn(Logger.prototype, 'warn').mockReturnValue();
-    await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
+    await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     expect(warn).toHaveBeenCalledWith(
       `The schedule 0 * * * * (UTC) of Workflow brief came due, but Agent coach is disabled; no run`,
     );
     expect((await state('brief')).nextRunAt).toEqual(
-      new Date('2026-09-28T12:00:00Z'),
+      new Date('2026-09-28T11:00:00Z'),
     );
 
     // Enabled again, it runs from its next time, not the ones it passed.
     await ws.editAgent('Coach', { enabled: true });
-    await scheduler.tick(new Date('2026-09-28T12:00:01Z'));
+    await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
     await executor.idle();
     const runs = await allRuns();
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
-      triggerKey: `schedule:brief:2026-09-28T12:00:00.000Z`,
+      triggerKey: `schedule:brief:2026-09-28T11:00:00.000Z`,
       skippedCount: 0,
     });
   });
@@ -437,7 +439,8 @@ describe('ScheduleTick', () => {
 
   it('starts a changed schedule afresh, catching nothing up', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
-    // Changed while it was overdue, as a note may be while Pero is down.
+    // Changed while it was overdue.
+    at('2026-09-28T13:10:00Z');
     await ws.editWorkflow('brief', { cron: '30 * * * *' });
 
     await scheduler.tick(new Date('2026-09-28T13:10:00Z'));
@@ -572,5 +575,190 @@ describe('ScheduleTick', () => {
     expect((await state('nightly')).nextRunAt).toEqual(
       new Date('2026-03-30T00:30:00Z'), // 02:30 CEST
     );
+  });
+
+  describe('reconciling with the notes', () => {
+    it('moves the next run as soon as an edit changes the hour', async () => {
+      at('2026-09-28T08:00:00Z');
+      await ws.workflow('brief', { agent: 'coach', hour: 9, timezone: 'UTC' });
+      await scheduler.reconciled();
+      expect((await state('brief')).nextRunAt).toEqual(
+        new Date('2026-09-28T09:00:00Z'),
+      );
+
+      at('2026-09-28T08:30:00Z');
+      await ws.editWorkflow('brief', { hour: 10 });
+      // Without waiting for a tick.
+      await scheduler.reconciled();
+      expect((await state('brief')).nextRunAt).toEqual(
+        new Date('2026-09-28T10:00:00Z'),
+      );
+
+      await scheduler.tick(new Date('2026-09-28T09:00:01Z'));
+      expect(await allRuns()).toEqual([]);
+      await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
+      await executor.idle();
+      expect((await allRuns()).map((run) => run.triggerKey)).toEqual([
+        'schedule:brief:2026-09-28T10:00:00.000Z',
+      ]);
+    });
+
+    it('cancels the waiting runs of a Workflow whose note is deleted, and lets a running one finish', async () => {
+      await scheduled('brief', '2026-09-28T10:00:00Z');
+      const held = claude.hold();
+      await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
+      await held.started;
+      await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
+      const [running, waiting] = await allRuns();
+      expect([running!.status, waiting!.status]).toEqual([
+        'running',
+        'pending',
+      ]);
+
+      const log = vi.spyOn(Logger.prototype, 'log');
+      await ws.removeWorkflow('brief');
+      await scheduler.reconciled();
+
+      expect(await allStates()).toEqual([]);
+      expect(
+        await ds
+          .getRepository(WorkflowRun)
+          .findOneByOrFail({ id: waiting!.id }),
+      ).toMatchObject({
+        status: 'cancelled',
+        errorText:
+          'Cancelled before it started: Workflow brief no longer exists',
+        finishedAt: expect.any(Date),
+      });
+      expect(log).toHaveBeenCalledWith(
+        `Run ${waiting!.id} of Workflow brief cancelled before it started: Workflow brief no longer exists`,
+      );
+
+      held.release();
+      await executor.idle();
+      expect((await allRuns()).map((run) => run.status)).toEqual([
+        'completed',
+        'cancelled',
+      ]);
+    });
+
+    it('drops the saved times of a disabled Workflow and cancels the runs its schedule queued, not those started by hand', async () => {
+      await scheduled('brief', '2026-09-28T10:00:00Z');
+      const held = claude.hold();
+      await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
+      await held.started;
+      await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
+      await ds.getRepository(WorkflowRun).insert({
+        workflowName: 'brief',
+        triggerKey: 'manual:by-hand',
+        status: 'pending',
+      });
+
+      const log = vi.spyOn(Logger.prototype, 'log');
+      at('2026-09-28T11:10:00Z');
+      await ws.editWorkflow('brief', { enabled: false });
+      await scheduler.reconciled();
+
+      expect(await allStates()).toEqual([]);
+      expect(log).toHaveBeenCalledWith(
+        'Workflow brief is disabled; the saved times of its schedule are dropped',
+      );
+      expect(
+        (await allRuns()).map((run) => [run.triggerKey, run.status]),
+      ).toEqual([
+        ['schedule:brief:2026-09-28T10:00:00.000Z', 'running'],
+        ['schedule:brief:2026-09-28T11:00:00.000Z', 'cancelled'],
+        ['manual:by-hand', 'pending'],
+      ]);
+      await scheduler.tick(new Date('2026-09-28T12:00:01Z'));
+      expect(await allRuns()).toHaveLength(3);
+
+      held.release();
+      await executor.idle();
+      expect((await allRuns()).map((run) => run.status)).toEqual([
+        'completed',
+        'cancelled',
+        'completed',
+      ]);
+
+      // Enabled again, it runs from its next time, not the ones it passed.
+      at('2026-09-28T12:10:00Z');
+      await ws.editWorkflow('brief', { enabled: true });
+      await scheduler.reconciled();
+      expect((await state('brief')).nextRunAt).toEqual(
+        new Date('2026-09-28T13:00:00Z'),
+      );
+    });
+
+    it('starts a renamed note on a schedule of its own', async () => {
+      await scheduled('brief', '2026-09-28T10:00:00Z');
+      await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
+      await executor.idle();
+
+      at('2026-09-28T10:30:00Z');
+      await ws.removeWorkflow('brief');
+      await ws.workflow('daily', {
+        agent: 'coach',
+        cron: '0 * * * *',
+        timezone: 'UTC',
+      });
+      await scheduler.reconciled();
+
+      expect(await allStates()).toEqual([
+        expect.objectContaining({
+          workflowName: 'daily',
+          nextRunAt: new Date('2026-09-28T11:00:00Z'),
+          lastRunAt: null,
+        }),
+      ]);
+    });
+
+    it('catches up at startup only the notes that still exist and are enabled', async () => {
+      await scheduled('kept', new Date());
+      await scheduled('paused', new Date());
+      await scheduled('removed', new Date());
+      await moduleRef.close();
+      // Down since the top of the hour three hours ago, and edited meanwhile.
+      await ws.editWorkflow('paused', { enabled: false });
+      await ws.removeWorkflow('removed');
+      const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+      const due = new Date(lastHour - 3 * HOUR_MS);
+      const offline = await openDatabase(dataSourceOptions(ws.database));
+      await offline
+        .getRepository(ScheduleState)
+        .createQueryBuilder()
+        .update()
+        .set({ nextRunAt: due })
+        .execute();
+      // Runs their schedules queued before Pero stopped.
+      await offline.getRepository(WorkflowRun).insert(
+        ['kept', 'paused', 'removed'].map((workflowName) => ({
+          workflowName,
+          triggerKey: `schedule:${workflowName}:${new Date(due.getTime() - HOUR_MS).toISOString()}`,
+          status: 'pending' as const,
+        })),
+      );
+      await offline.destroy();
+
+      await boot();
+      await executor.idle();
+
+      expect(
+        (await allRuns()).map((run) => [
+          run.workflowName,
+          run.status,
+          run.skippedCount,
+        ]),
+      ).toEqual([
+        ['kept', 'completed', 0],
+        ['paused', 'cancelled', 0],
+        ['removed', 'cancelled', 0],
+        // One catch-up run for the three hours since.
+        ['kept', 'completed', 3],
+      ]);
+      expect((await allStates()).map((row) => row.workflowName)).toEqual([
+        'kept',
+      ]);
+    });
   });
 });

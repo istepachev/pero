@@ -506,6 +506,13 @@ On each `snapshotChanged` event and at startup, reconcile `schedules` with the s
 
 Startup catch-up applies only to notes that still exist and are enabled.
 
+- **Found while building:**
+  - **Reconciling runs at three points:** on each change of the definitions (`Definitions.onChange`, so an edit applies right after the scan that reads it), in `ScheduleTick.onModuleInit` (after the executor's startup recovery and before it picks up pending runs), and still at the start of every tick, which catches a change that landed mid-tick. The definitions are read inside the reconciling transaction, so a run queued meanwhile, such as by hand for a new note, is never taken for one of a Workflow that is gone.
+  - **Which waiting runs are cancelled:** every pending run of a Workflow that is gone, but only the scheduled ones of a disabled Workflow. A disabled Workflow still runs and retries by hand (9.1), so those runs wait on. They are recorded `cancelled` with `Cancelled before it started: <reason>`, which sends no Notification. The executor still fails a scheduled run of a disabled Workflow it claims, for a change that lands between reconciling and the claim.
+  - **A disabled Workflow loses its row,** rather than passing its times as before, so enabling it again starts from now. A schedule whose Agent is disabled or gone still passes its times without a run, since the Workflow itself is unchanged.
+  - **A Workflow left out of the snapshot counts as gone:** a note broken since startup, or whose `channel` no longer resolves (9.1), loses its schedule's saved times and waiting runs, and starts afresh once fixed. A note broken after it loaded keeps its last good version, and its schedule.
+  - **A renamed note starts a fresh history window** with no change: windows are keyed by the Workflow's name.
+
 **Done when:**
 - Editing `hour` moves the next run within one tick.
 - Deleting the note cancels a waiting run.
