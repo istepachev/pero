@@ -321,12 +321,12 @@ Trigger keys become `schedule:<workflow>:<due time>`, and a time that comes due 
 
 `pero migrate <workspace>` converts an installation into a workspace, as [Migration](./MIGRATION.md#moving-an-existing-installation) describes:
 
-1. **Opens the old database read-only, in-process.** The CLI otherwise never opens a database. This is a documented exception, like `restore` touching files, and it refuses while a daemon answers for that data directory.
-2. **Runs `pero init`.**
-3. **Writes the notes:** `Pero.md`, one note per Agent (with `topics` from its Channel assignments), and one note per Workflow (splitting several schedules into several notes).
-4. **Writes `config.yaml` and `.env`.**
-5. **Copies the database** into `.pero/`.
-6. **Runs `pero check`.**
+1. **Copies the old database while holding the daemon lock, then migrates and reads the copy, in-process.** The CLI otherwise never opens a database. This is a documented exception, like `restore` touching files, and it refuses while a daemon answers for that data directory. The source is never opened, since even a read-only open of a WAL database can create files next to it, and a 0.1 database needs the 7.2 and 7.3 migrations before it can be read.
+2. **Checks before writing:** topic titles that would lead to two Agents, and notes that exist with other content, stop the command before anything is written.
+3. **Writes the notes:** `Pero.md`, one note per Agent (with `topics` from its Channel assignments), and one note per Workflow (splitting several schedules into several notes). Names are kept: a note is named after its title only when that gives the same name, and after the name otherwise. An Agent without its own model or effort takes `Pero.md`'s, and the command says so.
+4. **Writes `config.yaml` and `.env`**, and runs `pero init` for the rest of the skeleton, without the template `Agents/Main.md`.
+5. **Moves the copied database** into `.pero/`, last, so a migration that stopped part way runs again. A split Workflow is split in the copy too: one Workflow row per schedule, under the notes' names, each with its schedule's saved times, so phase 9 needs no mapping.
+6. **Runs `pero check`**, resolving topic titles against the copied Channels.
 
 The old installation is left untouched.
 
@@ -527,4 +527,4 @@ A later release removes the command stubs, the legacy data directory (`--data-di
 | Unclaimed topic: new note or main Agent? | 8.3 | New note (`create-agent`), as today |
 | Report Codex changes under the settings folder? | 8.4 | No: documented limitation |
 | Accept topic IDs in `topics`? | 8.2 | No: titles only |
-| Several schedules per Workflow note? | 7.4 | No: one note per schedule |
+| Several schedules per Workflow note? | 7.4 | Settled in 7.4: one note per schedule |

@@ -2083,6 +2083,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       const result = await pero(withDataDir(command), { nodeArgs });
       expect(result, command).toMatchObject({ code: 0, stderr: '' });
     }
+    // pero migrate loads it only to migrate, not to refuse.
+    expect(await pero(['-w', tmp, 'migrate', tmp], { nodeArgs })).toMatchObject(
+      {
+        code: 1,
+        stderr: expect.stringContaining('takes the workspace as its argument'),
+      },
+    );
     const follower = spawn(
       process.execPath,
       [...nodeArgs, PERO, ...withDataDir('logs', '--follow')],

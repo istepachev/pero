@@ -36,10 +36,10 @@ It does the following:
 
 1. **Makes the workspace** with `pero init`. The data folder becomes the old `default-working-directory`, written to `config.yaml` as `data:`.
 2. **Writes `Settings/Pero.md`** from the settings row. Shared instructions become the body.
-3. **Writes one Agent note per Agent:** instructions as the body, and only the properties that differ from `Pero.md`. The title comes from the Agent's title, or its name. Each Channel assigned to the Agent adds its topic title to `topics`. When two Channels with the same title were assigned to different Agents, the command stops and lists them for you to rename one topic.
+3. **Writes one Agent note per Agent:** instructions as the body, and only the properties that differ from `Pero.md`. The file is named after the Agent's title when that gives the Agent's name, and after its name otherwise, so its Sessions and history carry on. Each Channel assigned to the Agent adds its topic title to `topics`. When two Channels with the same title were assigned to different Agents, the command stops and lists them for you to rename one topic.
 4. **Writes one Workflow note per Workflow.** The input becomes the body. A schedule Trigger becomes `day`/`hour`/`minute` when it maps cleanly, otherwise `cron`. Notification targets become `channel`. A Workflow with several schedule Triggers gets one note per Trigger (`<Title> 1.md`, `<Title> 2.md`), and the command says so.
 5. **Writes `allowed-chats`** into `config.yaml`, and the token into the workspace's `.env`.
-6. **Copies the database** into `.pero/` and migrates it to the new schema: IDs become names, definition tables are dropped, and `schedules` rows get the Triggers' `next_run_at` so no run is missed or repeated. Disabled Agents and Workflows become notes with `enabled: false`, so their history keeps its names.
+6. **Copies the database** into `.pero/` and migrates it to the new schema: IDs become names, and `schedules` rows keep their saved times, so no run is missed or repeated. The definition tables stay until the phases that stop reading them drop them. Disabled Agents and Workflows become notes with `enabled: false`, so their history keeps its names.
 7. **Runs `pero check`** and prints the result.
 
 Disabled Channels have no equivalent. Their topics go to whichever Agent claims them, and the command lists them.
