@@ -1,22 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import {
   ConflictError,
   InvalidInputError,
   NotFoundError,
 } from '../common/errors.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
 import { WorkflowViews } from './workflow-views.service.js';
@@ -24,21 +18,19 @@ import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
 
 describe('WorkflowsService and WorkflowViews', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let agents: AgentsService;
   let workflows: WorkflowsService;
   let views: WorkflowViews;
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-workflows-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-workflows-');
+    await ws.agent('Coach');
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         WorkflowsModule,
         TriggersModule,
@@ -46,18 +38,14 @@ describe('WorkflowsService and WorkflowViews', () => {
     }).compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    agents = moduleRef.get(AgentsService);
+    ws.use(moduleRef);
     workflows = moduleRef.get(WorkflowsService);
     views = moduleRef.get(WorkflowViews);
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: vault });
-    await agents.create({ name: 'coach' });
   });
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   it('creates a Workflow for an enabled Agent and shows it', async () => {
@@ -94,7 +82,7 @@ describe('WorkflowsService and WorkflowViews', () => {
       }),
     ).rejects.toThrow(new NotFoundError('No Agent named nobody'));
 
-    await agents.edit('coach', { enabled: false });
+    await ws.editAgent('Coach', { enabled: false });
     await expect(
       workflows.create({ name: 'review', agent: 'coach', inputTemplate: 'Go' }),
     ).rejects.toThrow(
@@ -120,9 +108,8 @@ describe('WorkflowsService and WorkflowViews', () => {
   });
 
   it('changes the title, input, and Agent, and checks the new Agent', async () => {
-    await agents.create({ name: 'editor' });
-    await agents.create({ name: 'idle' });
-    await agents.edit('idle', { enabled: false });
+    await ws.agent('Editor');
+    await ws.agent('Idle', { enabled: false });
     await workflows.create({
       name: 'review',
       agent: 'coach',
@@ -266,7 +253,7 @@ describe('WorkflowsService and WorkflowViews', () => {
     await workflows.edit('review', { enabled: false });
     expect((await views.details('review')).enabled).toBe(false);
 
-    await agents.edit('coach', { enabled: false });
+    await ws.editAgent('Coach', { enabled: false });
     await workflows.edit('review', { enabled: true });
     expect(await views.details('review')).toMatchObject({
       enabled: true,
@@ -370,14 +357,14 @@ describe('WorkflowsService and WorkflowViews', () => {
     );
   });
 
-  it("names its Agent, so it outlives the Agent's row", async () => {
+  it("names its Agent, so it outlives the Agent's note", async () => {
     await workflows.create({
       name: 'Review',
       agent: 'Coach',
       inputTemplate: 'Go',
     });
 
-    await ds.getRepository(Agent).delete({ name: 'coach' });
+    await ws.remove('Agents/Coach.md');
     expect(await workflows.get('review')).toMatchObject({ agentName: 'coach' });
   });
 });

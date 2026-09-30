@@ -1,14 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import type { Exec } from './provider-auth.js';
 import {
   PROVIDER_AUTH_EXEC,
@@ -17,12 +12,10 @@ import {
 import { ProvidersModule } from './providers.module.js';
 
 describe('ProviderAuthService', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let service: ProviderAuthService;
   let health: ComponentHealth;
-  let agents: AgentsService;
-  let settings: SettingsService;
   let signedIn: Set<string>;
   let calls: number;
 
@@ -39,15 +32,13 @@ describe('ProviderAuthService', () => {
   };
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-providers-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-providers-');
     signedIn = new Set();
     calls = 0;
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ProvidersModule,
       ],
@@ -57,14 +48,12 @@ describe('ProviderAuthService', () => {
       .compile();
     service = moduleRef.get(ProviderAuthService);
     health = moduleRef.get(ComponentHealth);
-    agents = moduleRef.get(AgentsService);
-    settings = moduleRef.get(SettingsService);
-    await settings.update({ defaultWorkingDirectory: vault });
+    ws.use(moduleRef);
   });
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   const component = (name: string) =>
@@ -85,13 +74,13 @@ describe('ProviderAuthService', () => {
   });
 
   it('follows the default provider and enabled Agents', async () => {
-    await settings.update({ defaultProvider: 'codex' });
+    await ws.pero({ provider: 'codex' });
     expect(await service.inUse()).toEqual(['codex']);
 
-    await agents.create({ name: 'assistant', provider: 'claude' });
+    await ws.agent('Assistant', { provider: 'claude' });
     expect(await service.inUse()).toEqual(['claude', 'codex']);
 
-    await agents.edit('assistant', { enabled: false });
+    await ws.editAgent('Assistant', { enabled: false });
     await service.refreshRequirements();
     expect(await service.inUse()).toEqual(['codex']);
     expect(component('claude')?.required).toBe(false);
@@ -101,10 +90,10 @@ describe('ProviderAuthService', () => {
     await moduleRef.init();
     expect(component('codex')?.required).toBe(false);
 
-    await agents.create({ name: 'coder', provider: 'codex' });
+    await ws.agent('Coder', { provider: 'codex' });
     await vi.waitFor(() => expect(component('codex')?.required).toBe(true));
 
-    await agents.edit('coder', { enabled: false });
+    await ws.editAgent('Coder', { enabled: false });
     await vi.waitFor(() => expect(component('codex')?.required).toBe(false));
   });
 

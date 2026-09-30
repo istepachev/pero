@@ -1,11 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentsService } from '../agents/agents.service.js';
 import type { AgentChannelTurns } from '../channels/agent-channel-turns.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelRouter } from '../channels/channel-router.js';
@@ -28,8 +24,7 @@ import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
@@ -44,7 +39,6 @@ import {
 } from './notification-delivery.js';
 import { NotificationViews } from './notification-views.service.js';
 import { NotificationsModule } from './notifications.module.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const OWNER = privateChat('1234');
 
@@ -52,7 +46,7 @@ const OWNER = privateChat('1234');
 const SUGGESTION = 'Workflow brief\n\necho: Suggest one thing.';
 
 describe('NotificationDelivery', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let delivery: NotificationDelivery;
@@ -62,16 +56,16 @@ describe('NotificationDelivery', () => {
   let codex: FakeAgentRuntime;
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-delivery-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-delivery-');
+    await ws.pero();
+    await ws.agent('Main');
+    await ws.agent('Coach');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         ChannelsModule,
         WorkflowsModule,
         TriggersModule,
@@ -85,11 +79,7 @@ describe('NotificationDelivery', () => {
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     delivery = moduleRef.get(NotificationDelivery);
     workflows = moduleRef.get(WorkflowsService);
-    await moduleRef.get(SettingsService).update({
-      defaultProvider: 'claude',
-      defaultWorkingDirectory: vault,
-    });
-    await moduleRef.get(AgentsService).create({ name: 'coach' });
+    ws.use(moduleRef);
     await workflows.create({
       name: 'brief',
       agent: 'coach',
@@ -110,7 +100,7 @@ describe('NotificationDelivery', () => {
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /** The owner's direct chat as a Channel `brief` notifies. */
@@ -555,7 +545,7 @@ describe('NotificationDelivery', () => {
 
     it('gives a fresh Session the posted messages once, after the conversation it carries over', async () => {
       await posted();
-      await moduleRef.get(AgentsService).edit('main', { provider: 'codex' });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say('Tell me more');
       const input = codex.requests.at(-1)!.input;
@@ -570,7 +560,7 @@ describe('NotificationDelivery', () => {
     it('carries over earlier Workflow messages into a fresh Session', async () => {
       await posted();
       await say('Tell me more');
-      await moduleRef.get(AgentsService).edit('main', { provider: 'codex' });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say('And then?');
       const input = codex.requests.at(-1)!.input;
