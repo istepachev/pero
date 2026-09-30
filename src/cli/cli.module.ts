@@ -21,6 +21,7 @@ import {
 import { CheckCommand } from './commands/check.command.js';
 import { InitCommand } from './commands/init.command.js';
 import { LogsCommand } from './commands/logs.command.js';
+import { MigrateCommand } from './commands/migrate.command.js';
 import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
 import { RunCommand } from './commands/run.command.js';
@@ -80,6 +81,7 @@ import { GlobalOptionsSetup } from './global-options.js';
   providers: [
     GlobalOptionsSetup,
     InitCommand,
+    MigrateCommand,
     CheckCommand,
     RunCommand,
     StopCommand,
