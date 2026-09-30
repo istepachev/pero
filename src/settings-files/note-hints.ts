@@ -5,9 +5,9 @@ import { NOTE_FOLDERS, noteIdentity, PERO_NOTE } from './note-files.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /*
- * What the commands that changed Agents, settings, and which Agent answers
- * in a Channel say now that notes hold them: the file to edit instead.
- * They stay as such stubs for one release.
+ * What the commands that changed Agents, Workflows, their Triggers,
+ * settings, and which Agent answers in a Channel say now that notes hold
+ * them: the file to edit instead. They stay as such stubs for one release.
  */
 
 /** Where a workspace's configuration files are, absolute. */
@@ -81,12 +81,31 @@ export function findAgentNote(
   files: readonly string[],
   name: string,
 ): string | null {
+  return findNote(files, 'agent', name);
+}
+
+/**
+ * The note that defines the Workflow named `name`, in any case or as its
+ * title, among `files`, the paths in the settings folder; null if none.
+ */
+export function findWorkflowNote(
+  files: readonly string[],
+  name: string,
+): string | null {
+  return findNote(files, 'workflow', name);
+}
+
+function findNote(
+  files: readonly string[],
+  kind: keyof typeof NOTE_FOLDERS,
+  name: string,
+): string | null {
   const wanted = slugify(name) ?? name.toLowerCase();
   for (const file of files) {
     const found = noteIdentity(file);
     if (
       found.ok &&
-      found.identity.kind === 'agent' &&
+      found.identity.kind === kind &&
       found.identity.name === wanted
     ) {
       return file;
@@ -123,6 +142,82 @@ export function agentHint(
     case 'enable':
     case 'disable':
       return `${prefix}: set enabled: ${action === 'enable'} in ${shown(note)}.`;
+  }
+}
+
+/** A command that changed a Workflow. */
+export type WorkflowAction =
+  'create' | 'edit' | 'enable' | 'disable' | 'notify' | 'stop-notifying';
+
+/**
+ * What to edit instead of `pero workflows <action> <name>`, given `note`,
+ * the path of the Workflow's note in the settings folder, or null.
+ */
+export function workflowHint(
+  action: WorkflowAction,
+  name: string,
+  note: string | null,
+  files: ConfigurationFiles,
+): string {
+  const shown = (file: string) =>
+    shownPath(files.workspace, join(files.settingsFolder, file));
+  const prefix = 'Workflows are configured in notes now';
+  const add = `add ${shown(posix.join(NOTE_FOLDERS.workflow, `${name}.md`))}: its text is what each run asks the Agent, and hour and channel say when it runs and where it posts`;
+  if (note === null) {
+    return action === 'create'
+      ? `${prefix}: ${add}.`
+      : `${prefix}, and no note is named ${name}: ${add}.`;
+  }
+  const seen = "pero channels ls shows each topic's title";
+  switch (action) {
+    case 'create':
+      return `${prefix}, and ${shown(note)} already defines ${name}; edit it there.`;
+    case 'edit':
+      return `${prefix}: edit ${shown(note)}.`;
+    case 'enable':
+      return `${prefix}: set enabled: true in ${shown(note)}.`;
+    case 'disable':
+      return `${prefix}: set enabled: false in ${shown(note)}, which stops its schedule; pero workflows run still runs it.`;
+    case 'notify':
+      return `${prefix}: add the topic's title to channel in ${shown(note)}; ${seen}.`;
+    case 'stop-notifying':
+      return `${prefix}: take the topic's title out of channel in ${shown(note)}; ${seen}.`;
+  }
+}
+
+/** A command that listed or changed the Triggers that start Workflows. */
+export type TriggerAction = 'list' | 'add' | 'remove' | 'enable' | 'disable';
+
+/**
+ * What to do instead of `pero triggers <action>`. For `add`, `workflow` is
+ * the Workflow named and `note` the path of its note in the settings
+ * folder, or null.
+ */
+export function triggerHint(
+  action: TriggerAction,
+  workflow: string | null,
+  note: string | null,
+  files: ConfigurationFiles,
+): string {
+  const shown = (file: string) =>
+    shownPath(files.workspace, join(files.settingsFolder, file));
+  const prefix = 'Workflows run on the schedules their notes set now';
+  const byHand = 'any Workflow runs by hand with pero workflows run <name>';
+  const listed = "pero workflows ls shows each Workflow's note";
+  switch (action) {
+    case 'list':
+      return `${prefix}: pero workflows ls shows each schedule and its next run.`;
+    case 'add':
+      if (note === null) {
+        const add = shown(posix.join(NOTE_FOLDERS.workflow, `${workflow}.md`));
+        return `${prefix}, and no note is named ${workflow}: add ${add} with hour, day, and minute, or cron; ${byHand}.`;
+      }
+      return `${prefix}: set hour, day, and minute, or cron, in ${shown(note)}; ${byHand}.`;
+    case 'remove':
+    case 'disable':
+      return `${prefix}: set trigger: manual in the Workflow's note to stop its schedule; ${listed}.`;
+    case 'enable':
+      return `${prefix}: set trigger: schedule and enabled: true in the Workflow's note; ${listed}.`;
   }
 }
 

@@ -17,16 +17,21 @@ import {
   channelHint,
   type ConfigurationFiles,
   findAgentNote,
+  findWorkflowNote,
   legacyHint,
   SETTING_HOMES,
   settingHint,
+  type TriggerAction,
+  triggerHint,
+  type WorkflowAction,
+  workflowHint,
 } from '../settings-files/note-hints.js';
 import { scanSettingsFolder } from '../settings-files/scan.js';
 import { CliError } from './errors.js';
 
 /*
- * The commands that changed Agents, settings, and which Agent answers in
- * a Channel, now that notes hold them:
+ * The commands that changed Agents, Workflows, their Triggers, settings,
+ * and which Agent answers in a Channel, now that notes hold them:
  * they say which file to edit and exit 1, whether or not Pero runs.
  */
 
@@ -70,6 +75,43 @@ export async function agentStub(
     name,
   );
   throw new CliError(agentHint(action, name, note, files));
+}
+
+/** `pero workflows <action> <name>`: names the note to edit instead. */
+export async function workflowStub(
+  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  action: WorkflowAction,
+  name: string,
+): Promise<never> {
+  const files = configurationFiles(config);
+  const notes = await scanSettingsFolder(files.settingsFolder);
+  const note = findWorkflowNote(
+    notes.map((entry) => entry.file),
+    name,
+  );
+  throw new CliError(workflowHint(action, name, note, files));
+}
+
+/**
+ * `pero triggers <action>`: says what to edit instead; for `add`, the note
+ * of Workflow `workflow`.
+ */
+export async function triggerStub(
+  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  action: TriggerAction,
+  workflow: string | null,
+): Promise<never> {
+  const files = configurationFiles(config);
+  const note =
+    workflow === null
+      ? null
+      : findWorkflowNote(
+          (await scanSettingsFolder(files.settingsFolder)).map(
+            (entry) => entry.file,
+          ),
+          workflow,
+        );
+  throw new CliError(triggerHint(action, workflow, note, files));
 }
 
 /**

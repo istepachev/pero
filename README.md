@@ -65,15 +65,19 @@ pero stop
 
 ### Scheduled workflows
 
-A Workflow is a task an Agent does on its own, on a schedule or on demand. For example, this Workflow reviews the day's chats every evening and posts suggestions to a topic:
+A Workflow is a task an Agent does on its own, on a schedule or on demand: a note in `Workflows/`. For example, `data/Settings/Workflows/English review.md` reviews the day's chats every evening and posts suggestions to the English topic:
 
-```sh
-pero agents create english-coach --instructions "You are a friendly English tutor."
-pero workflows create english --agent english-coach --history \
-  --input "Suggest better English for: {{history}}"
-pero triggers add english --cron "0 21 * * *"   # every day at 21:00
-pero workflows notify english 5                 # post results to Channel 5 (see `pero channels`)
+```markdown
+---
+hour: 21
+agent: english-coach
+history: true
+channel: English
+---
+Suggest better English for: {{history}}
 ```
+
+`pero workflows` lists the Workflows and when each runs next, and `pero workflows run english-review` runs one now.
 
 `pero runs` shows what ran and how it went.
 

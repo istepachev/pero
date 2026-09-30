@@ -16,6 +16,7 @@ import {
   type Schedule,
   scheduleFingerprint,
 } from '../triggers/schedule.js';
+import { SCHEDULE_KEY_PATTERN, scheduleKey } from '../workflows/run-keys.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import {
   advanceScheduleWithin,
@@ -212,12 +213,12 @@ export class ScheduleTick
 
     // From the saved time, not `now`: every tick that reads this row
     // builds the same key, so the unique index allows one run per time.
-    const triggerKey = `schedule:${name}:${due.toISOString()}`;
+    const triggerKey = scheduleKey(name, due);
     const runs = manager.getRepository(WorkflowRun);
     const waiting = await runs.findOne({
       where: {
         workflowName: name,
-        triggerKey: Like('schedule:%'),
+        triggerKey: Like(SCHEDULE_KEY_PATTERN),
         status: 'pending',
       },
       order: { id: 'DESC' },

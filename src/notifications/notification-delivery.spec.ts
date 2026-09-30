@@ -25,12 +25,9 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
-import { TriggersModule } from '../triggers/triggers.module.js';
-import { TriggersService } from '../triggers/triggers.service.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
-import { WorkflowsService } from '../workflows/workflows.service.js';
 import {
   MAX_DELIVERY_ATTEMPTS,
   NOT_ALLOWED,
@@ -42,15 +39,14 @@ import { NotificationsModule } from './notifications.module.js';
 
 const OWNER = privateChat('1234');
 
-/** What run `brief` posts: the Workflow's name over the echoed input. */
-const SUGGESTION = 'Workflow brief\n\necho: Suggest one thing.';
+/** What run `brief` posts: the Workflow's title over the echoed input. */
+const SUGGESTION = 'Brief\n\necho: Suggest one thing.';
 
 describe('NotificationDelivery', () => {
   let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let delivery: NotificationDelivery;
-  let workflows: WorkflowsService;
   let adapter: FakeChannelAdapter;
   let claude: FakeAgentRuntime;
   let codex: FakeAgentRuntime;
@@ -68,7 +64,6 @@ describe('NotificationDelivery', () => {
         ws.hostConfig(),
         ChannelsModule,
         WorkflowsModule,
-        TriggersModule,
         NotificationsModule,
       ],
     })
@@ -78,16 +73,8 @@ describe('NotificationDelivery', () => {
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     delivery = moduleRef.get(NotificationDelivery);
-    workflows = moduleRef.get(WorkflowsService);
     ws.use(moduleRef);
-    await workflows.create({
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Suggest one thing.',
-    });
-    await moduleRef
-      .get(TriggersService)
-      .add({ workflow: 'brief', kind: 'manual' });
+    await ws.workflow('Brief', { agent: 'coach' }, 'Suggest one thing.');
     await moduleRef.get(AllowedChatsService).allow({
       integrationKind: 'telegram',
       chatKey: OWNER.key,
@@ -114,7 +101,7 @@ describe('NotificationDelivery', () => {
         title: null,
       }),
     );
-    await workflows.notify('brief', channel.id);
+    await ws.editWorkflow('Brief', { channel: channel.id });
     return channel;
   }
 
@@ -395,15 +382,11 @@ describe('NotificationDelivery', () => {
 
     it('lists the latest Notifications newest first, by status, Workflow, Channel, and run', async () => {
       const channel = await target();
-      await workflows.create({
-        name: 'other',
-        agent: 'coach',
-        inputTemplate: 'Other.',
-      });
-      await moduleRef
-        .get(TriggersService)
-        .add({ workflow: 'other', kind: 'manual' });
-      await workflows.notify('other', channel.id);
+      await ws.workflow(
+        'other',
+        { agent: 'coach', channel: channel.id },
+        'Other.',
+      );
       const first = await finishedRun();
       await delivery.tick(after(first.nextAttemptAt!, 1));
       const { id: otherRun } = await moduleRef.get(WorkflowRuns).start('other');
@@ -526,7 +509,7 @@ describe('NotificationDelivery', () => {
       channel = await ds
         .getRepository(Channel)
         .findOneByOrFail({ externalKey: OWNER.key });
-      await workflows.notify('brief', channel.id);
+      await ws.editWorkflow('Brief', { channel: channel.id });
     });
 
     it('gives the next turn what was posted since the last message, and the turn after it nothing', async () => {
@@ -535,7 +518,7 @@ describe('NotificationDelivery', () => {
       await say('Tell me more');
       const input = claude.requests.at(-1)!.input;
       expect(input).toMatch(
-        /^\[Posted in this chat by Workflows since the last message here\]\n\d{4}-\d\d-\d\d \d\d:\d\d Workflow brief: Workflow brief\n\necho: Suggest one thing\.\n\[End of posted messages\]\n\nTell me more$/,
+        /^\[Posted in this chat by Workflows since the last message here\]\n\d{4}-\d\d-\d\d \d\d:\d\d Workflow brief: Brief\n\necho: Suggest one thing\.\n\[End of posted messages\]\n\nTell me more$/,
       );
       expect(claude.requests.at(-1)!.providerSessionId).toBeDefined();
 
@@ -567,7 +550,7 @@ describe('NotificationDelivery', () => {
       expect(input).toMatch(
         /^\[Earlier conversation in this chat, from a previous session\]\n/,
       );
-      expect(input).toContain('Workflow brief: Workflow brief\n\necho:');
+      expect(input).toContain('Workflow brief: Brief\n\necho:');
       // Nothing was posted since the last message, so no block of its own.
       expect(input.endsWith('[End of earlier conversation]\n\nAnd then?')).toBe(
         true,
@@ -576,15 +559,16 @@ describe('NotificationDelivery', () => {
 
     it("leaves Workflow messages out of a Workflow's history window", async () => {
       await posted();
-      await workflows.create({
-        name: 'review',
-        agent: 'coach',
-        inputTemplate: 'Review:\n{{history}}',
-        history: { messages: 'all', hours: 24 },
-      });
-      await moduleRef
-        .get(TriggersService)
-        .add({ workflow: 'review', kind: 'manual' });
+      await ws.workflow(
+        'review',
+        {
+          agent: 'coach',
+          history: true,
+          'history-messages': 'all',
+          'history-hours': 24,
+        },
+        'Review:\n{{history}}',
+      );
 
       await moduleRef.get(WorkflowRuns).start('review');
       await moduleRef.get(WorkflowExecutor).idle();

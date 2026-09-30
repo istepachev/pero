@@ -705,7 +705,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toMatch(/^ {2}next turn +starts its first Session$/m);
     expect(show.stdout).toMatch(/^ {2}history +1 message, the latest at /m);
 
-    const described = 'Channel 1 (telegram -1001234567890:42 "Groceries")';
     // Notes route topics now.
     for (const args of [
       ['assign', '1', 'chef'],
@@ -741,283 +740,169 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: 'No Channel with ID 9\n',
     });
 
-    // A Workflow posts its runs to the Channel.
-    await pero(
-      ws('workflows', 'create', 'brief', '--agent', 'chef', '--input', 'Go'),
+    // A Workflow note posts its runs to the topic, by its title.
+    writeFileSync(
+      join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'Brief.md'),
+      '---\nagent: chef\nchannel: Groceries\n---\nGo\n',
     );
+    await restart(ws);
     const workflows = (...args: string[]) => pero(ws('workflows', ...args));
-    expect(await workflows('notify', 'brief', '1')).toEqual({
-      code: 0,
-      stdout: `Workflow brief now notifies ${described}: each answer, and each run that fails, is posted there.\n`,
-      stderr: '',
-    });
-    expect(await workflows('notify', 'brief', '1')).toMatchObject({
-      code: 0,
-      stdout: `Workflow brief already notifies ${described}.\n`,
-    });
     expect((await workflows('show', 'brief')).stdout).toContain(
       [
-        'Notifies',
+        'Posts to',
         '  ID  CHANNEL                     TITLE',
         '  1   telegram -1001234567890:42  Groceries',
       ].join('\n'),
     );
-    expect(await workflows('notify', 'brief', '1', '--remove')).toMatchObject({
-      code: 0,
-      stdout: 'Workflow brief no longer notifies Channel 1.\n',
-    });
-    expect(await workflows('notify', 'brief', '1', '--remove')).toMatchObject({
-      code: 0,
-      stdout: 'Workflow brief did not notify Channel 1.\n',
-    });
-    expect(await workflows('notify', 'brief', 'groceries')).toMatchObject({
+    expect(await workflows('notify', 'brief', '1')).toEqual({
       code: 1,
+      stdout: '',
       stderr:
-        'channel must be a Channel ID, as pero channels ls lists it, not "groceries"\n',
+        "Workflows are configured in notes now: add the topic's title to channel in data/Settings/Workflows/Brief.md; pero channels ls shows each topic's title.\n",
     });
-    expect(await workflows('notify', 'brief', '9')).toMatchObject({
-      code: 1,
-      stderr: 'No Channel with ID 9; pero channels ls lists them\n',
-    });
+    expect(
+      (await workflows('notify', 'brief', '1', '--remove')).stderr,
+    ).toContain("take the topic's title out of channel in");
   });
 
-  it('lists, shows, creates, edits, disables, and enables Workflows and their Triggers', async () => {
+  it('lists and shows the Workflows notes define, and names the note instead of each removed command', async () => {
     const ws = useWorkspace({
       'Pero.md': '---\ntimezone: Europe/Berlin\n---\n',
       'Agents/Coach.md': 'You coach.\n',
     });
-    expect((await pero(ws('run'))).code).toBe(0);
     const workflows = (...args: string[]) => pero(ws('workflows', ...args));
     const triggers = (...args: string[]) => pero(ws('triggers', ...args));
+    const prefix = 'Workflows are configured in notes now';
 
-    expect(await workflows()).toMatchObject({
-      code: 0,
-      stdout:
-        'No Workflows yet. Create one with pero workflows create <name> --agent <agent> --input <text>.\n',
-    });
-    expect(
-      await workflows('create', 'evening-review', '--input', 'Go'),
-    ).toMatchObject({
-      code: 1,
-      stderr: 'Give the Agent its runs use with --agent <name>\n',
-    });
+    // The stubs answer with Pero stopped too, whatever options they get.
     expect(
       await workflows(
         'create',
-        'evening review',
+        'evening-review',
         '--agent',
         'coach',
         '--input',
         'Go',
       ),
-    ).toMatchObject({
+    ).toEqual({
       code: 1,
-      stderr:
-        '<name>: must be letters and digits, in words joined by single hyphens\n',
+      stdout: '',
+      stderr: `${prefix}: add data/Settings/Workflows/evening-review.md: its text is what each run asks the Agent, and hour and channel say when it runs and where it posts.\n`,
     });
-    expect(
-      await workflows(
-        'create',
-        'evening-review',
-        '--agent',
-        'nobody',
-        '--input',
-        'Go',
-      ),
-    ).toMatchObject({ code: 1, stderr: 'No Agent named nobody\n' });
-    expect(
-      await pero(
-        ws(
-          'workflows',
-          'create',
-          'Evening-Review',
-          '--agent',
-          'coach',
-          '--input',
-          '-',
-        ),
-        { input: "Review today's chats.\n" },
-      ),
-    ).toMatchObject({
+    expect((await pero(ws('run'))).code).toBe(0);
+    expect(await workflows()).toMatchObject({
       code: 0,
       stdout:
-        'Created Workflow evening-review: runs Agent coach, 0 Triggers\n' +
-        'Start it on a schedule with pero triggers add evening-review --cron "<expression>".\n',
-    });
-    expect(
-      await workflows('edit', 'evening-review', '--title', 'Evening review'),
-    ).toMatchObject({
-      code: 0,
-      stdout: 'Changed Workflow evening-review: runs Agent coach, 0 Triggers\n',
-    });
-    expect(await workflows('edit', 'evening-review')).toMatchObject({
-      code: 1,
-      stderr:
-        'Nothing to change; see pero workflows edit --help for the options\n',
+        'No Workflows yet. Add a note to the Workflows folder in the settings folder.\n',
     });
 
-    expect(await triggers('add', 'evening-review')).toMatchObject({
-      code: 1,
-      stderr:
-        'Give a schedule with --cron "<expression>", such as --cron "0 9 * * *", or --manual\n',
-    });
-    expect(
-      await triggers('add', 'evening-review', '--cron', '@daily', '--manual'),
-    ).toMatchObject({
-      code: 1,
-      stderr: 'Give either --cron or --manual, not both\n',
-    });
-    expect(
-      await triggers('add', 'evening-review', '--cron', '0 21 * *'),
-    ).toMatchObject({
-      code: 1,
-      stderr: expect.stringMatching(
-        /^--cron: must be a cron expression of five fields/,
+    writeFileSync(
+      join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'Evening review.md'),
+      "---\nhour: 21\nagent: coach\n---\nReview today's chats.\n",
+    );
+    await restart(ws);
+    const listed = await workflows();
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toMatch(
+      new RegExp(
+        [
+          'NAME +AGENT +SCHEDULE +NEXT RUN +CHANNELS +STATE +NOTE',
+          'evening-review +coach +0 21 \\* \\* \\* \\(Europe/Berlin\\) +\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d +— +enabled +data/Settings/Workflows/Evening review\\.md',
+          '',
+        ].join('\n'),
       ),
-    });
-    expect(
-      await triggers(
-        'add',
-        'evening-review',
-        '--cron',
-        '0 21 * * *',
-        '--timezone',
-        'Mars/Base',
+    );
+    const shown = await workflows('show', 'Evening-Review');
+    expect(shown.code).toBe(0);
+    expect(shown.stdout).toMatch(
+      new RegExp(
+        [
+          '^Workflow evening-review "Evening review"',
+          '  note      data/Settings/Workflows/Evening review\\.md',
+          '  agent     coach',
+          "  input     Review today's chats\\.",
+          '  schedule  0 21 \\* \\* \\* \\(Europe/Berlin\\)',
+          '  next run  \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d',
+          '  last run  never',
+        ].join('\n'),
       ),
-    ).toMatchObject({
-      code: 1,
-      stderr: '--timezone: must be an IANA time zone such as Europe/Berlin\n',
-    });
-    expect(await triggers('add', 'nothing', '--manual')).toMatchObject({
+    );
+    expect(shown.stdout).toMatch(
+      /\n\nPosts to no Channel: name a topic in channel in its note to post its answers there\.\n$/,
+    );
+    expect(await workflows('show', 'nothing')).toMatchObject({
       code: 1,
       stderr: 'No Workflow named nothing\n',
     });
+
+    const note = 'data/Settings/Workflows/Evening review.md';
+    for (const [args, message] of [
+      [['edit', 'evening-review', '--title', 'x'], `edit ${note}.`],
+      [['enable', 'evening-review'], `set enabled: true in ${note}.`],
+      [
+        ['disable', 'evening-review'],
+        `set enabled: false in ${note}, which stops its schedule; pero workflows run still runs it.`,
+      ],
+    ] as const) {
+      expect(await workflows(...args)).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: `${prefix}: ${message}\n`,
+      });
+    }
     expect(
-      await triggers('add', 'evening-review', '--cron', '0 21 * * *'),
+      await workflows('create', 'evening-review', '--input', 'Go'),
     ).toMatchObject({
-      code: 0,
-      stdout: expect.stringMatching(
-        /^Added Trigger 1 of evening-review \(0 21 \* \* \* Europe\/Berlin\), next run \d{4}-\d\d-\d\d \d\d:\d\d\.\n$/,
-      ),
-    });
-    expect(await triggers('add', 'evening-review', '--manual')).toMatchObject({
-      code: 0,
-      stdout: 'Added Trigger 2 of evening-review (manual).\n',
+      code: 1,
+      stderr: `${prefix}, and ${note} already defines evening-review; edit it there.\n`,
     });
 
-    expect(await triggers()).toMatchObject({
-      code: 0,
-      stdout: expect.stringMatching(
-        new RegExp(
-          [
-            'ID  WORKFLOW        SCHEDULE                  NEXT RUN          STATE',
-            '1   evening-review  0 21 \\* \\* \\* Europe/Berlin  \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d  enabled',
-            '2   evening-review  manual                    —                 enabled',
-            '',
-          ].join('\n'),
-        ),
-      ),
-    });
-    expect(await triggers('disable', '1')).toMatchObject({
-      code: 0,
-      stdout:
-        'Disabled Trigger 1 of evening-review (0 21 * * * Europe/Berlin). It starts nothing until pero triggers enable 1.\n',
-    });
-    expect(await triggers('remove', '2')).toMatchObject({
-      code: 0,
-      stdout: 'Removed Trigger 2 of evening-review (manual).\n',
-    });
-    expect(await triggers('remove', 'two')).toMatchObject({
+    const schedules = 'Workflows run on the schedules their notes set now';
+    expect(await triggers()).toEqual({
       code: 1,
-      stderr:
-        'trigger must be a Trigger ID, as pero triggers ls lists it, not "two"\n',
+      stdout: '',
+      stderr: `${schedules}: pero workflows ls shows each schedule and its next run.\n`,
     });
-    expect(await triggers('enable', '2')).toMatchObject({
+    expect(
+      await triggers('add', 'evening-review', '--cron', '0 9 * * *'),
+    ).toMatchObject({
       code: 1,
-      stderr: 'No Trigger with ID 2\n',
+      stderr: `${schedules}: set hour, day, and minute, or cron, in ${note}; any Workflow runs by hand with pero workflows run <name>.\n`,
     });
+    for (const action of ['remove', 'disable', 'enable']) {
+      expect(await triggers(action, '1')).toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining(`${schedules}: set trigger: `),
+      });
+    }
 
-    expect(await workflows('disable', 'evening-review')).toMatchObject({
-      code: 0,
-      stdout:
-        'Disabled Workflow evening-review. Its Triggers start nothing until pero workflows enable evening-review.\n',
-    });
-    expect(await workflows()).toMatchObject({
-      code: 0,
-      stdout: [
-        'NAME            AGENT  TRIGGERS  STATE',
-        'evening-review  coach  1         disabled',
-        '',
-      ].join('\n'),
-    });
     writeFileSync(
       join(tmp, 'ws', 'data', 'Settings', 'Agents', 'Coach.md'),
       '---\nenabled: false\n---\nYou coach.\n',
     );
     await restart(ws);
-    expect(await workflows('enable', 'evening-review')).toMatchObject({
-      code: 0,
-      stdout: 'Enabled Workflow evening-review: runs Agent coach, 1 Trigger\n',
-      stderr:
-        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).\n',
-    });
-    expect(await workflows('show', 'evening-review')).toMatchObject({
-      code: 0,
-      stdout: [
-        'Workflow evening-review "Evening review"',
-        '  agent     coach (disabled)',
-        "  input     Review today's chats.",
-        '  runs      one at a time',
-        '  attempts  1 (a run Pero stops is not started again)',
-        '  history   none',
-        '  state     enabled',
-        '',
-        'Warning: Agent coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
-        '',
-        'Triggers',
-        '  ID  SCHEDULE                  NEXT RUN  STATE',
-        '  1   0 21 * * * Europe/Berlin  —         disabled',
-        '',
-        'Notifies no Channel: pero workflows notify evening-review <channel> posts its answers there.',
-        '',
-      ].join('\n'),
-    });
-    expect(
-      await workflows('edit', 'evening-review', '--agent', 'coach'),
-    ).toMatchObject({
-      code: 1,
-      stderr:
-        'Agent coach is disabled; enable it first (enabled: true in its note)\n',
-    });
+    expect((await workflows('show', 'evening-review')).stdout).toContain(
+      '\nWarning: Agent coach is disabled or has no note, so this Workflow cannot run until it is enabled again (enabled: true in its note).\n',
+    );
   });
 
   it("runs a Workflow by hand and prints the Agent's answer", async () => {
-    const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
+    const ws = useWorkspace({
+      'Agents/Coach.md': 'You coach.\n',
+      'Workflows/Brief.md':
+        '---\nagent: coach\nhour: 9\nmax-attempts: 3\n---\nSummarize the day.\n',
+    });
     const run = await pero(ws('run'), {
       env: { PERO_FAKE_RUNTIME: 'echo' },
     });
     expect(run.code).toBe(0);
-    await pero(
-      ws(
-        'workflows',
-        'create',
-        'brief',
-        '--agent',
-        'coach',
-        '--input',
-        'Summarize the day.',
-      ),
-    );
     const workflows = (...args: string[]) => pero(ws('workflows', ...args));
 
-    expect(await workflows('run', 'brief')).toMatchObject({
+    expect(await workflows('run', 'nothing')).toMatchObject({
       code: 1,
       stdout: '',
-      stderr:
-        'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual\n',
+      stderr: 'No Workflow named nothing\n',
     });
-    await pero(ws('triggers', 'add', 'brief', '--manual'));
-
     expect(await workflows('run', 'brief')).toEqual({
       code: 0,
       stdout: 'echo: Summarize the day.\n',
@@ -1043,21 +928,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: 'No run with ID 9\n',
     });
 
-    expect(
-      await workflows('edit', 'brief', '--max-attempts', '0'),
-    ).toMatchObject({
-      code: 1,
-      stderr: '--max-attempts must be a positive whole number, not "0"\n',
-    });
-    expect(
-      await workflows('edit', 'brief', '--max-attempts', '11'),
-    ).toMatchObject({
-      code: 1,
-      stderr: '--max-attempts: must be at most 10\n',
-    });
-    expect(
-      await workflows('edit', 'brief', '--max-attempts', '3'),
-    ).toMatchObject({ code: 0 });
     expect((await workflows('show', 'brief')).stdout).toContain(
       '  attempts  up to 3 (a run Pero stops starts again when Pero does)\n',
     );
@@ -1065,20 +935,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   it('lists, shows, and retries runs and Notifications', async () => {
     const echo = { env: { PERO_FAKE_RUNTIME: 'echo' } };
-    const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
+    const ws = useWorkspace({
+      'Agents/Coach.md': 'You coach.\n',
+      'Workflows/Brief.md': '---\nagent: coach\n---\nSummarize the day.\n',
+    });
     expect((await pero(ws('run'), echo)).code).toBe(0);
-    await pero(
-      ws(
-        'workflows',
-        'create',
-        'brief',
-        '--agent',
-        'coach',
-        '--input',
-        'Summarize the day.',
-      ),
-    );
-    await pero(ws('triggers', 'add', 'brief', '--manual'));
     const runs = (...args: string[]) => pero(ws('runs', ...args));
     const notifications = (...args: string[]) =>
       pero(ws('notifications', ...args));
@@ -1189,97 +1050,44 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
-  it('sets the Channel history a Workflow reads, and skips a run with none', async () => {
+  it('shows the Channel history a Workflow reads, and skips a run with none', async () => {
+    const english = (properties: string) =>
+      writeFileSync(
+        join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'English.md'),
+        `---\nagent: coach\n${properties}---\nSuggest improvements: {{history}}\n`,
+      );
     const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
-    const run = await pero(ws('run'), {
-      env: { PERO_FAKE_RUNTIME: 'echo' },
-    });
-    expect(run.code).toBe(0);
+    const echo = { env: { PERO_FAKE_RUNTIME: 'echo' } };
+    english('history: true\nhistory-channels: 7\n');
+    expect((await pero(ws('run'), echo)).code).toBe(0);
     const workflows = (...args: string[]) => pero(ws('workflows', ...args));
 
-    expect(
-      await workflows(
-        'create',
-        'english',
-        '--agent',
-        'coach',
-        '--input',
-        'Suggest improvements: {{history}}',
-        '--history-channels',
-        '7',
-      ),
-    ).toMatchObject({
+    expect(await workflows('show', 'english')).toMatchObject({
       code: 1,
       stderr:
-        '--history-channels: no Channel with ID 7; pero channels ls lists them\n',
+        "Workflow english isn't loaded: data/Settings/Workflows/English.md has errors; pero check lists them\n",
     });
-    expect(
-      await workflows(
-        'create',
-        'english',
-        '--agent',
-        'coach',
-        '--input',
-        'Suggest improvements: {{history}}',
-        '--history',
-      ),
-    ).toMatchObject({
-      code: 0,
-      stdout: expect.stringContaining(
-        'Created Workflow english: runs Agent coach, reads Channel history, 0 Triggers\n',
-      ),
-    });
+    expect((await pero(ws('check'))).stdout).toContain(
+      'history-channels: no Channel has the ID 7',
+    );
+
+    english('history: true\n');
+    await restart(ws);
     expect((await workflows('show', 'english')).stdout).toContain(
       "  history   people's messages in all Channels since the previous run; skipped when there are none\n",
     );
-    expect(
-      await workflows(
-        'edit',
-        'english',
-        '--history-messages',
-        'all',
-        '--history-hours',
-        '24',
-        '--run-when-empty',
-      ),
-    ).toMatchObject({ code: 0 });
-    expect((await workflows('show', 'english')).stdout).toContain(
-      '  history   all messages in all Channels from the last 24 hours; runs even when there are none\n',
-    );
-    expect(
-      await workflows('edit', 'english', '--history-messages', 'agents'),
-    ).toMatchObject({
-      code: 1,
-      stderr: '--history-messages must be people or all, not "agents"\n',
-    });
-    expect(
-      await workflows(
-        'edit',
-        'english',
-        '--no-history',
-        '--history-hours',
-        '3',
-      ),
-    ).toMatchObject({
-      code: 1,
-      stderr:
-        '--no-history stops runs reading history; give it without the other history options\n',
-    });
-
-    await workflows('edit', 'english', '--no-run-when-empty');
-    await pero(ws('triggers', 'add', 'english', '--manual'));
     expect(await workflows('run', 'english')).toMatchObject({
       code: 0,
       stdout:
         'Run 1 of Workflow english skipped: no messages in its history window\n',
     });
 
-    expect(await workflows('edit', 'english', '--no-history')).toMatchObject({
-      code: 0,
-      stdout: 'Changed Workflow english: runs Agent coach, 1 Trigger\n',
-    });
+    english(
+      'history: true\nhistory-messages: all\nhistory-hours: 24\nrun-when-empty: true\n',
+    );
+    await restart(ws);
     expect((await workflows('show', 'english')).stdout).toContain(
-      '  history   none\n',
+      '  history   all messages in all Channels from the last 24 hours; runs even when there are none\n',
     );
   });
 

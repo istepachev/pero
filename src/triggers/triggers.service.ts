@@ -8,7 +8,6 @@ import {
   parseInput,
 } from '../common/errors.js';
 import { type TriggerAdd, triggerAddSchema } from '../config/workflow-input.js';
-import type { TriggerView } from '../control/protocol.js';
 import { Definitions } from '../definitions/definitions.js';
 import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
@@ -27,8 +26,26 @@ import {
   scheduleFingerprint,
 } from './schedule.js';
 
+/** A Trigger of a Workflow, as the tables hold it. */
+export interface TriggerView {
+  id: number;
+  /** The name of the Workflow it starts. */
+  workflow: string;
+  kind: 'schedule' | 'manual';
+  /** A schedule's cron expression; null for other kinds. */
+  cron: string | null;
+  /** A schedule's IANA time zone; null for other kinds. */
+  timezone: string | null;
+  /** When a schedule is next due; null until it is scheduled. */
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  enabled: boolean;
+}
+
 /**
- * Adds, removes, and switches the Triggers that start Workflows. An enabled
+ * Adds, removes, and switches the Triggers that start Workflows, as the
+ * tables of a legacy installation hold them; nothing at runtime reads
+ * them since Workflows moved to notes. They go in plan step 9.4. An enabled
  * schedule always has its saved times in `schedules`; a disabled one has
  * none. Each change is told to readers of the definitions once it commits.
  */
@@ -243,56 +260,4 @@ export function triggerView(
     lastRunAt: times?.lastRunAt?.toISOString() ?? null,
     enabled: trigger.enabled,
   };
-}
-
-// The Trigger rows that runtime code reads, until plan step 9.1 lets any
-// Workflow run by hand.
-
-/** The Triggers of Workflow `workflowId`, named `workflow`, by ID. */
-export async function triggerViewsWithin(
-  manager: EntityManager,
-  workflowId: number,
-  workflow: string,
-): Promise<TriggerView[]> {
-  const triggers = await manager
-    .getRepository(Trigger)
-    .find({ where: { workflowId }, order: { id: 'ASC' } });
-  const states = await scheduleStatesWithin(manager, workflow);
-  return triggers.map((trigger) =>
-    triggerView(trigger, { name: workflow }, states),
-  );
-}
-
-/** How many Triggers each Workflow has, by Workflow ID. */
-export async function triggerCountsWithin(
-  manager: EntityManager,
-): Promise<Map<number, number>> {
-  const rows = await manager
-    .getRepository(Trigger)
-    .createQueryBuilder('t')
-    .select('t.workflowId', 'workflowId')
-    .addSelect('COUNT(*)', 'count')
-    .groupBy('t.workflowId')
-    .getRawMany<{ workflowId: number; count: number }>();
-  return new Map(rows.map((row) => [row.workflowId, Number(row.count)]));
-}
-
-/** The manual Trigger of Workflow `workflowId`; null if it has none. */
-export async function manualTriggerWithin(
-  manager: EntityManager,
-  workflowId: number,
-): Promise<{ id: number; enabled: boolean } | null> {
-  return manager.getRepository(Trigger).findOne({
-    select: { id: true, enabled: true },
-    where: { workflowId, kind: 'manual' },
-  });
-}
-
-/** Records that Trigger `id` started a run at `at`. */
-export async function markTriggerRunWithin(
-  manager: EntityManager,
-  id: number,
-  at: Date,
-): Promise<void> {
-  await manager.getRepository(Trigger).update(id, { lastRunAt: at });
 }

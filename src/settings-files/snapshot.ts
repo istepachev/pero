@@ -75,9 +75,22 @@ export interface WorkflowDefinition {
   schedule: { cron: string; timezone: string } | null;
   channels: readonly ChannelRef[];
   history: WorkflowNoteHistory | null;
+  /**
+   * The Channels `channels` and `history-channels` name, by ID, once a
+   * lookup found them; null without one.
+   */
+  resolved: ResolvedChannels | null;
   maxAttempts: number;
   enabled: boolean;
   input: string;
+}
+
+/** The Channels a Workflow's references name, by ID. */
+export interface ResolvedChannels {
+  /** Where each run's answer is posted, in the order `channel` names them. */
+  targets: readonly number[];
+  /** Whose history runs read: `all`, or those `history-channels` names. */
+  history: 'all' | readonly number[];
 }
 
 /** Every setting from the notes, with references between them resolved. */
@@ -525,7 +538,8 @@ class WorkflowResolver {
     }
     if (errors.length > 0) return errors;
 
-    const first = channels[0] as ResolvedRef | undefined;
+    const refs = channels as ResolvedRef[];
+    const first = refs[0];
     const answer: Answer =
       note.agent !== null
         ? { kind: 'agent', agent: note.agent }
@@ -540,6 +554,12 @@ class WorkflowResolver {
       return errors;
     }
     const { agent } = answer;
+    const ids = (resolved: readonly ResolvedRef[]) =>
+      unique(
+        resolved.flatMap((ref) =>
+          ref.kind === 'channel' ? [ref.channel.id] : [],
+        ),
+      );
 
     return {
       name: read.identity.name,
@@ -556,6 +576,20 @@ class WorkflowResolver {
             },
       channels: note.channels,
       history: note.history,
+      resolved:
+        this.topics === undefined
+          ? null
+          : {
+              targets: ids(refs),
+              history:
+                historyChannels === undefined || historyChannels === 'all'
+                  ? 'all'
+                  : ids(
+                      historyChannels.map(
+                        (ref) => this.check(ref) as ResolvedRef,
+                      ),
+                    ),
+            },
       maxAttempts: note.maxAttempts,
       enabled: note.enabled,
       input: note.input,
@@ -629,6 +663,10 @@ type ResolvedRef =
   | { kind: 'channel'; channel: ResolvedChannel }
   | { kind: 'title'; title: string }
   | { kind: 'id' };
+
+function unique(ids: readonly number[]): number[] {
+  return [...new Set(ids)];
+}
 
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;

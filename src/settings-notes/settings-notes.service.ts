@@ -6,12 +6,16 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import { InjectDataSource } from '@nestjs/typeorm';
 import { homedir } from 'node:os';
+import type { DataSource } from 'typeorm';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import { SettingsReloader } from '../settings-files/reload.js';
 import type { SettingsError } from '../settings-files/settings-error.js';
 import type { SettingsSnapshot } from '../settings-files/snapshot.js';
+import { allowedChannels } from './allowed-channels.js';
+import { channelTopicLookup } from './channel-topics.js';
 
 /** How often the settings folder is scanned for edits. */
 export const SETTINGS_NOTES_TICK_MS = 10_000;
@@ -44,9 +48,13 @@ export interface SettingsChange {
  * note is reported in the log and the `settings` component, and its last
  * good version stays in use while Pero runs.
  *
- * `FileDefinitions` serves Agents and defaults from the snapshot. In a
- * legacy data directory there are no notes: the `settings` component says
- * to run `pero migrate`, and this does nothing else.
+ * Workflow references to topics resolve against the Channels Pero has
+ * seen in the allowed chats, looked up on each scan: when those change,
+ * the snapshot is built again, though no note changed.
+ *
+ * `FileDefinitions` serves the definitions from the snapshot. In a legacy
+ * data directory there are no notes: the `settings` component says to run
+ * `pero migrate`, and this does nothing else.
  */
 @Injectable()
 export class SettingsNotes
@@ -61,11 +69,16 @@ export class SettingsNotes
   /** The rescan under way, if any. */
   private current: Promise<void> | null = null;
   private stopping = false;
+  /** The Channels references last resolved against, as JSON. */
+  private topics: string | null = null;
 
   constructor(
     private readonly health: ComponentHealth,
     // Absent only in tests that need no notes: as in a legacy data directory.
     @Optional() private readonly hostConfig?: HostConfigService,
+    // Absent only in tests without a database: references then are
+    // checked for syntax only, as in pero check without Pero.
+    @Optional() @InjectDataSource() private readonly dataSource?: DataSource,
   ) {}
 
   /** Whether Pero runs from a workspace, which has notes. */
@@ -173,6 +186,7 @@ export class SettingsNotes
 
   private async reload(reloader: SettingsReloader): Promise<void> {
     const first = reloader.current() === null;
+    await this.lookUpTopics(reloader);
     const reload = await reloader.rescan();
     if (reload === null) return;
     const { snapshot, changed, appeared, fixed } = reload;
@@ -180,7 +194,7 @@ export class SettingsNotes
       this.logger.log(
         `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.locations?.settingsFolder}`,
       );
-    } else {
+    } else if (changed.length > 0) {
       this.logger.log(`Settings notes changed: ${changed.join(', ')}`);
     }
     for (const error of appeared) this.logger.warn(describe(error));
@@ -195,6 +209,31 @@ export class SettingsNotes
         );
       }
     }
+  }
+
+  /**
+   * Gives `reloader` the Channels of the allowed chats to resolve
+   * references against, when they changed since it last had them. Should
+   * they fail to load, the ones it has stay.
+   */
+  private async lookUpTopics(reloader: SettingsReloader): Promise<void> {
+    if (this.dataSource === undefined || this.hostConfig === undefined) return;
+    let channels;
+    try {
+      channels = await allowedChannels(
+        this.dataSource,
+        this.hostConfig.allowedChats(),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not read the topics Workflow notes name: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    const topics = JSON.stringify(channels);
+    if (topics === this.topics) return;
+    this.topics = topics;
+    reloader.setTopics(channelTopicLookup(channels));
   }
 
   /** `settings`: `ok`, or how many notes have errors. */

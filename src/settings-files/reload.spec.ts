@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { channelTopicLookup } from '../settings-notes/channel-topics.js';
 import { SettingsReloader } from './reload.js';
 
 describe('SettingsReloader', () => {
@@ -221,5 +222,33 @@ describe('SettingsReloader', () => {
     expect(await reloader.rescan()).toBeNull();
     // Generous, so a slow CI machine stays green; typically a few ms.
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it('builds the snapshot again when the topics references resolve against change', async () => {
+    await write('Workflows/Report.md', '---\nchannel: Health\n---\nGo');
+    reloader.setTopics(channelTopicLookup([]));
+    await reloader.rescan();
+    expect(reloader.current()!.workflows.size).toBe(0);
+    expect(await reloader.rescan()).toBeNull();
+
+    reloader.setTopics(
+      channelTopicLookup([{ id: 5, key: '-100777:5', title: 'Health' }]),
+    );
+    const reload = await reloader.rescan();
+    expect(reload).toMatchObject({
+      changed: [],
+      appeared: [],
+      fixed: [
+        expect.objectContaining({
+          file: 'Workflows/Report.md',
+          property: 'channel',
+        }),
+      ],
+    });
+    expect(reloader.current()!.workflows.get('report')!.resolved).toEqual({
+      targets: [5],
+      history: 'all',
+    });
+    expect(await reloader.rescan()).toBeNull();
   });
 });

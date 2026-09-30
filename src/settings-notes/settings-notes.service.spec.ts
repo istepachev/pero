@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
@@ -53,7 +54,15 @@ describe('SettingsNotes', () => {
     })
       .useMocker((token) => {
         if (token === HostConfigService) {
-          return { folders: () => folders, inWorkspace: () => workspace };
+          return {
+            folders: () => folders,
+            inWorkspace: () => workspace,
+            allowedChats: () => [],
+          };
+        }
+        // No Channel seen yet.
+        if (token === DataSource) {
+          return { getRepository: () => ({ find: () => Promise.resolve([]) }) };
         }
         return {};
       })
@@ -159,8 +168,11 @@ describe('SettingsNotes', () => {
                 settingsFolder: settings,
               }),
               inWorkspace: () => true,
+              allowedChats: () => [],
             }
-          : {},
+          : token === DataSource
+            ? { getRepository: () => ({ find: () => Promise.resolve([]) }) }
+            : {},
       )
       .compile();
     notes = moduleRef.get(SettingsNotes);

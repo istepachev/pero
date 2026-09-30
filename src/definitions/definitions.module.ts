@@ -7,10 +7,9 @@ import { FileDefinitions } from './file-definitions.js';
 import { SqliteDefinitions } from './sqlite-definitions.js';
 
 /**
- * The definitions runtime code reads: `Definitions`. In a workspace, the
- * Agents and defaults come from its notes and the Workflows from SQLite;
- * a legacy data directory has no Agents until `pero migrate` moves it.
- * Needs the database from `PersistenceModule`.
+ * The definitions runtime code reads: `Definitions`. In a workspace, they
+ * come from its notes; a legacy data directory has no Agents until `pero
+ * migrate` moves it. Needs the database from `PersistenceModule`.
  */
 @Module({
   imports: [SettingsNotesModule],

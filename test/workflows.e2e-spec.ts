@@ -13,11 +13,7 @@ import Database from 'better-sqlite3';
 import type { Chat, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ConflictError,
-  InvalidInputError,
-  NotFoundError,
-} from '../src/common/errors.js';
+import { ConflictError, NotFoundError } from '../src/common/errors.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
@@ -37,6 +33,8 @@ import type { RunView } from '../src/control/protocol.js';
 import { Notification } from '../src/persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js';
 import { Channel } from '../src/persistence/entities/channel.entity.js';
+import { HostConfigService } from '../src/host-config/host-config.service.js';
+import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
 import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -49,7 +47,7 @@ const FORUM: Chat.SupergroupChat = {
 };
 const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
-describe('Workflow and Trigger definitions (e2e)', () => {
+describe('Workflows from notes (e2e)', () => {
   let tmp: string;
   let workspace: string;
   let database: string;
@@ -89,16 +87,32 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     utimesSync(path, new Date(clock), new Date(clock));
   }
 
+  /** Writes the note at `file`, read at once when Pero runs. */
+  async function note(file: string, text: string) {
+    write(file, text);
+    await daemon?.app.get(SettingsNotes).refresh();
+  }
+
   /**
    * Writes `Pero.md` with `properties`; a topic no note claims goes to the
    * main Agent. Read at once when Pero runs.
    */
   async function pero(properties: string[] = []) {
-    write(
+    await note(
       'Pero.md',
       ['---', 'new-topics: main-agent', ...properties, '---', ''].join('\n'),
     );
-    await daemon?.app.get(SettingsNotes).rescan();
+  }
+
+  /**
+   * Writes the Workflow note `Workflows/<title>.md` with `properties` and
+   * `body`, read at once when Pero runs.
+   */
+  async function workflow(title: string, properties: string[], body: string) {
+    await note(
+      `Workflows/${title}.md`,
+      ['---', ...properties, '---', body, ''].join('\n'),
+    );
   }
 
   async function start() {
@@ -121,16 +135,20 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     return daemon!.app.get(AgentRuntimes).get('claude') as FakeAgentRuntime;
   }
 
-  /** A Workflow `brief` of Agent `coach` that can be run by hand. */
-  async function manualBrief(maxAttempts?: number) {
-    await client.call('workflows.create', {
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Summarize the day.',
-      ...(maxAttempts === undefined ? {} : { maxAttempts }),
-    });
-    await client.call('triggers.add', { workflow: 'brief', kind: 'manual' });
+  /**
+   * The Workflow `brief` of Agent `coach`, run by hand, with the other
+   * `properties` of its note.
+   */
+  async function manualBrief(properties: string[] = []) {
+    await workflow(
+      'Brief',
+      ['agent: coach', ...properties],
+      'Summarize the day.',
+    );
   }
+
+  /** What run `brief` posts: the Workflow's title over the echoed input. */
+  const SUMMARY = 'Brief\n\necho: Summarize the day.';
 
   /** Every text the bot has sent. */
   const texts = () => api.sent().map((payload) => String(payload.text));
@@ -156,7 +174,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       });
     api.chats.set(String(FORUM.id), FORUM);
     await start();
-    await manualBrief();
     await client.call('settings.update', { telegramBotToken: TOKEN });
     await vi.waitFor(async () =>
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
@@ -168,11 +185,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     const channel = (await client.call('channels.list')).channels.find(
       ({ key }) => key === `${FORUM.id}:7`,
     )!;
-    await client.call('workflows.notify', {
-      name: 'brief',
-      channel: channel.id,
-      notify: true,
-    });
+    // Telegram named no title, so the note names the topic by its ID.
+    await manualBrief([`channel: ${channel.id}`]);
     return { channel, say, texts };
   }
 
@@ -191,44 +205,42 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     return run!;
   }
 
-  it('creates, edits, disables, and enables Workflows and their Triggers, keeping them across a restart', async () => {
+  it('serves Workflows from their notes, with each edit applying, across a restart', async () => {
     await pero(['timezone: Europe/Berlin']);
     write('Agents/Editor.md', 'You edit.');
     await start();
 
-    const created = await client.call('workflows.create', {
-      name: 'Evening-Review',
-      agent: 'coach',
-      inputTemplate: "Review today's chats.",
-    });
-    expect(created).toMatchObject({
-      name: 'evening-review',
-      title: null,
-      agent: 'coach',
-      enabled: true,
-      triggers: [],
-    });
-
-    const edited = await client.call('workflows.edit', {
-      name: 'evening-review',
-      change: { title: 'Evening review', agent: 'editor' },
-    });
-    expect(edited).toMatchObject({ title: 'Evening review', agent: 'editor' });
-
-    const daily = await client.call('triggers.add', {
-      workflow: 'evening-review',
-      kind: 'schedule',
-      cron: '0 21 * * *',
-    });
-    expect(daily).toMatchObject({
-      workflow: 'evening-review',
-      kind: 'schedule',
+    await workflow(
+      'Evening review',
+      ['hour: 21', 'agent: coach'],
+      "Review today's chats.",
+    );
+    const listed = (await client.call('workflows.list')).workflows;
+    expect(listed).toEqual([
+      expect.objectContaining({
+        name: 'evening-review',
+        title: 'Evening review',
+        file: 'data/Settings/Workflows/Evening review.md',
+        agent: 'coach',
+        agentEnabled: true,
+        inputTemplate: "Review today's chats.",
+        enabled: true,
+        channels: [],
+        errors: [],
+      }),
+    ]);
+    const [schedule] = listed[0]!.schedules;
+    expect(schedule).toMatchObject({
       cron: '0 21 * * *',
       timezone: 'Europe/Berlin',
-      enabled: true,
+      lastRunAt: null,
     });
-    // 21:00 in Berlin, within the next day.
-    const nextRun = new Date(daily.nextRunAt!);
+    // 21:00 in Berlin, within the next day, once the scheduler saw it.
+    await daemon!.app.get(ScheduleTick).tick();
+    const [shown] = (
+      await client.call('workflows.get', { name: 'evening-review' })
+    ).schedules;
+    const nextRun = new Date(shown!.nextRunAt!);
     expect(nextRun.getTime()).toBeGreaterThan(Date.now());
     expect(nextRun.getTime() - Date.now()).toBeLessThanOrEqual(
       24 * 60 * 60 * 1000,
@@ -236,176 +248,60 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     expect(
       nextRun.toLocaleTimeString('en-GB', { timeZone: 'Europe/Berlin' }),
     ).toBe('21:00:00');
-    const manual = await client.call('triggers.add', {
-      workflow: 'evening-review',
-      kind: 'manual',
-    });
-    const weekly = await client.call('triggers.add', {
-      workflow: 'evening-review',
-      kind: 'schedule',
-      cron: '@weekly',
-      timezone: 'UTC',
-    });
 
-    expect(
-      await client.call('triggers.setEnabled', {
-        id: daily.id,
-        enabled: false,
-      }),
-    ).toMatchObject({ id: daily.id, enabled: false, nextRunAt: null });
-    expect(await client.call('triggers.remove', { id: weekly.id })).toEqual(
-      weekly,
+    await workflow(
+      'Evening review',
+      ['trigger: manual', 'hour: 21', 'agent: editor', 'enabled: false'],
+      "Review today's chats, briefly.",
     );
-    expect(
-      await client.call('workflows.edit', {
-        name: 'evening-review',
-        change: { enabled: false },
-      }),
-    ).toMatchObject({ enabled: false });
-
     await restart();
 
-    const { workflows } = await client.call('workflows.list');
-    expect(workflows).toEqual([
-      expect.objectContaining({
-        name: 'evening-review',
-        title: 'Evening review',
-        agent: 'editor',
-        inputTemplate: "Review today's chats.",
-        enabled: false,
-        triggerCount: 2,
-      }),
-    ]);
     expect(
-      (await client.call('workflows.get', { name: 'evening-review' })).triggers,
-    ).toEqual([{ ...daily, enabled: false, nextRunAt: null }, manual]);
-    expect(
-      (await client.call('triggers.list', { workflow: 'evening-review' }))
-        .triggers,
-    ).toEqual([{ ...daily, enabled: false, nextRunAt: null }, manual]);
-
-    await client.call('workflows.edit', {
-      name: 'evening-review',
-      change: { enabled: true },
-    });
-    await client.call('triggers.setEnabled', { id: daily.id, enabled: true });
-    expect(
-      await client.call('workflows.get', { name: 'evening-review' }),
+      await client.call('workflows.get', { name: 'Evening-Review' }),
     ).toMatchObject({
-      enabled: true,
-      triggers: [
-        { id: daily.id, enabled: true, nextRunAt: expect.any(String) },
-        { id: manual.id },
-      ],
+      agent: 'editor',
+      inputTemplate: "Review today's chats, briefly.",
+      enabled: false,
+      schedules: [],
     });
+    await expect(
+      client.call('workflows.get', { name: 'nothing' }),
+    ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
   });
 
-  it('rejects invalid references and definitions', async () => {
-    write('Agents/Idle.md', '---\nenabled: false\n---\nYou rest.');
+  it('reports a Workflow note naming a topic Pero has not seen, in status and check', async () => {
     await start();
+    await workflow('Report', ['channel: Helth'], 'Report.');
 
     await expect(
-      client.call('workflows.create', {
-        name: 'review',
-        agent: 'nobody',
-        inputTemplate: 'Go',
-      }),
-    ).rejects.toThrow(new NotFoundError('No Agent named nobody'));
-    await expect(
-      client.call('workflows.create', {
-        name: 'review',
-        agent: 'idle',
-        inputTemplate: 'Go',
-      }),
+      client.call('workflows.get', { name: 'report' }),
     ).rejects.toThrow(
-      new InvalidInputError(
-        'Agent idle is disabled; enable it first (enabled: true in its note)',
+      new NotFoundError(
+        "Workflow report isn't loaded: data/Settings/Workflows/Report.md has errors; pero check lists them",
       ),
     );
-    await expect(
-      client.call('workflows.create', {
-        name: 'review',
-        agent: 'coach',
-        inputTemplate: '  ',
-      }),
-    ).rejects.toThrow(
-      new InvalidInputError('inputTemplate: must not be empty'),
-    );
-
-    await client.call('workflows.create', {
-      name: 'review',
-      agent: 'coach',
-      inputTemplate: 'Go',
-    });
-    await expect(
-      client.call('workflows.create', {
-        name: 'review',
-        agent: 'coach',
-        inputTemplate: 'Go',
-      }),
-    ).rejects.toThrow(
-      new ConflictError('A Workflow named review already exists'),
-    );
-    await expect(
-      client.call('workflows.edit', {
-        name: 'review',
-        change: { agent: 'idle' },
-      }),
-    ).rejects.toThrow(InvalidInputError);
-    await expect(
-      client.call('workflows.edit', { name: 'nothing', change: {} }),
-    ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
-
-    await expect(
-      client.call('triggers.add', { workflow: 'nothing', kind: 'manual' }),
-    ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
-    await expect(
-      client.call('triggers.add', {
-        workflow: 'review',
-        kind: 'schedule',
-        cron: '0 9 * *',
-      }),
-    ).rejects.toThrow(/^cron: must be a cron expression of five fields/);
-    await expect(
-      client.call('triggers.add', {
-        workflow: 'review',
-        kind: 'schedule',
-        cron: '0 9 * * *',
-        timezone: 'Mars/Olympus',
-      }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'timezone: must be an IANA time zone such as Europe/Berlin',
-      ),
-    );
-    await expect(client.call('triggers.remove', { id: 99 })).rejects.toThrow(
-      new NotFoundError('No Trigger with ID 99'),
-    );
-    await expect(
-      client.call('triggers.setEnabled', { id: 99, enabled: false }),
-    ).rejects.toThrow(NotFoundError);
-
-    expect((await client.call('triggers.list', {})).triggers).toEqual([]);
+    expect((await client.call('workflows.list')).workflows).toEqual([]);
     expect(
-      (await client.call('workflows.list')).workflows.map(({ name }) => name),
-    ).toEqual(['review']);
+      (await client.call('status')).components.find(
+        ({ name }) => name === 'settings',
+      ),
+    ).toMatchObject({
+      state: 'degraded',
+      detail: '1 note has errors; run pero check',
+    });
+    expect((await client.call('check')).problems).toEqual([
+      {
+        file: 'data/Settings/Workflows/Report.md',
+        property: 'channel',
+        message: 'no topic titled "Helth"; seen topics: none yet',
+      },
+    ]);
   });
 
-  it('runs a Workflow by hand through its manual Trigger, away from every Channel', async () => {
+  it('runs any Workflow by hand, whatever its trigger, away from every Channel', async () => {
     await start();
-    await client.call('workflows.create', {
-      name: 'brief',
-      agent: 'coach',
-      inputTemplate: 'Summarize the day.',
-    });
+    await workflow('Brief', ['agent: coach', 'hour: 9'], 'Summarize the day.');
 
-    await expect(
-      client.call('workflows.run', { name: 'brief' }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual',
-      ),
-    );
     await expect(
       client.call('workflows.run', { name: 'nothing' }),
     ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
@@ -413,14 +309,10 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       new NotFoundError('No run with ID 99'),
     );
 
-    const trigger = await client.call('triggers.add', {
-      workflow: 'brief',
-      kind: 'manual',
-    });
     const queued = await client.call('workflows.run', { name: 'brief' });
     expect(queued).toMatchObject({
       workflow: 'brief',
-      triggerId: trigger.id,
+      triggerId: null,
       attempt: 1,
     });
     await vi.waitFor(async () => {
@@ -430,9 +322,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         error: null,
       });
     });
-    const [listed] = (await client.call('triggers.list', { workflow: 'brief' }))
-      .triggers;
-    expect(listed!.lastRunAt).not.toBeNull();
     // No Channel took part.
     expect((await client.call('channels.list')).channels).toEqual([]);
 
@@ -443,26 +332,26 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     });
   });
 
-  it('keeps the history input a Workflow reads, and completes a run with none to read without its Agent', async () => {
+  it('reads the history input its note asks for, and completes a run with none to read without its Agent', async () => {
     await start();
-    await client.call('workflows.create', {
-      name: 'english',
-      agent: 'coach',
-      inputTemplate: 'Suggest improvements:\n{{history}}',
-      history: { messages: 'people' },
-    });
-    await client.call('triggers.add', { workflow: 'english', kind: 'manual' });
+    const english = (props: string[] = []) =>
+      workflow(
+        'English',
+        ['agent: coach', 'history: true', 'history-messages: people', ...props],
+        'Suggest improvements:\n{{history}}',
+      );
+    await english(['history-channels: 42']);
     await expect(
-      client.call('workflows.edit', {
-        name: 'english',
-        change: { history: { channels: [42] } },
+      client.call('workflows.run', { name: 'english' }),
+    ).rejects.toThrow(/^Workflow english isn't loaded: /);
+    expect((await client.call('check')).problems).toEqual([
+      expect.objectContaining({
+        property: 'history-channels',
+        message: 'no Channel has the ID 42',
       }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'history.channels: no Channel with ID 42; pero channels ls lists them',
-      ),
-    );
+    ]);
 
+    await english();
     const queued = await client.call('workflows.run', { name: 'english' });
     await vi.waitFor(async () => {
       expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
@@ -482,10 +371,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       hours: null,
       runWhenEmpty: false,
     });
-    await client.call('workflows.edit', {
-      name: 'english',
-      change: { history: { runWhenEmpty: true } },
-    });
+    await english(['run-when-empty: true']);
     const ran = await client.call('workflows.run', { name: 'english' });
     await vi.waitFor(async () => {
       expect(await client.call('runs.get', { id: ran.id })).toMatchObject({
@@ -495,10 +381,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       });
     });
 
-    await client.call('workflows.edit', {
-      name: 'english',
-      change: { history: null },
-    });
+    await workflow('English', ['agent: coach'], 'Suggest improvements.');
     expect(
       (await client.call('workflows.get', { name: 'english' })).history,
     ).toBeNull();
@@ -506,18 +389,13 @@ describe('Workflow and Trigger definitions (e2e)', () => {
 
   it('starts one catch-up run for the times a schedule missed while Pero was down', async () => {
     const HOUR_MS = 60 * 60 * 1000;
+    await workflow(
+      'Hourly',
+      ['agent: coach', "cron: '0 * * * *'", 'timezone: UTC'],
+      'Check the inbox.',
+    );
+    // Startup gives the schedule its saved times.
     await start();
-    await client.call('workflows.create', {
-      name: 'hourly',
-      agent: 'coach',
-      inputTemplate: 'Check the inbox.',
-    });
-    await client.call('triggers.add', {
-      workflow: 'hourly',
-      kind: 'schedule',
-      cron: '0 * * * *',
-      timezone: 'UTC',
-    });
 
     // Down since the top of the hour three hours ago.
     await daemon!.stop('downtime');
@@ -542,9 +420,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         result: 'echo: Check the inbox.',
       });
     });
-    const [listed] = (
-      await client.call('triggers.list', { workflow: 'hourly' })
-    ).triggers;
+    const [listed] = (await client.call('workflows.get', { name: 'hourly' }))
+      .schedules;
     expect(listed!.nextRunAt).toBe(new Date(lastHour + HOUR_MS).toISOString());
     expect(listed!.lastRunAt).not.toBeNull();
 
@@ -556,7 +433,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
 
   it('records a run Pero stopped as interrupted on the next start, and retries it as its Workflow allows', async () => {
     await start();
-    await manualBrief(2);
+    await manualBrief(['max-attempts: 2']);
     const held = claude().hold();
     const queued = await client.call('workflows.run', { name: 'brief' });
     const request = await held.started;
@@ -593,12 +470,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     await start();
     await manualBrief();
     await pero(['max-concurrent-runs: 1']);
-    await client.call('workflows.create', {
-      name: 'other',
-      agent: 'coach',
-      inputTemplate: 'Something else.',
-    });
-    await client.call('triggers.add', { workflow: 'other', kind: 'manual' });
+    await workflow('Other', ['agent: coach'], 'Something else.');
     const held = claude().hold();
     const running = await client.call('workflows.run', { name: 'brief' });
     const request = await held.started;
@@ -634,9 +506,87 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     });
   });
 
+  it(
+    'runs the weekly report from the overview by hand, answered by the Health Agent, and posts it in Health',
+    { timeout: 30_000 },
+    async () => {
+      await pero(['timezone: Europe/Berlin']);
+      write(
+        'Agents/Health.md',
+        '---\ntopics: [Health]\neffort: high\n---\nYou are my health coach.',
+      );
+      await workflow(
+        'Weekly health report',
+        [
+          'trigger: schedule',
+          'day: sunday',
+          'hour: 12',
+          'minute: 0',
+          'channel: Health',
+        ],
+        '# Workflow Instruction\nCreate a weekly report from Health/Log.md.',
+      );
+      api.chats.set(String(FORUM.id), FORUM);
+      await start();
+      await client.call('settings.update', { telegramBotToken: TOKEN });
+      await vi.waitFor(async () =>
+        expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
+      );
+      await client.call('telegram.allow', { chatId: String(FORUM.id) });
+      // Until Pero has seen the topic, the note can't name it.
+      expect(
+        (await client.call('check')).problems.map(({ message }) => message),
+      ).toEqual(['no topic titled "Health"; seen topics: none yet']);
+
+      api.push({
+        message: {
+          message_id: 1,
+          date: 0,
+          chat: FORUM,
+          from: OWNER,
+          message_thread_id: 9,
+          is_topic_message: true,
+          forum_topic_created: { name: 'Health', icon_color: 0 },
+        } as never,
+      });
+      await vi.waitFor(async () =>
+        expect(
+          (await client.call('channels.list')).channels.map(({ key }) => key),
+        ).toContain(`${FORUM.id}:9`),
+      );
+      await daemon!.app.get(SettingsNotes).refresh();
+
+      const report = await client.call('workflows.get', {
+        name: 'weekly-health-report',
+      });
+      expect(report).toMatchObject({
+        agent: 'health',
+        channels: [{ key: `${FORUM.id}:9`, title: 'Health' }],
+        schedules: [{ cron: '0 12 * * 0', timezone: 'Europe/Berlin' }],
+      });
+      const { id } = await client.call('workflows.run', {
+        name: 'weekly-health-report',
+      });
+      expect(await waitFinished(id)).toMatchObject({
+        status: 'completed',
+        result:
+          'echo: # Workflow Instruction\nCreate a weekly report from Health/Log.md.',
+      });
+      expect(claude().requests.at(-1)).toMatchObject({
+        providerOptions: { effort: 'high' },
+      });
+      await daemon!.app
+        .get(NotificationDelivery)
+        .tick(new Date(Date.now() + 1_000));
+      expect(api.sent().at(-1)).toMatchObject({
+        message_thread_id: 9,
+        text: 'Weekly health report\n\necho: # Workflow Instruction\nCreate a weekly report from Health/Log.md.',
+      });
+    },
+  );
+
   it('notifies the Channels a Workflow names of each finished run, keeping the Notifications across a restart', async () => {
     await start();
-    await manualBrief();
     const dataSource = daemon!.app.get<DataSource>(getDataSourceToken());
     const channels = dataSource.getRepository(Channel);
     const { id: channel } = await channels.save(
@@ -647,44 +597,19 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         title: 'English',
       }),
     );
+    daemon!.app.get(HostConfigService).allow('-1001234567890', 'Household');
+    await manualBrief(['channel: English']);
 
     expect(
-      await client.call('workflows.notify', {
-        name: 'brief',
-        channel,
-        notify: true,
-      }),
-    ).toMatchObject({
-      changed: true,
-      workflow: {
-        targets: [
-          {
-            id: channel,
-            integrationKind: 'telegram',
-            key: '-1001234567890:7',
-            title: 'English',
-          },
-        ],
+      (await client.call('workflows.get', { name: 'brief' })).channels,
+    ).toEqual([
+      {
+        id: channel,
+        integrationKind: 'telegram',
+        key: '-1001234567890:7',
+        title: 'English',
       },
-    });
-    expect(
-      (
-        await client.call('workflows.notify', {
-          name: 'brief',
-          channel,
-          notify: true,
-        })
-      ).changed,
-    ).toBe(false);
-    await expect(
-      client.call('workflows.notify', {
-        name: 'brief',
-        channel: 42,
-        notify: true,
-      }),
-    ).rejects.toThrow(
-      new NotFoundError('No Channel with ID 42; pero channels ls lists them'),
-    );
+    ]);
 
     const queued = await client.call('workflows.run', { name: 'brief' });
     await vi.waitFor(async () => {
@@ -706,25 +631,17 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         {
           workflow_run_id: queued.id,
           channel_id: channel,
-          payload: JSON.stringify({
-            text: 'Workflow brief\n\necho: Summarize the day.',
-          }),
+          payload: JSON.stringify({ text: SUMMARY }),
         },
       ]);
     } finally {
       db.close();
     }
-    expect(
-      (await client.call('workflows.get', { name: 'brief' })).targets,
-    ).toHaveLength(1);
 
+    await manualBrief();
     expect(
-      await client.call('workflows.notify', {
-        name: 'brief',
-        channel,
-        notify: false,
-      }),
-    ).toMatchObject({ changed: true, workflow: { targets: [] } });
+      (await client.call('workflows.get', { name: 'brief' })).channels,
+    ).toEqual([]);
   });
 
   it(
@@ -760,7 +677,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         status: 'delivered',
         lastError: null,
       });
-      const suggestion = 'Workflow brief\n\necho: Summarize the day.';
+      const suggestion = SUMMARY;
       expect(
         api.sent().filter((payload) => payload.text === suggestion),
       ).toEqual([expect.objectContaining({ message_thread_id: 7 })]);
@@ -844,14 +761,14 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         (await client.call('runs.list', {})).runs.map(({ id }) => id),
       ).toEqual([queued.id, failed.id]);
 
-      // A Notification to a chat no longer allowed fails, and is delivered
-      // once retried after the chat is allowed again.
+      // A Notification to a chat denied since its run fails, and is
+      // delivered once retried after the chat is allowed again.
       await delivery.tick(new Date(Date.now() + 1_000));
       expect(
         (await client.call('runs.get', { id: queued.id })).notifications,
       ).toEqual([expect.objectContaining({ status: 'delivered' })]);
-      await client.call('telegram.deny', { chatId: String(FORUM.id) });
       const denied = await runBrief();
+      await client.call('telegram.deny', { chatId: String(FORUM.id) });
       await delivery.tick(new Date(Date.now() + 1_000));
       const [notification] = (
         await client.call('notifications.list', { status: 'failed' })
@@ -869,7 +786,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       ).toMatchObject({
         chatAllowed: false,
         delivering: false,
-        text: 'Workflow brief\n\necho: Summarize the day.',
+        text: SUMMARY,
       });
       const sentBefore = api.sent().length;
 
@@ -889,7 +806,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       );
       expect(api.sent().slice(sentBefore)).toEqual([
         expect.objectContaining({
-          text: 'Workflow brief\n\necho: Summarize the day.',
+          text: SUMMARY,
           message_thread_id: 7,
         }),
       ]);
@@ -911,8 +828,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
           .map(({ text }) => text),
       ).toEqual([
         `Run ${failed.id} of Workflow brief failed: The model is overloaded`,
-        'Workflow brief\n\necho: Summarize the day.',
-        'Workflow brief\n\necho: Summarize the day.',
+        SUMMARY,
+        SUMMARY,
       ]);
       // No run was created for a delivery.
       expect(await runs().count()).toBe(3);

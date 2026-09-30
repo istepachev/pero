@@ -11,6 +11,7 @@ import {
   buildSnapshot,
   type SettingsSnapshot,
   topicClaim,
+  type WorkflowDefinition as NoteWorkflow,
 } from '../settings-files/snapshot.js';
 import {
   type AgentDefinition,
@@ -21,19 +22,15 @@ import {
   type Unanswered,
   type WorkflowDefinition,
 } from './definitions.js';
-import { SqliteDefinitions } from './sqlite-definitions.js';
 
 /**
- * The definitions of a workspace: the defaults and the Agents from its
- * notes, as the current snapshot holds them, so an edit applies from the
- * next turn. Workflows still come from SQLite until plan step 9.1.
+ * The definitions of a workspace: the defaults, the Agents, and the
+ * Workflows from its notes, as the current snapshot holds them, so an
+ * edit applies from the next turn or run.
  */
 @Injectable()
 export class FileDefinitions extends Definitions {
-  constructor(
-    private readonly notes: SettingsNotes,
-    private readonly sqlite: SqliteDefinitions,
-  ) {
+  constructor(private readonly notes: SettingsNotes) {
     super();
   }
 
@@ -132,21 +129,22 @@ export class FileDefinitions extends Definitions {
     }
   }
 
-  workflow(name: string): Promise<WorkflowDefinition | null> {
-    return this.sqlite.workflow(name);
+  async workflow(name: string): Promise<WorkflowDefinition | null> {
+    const { snapshot } = await this.current();
+    const workflow = snapshot.workflows.get(name.toLowerCase());
+    return workflow === undefined ? null : workflowDefinition(workflow);
   }
 
-  workflows(): Promise<WorkflowDefinition[]> {
-    return this.sqlite.workflows();
+  async workflows(): Promise<WorkflowDefinition[]> {
+    const { snapshot } = await this.current();
+    return [...snapshot.workflows.values()]
+      .map(workflowDefinition)
+      .filter((workflow) => workflow !== null)
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
 
   onChange(listener: () => void): () => void {
-    const stopNotes = this.notes.onChange(() => listener());
-    const stopSqlite = this.sqlite.onChange(listener);
-    return () => {
-      stopNotes();
-      stopSqlite();
-    };
+    return this.notes.onChange(() => listener());
   }
 
   /**
@@ -200,5 +198,38 @@ export function agentDefinition(agent: NoteAgent): AgentDefinition {
     sharedInstructions: agent.sharedInstructions,
     skipGitRepoCheck: agent.skipGitRepoCheck,
     enabled: agent.enabled,
+  };
+}
+
+/**
+ * The Workflow in a note, as runtime code reads it; null until its Channel
+ * references resolve, which they do wherever Pero runs with a database.
+ */
+export function workflowDefinition(
+  workflow: NoteWorkflow,
+): WorkflowDefinition | null {
+  const { resolved, agent } = workflow;
+  if (resolved === null || agent === null) return null;
+  return {
+    name: workflow.name,
+    title: workflow.title,
+    agent,
+    input: workflow.input,
+    history:
+      workflow.history === null
+        ? null
+        : {
+            channels:
+              resolved.history === 'all'
+                ? 'all'
+                : [...resolved.history].sort((a, b) => a - b),
+            messages: workflow.history.messages,
+            hours: workflow.history.hours,
+            runWhenEmpty: workflow.history.runWhenEmpty,
+          },
+    targets: [...resolved.targets],
+    maxAttempts: workflow.maxAttempts,
+    schedules: workflow.schedule === null ? [] : [workflow.schedule],
+    enabled: workflow.enabled,
   };
 }
