@@ -258,6 +258,6 @@ export function channelHint(
 export function legacyHint(dataDir: string): string {
   return (
     `${dataDir} is a legacy data directory, which has no Agents any more. ` +
-    'Run pero migrate <workspace> to move it to a workspace with notes, then edit them.'
+    'Make a workspace with pero init <folder>, whose notes define them.'
   );
 }

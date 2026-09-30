@@ -322,7 +322,7 @@ describe('Channels (e2e)', () => {
   });
 
   describe('in a legacy data directory', () => {
-    it('records its Channels, and says once in each that Pero needs pero migrate', async () => {
+    it('records its Channels, and says once in each that Pero needs a workspace', async () => {
       const dataDir = join(tmp, 'pero');
       const legacy = createControlClient(join(dataDir, 'run', 'pero.sock'));
       daemon = await startDaemon({
@@ -348,7 +348,7 @@ describe('Channels (e2e)', () => {
           key: `${FORUM.id}:${GROCERIES}`,
           agent: null,
           unanswered:
-            'a legacy data directory has no Agents; run pero migrate <workspace>',
+            'a legacy data directory has no Agents; make a workspace with pero init <folder>',
         }),
       ]);
       expect((await legacy.call('agents.list')).agents).toEqual([]);

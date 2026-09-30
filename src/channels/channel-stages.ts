@@ -68,8 +68,8 @@ export function unansweredText(reason: Unanswered): string {
       );
     case 'legacy':
       return (
-        `Pero isn't answering yet: its owner needs to run pero migrate ` +
-        `<workspace> on the Pero host, which moves its Agents into notes.`
+        `Pero isn't answering yet: its owner needs to make a workspace ` +
+        `on the Pero host, whose notes define its Agents.`
       );
   }
 }
@@ -90,7 +90,7 @@ export function unansweredSummary(reason: Unanswered): string {
     case 'no-main-agent':
       return `no note defines the main Agent, ${reason.agent}; add ${reason.note}`;
     case 'legacy':
-      return 'a legacy data directory has no Agents; run pero migrate <workspace>';
+      return 'a legacy data directory has no Agents; make a workspace with pero init <folder>';
   }
 }
 

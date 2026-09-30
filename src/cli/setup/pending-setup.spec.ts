@@ -68,7 +68,7 @@ describe('pendingSetup', () => {
     expect(formatPendingSetup(pending)).toBe(
       [
         'Setup needed:',
-        '  This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
+        '  This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',

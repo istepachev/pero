@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cronSchema } from '../config/workflow-input.js';
-import { DAYS, dayValue, fromCron, toCron } from './schedule.js';
+import { DAYS, toCron } from './schedule.js';
 
 describe('toCron', () => {
   const cron = (day: string | string[], hours: number[], minute = 0) =>
@@ -50,58 +50,5 @@ describe('toCron', () => {
     ]) {
       expect(cronSchema.parse(expression)).toBe(expression);
     }
-  });
-});
-
-describe('fromCron', () => {
-  it('inverts toCron exactly', () => {
-    for (const expression of [
-      '0 12 * * 0',
-      '0 9,18 * * 1-5',
-      '30 10 * * 0,6',
-      '0 7 * * *',
-      '45 9-11,15 * * 1-3',
-      '5 0 * * 6',
-    ]) {
-      const schedule = fromCron(expression);
-      expect(schedule).not.toBeNull();
-      expect(toCron(schedule!)).toBe(expression);
-    }
-    expect(fromCron('0 9,18 * * 1-5')).toEqual({
-      days: [1, 2, 3, 4, 5],
-      hours: [9, 18],
-      minute: 0,
-    });
-  });
-
-  it('gives null for what toCron would write otherwise, or cannot write', () => {
-    for (const expression of [
-      // Written differently by toCron, so the schedule's fingerprint would change.
-      '0 9 * * 5,1',
-      '0 9 * * 1,2,3',
-      '0 9 * * 0-6',
-      '0 9 * * MON-FRI',
-      '00 9 * * 1',
-      // Beyond day, hour, and minute.
-      '0 8 1 * *',
-      '0 8 * 6 *',
-      '*/15 9-17 * * 1-5',
-      '0 * * * *',
-      '0 9 * * 7',
-      '0 24 * * *',
-      '@daily',
-    ]) {
-      expect(fromCron(expression)).toBeNull();
-    }
-  });
-});
-
-describe('dayValue', () => {
-  it('names days the way a Workflow note writes them', () => {
-    expect(dayValue(DAYS.daily!)).toBeNull();
-    expect(dayValue([1, 2, 3, 4, 5])).toBe('weekdays');
-    expect(dayValue([6, 0])).toBe('weekends');
-    expect(dayValue([0])).toBe('sunday');
-    expect(dayValue([5, 1])).toEqual(['monday', 'friday']);
   });
 });

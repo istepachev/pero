@@ -82,7 +82,7 @@ describe('LegacyDataDirDefinitions', () => {
       expect((await definitions.defaults()).dataFolder).toBeNull();
     });
 
-    it('has no Agents, and tells every Channel to migrate', async () => {
+    it('has no Agents, and tells every Channel it needs a workspace', async () => {
       await boot();
       await moduleRef
         .get<DataSource>(getDataSourceToken())

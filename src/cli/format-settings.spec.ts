@@ -50,7 +50,7 @@ describe('formatSettings in a workspace', () => {
 });
 
 describe('formatSettings in a legacy data directory', () => {
-  it('says to migrate it, and shows only the token', () => {
+  it('says it needs a workspace, and shows only the token', () => {
     expect(
       formatSettings(
         {
@@ -64,7 +64,7 @@ describe('formatSettings in a legacy data directory', () => {
       ),
     ).toBe(
       [
-        '/home/me/.pero is a legacy data directory, which has no Agents any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.',
+        '/home/me/.pero is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.',
         'Telegram bot token: set (secrets)',
       ].join('\n'),
     );

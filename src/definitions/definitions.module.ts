@@ -7,8 +7,8 @@ import { LegacyDataDirDefinitions } from './legacy-data-dir-definitions.js';
 
 /**
  * The definitions runtime code reads: `Definitions`. In a workspace, they
- * come from its notes; a legacy data directory has none until `pero
- * migrate` moves it. Needs the database from `PersistenceModule`.
+ * come from its notes; a legacy data directory has none. Needs the
+ * database from `PersistenceModule`.
  */
 @Module({
   imports: [SettingsNotesModule],

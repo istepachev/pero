@@ -75,10 +75,7 @@ const TEMPLATE_NOTE = `---
 You are my assistant for this topic.
 `;
 
-/**
- * The notes `pero init` writes, by their path in the settings folder, so
- * `pero migrate` can tell them from the owner's.
- */
+/** The notes `pero init` writes, by their path in the settings folder. */
 export const SKELETON_NOTES: Readonly<Record<string, string>> = {
   'Pero.md': PERO_NOTE,
   'Agents/Main.md': MAIN_NOTE,
@@ -91,14 +88,11 @@ export const SKELETON_NOTES: Readonly<Record<string, string>> = {
  * `.gitignore` and a commented `config.yaml`, and in the settings folder
  * `Pero.md`, `Agents/Main.md`, `Agents/_Template.md`, and `Workflows/`.
  * In a cloned workspace it only fills in what is missing, and an existing
- * `config.yaml` decides where the settings folder is. Without `mainNote`,
- * `Agents/Main.md` is left out, for a workspace whose main Agent has
- * another note.
+ * `config.yaml` decides where the settings folder is.
  */
 export function initWorkspace(
   dir: string,
   home?: string,
-  options: { mainNote?: boolean } = {},
 ): { workspace: string; entries: SkeletonEntry[] } {
   if (isHomeFolder(dir, home)) {
     throw new WorkspaceInitError(
@@ -150,9 +144,7 @@ export function initWorkspace(
   );
   file(join(settings, 'Pero.md'), PERO_NOTE);
   folder(join(settings, 'Agents'));
-  if (options.mainNote ?? true) {
-    file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
-  }
+  file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
   file(join(settings, 'Agents', '_Template.md'), TEMPLATE_NOTE);
   const workflows = join(settings, 'Workflows');
   entries.push({

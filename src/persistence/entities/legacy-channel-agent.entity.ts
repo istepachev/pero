@@ -4,9 +4,8 @@ import { Channel } from './channel.entity.js';
 /**
  * The Agent a Channel of a legacy data directory is assigned to, and
  * whether the Channel is enabled. In a workspace, notes' `topics` route
- * Channels instead; this keeps a legacy data directory answering as before,
- * and tells `pero migrate` which topics each Agent claims. It goes with
- * legacy data directories, after 0.2.0.
+ * Channels instead. Nothing reads it any more; it goes with the legacy
+ * tables in plan step 11.6.
  */
 @Entity('legacy_channel_agents')
 export class LegacyChannelAgent {
