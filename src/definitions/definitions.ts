@@ -104,8 +104,8 @@ export function routeQuery(channel: {
  * reads them: inside the workspace, relative to it.
  */
 export type Unanswered =
-  /** Its Agent is disabled; `file` is its note, null outside a workspace. */
-  | { kind: 'disabled'; agent: string; file: string | null }
+  /** Its Agent is disabled; `file` is its note. */
+  | { kind: 'disabled'; agent: string; file: string }
   /** Several Agents' notes, in `files`, claim the topic. */
   | { kind: 'conflict'; title: string; files: string[] }
   /** Only notes that have errors and never loaded, in `files`, claim it. */
@@ -116,10 +116,8 @@ export type Unanswered =
   | { kind: 'untitled' }
   /** No note defines the main Agent; `note` is the one to add. */
   | { kind: 'no-main-agent'; agent: string; note: string }
-  /** A legacy Channel's Agent is gone; null when it never had one. */
-  | { kind: 'undefined-agent'; agent: string | null }
-  /** A legacy Channel is disabled. */
-  | { kind: 'channel-disabled' };
+  /** A legacy data directory has no Agents until `pero migrate` moves it. */
+  | { kind: 'legacy' };
 
 /** Who answers in a Channel now: an enabled Agent, or no one and why. */
 export type Route =

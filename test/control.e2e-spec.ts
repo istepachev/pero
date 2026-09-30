@@ -125,27 +125,29 @@ describe('Control endpoint (e2e)', () => {
     });
   });
 
-  it('changes settings and the bot token, validating both first', async () => {
+  it('changes the bot token, validating it first, and no other setting', async () => {
     const token = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
     app = await start();
     const before = await client.call('settings.get');
 
     await expect(
+      client.call('settings.update', { telegramBotToken: 'not a token' }),
+    ).rejects.toThrow(InvalidInputError);
+    await expect(
       client.call('settings.update', {
         maxConcurrentRuns: 3,
-        telegramBotToken: 'not a token',
-      }),
+        telegramBotToken: token,
+      } as never),
     ).rejects.toThrow(InvalidInputError);
     expect(await client.call('settings.get')).toEqual(before);
     expect(readdirSync(join(dataDir, 'secrets'))).toEqual([]);
 
     const view = await client.call('settings.update', {
-      maxConcurrentRuns: 3,
       telegramBotToken: token,
     });
 
     expect(view).toMatchObject({
-      maxConcurrentRuns: 3,
+      maxConcurrentRuns: before.maxConcurrentRuns,
       telegramBotToken: { set: true, source: 'secrets' },
     });
     expect(JSON.stringify(view)).not.toContain(token);

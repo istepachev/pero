@@ -1,31 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  composeInstructions,
-  effectiveWorkingDirectory,
-  resolveAgent,
-} from './agent-resolution.js';
-
-describe('effectiveWorkingDirectory', () => {
-  const settings = { defaultWorkingDirectory: '/vault' };
-
-  it('uses the Agent’s own folder, otherwise the default', () => {
-    expect(
-      effectiveWorkingDirectory({ workingDirectory: '/code' }, settings),
-    ).toBe('/code');
-    expect(
-      effectiveWorkingDirectory({ workingDirectory: null }, settings),
-    ).toBe('/vault');
-  });
-
-  it('refuses to follow an unset default', () => {
-    expect(() =>
-      effectiveWorkingDirectory(
-        { workingDirectory: null },
-        { defaultWorkingDirectory: null },
-      ),
-    ).toThrow(/unset/);
-  });
-});
+import { composeInstructions, resolveAgent } from './agent-resolution.js';
 
 describe('composeInstructions', () => {
   const shared = { sharedInstructions: 'Answer in English.' };

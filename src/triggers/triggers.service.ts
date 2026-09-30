@@ -9,11 +9,8 @@ import {
 } from '../common/errors.js';
 import { type TriggerAdd, triggerAddSchema } from '../config/workflow-input.js';
 import type { TriggerView } from '../control/protocol.js';
+import { Definitions } from '../definitions/definitions.js';
 import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
@@ -40,6 +37,8 @@ export class TriggersService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: SqliteDefinitions,
+    /** Where the installation's time zone is: `Pero.md` in a workspace. */
+    private readonly current: Definitions,
   ) {}
 
   /** Every Trigger, or those of the Workflow named `workflow`, by ID. */
@@ -69,19 +68,14 @@ export class TriggersService {
    */
   async add(input: TriggerAdd): Promise<TriggerView> {
     const fields = parseInput(triggerAddSchema, input);
+    const { timezone: installationZone } = await this.current.defaults();
     return this.committing(async (manager) => {
       const workflow = await findWorkflow(manager, fields.workflow);
       const triggers = manager.getRepository(Trigger);
       const existing = await triggers.findBy({ workflowId: workflow.id });
       let trigger: Trigger;
       if (fields.kind === 'schedule') {
-        const timezone =
-          fields.timezone ??
-          (
-            await manager
-              .getRepository(Settings)
-              .findOneByOrFail({ id: SETTINGS_ID })
-          ).timezone;
+        const timezone = fields.timezone ?? installationZone;
         // Spacing aside: two such schedules would share their saved times.
         const fingerprint = scheduleFingerprint({
           cron: fields.cron,

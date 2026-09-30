@@ -36,22 +36,22 @@ const settings: SettingsView = {
     claude: { model: null, effort: null },
     codex: { model: null, effort: null },
   },
-  defaultWorkingDirectory: null,
+  defaultWorkingDirectory: '/home/owner/workspace/data',
   sharedInstructions: null,
-  mainAgent: null,
+  mainAgent: 'main',
   historyCarryover: 50,
   historyRetentionDays: null,
   defaultPermissions: 'ask',
   timezone: 'UTC',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
-  files: null,
-  newTopics: null,
-  setInPero: null,
+  files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+  newTopics: 'create-agent',
+  setInPero: [],
 };
 
 describe('pendingSetup', () => {
-  it('lists the folder, Telegram, and providers in use', () => {
+  it('lists the migration a legacy data directory needs, Telegram, and providers in use', () => {
     const pending = pendingSetup(
       status([
         component(
@@ -62,13 +62,13 @@ describe('pendingSetup', () => {
         component('codex', 'unconfigured', 'Not signed in', false),
         component('telegram', 'unconfigured', 'Bot token is not set'),
       ]),
-      settings,
+      { ...settings, files: null },
     );
 
     expect(formatPendingSetup(pending)).toBe(
       [
         'Setup needed:',
-        '  Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
+        '  This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',

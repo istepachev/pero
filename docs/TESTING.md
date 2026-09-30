@@ -66,12 +66,12 @@ Where each [Phase 2 exit criterion](./IMPLEMENTATION_PLAN.md#phase-2-exit-criter
 
 | Criterion | Verified by |
 |---|---|
-| Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/phase2.e2e-spec.ts`; onboarding edge cases in `src/channels/channel-onboarding.spec.ts` |
+| Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/phase2.e2e-spec.ts`; onboarding edge cases in `src/channels/note-agents.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
 | Two topics keep separate contexts while working in the same shared folder | `test/phase2.e2e-spec.ts`: separate Agents, Sessions, and provider sessions, both in the default folder |
-| An Agent with its own folder works there | `test/phase2.e2e-spec.ts`; `test/agents.e2e-spec.ts` |
+| An Agent with its own folder works there | `test/phase2.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts` |
 | The General topic and a direct chat reach the main Agent in separate Sessions | `test/phase2.e2e-spec.ts` |
 | A follow-up resumes the right provider session after a restart | `test/phase2.e2e-spec.ts`: each of four Channels resumes its own provider session in a new daemon; real resume from another process in both smoke tests |
-| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/phase2.e2e-spec.ts`; `test/agents.e2e-spec.ts`; `test/channels.e2e-spec.ts` for reassignment |
+| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/phase2.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for reassignment |
 | Each Channel's history holds the text sent and received there, and nothing else | `test/phase2.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
 | A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/phase2.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
 | Codex and Claude subscription sign-ins each have a documented SDK smoke test under the service's account | `test/smoke/claude-runtime.smoke-spec.ts` and `test/smoke/codex-runtime.smoke-spec.ts`, run as in [the section above](#provider-smoke-tests-under-the-services-account) |
@@ -108,4 +108,4 @@ Where each [Phase 5 exit criterion](./vision/IMPLEMENTATION_PLAN.md#phase-5-exit
 | Committing the workspace commits `config.yaml` and nothing secret | `scripts/check-packed-install.sh`: `git add -A` in a running workspace stages `config.yaml` and the notes, not `.env`, the database, logs, or `run/`; `test/cli.e2e-spec.ts` and `src/config/env-file.spec.ts`: `pero status` reports a `.env` Git would commit |
 | Allowed chats can be changed by editing `config.yaml` | `src/host-config/host-config.service.spec.ts`: chats added or removed by hand are served or turned away from the next look, and a broken edit keeps the last valid version; `test/cli.e2e-spec.ts`: `telegram allow` and `deny` edit the file while Pero is stopped, and an invalid file stops startup |
 | Backups restore into a cloned workspace | `test/restore.e2e-spec.ts`: a workspace restored into a fresh clone at its path, with its data folder, resumes every Session; `test/cli.e2e-spec.ts`: a clone keeps its `config.yaml` and data files; `src/cli/restore.spec.ts`; `scripts/check-packed-install.sh`: a `git clone` |
-| A legacy data directory still works unchanged | `test/restore.e2e-spec.ts` and `test/cli.e2e-spec.ts` with `--data-dir`; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh`: a legacy backup restored into a workspace, its token in `.env` |
+| A legacy data directory still works unchanged | Until plan step 8.5, which leaves it no Agents: `test/cli.e2e-spec.ts` with `--data-dir` runs, backs up, and restores one, and `test/channels.e2e-spec.ts` has it say to run `pero migrate`; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh`: a legacy backup restored into a workspace, its token in `.env` |

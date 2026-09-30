@@ -162,7 +162,7 @@ export function channelHint(
 /** What a stub says in a legacy data directory, which has no notes. */
 export function legacyHint(dataDir: string): string {
   return (
-    `${dataDir} is a legacy data directory: its Agents and settings can't be changed any more. ` +
+    `${dataDir} is a legacy data directory, which has no Agents any more. ` +
     'Run pero migrate <workspace> to move it to a workspace with notes, then edit them.'
   );
 }

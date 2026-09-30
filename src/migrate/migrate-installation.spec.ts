@@ -139,7 +139,7 @@ async function legacyDataDir(
   const database = join(source, 'pero.sqlite');
   const old = await openDatabase({
     ...dataSourceOptions(database),
-    migrations: MIGRATIONS.slice(0, -3),
+    migrations: MIGRATIONS.slice(0, -4),
   });
   const rows = [
     agent('main', 'Main', 'claude', { model: 'opus', effort: 'high' }),
@@ -579,6 +579,26 @@ describe('migrateInstallation', () => {
         { chatKey: '-100222', title: 'Work' },
       ],
     });
+  });
+
+  it('takes the data folder from the legacy config.yaml, which may have changed since Pero last ran', async () => {
+    await legacyDataDir();
+    const elsewhere = join(tmp, 'elsewhere');
+    mkdirSync(elsewhere);
+    const config = join(source, 'config.yaml');
+    writeFileSync(
+      config,
+      readFileSync(config, 'utf8').replace(
+        `data: ${vault}`,
+        'data: ../elsewhere',
+      ),
+    );
+
+    await migrate();
+
+    expect(readHostConfig(join(workspace, '.pero', 'config.yaml'))?.data).toBe(
+      elsewhere,
+    );
   });
 
   it('moves each split schedule its saved times, so no run is missed', async () => {

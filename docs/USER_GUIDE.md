@@ -20,17 +20,14 @@ Every command works on the workspace found from the current folder (the nearest 
 
 ## First-run setup and settings
 
-Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, sign-in for the providers in use (the default provider, plus any provider an Agent uses), and, in a legacy data directory only, the default working directory all Agents share (a workspace has its `data/` folder). On a terminal it asks for each one: the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
+Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). A legacy data directory has no Agents, so there it also says to run `pero migrate <workspace>`. On a terminal it asks for each one: the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
 
 ```sh
 pero settings                                           # show everything
-pero settings set default-working-directory ~/notes
 printf '%s' "$TOKEN" | pero settings set telegram-bot-token
-pero settings set shared-instructions < persona.md
-pero settings unset claude.model                        # back to the provider default
 ```
 
-Keys: `default-provider`, `claude.model`, `claude.effort`, `codex.model`, `codex.effort`, `default-working-directory`, `shared-instructions`, `main-agent`, `history-carryover`, `history-retention-days`, `default-permissions`, `timezone`, `max-concurrent-runs`, `telegram-bot-token`. A value left out is read from a prompt on a terminal, otherwise from stdin; the token is never accepted as an argument. It is stored owner-only in `secrets/telegram-bot-token` and never shown or logged. Changes apply without a restart.
+The installation defaults are properties of `Pero.md` in the settings folder, and its body is the shared instructions; the data folder is `data` in `.pero/config.yaml`. `pero settings set` stores only the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. The old keys, such as `timezone` or `default-working-directory`, say where their value lives now. Changes apply without a restart.
 
 ## Telegram
 
@@ -42,7 +39,7 @@ Pero talks to you in a private Telegram group with topics, where each topic is a
 2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it.
 3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
 4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` waits for that message and offers to allow the chat itself.
-5. Create a topic for each conversation you want. In a workspace, a topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing. In a legacy data directory, each new topic onboards a new Agent named after it, working in the default working directory.
+5. Create a topic for each conversation you want. In a workspace, a topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing. A legacy data directory has no Agents: it answers each Channel once, saying to run `pero migrate`.
 6. Optionally, allow a direct chat with the bot too: message the bot, then allow your user ID the same way. It also talks to the main Agent, in a conversation separate from the General topic.
 
 Before signing in to a provider, you can try the whole setup with the echo runtime: `PERO_FAKE_RUNTIME=echo pero run` (see [Checking a real bot by hand](./TESTING.md#checking-a-real-bot-by-hand)).
@@ -73,7 +70,7 @@ pero channels show 3           # who answers, or why no one does
 pero channels history 3 -n 50  # its latest messages
 ```
 
-Pero keeps each Channel's message history until you set `history-retention-days`: then messages older than that many days are deleted within the hour, and every hour after, including when Pero starts. `pero settings unset history-retention-days` keeps everything again. Workflow Runs and Notifications keep their own text, such as an Agent's answer, whatever the setting. [Operating Pero](./OPERATIONS.md#message-history) describes exactly what the history keeps.
+Pero keeps each Channel's message history until you set `history-retention-days` in `Pero.md`: then messages older than that many days are deleted within the hour, and every hour after, including when Pero starts. Removing it keeps everything again. Workflow Runs and Notifications keep their own text, such as an Agent's answer, whatever the setting. [Operating Pero](./OPERATIONS.md#message-history) describes exactly what the history keeps.
 
 ## Agents
 

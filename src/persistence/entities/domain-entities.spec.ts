@@ -9,7 +9,6 @@ import { dataSourceOptions } from '../data-source-options.js';
 import { MIGRATIONS } from '../migrations/index.js';
 import { openDatabase } from '../open-database.js';
 import { inTransaction } from '../transaction.js';
-import { Agent } from './agent.entity.js';
 import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
@@ -18,18 +17,18 @@ import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
 import { ScheduleState } from './schedule-state.entity.js';
 import { Session } from './session.entity.js';
-import { Settings } from './settings.entity.js';
 import { Trigger } from './trigger.entity.js';
 import { WorkflowNotificationTarget } from './workflow-notification-target.entity.js';
 import { WorkflowRun } from './workflow-run.entity.js';
 import { Workflow } from './workflow.entity.js';
 
 const DOMAIN_TABLES = [
-  'agents',
   'allowed_chats',
   'channels',
   'inbound_updates',
+  'legacy_agents',
   'legacy_channel_agents',
+  'legacy_settings',
   'messages',
   'notifications',
   'schedules',
@@ -46,17 +45,46 @@ const UPDATE_ID = '9007199254740993';
 
 type Seeded = Awaited<ReturnType<typeof seed>>;
 
+/**
+ * Sets `values`, by column, in the settings row: `legacy_settings`, or
+ * `settings` before plan step 8.5 renamed it.
+ */
+async function updateSettings(
+  ds: DataSource,
+  values: Record<string, unknown>,
+): Promise<void> {
+  const [{ table }] = await ds.query<{ table: string }[]>(
+    `SELECT "name" AS "table" FROM "sqlite_master" ` +
+      `WHERE "name" IN ('settings', 'legacy_settings')`,
+  );
+  const columns = Object.keys(values).map((column) => `"${column}" = ?`);
+  await ds.query(
+    `UPDATE "${table}" SET ${columns.join(', ')} WHERE "id" = 1`,
+    Object.values(values),
+  );
+}
+
+/** The settings row, as `legacy_settings` holds it. */
+async function settingsRow(ds: DataSource): Promise<Record<string, unknown>> {
+  const [row] = await ds.query<Record<string, unknown>[]>(
+    `SELECT * FROM "legacy_settings" WHERE "id" = 1`,
+  );
+  return row!;
+}
+
 /** One row in every domain table, linked the way the runtime links them. */
 async function seed(ds: DataSource) {
-  const agent = await ds.getRepository(Agent).save({
-    name: 'assistant',
-    title: 'Personal assistant',
-    provider: 'claude',
-    instructions: 'Be brief.',
-    providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
-    workingDirectory: null,
-    toolPolicy: { permissions: 'bypass' },
-  });
+  await ds.query(
+    `INSERT INTO "legacy_agents" ("name", "title", "provider", "instructions", ` +
+      `"provider_options", "working_directory", "tool_policy_json") ` +
+      `VALUES ('assistant', 'Personal assistant', 'claude', 'Be brief.', ` +
+      `'{"model":"claude-opus-5-5","effort":"high"}', NULL, '{"permissions":"bypass"}')`,
+  );
+  const [agent] = await ds.query<
+    { id: number; name: string; provider: 'claude' }[]
+  >(
+    `SELECT "id", "name", "provider" FROM "legacy_agents" WHERE "name" = 'assistant'`,
+  );
   const channel = await ds.getRepository(Channel).save({
     integrationKind: 'telegram',
     externalKey: `${CHAT_ID}:7`,
@@ -139,9 +167,9 @@ async function seed(ds: DataSource) {
     senderId: null,
     text: 'Added milk.',
   });
-  await ds.getRepository(Settings).update(1, { mainAgentId: agent.id });
+  await updateSettings(ds, { main_agent_id: agent!.id });
   return {
-    agent,
+    agent: agent!,
     message,
     allowedChat,
     channel,
@@ -160,8 +188,8 @@ async function seed(ds: DataSource) {
 /** Every domain row, read back through the entities. */
 async function readAll(ds: DataSource) {
   return {
-    settings: await ds.getRepository(Settings).find(),
-    agents: await ds.getRepository(Agent).find(),
+    settings: await ds.query(`SELECT * FROM "legacy_settings"`),
+    agents: await ds.query(`SELECT * FROM "legacy_agents"`),
     allowedChats: await ds.getRepository(AllowedChat).find(),
     channels: await ds.getRepository(Channel).find(),
     routes: await ds.getRepository(LegacyChannelAgent).find(),
@@ -215,10 +243,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, default permissions, message history,
     // the allowlist, the Session resume migration, then the domain tables.
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 14; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -226,7 +254,7 @@ describe('domain entities', () => {
       'settings',
       'sqlite_sequence',
     ]);
-    expect(await db.getRepository(Settings).count()).toBe(1);
+    expect(await db.query(`SELECT "id" FROM "settings"`)).toEqual([{ id: 1 }]);
 
     await db.runMigrations({ transaction: 'each' });
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
@@ -235,15 +263,15 @@ describe('domain entities', () => {
 
   it("gives existing Sessions their Agent's provider and folder, and reverts to config versions", async () => {
     const db = await open();
-    await db
-      .getRepository(Settings)
-      .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
+    await updateSettings(db, {
+      default_working_directory: '/home/owner/vault',
+    });
     const seeded = await seed(db);
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, the allowlist, then the Session resume migration.
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 13; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -279,16 +307,16 @@ describe('domain entities', () => {
 
   it('keeps the settings row through the allowlist migration and back', async () => {
     const db = await open();
-    await db.getRepository(Settings).update(1, {
-      defaultWorkingDirectory: '/home/owner/vault',
-      sharedInstructions: 'Be kind.',
+    await updateSettings(db, {
+      default_working_directory: '/home/owner/vault',
+      shared_instructions: 'Be kind.',
     });
     await seed(db);
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, then the allowlist.
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 12; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -304,12 +332,10 @@ describe('domain entities', () => {
     ]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
-    ).toMatchObject({
-      defaultWorkingDirectory: '/home/owner/vault',
-      sharedInstructions: 'Be kind.',
-      mainAgentId: null,
+    expect(await settingsRow(db)).toMatchObject({
+      default_working_directory: '/home/owner/vault',
+      shared_instructions: 'Be kind.',
+      main_agent_id: null,
     });
     expect(await db.getRepository(Channel).find()).toEqual([
       expect.objectContaining({ title: null }),
@@ -320,15 +346,15 @@ describe('domain entities', () => {
   it('keeps the settings row through the message history migration and back', async () => {
     const db = await open();
     const { agent } = await seed(db);
-    await db.getRepository(Settings).update(1, {
-      sharedInstructions: 'Be kind.',
-      historyCarryover: 10,
+    await updateSettings(db, {
+      shared_instructions: 'Be kind.',
+      history_carryover: 10,
     });
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, then
     // message history.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 11; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -339,12 +365,10 @@ describe('domain entities', () => {
     ).toEqual([{ shared_instructions: 'Be kind.', main_agent_id: agent.id }]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
-    ).toMatchObject({
-      sharedInstructions: 'Be kind.',
-      mainAgentId: agent.id,
-      historyCarryover: 50,
+    expect(await settingsRow(db)).toMatchObject({
+      shared_instructions: 'Be kind.',
+      main_agent_id: agent.id,
+      history_carryover: 50,
     });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
@@ -352,15 +376,15 @@ describe('domain entities', () => {
   it('keeps the settings row through the default permissions migration and back', async () => {
     const db = await open();
     const { agent } = await seed(db);
-    await db.getRepository(Settings).update(1, {
-      sharedInstructions: 'Be kind.',
-      historyCarryover: 10,
-      defaultPermissions: 'bypass',
+    await updateSettings(db, {
+      shared_instructions: 'Be kind.',
+      history_carryover: 10,
+      default_permissions: 'bypass',
     });
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 10; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -382,12 +406,10 @@ describe('domain entities', () => {
     ]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
-    ).toMatchObject({
-      sharedInstructions: 'Be kind.',
-      historyCarryover: 10,
-      defaultPermissions: 'ask',
+    expect(await settingsRow(db)).toMatchObject({
+      shared_instructions: 'Be kind.',
+      history_carryover: 10,
+      default_permissions: 'ask',
     });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
@@ -397,8 +419,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -434,8 +457,9 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -489,8 +513,9 @@ describe('domain entities', () => {
       },
     });
 
-    // Channel routes, schedule state, names in state, history retention, Notification delivery,
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, Notification delivery,
     // then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -530,8 +555,9 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
-    // Channel routes, schedule state, names in state, history retention, then Notification
+    // Legacy definitions, Channel routes, schedule state, names in state, history retention, then Notification
     // delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -572,15 +598,16 @@ describe('domain entities', () => {
   it('keeps the settings row through the history retention migration and back', async () => {
     const db = await open();
     const { agent } = await seed(db);
-    expect(
-      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
-    ).toMatchObject({ historyRetentionDays: null });
-    await db.getRepository(Settings).update(1, {
-      historyCarryover: 10,
-      historyRetentionDays: 30,
+    expect(await settingsRow(db)).toMatchObject({
+      history_retention_days: null,
+    });
+    await updateSettings(db, {
+      history_carryover: 10,
+      history_retention_days: 30,
     });
 
-    // Channel routes, schedule state, names in state, then history retention.
+    // Legacy definitions, Channel routes, schedule state, names in state, then history retention.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -598,9 +625,10 @@ describe('domain entities', () => {
     ).toEqual([{ main_agent_id: agent.id, history_carryover: 10 }]);
 
     await db.runMigrations({ transaction: 'each' });
-    expect(
-      await db.getRepository(Settings).findOneByOrFail({ id: 1 }),
-    ).toMatchObject({ historyCarryover: 10, historyRetentionDays: null });
+    expect(await settingsRow(db)).toMatchObject({
+      history_carryover: 10,
+      history_retention_days: null,
+    });
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
@@ -608,7 +636,7 @@ describe('domain entities', () => {
     // 0.1.0 shipped every migration up to history retention.
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -3),
+      migrations: MIGRATIONS.slice(0, -4),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -696,7 +724,8 @@ describe('domain entities', () => {
     const db = await open();
     const { agent, session, message, workflow, run } = await seed(db);
 
-    // Channel routes, schedule state, then names in state.
+    // Legacy definitions, Channel routes, schedule state, then names in state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -746,7 +775,7 @@ describe('domain entities', () => {
   it('moves the times of enabled schedules into their own table', async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -2),
+      migrations: MIGRATIONS.slice(0, -3),
     });
     const trigger = (
       cron: string,
@@ -804,7 +833,8 @@ describe('domain entities', () => {
     const db = await open();
     const { trigger, schedule } = await seed(db);
 
-    // Channel routes, then schedule state.
+    // Legacy definitions, Channel routes, then schedule state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('schedules');
@@ -834,7 +864,7 @@ describe('domain entities', () => {
   it("moves each Channel's Agent and state into the legacy table", async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -1),
+      migrations: MIGRATIONS.slice(0, -2),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -885,6 +915,7 @@ describe('domain entities', () => {
       .update(channel.id, { enabled: false });
 
     await db.undoLastMigration({ transaction: 'each' });
+    await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('legacy_channel_agents');
     expect(
       await db.query(`SELECT "id", "agent_id", "enabled" FROM "channels"`),
@@ -901,6 +932,69 @@ describe('domain entities', () => {
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
+  it('keeps the Agents and settings, whole, in legacy tables', async () => {
+    const old = await openDatabase({
+      ...dataSourceOptions(database),
+      migrations: MIGRATIONS.slice(0, -1),
+    });
+    await old.query(
+      `INSERT INTO "agents" ("name", "provider", "provider_options", "tool_policy_json", "working_directory") ` +
+        `VALUES ('coach', 'codex', '{"model":"gpt-6","effort":null}', '{"permissions":"bypass"}', '/srv/code')`,
+    );
+    await old.query(
+      `UPDATE "settings" SET "main_agent_id" = 1, "shared_instructions" = 'Be kind.'`,
+    );
+    await old.destroy();
+
+    const db = await open();
+    expect(await tables(db)).not.toContain('agents');
+    expect(await tables(db)).not.toContain('settings');
+    expect(
+      await db.query(
+        `SELECT "id", "name", "provider", "provider_options", "working_directory" FROM "legacy_agents"`,
+      ),
+    ).toEqual([
+      {
+        id: 1,
+        name: 'coach',
+        provider: 'codex',
+        provider_options: '{"model":"gpt-6","effort":null}',
+        working_directory: '/srv/code',
+      },
+    ]);
+    expect(await settingsRow(db)).toMatchObject({
+      main_agent_id: 1,
+      shared_instructions: 'Be kind.',
+    });
+    // The main Agent's foreign key follows the renamed table.
+    await rejectsWith(
+      db.query(`DELETE FROM "legacy_agents"`),
+      'SQLITE_CONSTRAINT_TRIGGER',
+    );
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('gives the Agents and settings their tables back, and migrates again', async () => {
+    const db = await open();
+    const { agent } = await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).toEqual(
+      expect.arrayContaining(['agents', 'settings']),
+    );
+    expect(await tables(db)).not.toContain('legacy_agents');
+    expect(await db.query(`SELECT "main_agent_id" FROM "settings"`)).toEqual([
+      { main_agent_id: agent.id },
+    ]);
+    expect(await db.query(`SELECT "name" FROM "agents"`)).toEqual([
+      { name: 'assistant' },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(await settingsRow(db)).toMatchObject({ main_agent_id: agent.id });
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
   it('keeps every record across closing and reopening the database', async () => {
     let db = await open();
     await seed(db);
@@ -912,11 +1006,11 @@ describe('domain entities', () => {
     expect(await readAll(db)).toEqual(before);
     expect(before.agents[0]).toMatchObject({
       title: 'Personal assistant',
-      providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
-      useSharedInstructions: true,
-      codexSkipGitRepoCheck: false,
-      toolPolicy: { permissions: 'bypass' },
-      enabled: true,
+      provider_options: '{"model":"claude-opus-5-5","effort":"high"}',
+      use_shared_instructions: 1,
+      codex_skip_git_repo_check: 0,
+      tool_policy_json: '{"permissions":"bypass"}',
+      enabled: 1,
     });
     expect(before.schedules[0]!.nextRunAt).toEqual(
       new Date('2026-09-28T06:00:00.000Z'),
@@ -958,7 +1052,8 @@ describe('domain entities', () => {
     const instant = new Date('2026-03-29T01:30:00.000Z');
     expect(instant.getHours()).toBe(6);
     const db = await open();
-    const { schedule } = await seed(db);
+    const seeded = await seed(db);
+    const { schedule } = seeded;
     const repo = db.getRepository(ScheduleState);
 
     await repo.update(schedule.id, { nextRunAt: instant });
@@ -970,8 +1065,10 @@ describe('domain entities', () => {
       instant,
     );
     // SQLite's own datetime('now') default is UTC too.
-    const [agent] = await db.getRepository(Agent).find();
-    expect(Math.abs(agent!.createdAt.getTime() - Date.now())).toBeLessThan(
+    const channel = await db
+      .getRepository(Channel)
+      .findOneByOrFail({ id: seeded.channel.id });
+    expect(Math.abs(channel.createdAt.getTime() - Date.now())).toBeLessThan(
       60_000,
     );
   });
@@ -987,12 +1084,10 @@ describe('domain entities', () => {
 
     it('rejects a duplicate Agent or Workflow name', async () => {
       await rejectsWith(
-        db.getRepository(Agent).insert({
-          name: 'assistant',
-          provider: 'codex',
-          providerOptions: { model: null, effort: null },
-          toolPolicy: {},
-        }),
+        db.query(
+          `INSERT INTO "legacy_agents" ("name", "provider", "provider_options", "tool_policy_json") ` +
+            `VALUES ('assistant', 'codex', '{}', '{}')`,
+        ),
         'SQLITE_CONSTRAINT_UNIQUE',
       );
       await rejectsWith(
@@ -1128,7 +1223,7 @@ describe('domain entities', () => {
       ],
       [
         'settings.main_agent_id',
-        () => `UPDATE "settings" SET "main_agent_id" = ${MISSING}`,
+        () => `UPDATE "legacy_settings" SET "main_agent_id" = ${MISSING}`,
       ],
       [
         'sessions.channel_id',
@@ -1205,7 +1300,9 @@ describe('domain entities', () => {
         db.getRepository(Session).delete(seeded.session.id),
       ).rejects.toThrow(restricted);
       await expect(
-        db.getRepository(Agent).delete(seeded.agent.id),
+        db.query(`DELETE FROM "legacy_agents" WHERE "id" = ?`, [
+          seeded.agent.id,
+        ]),
       ).rejects.toThrow(restricted);
       await expect(
         db.getRepository(Channel).delete(seeded.channel.id),
@@ -1263,16 +1360,15 @@ describe('domain entities', () => {
 
   describe('checks', () => {
     let db: DataSource;
-    let seeded: Seeded;
 
     beforeEach(async () => {
       db = await open();
-      seeded = await seed(db);
+      await seed(db);
     });
 
     it.each([
-      `UPDATE "agents" SET "provider" = 'gpt'`,
-      `UPDATE "agents" SET "tool_policy_json" = '['`,
+      `UPDATE "legacy_agents" SET "provider" = 'gpt'`,
+      `UPDATE "legacy_agents" SET "tool_policy_json" = '['`,
       `UPDATE "channels" SET "integration_kind" = 'slack'`,
       `UPDATE "allowed_chats" SET "integration_kind" = 'slack'`,
       `UPDATE "allowed_chats" SET "kind" = 'channel'`,
@@ -1285,8 +1381,8 @@ describe('domain entities', () => {
       `UPDATE "workflow_runs" SET "result_json" = '{'`,
       `UPDATE "notifications" SET "status" = 'sent'`,
       `UPDATE "inbound_updates" SET "status" = 'ignored'`,
-      `UPDATE "settings" SET "history_carryover" = -1`,
-      `UPDATE "settings" SET "default_permissions" = 'always'`,
+      `UPDATE "legacy_settings" SET "history_carryover" = -1`,
+      `UPDATE "legacy_settings" SET "default_permissions" = 'always'`,
       `UPDATE "messages" SET "direction" = 'sideways'`,
       // A Workflow's message is its delivered Notification, and only that.
       `UPDATE "messages" SET "origin" = 'workflow', "agent_name" = NULL, "session_id" = NULL`,
@@ -1311,45 +1407,13 @@ describe('domain entities', () => {
       '',
       'a'.repeat(65),
     ])('rejects the non-slug name %j', async (name) => {
-      for (const table of ['agents', 'workflows']) {
+      for (const table of ['legacy_agents', 'workflows']) {
         await rejectsWith(
           db.query(`UPDATE "${table}" SET "name" = ?`, [name]),
           'SQLITE_CONSTRAINT_CHECK',
         );
       }
-      await db.query(`UPDATE "agents" SET "name" = ?`, ['a'.repeat(64)]);
-    });
-
-    it('reads a tool policy without permissions as ask, and refuses unknown fields', async () => {
-      const repo = db.getRepository(Agent);
-      await db.query(`UPDATE "agents" SET "tool_policy_json" = '{}'`);
-      expect(
-        (await repo.findOneByOrFail({ id: seeded.agent.id })).toolPolicy,
-      ).toEqual({ permissions: 'ask' });
-
-      await db.query(
-        `UPDATE "agents" SET "tool_policy_json" = '{"allow":["Read"]}'`,
-      );
-      await expect(
-        repo.findOneByOrFail({ id: seeded.agent.id }),
-      ).rejects.toThrow(/allow/);
-    });
-
-    it('validates Agent provider options on write and read', async () => {
-      const repo = db.getRepository(Agent);
-
-      await expect(
-        repo.update(seeded.agent.id, {
-          providerOptions: { model: null, effort: 'extreme' as 'high' },
-        }),
-      ).rejects.toThrow(/effort/);
-
-      await db.query(
-        `UPDATE "agents" SET "provider_options" = '{"temperature":1}'`,
-      );
-      await expect(
-        repo.findOneByOrFail({ id: seeded.agent.id }),
-      ).rejects.toThrow(/temperature/);
+      await db.query(`UPDATE "legacy_agents" SET "name" = ?`, ['a'.repeat(64)]);
     });
   });
 });

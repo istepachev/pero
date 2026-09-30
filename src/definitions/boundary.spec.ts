@@ -7,8 +7,6 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The entities that hold definitions, which runtime code reads through `Definitions`. */
 const DEFINITION_ENTITIES = [
-  'agent',
-  'settings',
   'workflow',
   'trigger',
   'workflow-notification-target',
@@ -19,8 +17,6 @@ const ALLOWED = [
   /^definitions\//,
   /^persistence\//,
   // The create and edit services write the tables.
-  /^agents\/agents\.service\.ts$/,
-  /^settings\/settings\.service\.ts$/,
   /^workflows\/workflows\.service\.ts$/,
   /^triggers\/triggers\.service\.ts$/,
 ];
@@ -54,14 +50,14 @@ describe('definition entities', () => {
 
   it('are recognised however the import is written', () => {
     expect(
-      ENTITY_IMPORT.test(`} from '../persistence/entities/agent.entity.js';`),
+      ENTITY_IMPORT.test(`} from '../persistence/entities/trigger.entity.js';`),
     ).toBe(true);
     expect(
       ENTITY_IMPORT.test(`import { Workflow } from './workflow.entity.js';`),
     ).toBe(false);
     expect(
       ENTITY_IMPORT.test(
-        `from '../../persistence/entities/settings.entity.js'`,
+        `from '../../persistence/entities/workflow.entity.js'`,
       ),
     ).toBe(true);
     expect(

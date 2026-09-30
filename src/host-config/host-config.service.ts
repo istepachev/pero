@@ -19,13 +19,12 @@ import {
   readHostConfig,
   resolveDataFolder,
   resolveSettingsFolder,
-  setDataFolder,
 } from '../config/host-config.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
+import { legacyDataFolder } from '../definitions/legacy-definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { SettingsService } from '../settings/settings.service.js';
 
 export const HOST_CONFIG_OPTIONS = Symbol('HOST_CONFIG_OPTIONS');
 
@@ -50,16 +49,15 @@ export interface HostConfigOptions {
 /**
  * `config.yaml`: the data folder and the chats Pero serves. It is read at
  * startup and kept in memory; Pero's own changes (allowing and denying
- * chats, following a chat's new ID, a new data folder) are written back
- * to the file, keeping its comments. Every 10 seconds it looks for edits
+ * chats, following a chat's new ID) are written back to the file, keeping
+ * its comments. Every 10 seconds it looks for edits
  * made by hand: a changed chat list applies at once, a changed `data` or
  * `settings` waits for a restart, and an invalid edit is reported while
  * the last valid version stays in use. The `config` component says which.
  *
- * Until the settings row and the `allowed_chats` table are dropped, it
- * also carries them over: a missing file starts from the default working
- * directory, rows in `allowed_chats` move into the file, and the data
- * folder is copied into the settings row, which the rest of Pero reads.
+ * It also carries a legacy installation over: a missing file starts from
+ * the default working directory `legacy_settings` kept, and rows in
+ * `allowed_chats` move into the file.
  */
 @Injectable()
 export class HostConfigService implements OnModuleInit {
@@ -79,27 +77,16 @@ export class HostConfigService implements OnModuleInit {
   constructor(
     @Inject(HOST_CONFIG_OPTIONS) private readonly options: HostConfigOptions,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly settings: SettingsService,
     private readonly health: ComponentHealth,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const current = await this.settings.get();
     this.config =
       readHostConfig(this.options.file) ??
-      this.create(current.defaultWorkingDirectory);
+      this.create(await legacyDataFolder(this.dataSource));
     await this.importAllowedChats();
 
-    const folder = await this.checkDataFolder();
-    if (folder !== null && folder !== current.defaultWorkingDirectory) {
-      await this.settings.setDataFolder(folder);
-      this.logger.log(
-        `Data folder is ${folder}` +
-          (current.defaultWorkingDirectory === null
-            ? ''
-            : `, was ${current.defaultWorkingDirectory}`),
-      );
-    }
+    await this.checkDataFolder();
     this.running = { data: this.config.data, settings: this.config.settings };
     this.remember();
     this.reportHealth();
@@ -182,9 +169,19 @@ export class HostConfigService implements OnModuleInit {
     if (workspace === null) return null;
     return {
       workspace,
-      dataFolder: resolveDataFolder(this.running, workspace, true)!,
+      dataFolder: this.dataFolder()!,
       settingsFolder: resolveSettingsFolder(this.running, workspace),
     };
+  }
+
+  /**
+   * The data folder, as it was at startup, since changing it takes a
+   * restart; a workspace always has one, a legacy data directory only when
+   * `config.yaml` names it.
+   */
+  dataFolder(): string | null {
+    const { workspace, base } = this.options;
+    return resolveDataFolder(this.running, base, workspace !== null);
   }
 
   /** The chats Pero serves, in the file's order. */
@@ -218,14 +215,6 @@ export class HostConfigService implements OnModuleInit {
       changed = moveChatId(document, from, to);
     });
     return changed;
-  }
-
-  /** Writes `folder` (absolute) as the data folder, which Pero applies at once. */
-  setDataFolder(folder: string): void {
-    const value = dataFolderValue(folder, this.options.workspace);
-    this.edit((document) => setDataFolder(document, value));
-    this.running = { ...this.running, data: this.config.data };
-    this.reportHealth();
   }
 
   private find(chatKey: string): HostAllowedChat | undefined {
@@ -352,24 +341,24 @@ export class HostConfigService implements OnModuleInit {
   }
 
   /**
-   * The data folder, checked. A workspace's default `data/` is created
+   * Checks the data folder. A workspace's default `data/` is created
    * when missing; any other folder must exist, or startup stops. A legacy
    * data directory only warns, as it did before `config.yaml`.
    */
-  private async checkDataFolder(): Promise<string | null> {
+  private async checkDataFolder(): Promise<void> {
     const { workspace, base, file } = this.options;
     const folder = resolveDataFolder(this.config, base, workspace !== null);
-    if (folder === null) return null;
+    if (folder === null) return;
     if (workspace !== null && folder === join(workspace, DEFAULT_DATA_FOLDER)) {
       mkdirSync(folder, { recursive: true });
     }
     try {
-      return await validateWorkingDirectory(folder);
+      await validateWorkingDirectory(folder);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       if (workspace === null) {
         this.logger.warn(`data in ${file}: ${reason}`);
-        return folder;
+        return;
       }
       throw new ConfigError(`Invalid ${file}:\n  data: ${reason}`);
     }

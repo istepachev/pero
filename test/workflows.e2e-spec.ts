@@ -1,6 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import Database from 'better-sqlite3';
 import type { Chat, User } from 'grammy/types';
@@ -12,6 +19,7 @@ import {
   NotFoundError,
 } from '../src/common/errors.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
+import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
   type ControlClient,
   createControlClient,
@@ -29,6 +37,7 @@ import type { RunView } from '../src/control/protocol.js';
 import { Notification } from '../src/persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js';
 import { Channel } from '../src/persistence/entities/channel.entity.js';
+import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 
@@ -42,21 +51,26 @@ const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('Workflow and Trigger definitions (e2e)', () => {
   let tmp: string;
-  let vault: string;
-  let dataDir: string;
+  let workspace: string;
+  let database: string;
   let client: ControlClient;
   let daemon: Daemon | undefined;
   let api: FakeBotApi;
+  /** Each edit gets a later modification time, whatever the clock. */
+  let clock: number;
 
   beforeEach(async () => {
     api = new FakeBotApi();
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    dataDir = join(tmp, 'pero');
-    vault = join(tmp, 'vault');
-    mkdirSync(vault);
-    client = createControlClient(join(dataDir, 'run', 'pero.sock'));
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    workspace = join(tmp, 'ws');
+    initWorkspace(workspace, tmp);
+    database = join(workspace, '.pero', 'pero.sqlite');
+    clock = Date.parse('2026-01-01T00:00:00Z');
+    await pero();
+    write('Agents/Coach.md', 'You coach.');
+    client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
   });
 
   afterEach(async () => {
@@ -66,9 +80,30 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
+  /** Writes `text` to the note at `file` in the settings folder. */
+  function write(file: string, text: string) {
+    const path = join(workspace, 'data', 'Settings', file);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+    clock += 1_000;
+    utimesSync(path, new Date(clock), new Date(clock));
+  }
+
+  /**
+   * Writes `Pero.md` with `properties`; a topic no note claims goes to the
+   * main Agent. Read at once when Pero runs.
+   */
+  async function pero(properties: string[] = []) {
+    write(
+      'Pero.md',
+      ['---', 'new-topics: main-agent', ...properties, '---', ''].join('\n'),
+    );
+    await daemon?.app.get(SettingsNotes).rescan();
+  }
+
   async function start() {
     daemon = await startDaemon({
-      config: resolveBootstrapConfig({ dataDir, env: {} }),
+      config: resolveBootstrapConfig({ workspace, env: {} }),
       foreground: false,
       // Telegram is the fake Bot API and Agents echo: nothing real runs.
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
@@ -86,10 +121,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     return daemon!.app.get(AgentRuntimes).get('claude') as FakeAgentRuntime;
   }
 
-  /** An enabled Agent `coach` and Workflow `brief` that can be run by hand. */
+  /** A Workflow `brief` of Agent `coach` that can be run by hand. */
   async function manualBrief(maxAttempts?: number) {
-    await client.call('settings.update', { defaultWorkingDirectory: vault });
-    await client.call('agents.create', { name: 'coach' });
     await client.call('workflows.create', {
       name: 'brief',
       agent: 'coach',
@@ -159,13 +192,9 @@ describe('Workflow and Trigger definitions (e2e)', () => {
   }
 
   it('creates, edits, disables, and enables Workflows and their Triggers, keeping them across a restart', async () => {
+    await pero(['timezone: Europe/Berlin']);
+    write('Agents/Editor.md', 'You edit.');
     await start();
-    await client.call('settings.update', {
-      defaultWorkingDirectory: vault,
-      timezone: 'Europe/Berlin',
-    });
-    await client.call('agents.create', { name: 'coach' });
-    await client.call('agents.create', { name: 'editor' });
 
     const created = await client.call('workflows.create', {
       name: 'Evening-Review',
@@ -272,14 +301,8 @@ describe('Workflow and Trigger definitions (e2e)', () => {
   });
 
   it('rejects invalid references and definitions', async () => {
+    write('Agents/Idle.md', '---\nenabled: false\n---\nYou rest.');
     await start();
-    await client.call('settings.update', { defaultWorkingDirectory: vault });
-    await client.call('agents.create', { name: 'coach' });
-    await client.call('agents.create', { name: 'idle' });
-    await client.call('agents.edit', {
-      name: 'idle',
-      change: { enabled: false },
-    });
 
     await expect(
       client.call('workflows.create', {
@@ -370,8 +393,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
 
   it('runs a Workflow by hand through its manual Trigger, away from every Channel', async () => {
     await start();
-    await client.call('settings.update', { defaultWorkingDirectory: vault });
-    await client.call('agents.create', { name: 'coach' });
     await client.call('workflows.create', {
       name: 'brief',
       agent: 'coach',
@@ -424,8 +445,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
 
   it('keeps the history input a Workflow reads, and completes a run with none to read without its Agent', async () => {
     await start();
-    await client.call('settings.update', { defaultWorkingDirectory: vault });
-    await client.call('agents.create', { name: 'coach' });
     await client.call('workflows.create', {
       name: 'english',
       agent: 'coach',
@@ -488,8 +507,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
   it('starts one catch-up run for the times a schedule missed while Pero was down', async () => {
     const HOUR_MS = 60 * 60 * 1000;
     await start();
-    await client.call('settings.update', { defaultWorkingDirectory: vault });
-    await client.call('agents.create', { name: 'coach' });
     await client.call('workflows.create', {
       name: 'hourly',
       agent: 'coach',
@@ -507,7 +524,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     daemon = undefined;
     const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
     const due = new Date(lastHour - 3 * HOUR_MS);
-    const db = new Database(join(dataDir, 'pero.sqlite'));
+    const db = new Database(database);
     db.prepare(
       `UPDATE "schedules" SET "next_run_at" = ? WHERE "workflow_name" = ?`,
     ).run(due.toISOString().replace('T', ' ').replace('Z', ''), 'hourly');
@@ -575,7 +592,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
   it('cancels a run waiting to start at once, and a running one through its runtime', async () => {
     await start();
     await manualBrief();
-    await client.call('settings.update', { maxConcurrentRuns: 1 });
+    await pero(['max-concurrent-runs: 1']);
     await client.call('workflows.create', {
       name: 'other',
       agent: 'coach',
@@ -677,7 +694,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     });
 
     await restart();
-    const db = new Database(join(dataDir, 'pero.sqlite'), { readonly: true });
+    const db = new Database(database, { readonly: true });
     try {
       expect(
         db
@@ -927,9 +944,10 @@ describe('Workflow and Trigger definitions (e2e)', () => {
           `UPDATE "messages" SET "created_at" = datetime('now', '-40 days') WHERE "text" NOT LIKE '%Recent'`,
         );
 
-      expect(
-        await client.call('settings.update', { historyRetentionDays: 30 }),
-      ).toMatchObject({ historyRetentionDays: 30 });
+      await pero(['history-retention-days: 30']);
+      expect(await client.call('settings.get')).toMatchObject({
+        historyRetentionDays: 30,
+      });
       await restart();
 
       await vi.waitFor(async () =>
@@ -938,7 +956,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       expect(
         await client.call('channels.get', { id: channel.id }),
       ).toMatchObject({ messages: 2 });
-      await client.call('settings.update', { historyRetentionDays: null });
+      await pero();
       expect(
         (await client.call('settings.get')).historyRetentionDays,
       ).toBeNull();

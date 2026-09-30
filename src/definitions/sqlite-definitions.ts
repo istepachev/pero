@@ -1,13 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, In } from 'typeorm';
-import { effectiveWorkingDirectory } from '../agents/agent-resolution.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
+import { HostConfigService } from '../host-config/host-config.service.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
@@ -17,91 +11,63 @@ import {
   type Defaults,
   Definitions,
   type Route,
-  type RouteQuery,
   type WorkflowDefinition,
 } from './definitions.js';
+import { readLegacyDefaults } from './legacy-definitions.js';
 
 /**
- * The definitions as the `settings`, `agents`, `workflows`, `triggers`,
- * and `workflow_notification_targets` tables hold them, and a legacy data
- * directory's Channel routes in `legacy_channel_agents`, read afresh on
- * every call. It opens no transaction of its own, so it can be
- * read inside a caller's: on SQLite's one connection, those reads see
- * what the transaction has written.
+ * The Workflows as the `workflows`, `triggers`, and
+ * `workflow_notification_targets` tables hold them, read afresh on every
+ * call; a workspace's notes define the rest. It opens no transaction of
+ * its own, so it can be read inside a caller's: on SQLite's one
+ * connection, those reads see what the transaction has written.
+ *
+ * It is also a legacy data directory's definitions, which have no Agents
+ * until `pero migrate` moves it to a workspace: every Channel is told so,
+ * and the defaults it kept in `legacy_settings` still apply, with the
+ * data folder `config.yaml` names.
  */
 @Injectable()
 export class SqliteDefinitions extends Definitions {
   private readonly logger = new Logger('Definitions');
   private readonly listeners = new Set<() => void>();
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    // Absent where only Workflows are read, as in `pero migrate`.
+    @Optional() private readonly hostConfig?: HostConfigService,
+  ) {
     super();
   }
 
   async defaults(): Promise<Defaults> {
-    return defaultsOf(await this.settings());
+    return {
+      ...(await readLegacyDefaults(this.dataSource)),
+      dataFolder: this.hostConfig?.dataFolder() ?? null,
+    };
   }
 
-  async agent(name: string): Promise<AgentDefinition | null> {
-    const row = await this.dataSource
-      .getRepository(Agent)
-      .findOneBy({ name: name.toLowerCase() });
-    return row === null ? null : agentDefinition(row, await this.settings());
+  agent(): Promise<AgentDefinition | null> {
+    return Promise.resolve(null);
   }
 
-  async agents(): Promise<AgentDefinition[]> {
-    const settings = await this.settings();
-    const rows = await this.dataSource
-      .getRepository(Agent)
-      .find({ order: { name: 'ASC' } });
-    return rows.map((row) => agentDefinition(row, settings));
+  agents(): Promise<AgentDefinition[]> {
+    return Promise.resolve([]);
   }
 
-  async mainAgent(): Promise<AgentDefinition | null> {
-    const settings = await this.settings();
-    if (settings.mainAgentId === null) return null;
-    const row = await this.dataSource
-      .getRepository(Agent)
-      .findOneBy({ id: settings.mainAgentId });
-    return row === null ? null : agentDefinition(row, settings);
+  mainAgent(): Promise<AgentDefinition | null> {
+    return Promise.resolve(null);
   }
 
-  async mainAgentName(): Promise<string | null> {
-    return (await this.mainAgent())?.name ?? null;
+  mainAgentName(): Promise<string | null> {
+    return Promise.resolve(null);
   }
 
-  /**
-   * The Agent a legacy data directory's onboarding or `pero migrate`'s
-   * source assigned `channel` to. A disabled Channel or Agent stays
-   * silent, as it always did.
-   */
-  async route(channel: RouteQuery): Promise<Route> {
-    const row = await this.dataSource
-      .getRepository(LegacyChannelAgent)
-      .findOneBy({ channelId: channel.id });
-    if (row === null) {
-      return {
-        kind: 'unanswered',
-        reason: { kind: 'undefined-agent', agent: null },
-      };
-    }
-    if (!row.enabled) {
-      return { kind: 'unanswered', reason: { kind: 'channel-disabled' } };
-    }
-    const agent = await this.agent(row.agentName);
-    if (agent === null) {
-      return {
-        kind: 'unanswered',
-        reason: { kind: 'undefined-agent', agent: row.agentName },
-      };
-    }
-    if (!agent.enabled) {
-      return {
-        kind: 'unanswered',
-        reason: { kind: 'disabled', agent: agent.name, file: null },
-      };
-    }
-    return { kind: 'agent', agent };
+  route(): Promise<Route> {
+    return Promise.resolve({
+      kind: 'unanswered',
+      reason: { kind: 'legacy' },
+    });
   }
 
   async workflow(name: string): Promise<WorkflowDefinition | null> {
@@ -182,47 +148,6 @@ export class SqliteDefinitions extends Definitions {
     }
     return schedules;
   }
-
-  private settings(): Promise<Settings> {
-    return this.dataSource
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
-  }
-}
-
-/** The defaults the settings row holds. */
-export function defaultsOf(settings: Settings): Defaults {
-  return {
-    provider: settings.defaultProvider,
-    providerDefaults: settings.providerDefaults,
-    permissions: settings.defaultPermissions,
-    timezone: settings.timezone,
-    historyCarryover: settings.historyCarryover,
-    historyRetentionDays: settings.historyRetentionDays,
-    maxConcurrentRuns: settings.maxConcurrentRuns,
-    dataFolder: settings.defaultWorkingDirectory,
-    sharedInstructions: settings.sharedInstructions,
-  };
-}
-
-/** The Agent in row `row`, following the defaults in `settings`. */
-export function agentDefinition(
-  row: Agent,
-  settings: Settings,
-): AgentDefinition {
-  return {
-    name: row.name,
-    title: row.title,
-    provider: row.provider,
-    providerOptions: row.providerOptions,
-    permissions: row.toolPolicy.permissions,
-    workingDirectory: effectiveWorkingDirectory(row, settings),
-    ownWorkingDirectory: row.workingDirectory,
-    instructions: row.instructions,
-    sharedInstructions: row.useSharedInstructions,
-    skipGitRepoCheck: row.codexSkipGitRepoCheck,
-    enabled: row.enabled,
-  };
 }
 
 /**

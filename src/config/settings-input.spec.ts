@@ -34,21 +34,20 @@ describe('telegramBotTokenSchema', () => {
 });
 
 describe('settingsChangeSchema', () => {
-  it('takes settings and the token together, or clears the token', () => {
-    expect(
-      settingsChangeSchema.parse({
-        timezone: 'utc',
-        telegramBotToken: TOKEN,
-      }),
-    ).toEqual({ timezone: 'UTC', telegramBotToken: TOKEN });
+  it('takes the token, or clears it', () => {
+    expect(settingsChangeSchema.parse({ telegramBotToken: TOKEN })).toEqual({
+      telegramBotToken: TOKEN,
+    });
     expect(settingsChangeSchema.parse({ telegramBotToken: null })).toEqual({
       telegramBotToken: null,
     });
   });
 
-  it('refuses unknown fields', () => {
-    expect(() => parseInput(settingsChangeSchema, { token: TOKEN })).toThrow(
-      InvalidInputError,
-    );
+  it('refuses any other setting, which notes and config.yaml hold', () => {
+    for (const change of [{ token: TOKEN }, { timezone: 'UTC' }]) {
+      expect(() => parseInput(settingsChangeSchema, change)).toThrow(
+        InvalidInputError,
+      );
+    }
   });
 });

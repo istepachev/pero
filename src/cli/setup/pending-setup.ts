@@ -17,10 +17,11 @@ export interface PendingSetup {
 }
 
 /**
- * What stands between the daemon and a working installation: the default
- * working directory, the Telegram bot token, a Telegram chat to serve, and
- * sign-in for each provider in use. Providers no Agent uses are left out.
- * Without `chats`, as from a daemon too old to list them, the chat is too.
+ * What stands between the daemon and a working installation: a workspace,
+ * since a legacy data directory has no Agents, the Telegram bot token, a
+ * Telegram chat to serve, and sign-in for each provider in use. Providers
+ * no Agent uses are left out. Without `chats`, as from a daemon too old
+ * to list them, the chat is too.
  */
 export function pendingSetup(
   status: StatusResult,
@@ -28,11 +29,11 @@ export function pendingSetup(
   chats: TelegramChats | null = null,
 ): PendingSetup[] {
   const pending: PendingSetup[] = [];
-  if (settings.defaultWorkingDirectory === null) {
+  if (settings.files === null) {
     pending.push({
-      name: 'default-working-directory',
+      name: 'workspace',
       message:
-        'Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
+        'This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
     });
   }
 

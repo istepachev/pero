@@ -279,7 +279,8 @@ describe('ScheduleTick', () => {
     const sqlTime = (date: Date) =>
       date.toISOString().replace('T', ' ').replace('Z', '');
     const offline = await openDatabase(dataSourceOptions(ws.database));
-    // Channel routes, then schedule state.
+    // Legacy definitions, Channel routes, then schedule state.
+    await offline.undoLastMigration({ transaction: 'each' });
     await offline.undoLastMigration({ transaction: 'each' });
     await offline.undoLastMigration({ transaction: 'each' });
     await offline.query(

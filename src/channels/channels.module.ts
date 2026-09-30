@@ -4,7 +4,6 @@ import { DefinitionsModule } from '../definitions/definitions.module.js';
 import { HistoryModule } from '../history/history.module.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
 import { AgentChannelTurns } from './agent-channel-turns.js';
-import { AgentNamer, SlugAgentNamer } from './agent-namer.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelOnboardingService } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';
@@ -41,7 +40,6 @@ import {
     },
     { provide: ChannelTurns, useClass: AgentChannelTurns },
     { provide: ChannelOnboarding, useClass: ChannelOnboardingService },
-    { provide: AgentNamer, useClass: SlugAgentNamer },
   ],
   exports: [
     ChannelRouter,

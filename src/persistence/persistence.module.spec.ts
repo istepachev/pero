@@ -7,7 +7,6 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUSY_TIMEOUT_MS } from './data-source-options.js';
-import { Settings } from './entities/settings.entity.js';
 import { MIGRATIONS } from './migrations/index.js';
 import { PersistenceModule } from './persistence.module.js';
 
@@ -84,84 +83,47 @@ describe('PersistenceModule', () => {
     });
   });
 
-  it('seeds one settings row with the defaults', async () => {
+  it('keeps the settings row it seeded as legacy_settings', async () => {
     const ds = await start();
 
-    const rows = await ds.getRepository(Settings).find();
-    expect(rows).toEqual([
+    expect(
+      await ds.query(
+        `SELECT "id", "default_provider", "provider_defaults", "timezone", ` +
+          `"max_concurrent_runs" FROM "legacy_settings"`,
+      ),
+    ).toEqual([
       {
         id: 1,
-        defaultProvider: 'claude',
-        providerDefaults: {
-          claude: { model: null, effort: null },
-          codex: { model: null, effort: null },
-        },
-        defaultWorkingDirectory: null,
-        sharedInstructions: null,
-        mainAgentId: null,
-        historyCarryover: 50,
-        historyRetentionDays: null,
-        defaultPermissions: 'ask',
+        default_provider: 'claude',
+        provider_defaults:
+          '{"claude":{"model":null,"effort":null},"codex":{"model":null,"effort":null}}',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        maxConcurrentRuns: 2,
-        createdAt: expect.any(Date),
-        updatedAt: expect.any(Date),
+        max_concurrent_runs: 2,
       },
     ]);
   });
 
-  it('rejects a second row, an unknown provider, and malformed JSON', async () => {
+  it('keeps the checks of the legacy tables', async () => {
     const ds = await start();
 
     await expect(
       ds.query(
-        `INSERT INTO "settings" ("id", "provider_defaults", "timezone") ` +
+        `INSERT INTO "legacy_settings" ("id", "provider_defaults", "timezone") ` +
           `VALUES (2, '{}', 'UTC')`,
       ),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
     });
     await expect(
-      ds.query(`UPDATE "settings" SET "default_provider" = 'gpt'`),
+      ds.query(`UPDATE "legacy_settings" SET "default_provider" = 'gpt'`),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
     });
     await expect(
-      ds.query(`UPDATE "settings" SET "provider_defaults" = '{'`),
+      ds.query(`UPDATE "legacy_settings" SET "main_agent_id" = 42`),
     ).rejects.toMatchObject({
-      driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
+      driverError: { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },
     });
-  });
-
-  it('validates provider defaults on write and read', async () => {
-    const ds = await start();
-    const repo = ds.getRepository(Settings);
-
-    await repo.update(1, {
-      providerDefaults: {
-        claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
-        codex: { model: null, effort: null },
-      },
-    });
-    expect((await repo.findOneByOrFail({ id: 1 })).providerDefaults).toEqual({
-      claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
-      codex: { model: null, effort: null },
-    });
-
-    await expect(
-      repo.update(1, {
-        providerDefaults: {
-          claude: { model: null, effort: 'minimal' as 'low' },
-          codex: { model: null, effort: null },
-        },
-      }),
-    ).rejects.toThrow(/effort/);
-
-    // Valid JSON that the schema rejects fails loudly on read.
-    await ds.query(
-      `UPDATE "settings" SET "provider_defaults" = '{"claude":{"temp":1}}'`,
-    );
-    await expect(repo.findOneByOrFail({ id: 1 })).rejects.toThrow(/temp/);
   });
 
   it('treats a second startup as a no-op', async () => {
@@ -171,7 +133,7 @@ describe('PersistenceModule', () => {
     expect(log).toHaveBeenCalledWith(
       `Applied migration ${MIGRATIONS[0]!.name}`,
     );
-    await ds.getRepository(Settings).update(1, { timezone: 'Europe/Berlin' });
+    await ds.query(`UPDATE "legacy_settings" SET "timezone" = 'Europe/Berlin'`);
     log.mockClear();
 
     ds = await restart();
@@ -180,9 +142,9 @@ describe('PersistenceModule', () => {
       expect.stringMatching(/^Applied migration/),
     );
     expect(await appliedMigrations(ds)).toEqual(applied);
-    const rows = await ds.getRepository(Settings).find();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.timezone).toBe('Europe/Berlin');
+    expect(await ds.query(`SELECT "timezone" FROM "legacy_settings"`)).toEqual([
+      { timezone: 'Europe/Berlin' },
+    ]);
   });
 
   it('reverts every migration cleanly and migrates again', async () => {
@@ -205,6 +167,8 @@ describe('PersistenceModule', () => {
 
     await ds.runMigrations({ transaction: 'each' });
     expect(await tables()).toEqual(migrated);
-    expect(await ds.getRepository(Settings).count()).toBe(1);
+    expect(await ds.query(`SELECT "id" FROM "legacy_settings"`)).toEqual([
+      { id: 1 },
+    ]);
   });
 });

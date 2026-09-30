@@ -27,6 +27,7 @@ import {
   STATE_GITIGNORE,
 } from '../src/config/data-dir.js';
 import { PACKAGE_VERSION } from '../src/common/package-version.js';
+import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import { createControlClient } from '../src/control/client.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 import {
@@ -151,11 +152,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
    * `pero status` once it shows the bot connected to the fake Bot API;
    * degraded while no chat is allowed.
    */
-  async function connectedStatus(root = layout.root): Promise<Result> {
+  async function connectedStatus(
+    target: (...args: string[]) => string[] = withDataDir,
+  ): Promise<Result> {
     let status: Result | undefined;
     await vi.waitFor(
       async () => {
-        status = await pero(['--data-dir', root, 'status']);
+        status = await pero(target('status'));
         expect(status.stdout).toMatch(
           /telegram +(ok|degraded) +Connected as @pero_test_bot(\n|; no chat is allowed yet)/,
         );
@@ -172,10 +175,27 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   ];
 
   /**
-   * The running daemon's control endpoint, which still changes a legacy
-   * data directory's Agents and settings; its CLI names the notes to edit.
+   * Makes `tmp/ws` a workspace, with `notes` by their path in its settings
+   * folder, and the installation the test runs; returns the arguments
+   * that run `pero` there.
    */
-  const control = () => createControlClient(layout.controlSocket);
+  function useWorkspace(
+    notes: Record<string, string> = {},
+  ): (...args: string[]) => string[] {
+    const root = join(realpathSync(tmp), 'ws');
+    initWorkspace(root, tmp);
+    for (const [file, text] of Object.entries(notes)) {
+      writeFileSync(join(root, 'data', 'Settings', file), text);
+    }
+    layout = dataDirLayout(join(root, '.pero'), root);
+    return (...args) => ['-w', root, ...args];
+  }
+
+  /** Restarts the daemon of `target`, which then reads its notes again. */
+  async function restart(target: (...args: string[]) => string[]) {
+    expect((await pero(target('stop'))).code).toBe(0);
+    expect((await pero(target('run'))).code).toBe(0);
+  }
 
   it('runs once, reports status, and stops safely twice', async () => {
     const first = await pero(withDataDir('run'));
@@ -187,7 +207,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(first.stdout).toContain(
       [
         'Setup needed:',
-        '  Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
+        '  This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
@@ -249,7 +269,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
     const show = await pero(withDataDir('settings', 'show'));
     expect(show.code).toBe(0);
-    expect(show.stdout).toMatch(/^telegram-bot-token +set \(secrets\)$/m);
+    expect(show.stdout).toMatch(/^Telegram bot token: set \(secrets\)$/m);
     const secret = join(layout.secrets, 'telegram-bot-token');
     expect(statSync(secret).mode & 0o777).toBe(0o600);
     expect(readFileSync(secret, 'utf8')).toBe(`${TOKEN}\n`);
@@ -508,7 +528,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
 
     // A legacy data directory, running or not, can only be migrated.
-    const legacy = `${layout.root} is a legacy data directory: its Agents and settings can't be changed any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.\n`;
+    const legacy = `${layout.root} is a legacy data directory, which has no Agents any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.\n`;
     expect(await pero(withDataDir('agents', 'create', 'notes'))).toEqual({
       code: 1,
       stdout: '',
@@ -518,11 +538,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(
       await pero(withDataDir('settings', 'set', 'timezone', 'UTC')),
     ).toMatchObject({ code: 1, stderr: legacy });
-    expect((await pero(withDataDir('settings'))).stdout).toMatch(
-      /^timezone +\S+$/m,
+    expect((await pero(withDataDir('settings'))).stdout).toBe(
+      `${legacy}Telegram bot token: not set\n`,
     );
     expect((await pero(withDataDir('status'))).stdout).toContain(
-      "settings  degraded      legacy data directory: its Agents and settings can't be changed; run pero migrate <workspace>",
+      'settings  degraded      legacy data directory: no Agents answer until you run pero migrate <workspace>',
     );
   });
 
@@ -635,8 +655,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   }, 30_000);
 
   it('lists, shows, assigns, disables, and enables Channels, and prints their history', async () => {
-    const channels = (...args: string[]) =>
-      pero(withDataDir('channels', ...args));
+    const ws = useWorkspace({ 'Agents/Chef.md': 'You cook.\n' });
+    const channels = (...args: string[]) => pero(ws('channels', ...args));
     expect(await channels()).toMatchObject({
       code: 1,
       stderr: `${NOT_RUNNING}\n`,
@@ -649,20 +669,16 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       is_forum: true,
     };
     api.chats.set(String(forum.id), forum);
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    mkdirSync(join(tmp, 'vault'));
-    await control().call('settings.update', {
-      defaultWorkingDirectory: join(tmp, 'vault'),
-    });
-    await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
+    expect((await pero(ws('run'))).code).toBe(0);
+    await pero(ws('settings', 'set', 'telegram-bot-token'), {
       input: `${TOKEN}\n`,
     });
-    await connectedStatus();
+    await connectedStatus(ws);
     expect(await channels()).toMatchObject({
       code: 0,
       stdout: expect.stringMatching(/^No Channels yet\. /),
     });
-    await pero(withDataDir('telegram', 'allow', String(forum.id)));
+    await pero(ws('telegram', 'allow', String(forum.id)));
     api.push({
       message: {
         message_id: 1,
@@ -689,9 +705,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toMatch(/^ {2}next turn +starts its first Session$/m);
     expect(show.stdout).toMatch(/^ {2}history +1 message, the latest at /m);
 
-    await control().call('agents.create', { name: 'chef' });
     const described = 'Channel 1 (telegram -1001234567890:42 "Groceries")';
-    // Notes route topics now; a legacy data directory has none to edit.
+    // Notes route topics now.
     for (const args of [
       ['assign', '1', 'chef'],
       ['disable', '1'],
@@ -701,7 +716,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         code: 1,
         stdout: '',
         stderr: expect.stringContaining(
-          'is a legacy data directory: its Agents and settings',
+          "Topics are routed by the Agent notes' topics now",
         ),
       });
     }
@@ -728,18 +743,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     // A Workflow posts its runs to the Channel.
     await pero(
-      withDataDir(
-        'workflows',
-        'create',
-        'brief',
-        '--agent',
-        'chef',
-        '--input',
-        'Go',
-      ),
+      ws('workflows', 'create', 'brief', '--agent', 'chef', '--input', 'Go'),
     );
-    const workflows = (...args: string[]) =>
-      pero(withDataDir('workflows', ...args));
+    const workflows = (...args: string[]) => pero(ws('workflows', ...args));
     expect(await workflows('notify', 'brief', '1')).toEqual({
       code: 0,
       stdout: `Workflow brief now notifies ${described}: each answer, and each run that fails, is posted there.\n`,
@@ -776,18 +782,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('lists, shows, creates, edits, disables, and enables Workflows and their Triggers', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
-    await control().call('settings.update', {
-      defaultWorkingDirectory: vault,
-      timezone: 'Europe/Berlin',
+    const ws = useWorkspace({
+      'Pero.md': '---\ntimezone: Europe/Berlin\n---\n',
+      'Agents/Coach.md': 'You coach.\n',
     });
-    await control().call('agents.create', { name: 'coach' });
-    const workflows = (...args: string[]) =>
-      pero(withDataDir('workflows', ...args));
-    const triggers = (...args: string[]) =>
-      pero(withDataDir('triggers', ...args));
+    expect((await pero(ws('run'))).code).toBe(0);
+    const workflows = (...args: string[]) => pero(ws('workflows', ...args));
+    const triggers = (...args: string[]) => pero(ws('triggers', ...args));
 
     expect(await workflows()).toMatchObject({
       code: 0,
@@ -826,7 +827,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     ).toMatchObject({ code: 1, stderr: 'No Agent named nobody\n' });
     expect(
       await pero(
-        withDataDir(
+        ws(
           'workflows',
           'create',
           'Evening-Review',
@@ -949,10 +950,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '',
       ].join('\n'),
     });
-    await control().call('agents.edit', {
-      name: 'coach',
-      change: { enabled: false },
-    });
+    writeFileSync(
+      join(tmp, 'ws', 'data', 'Settings', 'Agents', 'Coach.md'),
+      '---\nenabled: false\n---\nYou coach.\n',
+    );
+    await restart(ws);
     expect(await workflows('enable', 'evening-review')).toMatchObject({
       code: 0,
       stdout: 'Enabled Workflow evening-review: runs Agent coach, 1 Trigger\n',
@@ -990,16 +992,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it("runs a Workflow by hand and prints the Agent's answer", async () => {
-    const run = await pero(withDataDir('run'), {
+    const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
+    const run = await pero(ws('run'), {
       env: { PERO_FAKE_RUNTIME: 'echo' },
     });
     expect(run.code).toBe(0);
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
-    await control().call('settings.update', { defaultWorkingDirectory: vault });
-    await control().call('agents.create', { name: 'coach' });
     await pero(
-      withDataDir(
+      ws(
         'workflows',
         'create',
         'brief',
@@ -1009,8 +1008,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'Summarize the day.',
       ),
     );
-    const workflows = (...args: string[]) =>
-      pero(withDataDir('workflows', ...args));
+    const workflows = (...args: string[]) => pero(ws('workflows', ...args));
 
     expect(await workflows('run', 'brief')).toMatchObject({
       code: 1,
@@ -1018,7 +1016,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr:
         'Workflow brief has no manual Trigger; add one with pero triggers add brief --manual\n',
     });
-    await pero(withDataDir('triggers', 'add', 'brief', '--manual'));
+    await pero(ws('triggers', 'add', 'brief', '--manual'));
 
     expect(await workflows('run', 'brief')).toEqual({
       code: 0,
@@ -1031,7 +1029,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: '',
     });
 
-    const runs = (...args: string[]) => pero(withDataDir('runs', ...args));
+    const runs = (...args: string[]) => pero(ws('runs', ...args));
     expect(await runs('cancel', '1')).toMatchObject({
       code: 1,
       stderr: 'Run 1 has already finished (completed)\n',
@@ -1067,13 +1065,10 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   it('lists, shows, and retries runs and Notifications', async () => {
     const echo = { env: { PERO_FAKE_RUNTIME: 'echo' } };
-    expect((await pero(withDataDir('run'), echo)).code).toBe(0);
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
-    await control().call('settings.update', { defaultWorkingDirectory: vault });
-    await control().call('agents.create', { name: 'coach' });
+    const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
+    expect((await pero(ws('run'), echo)).code).toBe(0);
     await pero(
-      withDataDir(
+      ws(
         'workflows',
         'create',
         'brief',
@@ -1083,24 +1078,24 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'Summarize the day.',
       ),
     );
-    await pero(withDataDir('triggers', 'add', 'brief', '--manual'));
-    const runs = (...args: string[]) => pero(withDataDir('runs', ...args));
+    await pero(ws('triggers', 'add', 'brief', '--manual'));
+    const runs = (...args: string[]) => pero(ws('runs', ...args));
     const notifications = (...args: string[]) =>
-      pero(withDataDir('notifications', ...args));
+      pero(ws('notifications', ...args));
 
     expect(await runs()).toEqual({
       code: 0,
       stdout: 'No runs yet. pero workflows run <name> starts one by hand.\n',
       stderr: '',
     });
-    expect((await pero(withDataDir('workflows', 'run', 'brief'))).code).toBe(0);
+    expect((await pero(ws('workflows', 'run', 'brief'))).code).toBe(0);
     expect(await runs('retry', '1')).toMatchObject({
       code: 1,
       stderr: 'Run 1 completed; pero workflows run brief starts another\n',
     });
 
     // Run 1 failed, and left a Notification that could not be delivered.
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(ws('stop'))).code).toBe(0);
     const db = new Database(layout.database);
     db.prepare(
       `UPDATE "workflow_runs" SET "status" = 'failed', "result_json" = NULL, ` +
@@ -1115,7 +1110,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         `VALUES (1, 1, 'failed', '{"text":"Run 1 of Workflow brief failed"}', 10, 'Telegram is unreachable')`,
     ).run();
     db.close();
-    expect((await pero(withDataDir('run'), echo)).code).toBe(0);
+    expect((await pero(ws('run'), echo)).code).toBe(0);
 
     const listed = await runs('ls', '--status', 'failed');
     expect(listed.code).toBe(0);
@@ -1195,16 +1190,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('sets the Channel history a Workflow reads, and skips a run with none', async () => {
-    const run = await pero(withDataDir('run'), {
+    const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
+    const run = await pero(ws('run'), {
       env: { PERO_FAKE_RUNTIME: 'echo' },
     });
     expect(run.code).toBe(0);
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
-    await control().call('settings.update', { defaultWorkingDirectory: vault });
-    await control().call('agents.create', { name: 'coach' });
-    const workflows = (...args: string[]) =>
-      pero(withDataDir('workflows', ...args));
+    const workflows = (...args: string[]) => pero(ws('workflows', ...args));
 
     expect(
       await workflows(
@@ -1276,7 +1267,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
 
     await workflows('edit', 'english', '--no-run-when-empty');
-    await pero(withDataDir('triggers', 'add', 'english', '--manual'));
+    await pero(ws('triggers', 'add', 'english', '--manual'));
     expect(await workflows('run', 'english')).toMatchObject({
       code: 0,
       stdout:
@@ -1322,33 +1313,23 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('counts only providers in use and checks sign-in again on run', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const ws = useWorkspace();
+    expect((await pero(ws('run'))).code).toBe(0);
     const pid = readDaemonMetadata(layout.metadataFile)?.pid;
 
     writeFileSync(join(authDir, 'claude'), '');
-    mkdirSync(join(tmp, 'vault'));
-    await control().call('settings.update', {
-      defaultWorkingDirectory: join(tmp, 'vault'),
-    });
-    await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
+    await pero(ws('settings', 'set', 'telegram-bot-token'), {
       input: TOKEN,
     });
-    await pero(withDataDir('telegram', 'allow', '1234'));
+    await pero(ws('telegram', 'allow', '1234'));
 
-    const again = await pero(withDataDir('run'));
+    const again = await pero(ws('run'));
     expect(again).toMatchObject({
       code: 0,
-      stdout: `Pero is already running (pid ${pid}, data directory ${layout.root})\n`,
+      stdout: `Pero is already running (pid ${pid}, workspace ${join(realpathSync(tmp), 'ws')})\n`,
     });
-    const ready = await pero(withDataDir('status'));
-    // Only a legacy data directory's own notice keeps it degraded.
-    expect(ready.stdout).toMatch(/Health +degraded/);
-    expect(
-      ready.stdout
-        .split('\n')
-        .filter((line) => / degraded /.test(line))
-        .map((line) => line.trim().split(/ +/)[0]),
-    ).toEqual(['settings']);
+    const ready = await pero(ws('status'));
+    expect(ready.stdout).toMatch(/Health +ok/);
     expect(ready.stdout).toMatch(/claude +ok +Signed in \(claude\.ai, pro\)/);
     expect(ready.stdout).toContain(
       'codex     unconfigured  Not signed in — run codex login (on a headless host: codex login --device-auth) (not in use)',
@@ -1356,14 +1337,18 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(ready.stdout).not.toContain('owner@example.com');
 
     // Codex becomes the provider in use; Claude no longer counts.
-    await control().call('settings.update', { defaultProvider: 'codex' });
-    const switched = await pero(withDataDir('run'));
+    writeFileSync(
+      join(tmp, 'ws', 'data', 'Settings', 'Pero.md'),
+      '---\nprovider: codex\n---\n',
+    );
+    expect((await pero(ws('stop'))).code).toBe(0);
+    const switched = await pero(ws('run'));
     expect(switched.stdout).toContain(
       '  codex: Not signed in — run codex login (on a headless host: codex login --device-auth), then pero run to check again',
     );
     expect(switched.stdout).not.toContain('claude:');
     // Required now: no longer marked not in use.
-    expect((await pero(withDataDir('status'))).stdout).toContain(
+    expect((await pero(ws('status'))).stdout).toContain(
       'codex     unconfigured  Not signed in — run codex login (on a headless host: codex login --device-auth)\n',
     );
   });
@@ -1766,24 +1751,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   it('restores a backup into a fresh data directory that starts with the same records', async () => {
     const cwd = realpathSync(tmp);
     const vault = join(cwd, 'vault');
-    const own = join(cwd, 'own');
     mkdirSync(vault);
-    mkdirSync(own);
+    mkdirSync(layout.root, { recursive: true });
+    writeFileSync(layout.configFile, `data: ${vault}\n`);
     const file = join(cwd, 'backup.tgz');
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
     expect((await pero(withDataDir('run'))).code).toBe(0);
-    await control().call('agents.create', {
-      name: 'coder',
-      workingDirectory: own,
-    });
-    await control().call('settings.update', {
-      defaultWorkingDirectory: vault,
-      timezone: 'Europe/Lisbon',
-      providerDefaults: { claude: { model: 'claude-opus-5-5' } },
-      historyCarryover: 20,
-      sharedInstructions: 'Be brief.',
-    });
     const set = await pero(
       withDataDir('settings', 'set', 'telegram-bot-token'),
       {
@@ -1811,7 +1785,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect((await pero(withDataDir('stop'))).code).toBe(0);
 
-    rmSync(own, { recursive: true });
+    rmSync(vault, { recursive: true });
     const restore = await pero(['--data-dir', restored.root, 'restore', file], {
       nodeArgs,
     });
@@ -1823,16 +1797,19 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
             `Start it with pero run --data-dir ${escape(restored.root)}\\n$`,
         ),
       ),
-      stderr: `Warning: ${own}, the working directory of Agent coder, is missing; restore it from your own backup of the working folders\n`,
+      stderr: `Warning: ${vault}, the default working directory, is missing; restore it from your own backup of the working folders\n`,
     });
-    mkdirSync(own);
+    mkdirSync(vault);
 
     const run = await pero(['--data-dir', restored.root, 'run']);
     expect(run.code).toBe(0);
     const after = await pero(['--data-dir', restored.root, 'settings']);
-    expect(after).toEqual(before);
+    expect(after).toEqual({
+      ...before,
+      stdout: before.stdout.replace(layout.root, restored.root),
+    });
     // The restored token connects the bot.
-    await connectedStatus(restored.root);
+    await connectedStatus((...args) => ['--data-dir', restored.root, ...args]);
     expect((await pero(['--data-dir', restored.root, 'stop'])).code).toBe(0);
 
     expect(dumpTables(restored.database)).toEqual(dumpTables(layout.database));

@@ -287,40 +287,15 @@ describe('Agents from notes (e2e)', () => {
     ).toEqual([['Groceries', 'pantry']]);
   });
 
-  it('refuses to change Agents and settings in the database, naming the note', async () => {
+  it('takes only the bot token as a setting, and no Agent changes', async () => {
     await start();
     await expect(
-      client.call('agents.create', { name: 'garden' }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'Agents are configured in notes now: add data/Settings/Agents/garden.md (Agents/_Template.md shows the properties).',
-      ),
-    );
-    await expect(
-      client.call('agents.edit', {
-        name: 'pantry',
-        change: { enabled: false },
-      }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'Agents are configured in notes now: set enabled: false in data/Settings/Agents/Pantry.md.',
-      ),
-    );
-    await expect(
       client.call('settings.update', {
-        providerDefaults: { codex: { effort: 'high' } },
-      }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'Settings are in notes now: set codex-effort in data/Settings/Pero.md.',
-      ),
-    );
+        timezone: 'UTC',
+      } as never),
+    ).rejects.toThrow(InvalidInputError);
     await expect(
-      client.call('settings.update', { defaultWorkingDirectory: tmp }),
-    ).rejects.toThrow(
-      new InvalidInputError(
-        'The data folder is set in config.yaml now: set data in .pero/config.yaml, then restart Pero.',
-      ),
-    );
+      client.call('agents.create' as never, { name: 'garden' } as never),
+    ).rejects.toThrow(/agents\.create/);
   });
 });
