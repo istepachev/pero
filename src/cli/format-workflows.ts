@@ -62,12 +62,11 @@ export function formatWorkflowDetails(workflow: WorkflowDetails): string {
     lines.push(
       'Notifies',
       ...table([
-        ['ID', 'CHANNEL', 'TITLE', 'STATE'],
+        ['ID', 'CHANNEL', 'TITLE'],
         ...workflow.targets.map((target) => [
           String(target.id),
           `${target.integrationKind} ${target.key}`,
           target.title ?? '—',
-          state(target.enabled),
         ]),
       ]).map((row) => `  ${row}`),
     );
@@ -90,17 +89,9 @@ export function formatNotify(
       ? `Workflow ${workflow.name} no longer notifies ${channel}.`
       : `Workflow ${workflow.name} did not notify ${channel}.`;
   }
-  const lines = [
-    changed
-      ? `Workflow ${workflow.name} now notifies ${channel}: each answer, and each run that fails, is posted there.`
-      : `Workflow ${workflow.name} already notifies ${channel}.`,
-  ];
-  if (target !== undefined && !target.enabled) {
-    lines.push(
-      `Note: ${channel} is disabled, so its Agent does not answer there; pero channels enable ${channelId} turns it back on.`,
-    );
-  }
-  return lines.join('\n');
+  return changed
+    ? `Workflow ${workflow.name} now notifies ${channel}: each answer, and each run that fails, is posted there.`
+    : `Workflow ${workflow.name} already notifies ${channel}.`;
 }
 
 /** `pero triggers ls`: one row per Trigger. */

@@ -6,7 +6,6 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -22,7 +21,6 @@ describe('SessionService', () => {
   let moduleRef: TestingModule;
   let ds: DataSource;
   let sessions: SessionService;
-  let agentId: number;
   let channelId: number;
 
   beforeEach(async () => {
@@ -43,7 +41,6 @@ describe('SessionService', () => {
     await moduleRef
       .get(SettingsService)
       .update({ defaultWorkingDirectory: vault });
-    agentId = (await moduleRef.get(AgentsService).create({ name: 'main' })).id;
     const channels = ds.getRepository(Channel);
     channelId = (
       await channels.save(
@@ -52,7 +49,6 @@ describe('SessionService', () => {
           externalKey: '1234',
           address: { chatId: '1234' },
           title: null,
-          agentId,
         }),
       )
     ).id;

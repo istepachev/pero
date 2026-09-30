@@ -54,7 +54,6 @@ const english: NotificationTargetView = {
   integrationKind: 'telegram',
   key: '-100777:7',
   title: 'English',
-  enabled: true,
 };
 
 describe('Workflow formatting', () => {
@@ -118,9 +117,9 @@ describe('Workflow formatting', () => {
         '  4   manual                    —                 disabled',
         '',
         'Notifies',
-        '  ID  CHANNEL             TITLE    STATE',
-        '  5   telegram -100777:7  English  enabled',
-        '  9   telegram 1234       —        enabled',
+        '  ID  CHANNEL             TITLE',
+        '  5   telegram -100777:7  English',
+        '  9   telegram 1234       —',
       ].join('\n'),
     );
   });
@@ -175,16 +174,6 @@ describe('Workflow formatting', () => {
     );
     expect(formatNotify(notifying, 5, true, false)).toBe(
       'Workflow evening-review already notifies Channel 5 (telegram -100777:7 "English").',
-    );
-    expect(
-      formatNotify(
-        { ...notifying, targets: [{ ...english, enabled: false }] },
-        5,
-        true,
-        true,
-      ).split('\n')[1],
-    ).toBe(
-      'Note: Channel 5 (telegram -100777:7 "English") is disabled, so its Agent does not answer there; pero channels enable 5 turns it back on.',
     );
     expect(formatNotify(none, 5, false, true)).toBe(
       'Workflow evening-review no longer notifies Channel 5.',

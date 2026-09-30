@@ -581,10 +581,18 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '  state                enabled',
         '  main agent           no',
         '',
-        'No Channel is assigned to it yet.',
+        'No Channel goes to it yet.',
         '',
       ].join('\n'),
     );
+    expect(await ws('channels', 'assign', '3', 'coach')).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        "Topics are routed by the Agent notes' topics now: add the topic's " +
+        'title to topics in data/Settings/Agents/Home/Coach.md; pero ' +
+        "channels ls shows each topic's title and who answers there.\n",
+    });
     expect(await ws('agents', 'show', 'broken')).toMatchObject({
       code: 1,
       stderr:
@@ -671,8 +679,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await channels()).toEqual({
       code: 0,
       stdout:
-        'ID  CHANNEL                     TITLE      AGENT      STATE\n' +
-        '1   telegram -1001234567890:42  Groceries  groceries  enabled\n',
+        'ID  CHANNEL                     TITLE      AGENT\n' +
+        '1   telegram -1001234567890:42  Groceries  groceries\n',
       stderr: '',
     });
     const show = await channels('show', '1');
@@ -683,23 +691,20 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     await control().call('agents.create', { name: 'chef' });
     const described = 'Channel 1 (telegram -1001234567890:42 "Groceries")';
-    expect(await channels('assign', '1', 'chef')).toMatchObject({
-      code: 0,
-      stdout: `${described} now talks to Agent chef.\nIts next turn starts a fresh Session.\n`,
-    });
-    expect(await channels('assign', '1', 'chef')).toMatchObject({
-      code: 0,
-      stdout: `${described} already talks to Agent chef.\n`,
-    });
-    expect(await channels('disable', '1')).toMatchObject({
-      code: 0,
-      stdout: `Disabled ${described}. Its messages are ignored until pero channels enable 1.\n`,
-    });
-    expect((await channels('ls')).stdout).toMatch(/ chef +disabled\n$/);
-    expect(await channels('enable', '1')).toMatchObject({
-      code: 0,
-      stdout: `Enabled ${described}: it talks to Agent chef.\n`,
-    });
+    // Notes route topics now; a legacy data directory has none to edit.
+    for (const args of [
+      ['assign', '1', 'chef'],
+      ['disable', '1'],
+      ['enable', '1'],
+    ]) {
+      expect(await channels(...args)).toMatchObject({
+        code: 1,
+        stdout: '',
+        stderr: expect.stringContaining(
+          'is a legacy data directory: its Agents and settings',
+        ),
+      });
+    }
 
     const history = await channels('history', '1', '-n', '5');
     expect(history.code).toBe(0);
@@ -719,10 +724,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await channels('show', '9')).toMatchObject({
       code: 1,
       stderr: 'No Channel with ID 9\n',
-    });
-    expect(await channels('assign', '1', 'nobody')).toMatchObject({
-      code: 1,
-      stderr: 'No Agent named nobody\n',
     });
 
     // A Workflow posts its runs to the Channel.
@@ -751,8 +752,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await workflows('show', 'brief')).stdout).toContain(
       [
         'Notifies',
-        '  ID  CHANNEL                     TITLE      STATE',
-        '  1   telegram -1001234567890:42  Groceries  enabled',
+        '  ID  CHANNEL                     TITLE',
+        '  1   telegram -1001234567890:42  Groceries',
       ].join('\n'),
     );
     expect(await workflows('notify', 'brief', '1', '--remove')).toMatchObject({
@@ -1106,8 +1107,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         `"error_text" = 'The model is overloaded' WHERE "id" = 1`,
     ).run();
     db.prepare(
-      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "title", "agent_id") ` +
-        `VALUES ('telegram', '-100:7', '{"chatId":"-100","topicId":7}', 'English', 1)`,
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "title") ` +
+        `VALUES ('telegram', '-100:7', '{"chatId":"-100","topicId":7}', 'English')`,
     ).run();
     db.prepare(
       `INSERT INTO "notifications" ("workflow_run_id", "channel_id", "status", "payload", "attempt", "last_error") ` +

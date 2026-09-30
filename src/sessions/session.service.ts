@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
+import { type DataSource, type EntityManager, Not } from 'typeorm';
 import type { ResolvedAgent } from '../agents/agent-resolution.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
@@ -79,16 +79,21 @@ export class SessionService {
   }
 
   /**
-   * Closes the Channel's active Sessions inside the caller's transaction,
-   * as when it is assigned another Agent: its next turn starts a fresh one.
+   * Closes the Channel's active Sessions of Agents other than `agentName`
+   * inside the caller's transaction, as when the Channel goes to that
+   * Agent now: going back to one of them later starts a fresh Session.
    */
-  async closeActiveWithin(
+  async closeOthersWithin(
     manager: EntityManager,
     channelId: number,
+    agentName: string,
   ): Promise<void> {
     await manager
       .getRepository(Session)
-      .update({ channelId, status: 'active' }, { status: 'closed' });
+      .update(
+        { channelId, status: 'active', agentName: Not(agentName) },
+        { status: 'closed' },
+      );
   }
 
   /** Records the provider's ID for `session` when it changed. */

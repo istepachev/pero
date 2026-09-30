@@ -24,6 +24,7 @@ import {
 } from '../src/control/client.js';
 import type { RunDetails } from '../src/control/protocol.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
+import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import {
   type RuntimeRequest,
@@ -286,10 +287,11 @@ describe('Restore drill (e2e)', () => {
       workingDirectory: own,
       codexSkipGitRepoCheck: true,
     });
-    await client.call('channels.assign', {
-      id: await channelId(FORUM, KITCHEN),
-      agent: 'coder',
-    });
+    // Where a 0.1 installation's pero channels assign put it.
+    await daemon!.app
+      .get<DataSource>(getDataSourceToken())
+      .getRepository(LegacyChannelAgent)
+      .update(await channelId(FORUM, KITCHEN), { agentName: 'coder' });
     for (const [chat, topic] of CHANNELS) {
       expect(await say(chat, topic, 'Hello')).toBe('echo: Hello');
     }
@@ -422,11 +424,11 @@ describe('Restore drill (e2e)', () => {
   it('restores a workspace into a fresh clone of it, with its data folder', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, tmp);
-    // Until onboarding writes notes (plan step 8.3), a topic's Agent needs
-    // one to answer.
+    // Until onboarding writes notes (plan step 8.3), a topic is answered
+    // only by an Agent whose note claims it.
     writeFileSync(
       join(ws, 'data', 'Settings', 'Agents', 'English.md'),
-      'You teach English.\n',
+      '---\ntopics: English\n---\nYou teach English.\n',
     );
     await start(join(ws, '.pero'), ws);
     await client.call('settings.update', { telegramBotToken: TOKEN });

@@ -670,7 +670,6 @@ describe('Workflow Runs and the executor', () => {
   describe('notifications', () => {
     /** A Channel `workflow` notifies. */
     async function target(workflow: string, key = '1234'): Promise<number> {
-      const coach = await agents.get('coach');
       const channels = ds.getRepository(Channel);
       const { id } = await channels.save(
         channels.create({
@@ -678,7 +677,6 @@ describe('Workflow Runs and the executor', () => {
           externalKey: key,
           address: { chatId: key },
           title: null,
-          agentId: coach.id,
         }),
       );
       await workflows.notify(workflow, id);

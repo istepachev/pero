@@ -150,7 +150,7 @@ describe('formatAgentDetails in a workspace', () => {
         'Its note has errors, so its last good version is in use:',
         '  effort: must be low, medium, high, xhigh, or max for claude',
         '',
-        'No Channel is assigned to it yet.',
+        'No Channel goes to it yet.',
       ].join('\n'),
     );
   });
@@ -167,7 +167,6 @@ describe('formatAgentDetails', () => {
           integrationKind: 'telegram',
           key: '-1001:12',
           title: 'Code',
-          enabled: true,
           nextTurn: resume,
         },
         {
@@ -175,7 +174,6 @@ describe('formatAgentDetails', () => {
           integrationKind: 'telegram',
           key: '-1001:14',
           title: null,
-          enabled: false,
           nextTurn: {
             kind: 'fresh',
             reason: 'provider',
@@ -203,18 +201,18 @@ describe('formatAgentDetails', () => {
         'Warning: Working directory /srv/code does not exist',
         '',
         'Channels',
-        '  ID  CHANNEL            TITLE         NEXT TURN',
-        '  3   telegram -1001:12  Code          resumes Session 4',
-        "  5   telegram -1001:14  — (disabled)  fresh Session: provider was claude, with the Channel's recent messages",
+        '  ID  CHANNEL            TITLE  NEXT TURN',
+        '  3   telegram -1001:12  Code   resumes Session 4',
+        "  5   telegram -1001:14  —      fresh Session: provider was claude, with the Channel's recent messages",
       ].join('\n'),
     );
   });
 
-  it('says when no Channel is assigned', () => {
+  it('says when no Channel goes to it', () => {
     expect(
       formatAgentDetails({ ...notes, channels: [], folderProblem: null }),
     ).toMatch(
-      /main agent +yes: General topics and direct chats\n\nNo Channel is assigned to it yet\.$/,
+      /main agent +yes: General topics and direct chats\n\nNo Channel goes to it yet\.$/,
     );
   });
 });

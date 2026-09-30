@@ -9,6 +9,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { NotFoundError } from '../common/errors.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -177,17 +178,47 @@ describe('SqliteDefinitions', () => {
       expect(await definitions.mainAgentName()).toBe('notes');
     });
 
-    it('maps row IDs and names both ways', async () => {
-      const id = (await ids.findAgentId('Coder'))!;
-      expect(await ids.agentName(id)).toBe('coder');
-      expect(await ids.findAgentId('nobody')).toBeNull();
-      expect(await ids.agentNames()).toEqual(
-        new Map([
-          [id, 'coder'],
-          [(await ids.findAgentId('notes'))!, 'notes'],
-        ]),
+    it('routes a Channel to the Agent its legacy row names', async () => {
+      const ds = moduleRef.get<DataSource>(getDataSourceToken());
+      const channels = ds.getRepository(Channel);
+      const saved = await channels.save(
+        ['1', '2', '3', '4', '5'].map((key) =>
+          channels.create({
+            integrationKind: 'telegram',
+            externalKey: `-100:${key}`,
+            address: { chatId: '-100', topicId: key },
+            title: null,
+          }),
+        ),
       );
-      await expect(ids.agentName(999)).rejects.toThrow(NotFoundError);
+      const [coder, disabledChannel, disabledAgent, gone, none] = saved.map(
+        (channel) => ({ id: channel.id, primary: false, title: null }),
+      );
+      await agents.edit('notes', { enabled: false });
+      await ds.getRepository(LegacyChannelAgent).insert([
+        { channelId: coder!.id, agentName: 'coder' },
+        { channelId: disabledChannel!.id, agentName: 'coder', enabled: false },
+        { channelId: disabledAgent!.id, agentName: 'notes' },
+        { channelId: gone!.id, agentName: 'nobody' },
+      ]);
+
+      expect(await definitions.route(coder!)).toMatchObject({
+        kind: 'agent',
+        agent: { name: 'coder' },
+      });
+      expect(await definitions.route(disabledChannel!)).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'channel-disabled' },
+      });
+      expect(await definitions.route(disabledAgent!)).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'disabled', agent: 'notes', file: null },
+      });
+      expect(await definitions.route(gone!)).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'undefined-agent', agent: 'nobody' },
+      });
+      expect((await definitions.route(none!)).kind).toBe('unanswered');
     });
   });
 
@@ -200,7 +231,6 @@ describe('SqliteDefinitions', () => {
       await agents.create({ name: 'coach' });
       const ds = moduleRef.get<DataSource>(getDataSourceToken());
       const channels = ds.getRepository(Channel);
-      const agentId = (await ids.findAgentId('coach'))!;
       [direct, english] = (
         await channels.save([
           channels.create({
@@ -208,14 +238,12 @@ describe('SqliteDefinitions', () => {
             externalKey: '1234',
             address: { chatId: '1234' },
             title: null,
-            agentId,
           }),
           channels.create({
             integrationKind: 'telegram',
             externalKey: '-100777:7',
             address: { chatId: '-100777', topicId: '7' },
             title: 'English',
-            agentId,
           }),
         ])
       ).map((channel) => channel.id);
@@ -365,14 +393,12 @@ describe('SqliteDefinitions', () => {
     await agents.create({ name: 'coach' });
     const ds = moduleRef.get<DataSource>(getDataSourceToken());
     const channels = ds.getRepository(Channel);
-    const agentId = (await ids.findAgentId('coach'))!;
     const { id: channel } = await channels.save(
       channels.create({
         integrationKind: 'telegram',
         externalKey: '1234',
         address: { chatId: '1234' },
         title: null,
-        agentId,
       }),
     );
     const listener = vi.fn();

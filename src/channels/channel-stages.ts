@@ -1,7 +1,9 @@
-import type { DefinitionIds } from '../definitions/definition-ids.js';
-import type {
-  AgentDefinition,
-  Definitions,
+import {
+  type AgentDefinition,
+  type Definitions,
+  type Route,
+  routeQuery,
+  type Unanswered,
 } from '../definitions/definitions.js';
 import type { Channel } from '../persistence/entities/channel.entity.js';
 import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
@@ -12,26 +14,93 @@ import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
  * ones.
  */
 
-/** A known, enabled Channel with its assigned Agent. */
-export type RoutedChannel = Omit<Channel, 'agent'> & { agent: AgentDefinition };
+/** A known Channel with the enabled Agent that answers there now. */
+export type RoutedChannel = Channel & { agent: AgentDefinition };
 
-/**
- * The Agent assigned to `channel`: its name, and its definition, which is
- * null when there is none, as for an Agent onboarding created in a
- * workspace that no note defines.
- */
-export async function assignedAgent(
-  channel: Pick<Channel, 'agentId'>,
+/** Who answers in `channel` now. */
+export function routeOf(
+  channel: Pick<Channel, 'id' | 'externalKey' | 'title'>,
   definitions: Definitions,
-  ids: DefinitionIds,
-): Promise<{ name: string; agent: AgentDefinition | null }> {
-  const name = await ids.agentName(channel.agentId);
-  return { name, agent: await definitions.agent(name) };
+): Promise<Route> {
+  return definitions.route(routeQuery(channel));
 }
 
-/** Why a Channel whose Agent has no definition gets no answer. */
-export function undefinedAgentHint(name: string): string {
-  return `Agent ${name} has no note; add Agents/${name}.md to the settings folder`;
+/**
+ * What Pero replies, once, in a Channel no one answers in: why, and what
+ * to edit. Null where it stays silent, as a legacy data directory always
+ * did.
+ */
+export function unansweredText(reason: Unanswered): string | null {
+  switch (reason.kind) {
+    case 'disabled':
+      return reason.file === null
+        ? null
+        : `Agent ${reason.agent} is disabled, so no one answers here. ` +
+            `To turn it back on, set enabled: true in ${reason.file}.`;
+    case 'conflict':
+      return (
+        `No one answers in this topic: ${together(reason.files)} claim ` +
+        `"${reason.title}" in their topics. Keep it in only one of them.`
+      );
+    case 'unloaded':
+      return (
+        `No one answers in this topic yet: ${together(reason.files)} ` +
+        `${reason.files.length === 1 ? 'claims' : 'claim'} "${reason.title}" ` +
+        `but ${reason.files.length === 1 ? 'has' : 'have'} errors, so ` +
+        `${reason.files.length === 1 ? "it hasn't" : "they haven't"} loaded. ` +
+        `Run pero check on the Pero host to see them.`
+      );
+    case 'unclaimed':
+      return (
+        `No Agent answers in this topic: none lists "${reason.title}" in its ` +
+        `topics. Add it to an Agent note's topics, or create ${reason.note} ` +
+        `with topics: [${reason.title}].`
+      );
+    case 'untitled':
+      return (
+        `Pero doesn't know this topic's title yet, so no Agent can claim it. ` +
+        `Rename the topic, or send a message that isn't a reply, and Pero ` +
+        `will pick up its title.`
+      );
+    case 'no-main-agent':
+      return (
+        `No one answers here: no note defines the main Agent, ` +
+        `${reason.agent}. Add ${reason.note}.`
+      );
+    case 'undefined-agent':
+    case 'channel-disabled':
+      return null;
+  }
+}
+
+/** Why no one answers in a Channel, for the log and `pero channels`. */
+export function unansweredSummary(reason: Unanswered): string {
+  switch (reason.kind) {
+    case 'disabled':
+      return `Agent ${reason.agent} is disabled`;
+    case 'conflict':
+      return `"${reason.title}" is claimed by ${together(reason.files)}`;
+    case 'unloaded':
+      return `"${reason.title}" is claimed only by ${together(reason.files)}, which ${reason.files.length === 1 ? 'has' : 'have'} errors`;
+    case 'unclaimed':
+      return `no Agent claims "${reason.title}"`;
+    case 'untitled':
+      return "the topic's title isn't known yet";
+    case 'no-main-agent':
+      return `no note defines the main Agent, ${reason.agent}; add ${reason.note}`;
+    case 'undefined-agent':
+      return reason.agent === null
+        ? 'the Channel has no Agent'
+        : `Agent ${reason.agent} is not defined`;
+    case 'channel-disabled':
+      return 'the Channel is disabled';
+  }
+}
+
+/** `files` in a sentence: `a`, `a and b`, or `a, b, and c`. */
+function together(files: readonly string[]): string {
+  if (files.length <= 2) return files.join(' and ');
+  return `${files.slice(0, -1).join(', ')}, and ${files.at(-1)}`;
 }
 
 /** Runs a turn of a known Channel's Agent. */
@@ -61,9 +130,7 @@ export abstract class ChannelOnboarding {
    * Resolves to the Channel it now has, which the message goes on to, or
    * null when none could be set up yet.
    */
-  abstract onUnknownChannel(
-    message: InboundMessage,
-  ): Promise<RoutedChannel | null>;
+  abstract onUnknownChannel(message: InboundMessage): Promise<Channel | null>;
 
   /** Any event from an allowed chat. */
   abstract onEvent(event: ChannelEvent): Promise<void>;

@@ -13,6 +13,8 @@ import {
 import {
   type AgentAction,
   agentHint,
+  type ChannelAction,
+  channelHint,
   type ConfigurationFiles,
   findAgentNote,
   legacyHint,
@@ -23,7 +25,8 @@ import { scanSettingsFolder } from '../settings-files/scan.js';
 import { CliError } from './errors.js';
 
 /*
- * The commands that changed Agents and settings, now that notes hold them:
+ * The commands that changed Agents, settings, and which Agent answers in
+ * a Channel, now that notes hold them:
  * they say which file to edit and exit 1, whether or not Pero runs.
  */
 
@@ -67,6 +70,28 @@ export async function agentStub(
     name,
   );
   throw new CliError(agentHint(action, name, note, files));
+}
+
+/**
+ * `pero channels <action>`: names the note to edit instead; for `assign`,
+ * the note of Agent `agent`.
+ */
+export async function channelStub(
+  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  action: ChannelAction,
+  agent: string | null,
+): Promise<never> {
+  const files = configurationFiles(config);
+  const note =
+    agent === null
+      ? null
+      : findAgentNote(
+          (await scanSettingsFolder(files.settingsFolder)).map(
+            (entry) => entry.file,
+          ),
+          agent,
+        );
+  throw new CliError(channelHint(action, agent, note, files));
 }
 
 /**

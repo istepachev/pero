@@ -13,6 +13,7 @@ import { Agent } from './agent.entity.js';
 import { AllowedChat } from './allowed-chat.entity.js';
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
+import { LegacyChannelAgent } from './legacy-channel-agent.entity.js';
 import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
 import { ScheduleState } from './schedule-state.entity.js';
@@ -28,6 +29,7 @@ const DOMAIN_TABLES = [
   'allowed_chats',
   'channels',
   'inbound_updates',
+  'legacy_channel_agents',
   'messages',
   'notifications',
   'schedules',
@@ -60,7 +62,11 @@ async function seed(ds: DataSource) {
     externalKey: `${CHAT_ID}:7`,
     address: { chatId: CHAT_ID, messageThreadId: '7' },
     title: 'Groceries',
-    agentId: agent.id,
+  });
+  const route = await ds.getRepository(LegacyChannelAgent).save({
+    channelId: channel.id,
+    agentName: agent.name,
+    enabled: true,
   });
   const session = await ds.getRepository(Session).save({
     agentName: agent.name,
@@ -139,6 +145,7 @@ async function seed(ds: DataSource) {
     message,
     allowedChat,
     channel,
+    route,
     session,
     workflow,
     trigger,
@@ -157,6 +164,7 @@ async function readAll(ds: DataSource) {
     agents: await ds.getRepository(Agent).find(),
     allowedChats: await ds.getRepository(AllowedChat).find(),
     channels: await ds.getRepository(Channel).find(),
+    routes: await ds.getRepository(LegacyChannelAgent).find(),
     sessions: await ds.getRepository(Session).find(),
     workflows: await ds.getRepository(Workflow).find(),
     triggers: await ds.getRepository(Trigger).find(),
@@ -207,10 +215,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, default permissions, message history,
     // the allowlist, the Session resume migration, then the domain tables.
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 13; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -232,10 +240,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, the allowlist, then the Session resume migration.
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 12; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -277,10 +285,10 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, message
     // history, then the allowlist.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 11; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -317,10 +325,10 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // Workflow history, attempts, skipped counts, default permissions, then
     // message history.
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 10; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -350,9 +358,9 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 9; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -389,8 +397,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -425,8 +434,9 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -479,8 +489,9 @@ describe('domain entities', () => {
       },
     });
 
-    // Schedule state, names in state, history retention, Notification delivery,
+    // Channel routes, schedule state, names in state, history retention, Notification delivery,
     // then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -519,8 +530,9 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
-    // Schedule state, names in state, history retention, then Notification
+    // Channel routes, schedule state, names in state, history retention, then Notification
     // delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -568,7 +580,8 @@ describe('domain entities', () => {
       historyRetentionDays: 30,
     });
 
-    // Schedule state, names in state, then history retention.
+    // Channel routes, schedule state, names in state, then history retention.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -595,7 +608,7 @@ describe('domain entities', () => {
     // 0.1.0 shipped every migration up to history retention.
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -2),
+      migrations: MIGRATIONS.slice(0, -3),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -662,6 +675,9 @@ describe('domain entities', () => {
     expect(
       await db.query(`SELECT "id", "name", "agent_name" FROM "workflows"`),
     ).toEqual([{ id: 1, name: 'brief', agent_name: 'main' }]);
+    expect(await db.getRepository(LegacyChannelAgent).find()).toEqual([
+      { channelId: 1, agentName: 'coach', enabled: true },
+    ]);
     expect(await db.getRepository(Notification).count()).toBe(1);
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
 
@@ -680,7 +696,8 @@ describe('domain entities', () => {
     const db = await open();
     const { agent, session, message, workflow, run } = await seed(db);
 
-    // Schedule state, then names in state.
+    // Channel routes, schedule state, then names in state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = async (table: string) =>
@@ -729,7 +746,7 @@ describe('domain entities', () => {
   it('moves the times of enabled schedules into their own table', async () => {
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -1),
+      migrations: MIGRATIONS.slice(0, -2),
     });
     const trigger = (
       cron: string,
@@ -787,6 +804,8 @@ describe('domain entities', () => {
     const db = await open();
     const { trigger, schedule } = await seed(db);
 
+    // Channel routes, then schedule state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     expect(await tables(db)).not.toContain('schedules');
     expect(
@@ -810,6 +829,76 @@ describe('domain entities', () => {
         lastRunAt: schedule.lastRunAt,
       }),
     ]);
+  });
+
+  it("moves each Channel's Agent and state into the legacy table", async () => {
+    const old = await openDatabase({
+      ...dataSourceOptions(database),
+      migrations: MIGRATIONS.slice(0, -1),
+    });
+    const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
+    const agentValues = (name: string) =>
+      `'${name}', 'claude', '{"model":null,"effort":null}', '{"permissions":"ask"}'`;
+    for (const sql of [
+      `INSERT INTO "agents" (${agentColumns}) VALUES (${agentValues('main')})`,
+      `INSERT INTO "agents" (${agentColumns}) VALUES (${agentValues('coach')})`,
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "title", "agent_id") ` +
+        `VALUES ('telegram', '42', '{"chatId":"42"}', 'Home', 1)`,
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json", "title", "agent_id", "enabled") ` +
+        `VALUES ('telegram', '42:7', '{"chatId":"42","messageThreadId":"7"}', 'Running', 2, 0)`,
+      `INSERT INTO "sessions" ("agent_name", "channel_id", "provider", "working_directory") ` +
+        `VALUES ('coach', 2, 'claude', '/vault')`,
+    ]) {
+      await old.query(sql);
+    }
+    await old.destroy();
+
+    const db = await open();
+    expect(await db.getRepository(LegacyChannelAgent).find()).toEqual([
+      { channelId: 1, agentName: 'main', enabled: true },
+      { channelId: 2, agentName: 'coach', enabled: false },
+    ]);
+    expect(await db.query(`SELECT * FROM "channels" ORDER BY "id"`)).toEqual([
+      expect.objectContaining({ id: 1, external_key: '42', title: 'Home' }),
+      expect.objectContaining({
+        id: 2,
+        external_key: '42:7',
+        title: 'Running',
+      }),
+    ]);
+    const columns = (
+      await db.query<{ name: string }[]>(
+        `SELECT "name" FROM pragma_table_info('channels')`,
+      )
+    ).map((column) => column.name);
+    expect(columns).not.toContain('agent_id');
+    expect(columns).not.toContain('enabled');
+    expect(await db.getRepository(Session).count()).toBe(1);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it('gives Channels their Agent and state back, and migrates again', async () => {
+    const db = await open();
+    const { agent, channel } = await seed(db);
+    await db
+      .getRepository(LegacyChannelAgent)
+      .update(channel.id, { enabled: false });
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).not.toContain('legacy_channel_agents');
+    expect(
+      await db.query(`SELECT "id", "agent_id", "enabled" FROM "channels"`),
+    ).toEqual([{ id: channel.id, agent_id: agent.id, enabled: 0 }]);
+    await rejectsWith(
+      db.query(`UPDATE "channels" SET "agent_id" = 999`),
+      'SQLITE_CONSTRAINT_FOREIGNKEY',
+    );
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(await db.getRepository(LegacyChannelAgent).find()).toEqual([
+      { channelId: channel.id, agentName: agent.name, enabled: false },
+    ]);
+    expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
   it('keeps every record across closing and reopening the database', async () => {
@@ -922,7 +1011,6 @@ describe('domain entities', () => {
           integrationKind: 'telegram',
           externalKey: seeded.channel.externalKey,
           address: {},
-          agentId: seeded.agent.id,
         }),
         'SQLITE_CONSTRAINT_UNIQUE',
       );
@@ -1033,10 +1121,10 @@ describe('domain entities', () => {
     const MISSING = 999;
     const orphans: [string, (s: Seeded) => string][] = [
       [
-        'channels.agent_id',
+        'legacy_channel_agents.channel_id',
         () =>
-          `INSERT INTO "channels" ("integration_kind", "external_key", ` +
-          `"address_json", "agent_id") VALUES ('telegram', 'x', '{}', ${MISSING})`,
+          `INSERT INTO "legacy_channel_agents" ("channel_id", "agent_name") ` +
+          `VALUES (${MISSING}, 'main')`,
       ],
       [
         'settings.main_agent_id',

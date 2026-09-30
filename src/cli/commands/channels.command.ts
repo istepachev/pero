@@ -5,14 +5,13 @@ import {
 } from '../../control/protocol.js';
 import { channelId } from '../channel-id.js';
 import { CliError } from '../errors.js';
+import type { ChannelAction } from '../../settings-files/note-hints.js';
 import {
-  agentWarning,
-  describeChannel,
-  formatAssigned,
   formatChannelDetails,
   formatChannelList,
   formatHistory,
 } from '../format-channels.js';
+import { channelStub } from '../note-stubs.js';
 import { PeroCommand } from '../pero-command.js';
 import { positiveInt } from '../positive-int.js';
 
@@ -20,7 +19,7 @@ const CHANNEL = { channel: "the Channel's ID, as pero channels ls lists it" };
 
 @SubCommand({
   name: 'ls',
-  description: 'List the Channels and the Agent each is assigned',
+  description: 'List the Channels and the Agent that answers in each now',
   options: { isDefault: true },
 })
 export class ChannelsListCommand extends PeroCommand {
@@ -35,7 +34,7 @@ export class ChannelsListCommand extends PeroCommand {
   name: 'show',
   arguments: '<channel>',
   description:
-    'Show a Channel, its Agent, and whether its next turn resumes its Session',
+    'Show a Channel, who answers there now, and whether its next turn resumes its Session',
   argsDescription: CHANNEL,
 })
 export class ChannelsShowCommand extends PeroCommand {
@@ -48,66 +47,49 @@ export class ChannelsShowCommand extends PeroCommand {
   }
 }
 
+/** A removed command that says which note to edit instead. */
+abstract class ChannelStubCommand extends PeroCommand {
+  protected abstract readonly action: ChannelAction;
+
+  async run([, agent]: string[]): Promise<void> {
+    await channelStub(this.config(), this.action, agent ?? null);
+  }
+}
+
 @SubCommand({
   name: 'assign',
   arguments: '<channel> <agent>',
   description:
-    'Point a Channel at another Agent; its next turn starts a fresh Session that carries over recent messages',
+    "Removed: add the topic's title to the Agent note's topics instead; this says where",
   argsDescription: {
     ...CHANNEL,
     agent: "the Agent's name, as pero agents ls lists it",
   },
 })
-export class ChannelsAssignCommand extends PeroCommand {
-  async run([channel, agent]: string[]): Promise<void> {
-    const id = channelId(channel!);
-    const { client } = await this.requireDaemon();
-    const result = await client.call('channels.assign', { id, agent: agent! });
-    console.log(formatAssigned(result.channel, result.alreadyAssigned));
-  }
+export class ChannelsAssignCommand extends ChannelStubCommand {
+  protected readonly action = 'assign';
 }
 
 @SubCommand({
   name: 'disable',
   arguments: '<channel>',
   description:
-    'Ignore messages in a Channel; its Agent and Sessions are kept, and it is not onboarded again',
+    "Removed: set enabled: false in the note of the topic's Agent instead",
   argsDescription: CHANNEL,
 })
-export class ChannelsDisableCommand extends PeroCommand {
-  async run([channel]: string[]): Promise<void> {
-    const id = channelId(channel!);
-    const { client } = await this.requireDaemon();
-    const details = await client.call('channels.setEnabled', {
-      id,
-      enabled: false,
-    });
-    console.log(
-      `Disabled ${describeChannel(details)}. Its messages are ignored until pero channels enable ${id}.`,
-    );
-  }
+export class ChannelsDisableCommand extends ChannelStubCommand {
+  protected readonly action = 'disable';
 }
 
 @SubCommand({
   name: 'enable',
   arguments: '<channel>',
-  description: 'Let a disabled Channel reach its Agent again',
+  description:
+    "Removed: set enabled: true in the note of the topic's Agent instead",
   argsDescription: CHANNEL,
 })
-export class ChannelsEnableCommand extends PeroCommand {
-  async run([channel]: string[]): Promise<void> {
-    const id = channelId(channel!);
-    const { client } = await this.requireDaemon();
-    const details = await client.call('channels.setEnabled', {
-      id,
-      enabled: true,
-    });
-    console.log(
-      `Enabled ${describeChannel(details)}: it talks to Agent ${details.agent}.`,
-    );
-    const warning = agentWarning(details);
-    if (warning !== null) console.error(warning);
-  }
+export class ChannelsEnableCommand extends ChannelStubCommand {
+  protected readonly action = 'enable';
 }
 
 interface HistoryOptions {
@@ -150,7 +132,7 @@ export class ChannelsHistoryCommand extends PeroCommand {
 @Command({
   name: 'channels',
   description:
-    'List Channels, point them at other Agents, disable them, and read their history',
+    'List Channels, see which Agent answers in each, and read their history',
   subCommands: [
     ChannelsListCommand,
     ChannelsShowCommand,

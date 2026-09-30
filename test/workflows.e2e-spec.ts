@@ -28,7 +28,6 @@ import {
 import type { RunView } from '../src/control/protocol.js';
 import { Notification } from '../src/persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js';
-import { Agent } from '../src/persistence/entities/agent.entity.js';
 import { Channel } from '../src/persistence/entities/channel.entity.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -622,9 +621,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     await start();
     await manualBrief();
     const dataSource = daemon!.app.get<DataSource>(getDataSourceToken());
-    const coach = await dataSource
-      .getRepository(Agent)
-      .findOneByOrFail({ name: 'coach' });
     const channels = dataSource.getRepository(Channel);
     const { id: channel } = await channels.save(
       channels.create({
@@ -632,7 +628,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
         externalKey: '-1001234567890:7',
         address: { chatId: '-1001234567890', topicId: '7' },
         title: 'English',
-        agentId: coach.id,
       }),
     );
 
@@ -651,7 +646,6 @@ describe('Workflow and Trigger definitions (e2e)', () => {
             integrationKind: 'telegram',
             key: '-1001234567890:7',
             title: 'English',
-            enabled: true,
           },
         ],
       },

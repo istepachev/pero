@@ -5,9 +5,9 @@ import { NOTE_FOLDERS, noteIdentity, PERO_NOTE } from './note-files.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /*
- * What the commands that changed Agents and settings say now that notes
- * hold them: the file to edit instead. They stay as such stubs for one
- * release.
+ * What the commands that changed Agents, settings, and which Agent answers
+ * in a Channel say now that notes hold them: the file to edit instead.
+ * They stay as such stubs for one release.
  */
 
 /** Where a workspace's configuration files are, absolute. */
@@ -123,6 +123,39 @@ export function agentHint(
     case 'enable':
     case 'disable':
       return `${prefix}: set enabled: ${action === 'enable'} in ${shown(note)}.`;
+  }
+}
+
+/** A command that changed which Agent answers in a Channel. */
+export type ChannelAction = 'assign' | 'enable' | 'disable';
+
+/**
+ * What to edit instead of `pero channels <action>`. For `assign`, `agent`
+ * is the Agent named and `note` the path of its note in the settings
+ * folder, or null.
+ */
+export function channelHint(
+  action: ChannelAction,
+  agent: string | null,
+  note: string | null,
+  files: ConfigurationFiles,
+): string {
+  const shown = (file: string) =>
+    shownPath(files.workspace, join(files.settingsFolder, file));
+  const prefix = "Topics are routed by the Agent notes' topics now";
+  const seen =
+    "pero channels ls shows each topic's title and who answers there";
+  switch (action) {
+    case 'assign':
+      if (note === null) {
+        const add = shown(posix.join(NOTE_FOLDERS.agent, `${agent}.md`));
+        return `${prefix}, and no note is named ${agent}: add ${add} with the topic's title in its topics; ${seen}.`;
+      }
+      return `${prefix}: add the topic's title to topics in ${shown(note)}; ${seen}.`;
+    case 'enable':
+      return `${prefix}, so a Channel isn't enabled on its own: set enabled: true in the note of the Agent that claims the topic, or add its title to an Agent's topics; ${seen}.`;
+    case 'disable':
+      return `${prefix}, so a Channel isn't disabled on its own: set enabled: false in the note of the Agent that answers there, or take the title out of its topics; ${seen}.`;
   }
 }
 

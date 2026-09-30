@@ -1,9 +1,4 @@
-import type {
-  AgentChannelView,
-  AgentDetails,
-  AgentView,
-  NextTurn,
-} from '../control/protocol.js';
+import type { AgentDetails, AgentView, NextTurn } from '../control/protocol.js';
 import type { ValueOrigin } from '../settings-files/origins.js';
 import { table } from './format-status.js';
 import { preview } from './settings-keys.js';
@@ -98,7 +93,7 @@ export function formatAgentDetails(agent: AgentDetails): string {
   }
   lines.push('');
   if (agent.channels.length === 0) {
-    lines.push('No Channel is assigned to it yet.');
+    lines.push('No Channel goes to it yet.');
   } else {
     lines.push(
       'Channels',
@@ -107,7 +102,7 @@ export function formatAgentDetails(agent: AgentDetails): string {
         ...agent.channels.map((channel) => [
           String(channel.id),
           `${channel.integrationKind} ${channel.key}`,
-          title(channel),
+          channel.title ?? '—',
           describeNextTurn(channel.nextTurn),
         ]),
       ]).map((row) => `  ${row}`),
@@ -136,9 +131,4 @@ export function describeNextTurn(turn: NextTurn): string {
 function folder(agent: AgentView): string {
   if (agent.workingDirectory !== null) return agent.effectiveWorkingDirectory;
   return `${agent.effectiveWorkingDirectory} (${agent.origins === null ? 'default' : 'data folder'})`;
-}
-
-function title(channel: AgentChannelView): string {
-  const name = channel.title ?? '—';
-  return channel.enabled ? name : `${name} (disabled)`;
 }

@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, In } from 'typeorm';
 import { effectiveWorkingDirectory } from '../agents/agent-resolution.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import {
   SETTINGS_ID,
   Settings,
@@ -15,12 +16,15 @@ import {
   type AgentDefinition,
   type Defaults,
   Definitions,
+  type Route,
+  type RouteQuery,
   type WorkflowDefinition,
 } from './definitions.js';
 
 /**
  * The definitions as the `settings`, `agents`, `workflows`, `triggers`,
- * and `workflow_notification_targets` tables hold them, read afresh on
+ * and `workflow_notification_targets` tables hold them, and a legacy data
+ * directory's Channel routes in `legacy_channel_agents`, read afresh on
  * every call. It opens no transaction of its own, so it can be
  * read inside a caller's: on SQLite's one connection, those reads see
  * what the transaction has written.
@@ -64,6 +68,40 @@ export class SqliteDefinitions extends Definitions {
 
   async mainAgentName(): Promise<string | null> {
     return (await this.mainAgent())?.name ?? null;
+  }
+
+  /**
+   * The Agent a legacy data directory's onboarding or `pero migrate`'s
+   * source assigned `channel` to. A disabled Channel or Agent stays
+   * silent, as it always did.
+   */
+  async route(channel: RouteQuery): Promise<Route> {
+    const row = await this.dataSource
+      .getRepository(LegacyChannelAgent)
+      .findOneBy({ channelId: channel.id });
+    if (row === null) {
+      return {
+        kind: 'unanswered',
+        reason: { kind: 'undefined-agent', agent: null },
+      };
+    }
+    if (!row.enabled) {
+      return { kind: 'unanswered', reason: { kind: 'channel-disabled' } };
+    }
+    const agent = await this.agent(row.agentName);
+    if (agent === null) {
+      return {
+        kind: 'unanswered',
+        reason: { kind: 'undefined-agent', agent: row.agentName },
+      };
+    }
+    if (!agent.enabled) {
+      return {
+        kind: 'unanswered',
+        reason: { kind: 'disabled', agent: agent.name, file: null },
+      };
+    }
+    return { kind: 'agent', agent };
   }
 
   async workflow(name: string): Promise<WorkflowDefinition | null> {

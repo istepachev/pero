@@ -217,24 +217,6 @@ export class AgentsService {
   }
 
   /**
-   * Inside the caller's transaction: the row of the Agent named `name`,
-   * created with the installation defaults when there is none. In a
-   * workspace, rows only anchor Channels to Agents that notes define, until
-   * Channels stop holding an Agent (plan step 8.2). `InvalidInputError`
-   * while no default folder is set.
-   */
-  async anchorWithin(manager: EntityManager, name: string): Promise<Agent> {
-    return (
-      (await manager
-        .getRepository(Agent)
-        .findOneBy({ name: name.toLowerCase() })) ??
-      this.createFollowingWithin(manager, await getSettings(manager), {
-        name: name.toLowerCase(),
-      })
-    );
-  }
-
-  /**
    * Inside the caller's transaction: a new Agent for a topic, named `base`
    * or, when that is taken, `base-2`, `base-3`, …, with the installation
    * defaults. `InvalidInputError` while no default folder is set.
@@ -250,18 +232,21 @@ export class AgentsService {
   }
 
   /**
-   * Inside the caller's transaction: retitles Agent `id` to `title` while
-   * its title still mirrors its topic's, `topicTitle`; never its name.
+   * Inside the caller's transaction: retitles the Agent named `name` to
+   * `title` while its title still mirrors its topic's, `topicTitle`; never
+   * its name. Nothing when there is no such Agent.
    */
   async retitleWithin(
     manager: EntityManager,
-    id: number,
+    name: string,
     topicTitle: string | null,
     title: string | null,
   ): Promise<void> {
     const agents = manager.getRepository(Agent);
-    const agent = await agents.findOneByOrFail({ id });
-    if (agent.title === topicTitle) await agents.update(id, { title });
+    const agent = await agents.findOneBy({ name });
+    if (agent !== null && agent.title === topicTitle) {
+      await agents.update(agent.id, { title });
+    }
   }
 
   /** Tells readers of the definitions that Agents written here committed. */

@@ -57,7 +57,7 @@ describe('HistoryRetention', () => {
     mkdirSync(vault);
     await boot();
     await settings.update({ defaultWorkingDirectory: vault });
-    const agent = await moduleRef.get(AgentsService).create({ name: 'coach' });
+    await moduleRef.get(AgentsService).create({ name: 'coach' });
     const channels = ds.getRepository(Channel);
     channelId = (
       await channels.save(
@@ -66,7 +66,6 @@ describe('HistoryRetention', () => {
           externalKey: '1234',
           address: { chatId: '1234' },
           title: null,
-          agentId: agent.id,
         }),
       )
     ).id;

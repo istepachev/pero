@@ -7,7 +7,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
@@ -17,11 +16,6 @@ import { Definitions } from '../definitions/definitions.js';
 import { FileDefinitions } from '../definitions/file-definitions.js';
 import { HostConfigModule } from '../host-config/host-config.module.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
-import { Channel } from '../persistence/entities/channel.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
@@ -31,24 +25,24 @@ import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelRouter } from './channel-router.js';
 import { ChannelTurns } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
-import { ChannelsService } from './channels.service.js';
 import {
   FakeChannelAdapter,
   groupChat,
   inboundMessage,
   privateChat,
   topicCreated,
+  topicRenamed,
 } from './testing/fake-channel-adapter.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
 
 /*
- * In a workspace, Agents come from notes, while Channels still point at
- * Agent rows until plan step 8.2: a row only anchors a Channel to the
- * Agent a note of that name defines.
+ * In a workspace, Agents come from notes, and so does which one answers
+ * where: a primary Channel gets the main Agent, and a topic the Agent
+ * whose topics claims its title, chosen on every message.
  */
-describe('Agents from notes in a workspace', () => {
+describe('Topic routing by notes in a workspace', () => {
   let workspace: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
@@ -68,6 +62,12 @@ describe('Agents from notes in a workspace', () => {
     utimesSync(path, new Date(clock), new Date(clock));
   }
 
+  /** Writes `file` and has Pero read the notes again. */
+  async function edit(file: string, text: string) {
+    write(file, text);
+    await moduleRef.get(SettingsNotes).rescan();
+  }
+
   beforeEach(async () => {
     workspace = mkdtempSync(join(tmpdir(), 'pero-note-agents-'));
     mkdirSync(join(workspace, '.pero'));
@@ -75,7 +75,9 @@ describe('Agents from notes in a workspace', () => {
     write('Pero.md', '---\nmain-agent: Coach\n---\nBe brief.');
     write('Agents/Coach.md', 'You coach.');
     write('Agents/Health.md', '---\ntopics: Health\n---\nYou track health.');
-    write('Agents/Retired.md', '---\nenabled: false\n---');
+    write('Agents/Retired.md', '---\ntopics: Garden\nenabled: false\n---');
+    // Broken since Pero started, so it never loaded.
+    write('Agents/Sleep.md', '---\ntopics: Sleep\nmodle: x\n---');
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({
@@ -117,18 +119,20 @@ describe('Agents from notes in a workspace', () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  function rows(): Promise<string[]> {
-    return ds
-      .getRepository(Agent)
-      .find({ order: { id: 'ASC' } })
-      .then((agents) => agents.map((agent) => agent.name));
-  }
-
   function answeredBy(): string[] {
     return turns.handle.mock.calls.map(
       (call) =>
         (call as unknown as [{ agent: { name: string } }])[0].agent.name,
     );
+  }
+
+  function sentTexts(): string[] {
+    return adapter.sent.map((sent) => sent.message.text);
+  }
+
+  /** A message in topic `topic` of the group, titled `title`. */
+  function inTopic(topic: string, title: string | null) {
+    return adapter.deliver(inboundMessage(GROUP, { topic, title, text: 'Hi' }));
   }
 
   it('reads the Agents from the notes', async () => {
@@ -142,65 +146,132 @@ describe('Agents from notes in a workspace', () => {
     });
   });
 
-  it('anchors a primary Channel to the main Agent Pero.md names', async () => {
+  it('sends General topics and direct chats to the main Agent, and stores no Agent', async () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'Hi' }));
+    await adapter.deliver(inboundMessage(GROUP, { text: 'Hi' }));
 
-    expect(await rows()).toEqual(['coach']);
-    const settings = await ds
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
-    expect(settings.mainAgentId).toBeNull();
-    expect(adapter.sent.map((sent) => sent.message.text)).toEqual([
+    expect(answeredBy()).toEqual(['coach', 'coach']);
+    expect(sentTexts()).toEqual([
+      expect.stringMatching(/^This chat talks to Agent coach: claude/),
       expect.stringMatching(/^This chat talks to Agent coach: claude/),
     ]);
-    expect(answeredBy()).toEqual(['coach']);
+    expect(await ds.getRepository(Agent).count()).toBe(0);
   });
 
-  it('leaves a topic no note defines unanswered, until a note does', async () => {
-    const warn = vi.spyOn(Logger.prototype, 'warn');
-    await adapter.emit(topicCreated(GROUP, '7', { title: 'Garden' }));
-    await adapter.deliver(inboundMessage(GROUP, { topic: '7', text: 'Hi' }));
+  it('sends a topic to the Agent that claims its title', async () => {
+    await adapter.emit(topicCreated(GROUP, '5', { title: 'health' }));
+    await inTopic('5', 'health');
 
-    expect(await rows()).toEqual(['garden']);
-    expect(adapter.sent).toEqual([]);
-    expect(turns.handle).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(
+    expect(answeredBy()).toEqual(['health']);
+    expect(sentTexts()).toEqual([
+      expect.stringMatching(/^This topic talks to Agent health: claude/),
+    ]);
+  });
+
+  it('moves a topic once another Agent claims its title', async () => {
+    await inTopic('6', 'Running');
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
+      'No Agent answers in this topic: none lists "Running" in its topics. ' +
+        "Add it to an Agent note's topics, or create " +
+        'data/Settings/Agents/Running.md with topics: [Running].',
+    ]);
+
+    await edit('Agents/Health.md', '---\ntopics: [Health, Running]\n---');
+    await inTopic('6', 'Running');
+    expect(answeredBy()).toEqual(['health']);
+
+    await edit('Agents/Coach.md', '---\ntopics: Running\n---');
+    await edit('Agents/Health.md', '---\ntopics: Health\n---');
+    await inTopic('6', 'Running');
+    expect(answeredBy()).toEqual(['health', 'coach']);
+  });
+
+  it('answers a topic claimed twice with neither, and says why once', async () => {
+    await edit('Agents/Runner.md', '---\ntopics: Health\n---');
+    await inTopic('5', 'Health');
+    await inTopic('5', 'Health');
+
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
+      'No one answers in this topic: data/Settings/Agents/Health.md and ' +
+        'data/Settings/Agents/Runner.md claim "Health" in their topics. ' +
+        'Keep it in only one of them.',
+    ]);
+
+    // Once it is answered again, a new problem is told again.
+    await edit('Agents/Runner.md', 'You run.');
+    await inTopic('5', 'Health');
+    await edit('Agents/Runner.md', '---\ntopics: Health\n---');
+    await inTopic('5', 'Health');
+    expect(answeredBy()).toEqual(['health']);
+    expect(sentTexts()).toHaveLength(2);
+  });
+
+  it("silences a disabled Agent's topics, saying so once", async () => {
+    await inTopic('8', 'Garden');
+    await inTopic('8', 'Garden');
+
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
+      'Agent retired is disabled, so no one answers here. To turn it back ' +
+        'on, set enabled: true in data/Settings/Agents/Retired.md.',
+    ]);
+  });
+
+  it('names the note that claims a topic but never loaded', async () => {
+    await inTopic('9', 'Sleep');
+
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
       expect.stringContaining(
-        'Agent garden has no note; add Agents/garden.md to the settings folder',
+        'data/Settings/Agents/Sleep.md claims "Sleep" but has errors',
       ),
-    );
-
-    write('Agents/Garden.md', 'You garden.');
-    await moduleRef.get(SettingsNotes).rescan();
-    await adapter.deliver(inboundMessage(GROUP, { topic: '7', text: 'Hi' }));
-    expect(answeredBy()).toEqual(['garden']);
+    ]);
   });
 
-  it('assigns a Channel to an Agent only a note defines', async () => {
-    await adapter.emit(topicCreated(GROUP, '7', { title: 'Health' }));
-    const channel = await ds
-      .getRepository(Channel)
-      .findOneByOrFail({ externalKey: `${GROUP.key}:7` });
-
-    await expect(
-      moduleRef.get(ChannelsService).assign(channel.id, 'health'),
-    ).resolves.toEqual({ from: 'health', to: 'health', alreadyAssigned: true });
-
-    await expect(
-      moduleRef.get(ChannelsService).assign(channel.id, 'coach'),
-    ).resolves.toEqual({ from: 'health', to: 'coach', alreadyAssigned: false });
-    expect(await rows()).toEqual(['health', 'coach']);
-    await adapter.deliver(inboundMessage(GROUP, { topic: '7', text: 'Hi' }));
-    expect(answeredBy()).toEqual(['coach']);
-
-    await expect(
-      moduleRef.get(ChannelsService).assign(channel.id, 'retired'),
-    ).rejects.toThrow(
-      'Agent retired is disabled; enable it first (enabled: true in its note)',
+  it('sends an unclaimed topic to the main Agent with new-topics: main-agent', async () => {
+    await edit(
+      'Pero.md',
+      '---\nmain-agent: Coach\nnew-topics: main-agent\n---',
     );
-    await expect(
-      moduleRef.get(ChannelsService).assign(channel.id, 'nobody'),
-    ).rejects.toThrow('No Agent named nobody');
+    await inTopic('6', 'Running');
+    await inTopic('7', null);
+
+    expect(answeredBy()).toEqual(['coach', 'coach']);
+  });
+
+  it('says when no note defines the main Agent', async () => {
+    await edit('Pero.md', '---\nmain-agent: Boss\n---');
+    await adapter.deliver(inboundMessage(OWNER, { text: 'Hi' }));
+
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
+      'No one answers here: no note defines the main Agent, boss. ' +
+        'Add data/Settings/Agents/Boss.md.',
+    ]);
+  });
+
+  it('routes a topic once a message tells its title', async () => {
+    await inTopic('5', null);
+    expect(answeredBy()).toEqual([]);
+    expect(sentTexts()).toEqual([
+      expect.stringMatching(/^Pero doesn't know this topic's title yet/),
+    ]);
+
+    await inTopic('5', 'Health');
+    expect(answeredBy()).toEqual(['health']);
+  });
+
+  it('follows a renamed topic to the Agent claiming its new title', async () => {
+    await adapter.emit(topicCreated(GROUP, '5', { title: 'Health' }));
+    await inTopic('5', 'Health');
+    await adapter.emit(topicRenamed(GROUP, '5', 'Coaching'));
+    await edit('Agents/Coach.md', '---\ntopics: Coaching\n---');
+    // Messages still carry the title the topic was created with.
+    await inTopic('5', 'Health');
+
+    expect(answeredBy()).toEqual(['health', 'coach']);
   });
 
   it('lets a Workflow use an Agent only a note defines', async () => {

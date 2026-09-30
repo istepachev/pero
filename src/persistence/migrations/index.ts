@@ -11,6 +11,7 @@ import { NotificationDelivery1790658397489 } from './1790658397489-NotificationD
 import { HistoryRetention1790680000000 } from './1790680000000-HistoryRetention.js';
 import { StateByName1790700000000 } from './1790700000000-StateByName.js';
 import { ScheduleState1790710000000 } from './1790710000000-ScheduleState.js';
+import { ChannelRoutes1790720000000 } from './1790720000000-ChannelRoutes.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -30,4 +31,5 @@ export const MIGRATIONS = [
   HistoryRetention1790680000000,
   StateByName1790700000000,
   ScheduleState1790710000000,
+  ChannelRoutes1790720000000,
 ];

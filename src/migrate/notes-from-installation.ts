@@ -117,11 +117,17 @@ export function planNotes(
   const claims = new Map<string, Map<string, InstallationChannel[]>>();
   for (const channel of channels) {
     if (!isTopic(channel)) {
-      if (channel.agent !== mainAgent) {
+      if (channel.agent !== null && channel.agent !== mainAgent) {
         notices.push(
           `Chat ${chatTitles.get(channel.key)} was answered by ${channel.agent}; a chat's General topic and direct chats go to the main Agent, ${mainAgent}, now.`,
         );
       }
+      continue;
+    }
+    if (channel.agent === null) {
+      notices.push(
+        `Topic ${where(channel)} (Channel ${channel.id}) had no Agent, so no note claims it: it goes to a new Agent or the main Agent.`,
+      );
       continue;
     }
     if (channel.title === null) {

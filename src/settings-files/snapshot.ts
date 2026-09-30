@@ -22,6 +22,7 @@ import {
   readAgentNote,
   readPeroNote,
   readWorkflowNote,
+  topicTitles,
   type WorkflowNote,
   type WorkflowNoteHistory,
   type WorkflowTrigger,
@@ -97,6 +98,11 @@ export interface SettingsSnapshot {
   topicClaims: ReadonlyMap<string, string>;
   /** Topic titles, lowercased, that several Agents claim: none answers. */
   conflictedTopics: ReadonlySet<string>;
+  /**
+   * Topic titles, lowercased, that only Agent notes left out for errors
+   * claim, with those notes' files: none answers until they load.
+   */
+  unloadedTopics: ReadonlyMap<string, readonly string[]>;
   /** Sorted by file. */
   errors: readonly SettingsError[];
 }
@@ -301,6 +307,19 @@ export function buildSnapshot(
     }
   }
 
+  // Topics only notes left out claim, as a note broken since Pero started.
+  const unloadedTopics = new Map<string, string[]>();
+  for (const read of agentNotes) {
+    if (agents.get(read.identity.name)?.file === read.file) continue;
+    for (const title of topicTitles(read.note?.properties.topics) ?? []) {
+      const key = title.toLowerCase();
+      if (claimants.has(key)) continue;
+      const files = unloadedTopics.get(key) ?? [];
+      if (!files.includes(read.file)) files.push(read.file);
+      unloadedTopics.set(key, files);
+    }
+  }
+
   // The main Agent: the default one is created when a Channel first needs it.
   const mainAgent = defaults.mainAgent;
   if (pero?.note?.properties['main-agent'] != null && !agents.has(mainAgent)) {
@@ -342,6 +361,7 @@ export function buildSnapshot(
     workflows,
     topicClaims,
     conflictedTopics,
+    unloadedTopics,
     // Stable, so each file's errors keep the order they were found in.
     errors: Object.freeze(errors.sort((a, b) => compare(a.file, b.file))),
   });
@@ -427,6 +447,40 @@ function defineAgent(
     instructions: note.instructions,
     note,
   };
+}
+
+/** Who answers the topic a title names, by the Agents' `topics`. */
+export type TopicClaim =
+  | { kind: 'agent'; agent: string }
+  /** Several Agents claim it, in `files`: none answers. */
+  | { kind: 'conflict'; files: readonly string[] }
+  /** Only notes left out for errors, in `files`, claim it. */
+  | { kind: 'unloaded'; files: readonly string[] }
+  | { kind: 'unclaimed' };
+
+/** Who answers the topic titled `title`, in any case, in `snapshot`. */
+export function topicClaim(
+  snapshot: Pick<
+    SettingsSnapshot,
+    'agents' | 'topicClaims' | 'conflictedTopics' | 'unloadedTopics'
+  >,
+  title: string,
+): TopicClaim {
+  const key = title.trim().toLowerCase();
+  const agent = snapshot.topicClaims.get(key);
+  if (agent !== undefined) return { kind: 'agent', agent };
+  if (snapshot.conflictedTopics.has(key)) {
+    const files = [...snapshot.agents.values()]
+      .filter((claiming) =>
+        claiming.topics.some((topic) => topic.toLowerCase() === key),
+      )
+      .map((claiming) => claiming.file)
+      .sort(compare);
+    return { kind: 'conflict', files };
+  }
+  const files = snapshot.unloadedTopics.get(key);
+  if (files !== undefined) return { kind: 'unloaded', files };
+  return { kind: 'unclaimed' };
 }
 
 /** Resolves what Workflow notes refer to: Agents and Channels. */

@@ -11,9 +11,9 @@ import { ChannelRouter } from './channel-router.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelViews } from './channel-views.service.js';
 import { ChannelOnboarding, ChannelTurns } from './channel-stages.js';
-import { ChannelsService } from './channels.service.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
+import { UnansweredReplies } from './unanswered-replies.js';
 import {
   DEFAULT_APPROVAL_TIMEOUT_MS,
   TOOL_APPROVAL_TIMEOUT_MS,
@@ -22,7 +22,7 @@ import {
 
 /**
  * The Channel router, the chat allowlist, onboarding, the hand-off to
- * Agents, and Channel management; adapters connect to it.
+ * Agents, and the Channel views; adapters connect to it.
  */
 @Module({
   imports: [AgentsModule, DefinitionsModule, HistoryModule, SessionsModule],
@@ -30,11 +30,11 @@ import {
     ChannelRouter,
     ChannelSender,
     ChannelViews,
-    ChannelsService,
     AllowedChatsService,
     InboundUpdates,
     PairingRequests,
     ToolApprovals,
+    UnansweredReplies,
     {
       provide: TOOL_APPROVAL_TIMEOUT_MS,
       useValue: DEFAULT_APPROVAL_TIMEOUT_MS,
@@ -47,7 +47,6 @@ import {
     ChannelRouter,
     ChannelSender,
     ChannelViews,
-    ChannelsService,
     AllowedChatsService,
     PairingRequests,
   ],

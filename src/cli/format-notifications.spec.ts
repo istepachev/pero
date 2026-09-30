@@ -15,7 +15,6 @@ const NOTIFICATION: NotificationDetails = {
     integrationKind: 'telegram',
     key: '-100:7',
     title: 'English',
-    enabled: true,
   },
   status: 'pending',
   attempt: 2,

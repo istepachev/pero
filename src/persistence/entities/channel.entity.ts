@@ -4,21 +4,20 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  JoinColumn,
-  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
-import { Agent } from './agent.entity.js';
 import { INTEGRATION_KINDS, type IntegrationKind, oneOf } from './sql.js';
 
-/** A conversation endpoint, such as one Telegram topic, and its Agent. */
+/**
+ * A conversation endpoint, such as one Telegram topic. Which Agent answers
+ * there isn't stored: it follows the notes on each message.
+ */
 @Entity('channels')
 @Index('UQ_channels_key', ['integrationKind', 'externalKey'], {
   unique: true,
 })
-@Index('IDX_channels_agent_id', ['agentId'])
 @Check(
   'CHK_channels_integration_kind',
   oneOf('integration_kind', INTEGRATION_KINDS),
@@ -52,19 +51,6 @@ export class Channel {
   /** The topic or chat name, for display; null when the integration has none. */
   @Column({ type: 'text', nullable: true })
   title: string | null;
-
-  @Column({ name: 'agent_id', type: 'integer' })
-  agentId: number;
-
-  @ManyToOne(() => Agent, { onDelete: 'RESTRICT' })
-  @JoinColumn({
-    name: 'agent_id',
-    foreignKeyConstraintName: 'FK_channels_agent_id',
-  })
-  agent?: Agent;
-
-  @Column({ type: 'boolean', default: true })
-  enabled: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

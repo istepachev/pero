@@ -65,12 +65,11 @@ pero telegram deny -1001234567890     # its Channels and Agents stay for when it
 
 ### Channels and history
 
-Each topic, General topic, and direct chat is a Channel, created with its Agent when it first reaches Pero. `pero channels` lists them by ID:
+Each topic, General topic, and direct chat is a Channel, created when it first reaches Pero. In a workspace, which Agent answers there follows the notes on every message: the main Agent (`main-agent` in `Pero.md`) answers General topics, groups without topics, and direct chats, and a topic goes to the Agent whose note lists its title in `topics`. To move a topic, change `topics`; the new Agent's first turn starts with the topic's recent messages. To silence it, set `enabled: false` in its Agent's note. Where no Agent answers, such as a topic two notes claim, Pero replies once saying why. `pero channels` lists them by ID:
 
 ```sh
-pero channels                  # each Channel with its Agent
-pero channels assign 3 main    # topic 3 now talks to main, starting with its recent messages
-pero channels disable 3        # ignore it, without onboarding it again; enable brings it back
+pero channels                  # each Channel with the Agent that answers there now
+pero channels show 3           # who answers, or why no one does
 pero channels history 3 -n 50  # its latest messages
 ```
 

@@ -129,7 +129,7 @@ Pero records the text of each allowed Channel: what people wrote there, what its
 It does not record:
 - messages from chats that are not allowed;
 - the Agents' reasoning, tool use, or tool approval requests;
-- messages to a disabled Channel.
+- messages in a Channel no Agent answers, such as a topic two notes claim or a disabled Agent's topic, and Pero's reply saying why.
 
 Logs never hold message text.
 

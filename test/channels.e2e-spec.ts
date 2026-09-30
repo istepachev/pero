@@ -12,6 +12,7 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
+import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import {
   FakeBotApi,
@@ -30,7 +31,7 @@ const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 const GROCERIES = 42;
 const KITCHEN = 43;
 
-describe('Channel management (e2e)', () => {
+describe('Channels of a legacy data directory (e2e)', () => {
   let tmp: string;
   let dataDir: string;
   let client: ControlClient;
@@ -85,6 +86,20 @@ describe('Channel management (e2e)', () => {
       .get<DataSource>(getDataSourceToken())
       .getRepository(Session)
       .find({ order: { id: 'ASC' } });
+  }
+
+  /**
+   * Changes Channel `id`'s Agent or state as a legacy data directory keeps
+   * them, which no command changes any more.
+   */
+  async function route(
+    id: number,
+    change: { agentName?: string; enabled?: boolean },
+  ): Promise<void> {
+    await daemon!.app
+      .get<DataSource>(getDataSourceToken())
+      .getRepository(LegacyChannelAgent)
+      .update(id, change);
   }
 
   /** A message in `topic`; resolves to its update ID. */
@@ -145,7 +160,7 @@ describe('Channel management (e2e)', () => {
         title: 'Groceries',
         agent: 'groceries',
         agentEnabled: true,
-        enabled: true,
+        unanswered: null,
       }),
       expect.objectContaining({
         key: `${FORUM.id}:${KITCHEN}`,
@@ -163,7 +178,7 @@ describe('Channel management (e2e)', () => {
     });
   });
 
-  it("reassigns a Channel, whose new Agent starts with the Channel's history, keeping every Channel's Session separate", async () => {
+  it("moves a Channel to another Agent, which starts with the Channel's history, keeping every Channel's Session separate", async () => {
     await start();
     const groceries = await channelId(GROCERIES);
     const kitchen = await channelId(KITCHEN);
@@ -177,25 +192,16 @@ describe('Channel management (e2e)', () => {
     expect(first).toMatchObject({ agentName: 'groceries' });
     expect(second).toMatchObject({ agentName: 'kitchen' });
 
-    const result = await client.call('channels.assign', {
-      id: groceries,
+    await route(groceries, { agentName: 'kitchen' });
+    expect(await client.call('channels.get', { id: groceries })).toMatchObject({
       agent: 'kitchen',
-    });
-    expect(result).toMatchObject({
-      alreadyAssigned: false,
-      channel: {
-        agent: 'kitchen',
-        nextTurn: { kind: 'new', carriesOver: true },
-      },
+      nextTurn: { kind: 'new', carriesOver: true },
     });
     expect(
       (await client.call('agents.get', { name: 'groceries' })).channels,
     ).toEqual([]);
-    expect(await sessions()).toEqual([
-      expect.objectContaining({ id: first!.id, status: 'closed' }),
-      expect.objectContaining({ id: second!.id, status: 'active' }),
-    ]);
 
+    // The new Agent's first turn ends the old Agent's Session.
     const carried = await say(GROCERIES, 'Bread');
     expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
     expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
@@ -218,14 +224,6 @@ describe('Channel management (e2e)', () => {
         status: 'active',
       }),
     ]);
-
-    // Assigning the Agent it has changes nothing.
-    expect(
-      await client.call('channels.assign', { id: groceries, agent: 'kitchen' }),
-    ).toMatchObject({
-      alreadyAssigned: true,
-      channel: { nextTurn: { kind: 'resume' } },
-    });
   });
 
   it('ignores a disabled Channel without onboarding it again, and resumes it once enabled', async () => {
@@ -234,12 +232,11 @@ describe('Channel management (e2e)', () => {
     expect(await say(GROCERIES, 'Milk')).toBe('echo: Milk');
     const before = await sessions();
 
-    expect(
-      await client.call('channels.setEnabled', {
-        id: groceries,
-        enabled: false,
-      }),
-    ).toMatchObject({ enabled: false });
+    await route(groceries, { enabled: false });
+    expect(await client.call('channels.get', { id: groceries })).toMatchObject({
+      agent: null,
+      unanswered: 'the Channel is disabled',
+    });
     const sent = api.sent().length;
     await handled(inTopic(GROCERIES, { text: 'Anyone?' }));
     // The topic created again, as a redelivered event would be.
@@ -252,7 +249,7 @@ describe('Channel management (e2e)', () => {
       (await client.call('channels.get', { id: groceries })).messages,
     ).toBe(3);
 
-    await client.call('channels.setEnabled', { id: groceries, enabled: true });
+    await route(groceries, { enabled: true });
     expect(await say(GROCERIES, 'Eggs')).toBe('echo: Eggs');
     expect(await sessions()).toEqual(before);
   });
@@ -296,15 +293,11 @@ describe('Channel management (e2e)', () => {
     ]);
   });
 
-  it('refuses an unknown Channel or Agent', async () => {
+  it('refuses an unknown Channel', async () => {
     await start();
-    const groceries = await channelId(GROCERIES);
     await expect(client.call('channels.get', { id: 99 })).rejects.toThrow(
       new NotFoundError('No Channel with ID 99'),
     );
-    await expect(
-      client.call('channels.assign', { id: groceries, agent: 'nobody' }),
-    ).rejects.toThrow(new NotFoundError('No Agent named nobody'));
     await expect(client.call('channels.history', { id: 99 })).rejects.toThrow(
       NotFoundError,
     );

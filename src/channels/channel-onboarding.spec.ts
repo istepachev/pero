@@ -10,6 +10,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import {
   SETTINGS_ID,
@@ -103,11 +104,27 @@ describe('Channel onboarding', () => {
     return ds.getRepository(Channel).find({ order: { id: 'ASC' } });
   }
 
-  async function channelFor(key: string): Promise<Channel & { agent: Agent }> {
-    return (await ds.getRepository(Channel).findOneOrFail({
-      where: { integrationKind: 'telegram', externalKey: key },
-      relations: { agent: true },
-    })) as Channel & { agent: Agent };
+  /** The Channel with `key`, with the Agent and state its legacy row holds. */
+  async function channelFor(
+    key: string,
+  ): Promise<
+    Channel & { agentName: string | null; agent: Agent; enabled: boolean }
+  > {
+    const channel = await ds
+      .getRepository(Channel)
+      .findOneByOrFail({ integrationKind: 'telegram', externalKey: key });
+    const route = await ds
+      .getRepository(LegacyChannelAgent)
+      .findOneBy({ channelId: channel.id });
+    const agent = await ds
+      .getRepository(Agent)
+      .findOneBy({ name: route?.agentName ?? '' });
+    return Object.assign(channel, {
+      agentName: route?.agentName ?? null,
+      // Every legacy Channel has an Agent; a test that finds none fails.
+      agent: agent!,
+      enabled: route?.enabled ?? true,
+    });
   }
 
   async function mainAgentId(): Promise<number | null> {
@@ -155,10 +172,12 @@ describe('Channel onboarding', () => {
           externalKey: topic.key,
           address: topic.address,
           title: 'Groceries & Errands',
-          agentId: agent!.id,
-          enabled: true,
         }),
       ]);
+      expect(await channelFor(topic.key)).toMatchObject({
+        agentName: agent!.name,
+        enabled: true,
+      });
       expect(adapter.sent).toEqual([
         {
           address: topic.address,
@@ -284,9 +303,16 @@ describe('Channel onboarding', () => {
       expect(main).toMatchObject({ name: MAIN_AGENT_NAME, title: null });
       expect(await mainAgentId()).toBe(main!.id);
       const channels = await allChannels();
-      expect(channels.map((c) => [c.externalKey, c.agentId])).toEqual([
-        [GROUP.key, main!.id],
-        [OWNER.key, main!.id],
+      expect(
+        await Promise.all(
+          channels.map(async (c) => [
+            c.externalKey,
+            (await channelFor(c.externalKey)).agentName,
+          ]),
+        ),
+      ).toEqual([
+        [GROUP.key, main!.name],
+        [OWNER.key, main!.name],
       ]);
       expect(channels[0]!.title).toBe('Household');
       expect(sentTexts()).toEqual([
@@ -308,7 +334,7 @@ describe('Channel onboarding', () => {
 
       await adapter.deliver(inboundMessage(OWNER));
 
-      expect((await channelFor(OWNER.key)).agentId).toBe(assistant.id);
+      expect((await channelFor(OWNER.key)).agentName).toBe(assistant.name);
       expect(await allAgents()).toHaveLength(1);
     });
 
@@ -317,7 +343,7 @@ describe('Channel onboarding', () => {
 
       await adapter.deliver(inboundMessage(OWNER));
 
-      expect((await channelFor(OWNER.key)).agentId).toBe(main.id);
+      expect((await channelFor(OWNER.key)).agentName).toBe(main.name);
       expect(await mainAgentId()).toBe(main.id);
       expect(await allAgents()).toHaveLength(1);
     });
@@ -326,18 +352,20 @@ describe('Channel onboarding', () => {
       const error = vi.spyOn(Logger.prototype, 'error');
       const assistant = await agents.create({ name: 'assistant' });
       const topic = inboundChannel(GROUP, '7', 'Old');
-      await ds.getRepository(Channel).save({
+      const { id } = await ds.getRepository(Channel).save({
         integrationKind: 'telegram',
         externalKey: topic.key,
         address: topic.address,
         title: 'Old',
-        agentId: assistant.id,
       });
+      await ds
+        .getRepository(LegacyChannelAgent)
+        .insert({ channelId: id, agentName: assistant.name });
 
       await adapter.emit(topicCreated(GROUP, '7', { title: 'New' }));
 
       expect(await channelFor(topic.key)).toMatchObject({
-        agentId: assistant.id,
+        agentName: assistant.name,
         title: 'Old',
       });
       expect(await allAgents()).toHaveLength(1);
@@ -348,7 +376,7 @@ describe('Channel onboarding', () => {
     it('does not onboard a disabled Channel again', async () => {
       await adapter.emit(topicCreated(GROUP, '7'));
       const { id } = await channelFor(`${GROUP.key}:7`);
-      await ds.getRepository(Channel).update(id, { enabled: false });
+      await ds.getRepository(LegacyChannelAgent).update(id, { enabled: false });
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '7' }));
 
@@ -439,7 +467,7 @@ describe('Channel onboarding', () => {
         expect(await channelFor(SUPERGROUP_KEY)).toMatchObject({
           id: before.id,
           address: { chatId: SUPERGROUP_KEY },
-          agentId: before.agentId,
+          agentName: before.agentName,
         });
         // Messages from the new ID reach the same Channel.
         await adapter.deliver(
@@ -551,7 +579,7 @@ describe('Channel onboarding', () => {
 
       await adapter.deliver(inboundMessage(OWNER));
 
-      expect((await channelFor(OWNER.key)).agentId).toBe(assistant.id);
+      expect((await channelFor(OWNER.key)).agentName).toBe(assistant.name);
       expect(sentTexts()).toEqual([welcomeText(assistant, own, 'chat')]);
     });
 

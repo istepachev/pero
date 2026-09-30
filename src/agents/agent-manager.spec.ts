@@ -11,7 +11,6 @@ import type { InboundChat } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
 import { ChannelTurns } from '../channels/channel-stages.js';
 import { ChannelsModule } from '../channels/channels.module.js';
-import { ChannelsService } from '../channels/channels.service.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import {
   FakeChannelAdapter,
@@ -21,6 +20,7 @@ import {
   topicCreated,
 } from '../channels/testing/fake-channel-adapter.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -136,6 +136,17 @@ describe('AgentManager', () => {
     return ds
       .getRepository(Channel)
       .findOneByOrFail({ integrationKind: 'telegram', externalKey: key });
+  }
+
+  /**
+   * Points Channel `id` at Agent `agentName`, and enables or disables it,
+   * as a legacy data directory keeps it; notes change routes the same way.
+   */
+  function route(
+    id: number,
+    change: { agentName?: string; enabled?: boolean },
+  ): Promise<unknown> {
+    return ds.getRepository(LegacyChannelAgent).update(id, change);
   }
 
   /** Lets queued promise callbacks and database work run. */
@@ -306,7 +317,13 @@ describe('AgentManager', () => {
 
     const general = await channelFor(GROUP.key);
     const direct = await channelFor(OWNER.key);
-    expect(general.agentId).toBe(direct.agentId);
+    const routes = ds.getRepository(LegacyChannelAgent);
+    expect(await routes.findOneBy({ channelId: general.id })).toMatchObject({
+      agentName: 'main',
+    });
+    expect(await routes.findOneBy({ channelId: direct.id })).toMatchObject({
+      agentName: 'main',
+    });
     const sessions = await allSessions();
     expect(
       sessions.map(({ channelId, agentName, providerSessionId }) => ({
@@ -473,7 +490,7 @@ describe('AgentManager', () => {
     ).toMatchObject({ direction: 'in', sessionId: null });
   });
 
-  it('skips a turn whose Channel was assigned another Agent after it was accepted', async () => {
+  it('skips a turn whose Channel went to another Agent after it was accepted', async () => {
     await say(OWNER, 'Hello');
     const channel = await channelFor(OWNER.key);
     await agents.create({ name: 'other' });
@@ -481,7 +498,7 @@ describe('AgentManager', () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await moduleRef.get(ChannelsService).assign(channel.id, 'other');
+    await route(channel.id, { agentName: 'other' });
 
     held.release();
     await idle();
@@ -490,12 +507,9 @@ describe('AgentManager', () => {
       'Hello',
       'one',
     ]);
-    // The old Agent opened no Session in a Channel it no longer serves.
-    expect(
-      (await allSessions()).filter((session) => session.status === 'active'),
-    ).toEqual([]);
 
-    // The new Agent starts fresh, with the skipped message carried over.
+    // The new Agent starts fresh, with the skipped message carried over,
+    // and the old Agent's Session ends.
     await say(OWNER, 'three');
     expect(claude.requests.at(-1)!.input).toMatch(/User: two\n.*\n\nthree$/s);
     expect(
@@ -505,15 +519,41 @@ describe('AgentManager', () => {
     ]);
   });
 
-  it('skips a turn whose Channel was disabled after it was accepted, and resumes once enabled', async () => {
+  it('starts afresh when a Channel goes back to an Agent it had before', async () => {
     await say(OWNER, 'Hello');
     const channel = await channelFor(OWNER.key);
-    const channels = moduleRef.get(ChannelsService);
+    await agents.create({ name: 'other' });
+
+    await route(channel.id, { agentName: 'other' });
+    await say(OWNER, 'to other');
+    await route(channel.id, { agentName: 'main' });
+    await say(OWNER, 'back');
+
+    // Main's first Session ended; its return starts a new one.
+    expect(claude.requests.at(-1)!.providerSessionId).toBeUndefined();
+    expect(claude.requests.at(-1)!.input).toMatch(
+      /User: to other\n.*\n\nback$/s,
+    );
+    expect(
+      (await allSessions()).map(({ agentName, status }) => ({
+        agentName,
+        status,
+      })),
+    ).toEqual([
+      { agentName: 'main', status: 'closed' },
+      { agentName: 'other', status: 'closed' },
+      { agentName: 'main', status: 'active' },
+    ]);
+  });
+
+  it('skips a turn whose legacy Channel was disabled after it was accepted, and resumes once enabled', async () => {
+    await say(OWNER, 'Hello');
+    const channel = await channelFor(OWNER.key);
     const held = claude.hold();
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await channels.setEnabled(channel.id, false);
+    await route(channel.id, { enabled: false });
 
     held.release();
     await idle();
@@ -524,8 +564,10 @@ describe('AgentManager', () => {
 
     await say(OWNER, 'ignored');
     expect(claude.requests).toHaveLength(2);
+    // A legacy Channel stays silent, as it always did.
+    expect(sentTexts().at(-1)).toBe('echo: one');
 
-    await channels.setEnabled(channel.id, true);
+    await route(channel.id, { enabled: true });
     await say(OWNER, 'three');
     expect(claude.requests.at(-1)).toMatchObject({
       input: 'three',

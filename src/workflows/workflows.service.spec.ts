@@ -187,9 +187,6 @@ describe('WorkflowsService and WorkflowViews', () => {
   });
 
   it('sets, changes, and clears the Channel history its runs read', async () => {
-    const agent = await ds.getRepository(Agent).findOneByOrFail({
-      name: 'coach',
-    });
     const channels = ds.getRepository(Channel);
     const { id: channel } = await channels.save(
       channels.create({
@@ -197,7 +194,6 @@ describe('WorkflowsService and WorkflowViews', () => {
         externalKey: '1234',
         address: { chatId: '1234' },
         title: null,
-        agentId: agent.id,
       }),
     );
     await workflows.create({
@@ -314,9 +310,6 @@ describe('WorkflowsService and WorkflowViews', () => {
   });
 
   it('adds and removes the Channels a Workflow notifies', async () => {
-    const agent = await ds.getRepository(Agent).findOneByOrFail({
-      name: 'coach',
-    });
     const channels = ds.getRepository(Channel);
     const [topic, direct] = await channels.save([
       channels.create({
@@ -324,16 +317,12 @@ describe('WorkflowsService and WorkflowViews', () => {
         externalKey: '-100777:7',
         address: { chatId: '-100777', topicId: '7' },
         title: 'English',
-        agentId: agent.id,
       }),
       channels.create({
         integrationKind: 'telegram',
         externalKey: '1234',
         address: { chatId: '1234' },
         title: null,
-        agentId: agent.id,
-        // A disabled Channel may be a target.
-        enabled: false,
       }),
     ]);
     await workflows.create({
@@ -354,14 +343,12 @@ describe('WorkflowsService and WorkflowViews', () => {
         integrationKind: 'telegram',
         key: '-100777:7',
         title: 'English',
-        enabled: true,
       },
       {
         id: direct!.id,
         integrationKind: 'telegram',
         key: '1234',
         title: null,
-        enabled: false,
       },
     ]);
 
