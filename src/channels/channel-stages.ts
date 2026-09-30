@@ -27,16 +27,15 @@ export function routeOf(
 
 /**
  * What Pero replies, once, in a Channel no one answers in: why, and what
- * to edit. Null where it stays silent, as a legacy data directory always
- * did.
+ * to edit.
  */
-export function unansweredText(reason: Unanswered): string | null {
+export function unansweredText(reason: Unanswered): string {
   switch (reason.kind) {
     case 'disabled':
-      return reason.file === null
-        ? null
-        : `Agent ${reason.agent} is disabled, so no one answers here. ` +
-            `To turn it back on, set enabled: true in ${reason.file}.`;
+      return (
+        `Agent ${reason.agent} is disabled, so no one answers here. ` +
+        `To turn it back on, set enabled: true in ${reason.file}.`
+      );
     case 'conflict':
       return (
         `No one answers in this topic: ${together(reason.files)} claim ` +
@@ -67,9 +66,11 @@ export function unansweredText(reason: Unanswered): string | null {
         `No one answers here: no note defines the main Agent, ` +
         `${reason.agent}. Add ${reason.note}.`
       );
-    case 'undefined-agent':
-    case 'channel-disabled':
-      return null;
+    case 'legacy':
+      return (
+        `Pero isn't answering yet: its owner needs to run pero migrate ` +
+        `<workspace> on the Pero host, which moves its Agents into notes.`
+      );
   }
 }
 
@@ -88,12 +89,8 @@ export function unansweredSummary(reason: Unanswered): string {
       return "the topic's title isn't known yet";
     case 'no-main-agent':
       return `no note defines the main Agent, ${reason.agent}; add ${reason.note}`;
-    case 'undefined-agent':
-      return reason.agent === null
-        ? 'the Channel has no Agent'
-        : `Agent ${reason.agent} is not defined`;
-    case 'channel-disabled':
-      return 'the Channel is disabled';
+    case 'legacy':
+      return 'a legacy data directory has no Agents; run pero migrate <workspace>';
   }
 }
 

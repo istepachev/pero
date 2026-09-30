@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -8,75 +7,74 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NotFoundError } from '../common/errors.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { SessionService } from '../sessions/session.service.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { Definitions, requireAgent } from '../definitions/definitions.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { resolveAgent } from './agent-resolution.js';
 import { AgentViews } from './agent-views.service.js';
 import { AgentsModule } from './agents.module.js';
-import { AgentsService } from './agents.service.js';
 
 describe('AgentViews', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let vault: string;
   let own: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let settings: SettingsService;
-  let agents: AgentsService;
   let views: AgentViews;
 
-  beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-agent-views-'));
-    vault = join(tmp, 'vault');
-    own = join(tmp, 'own');
-    mkdirSync(vault);
-    mkdirSync(own);
+  async function boot() {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         SessionsModule,
       ],
     }).compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    settings = moduleRef.get(SettingsService);
-    agents = moduleRef.get(AgentsService);
     views = moduleRef.get(AgentViews);
-    await settings.update({ defaultWorkingDirectory: vault });
+    ws.use(moduleRef);
+  }
+
+  beforeEach(async () => {
+    ws = TestWorkspace.create('pero-agent-views-');
+    vault = ws.dataFolder;
+    own = join(ws.root, 'own');
+    mkdirSync(own);
+    await boot();
   });
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
-  /** A topic Channel that goes to Agent `agentName`. */
-  async function channel(agentName: string, key: string): Promise<number> {
+  /** A topic Channel, titled `title`. */
+  async function channel(title: string, key: string): Promise<number> {
     const channels = ds.getRepository(Channel);
     const saved = await channels.save(
       channels.create({
         integrationKind: 'telegram',
         externalKey: key,
         address: { chatId: key },
-        title: `Topic ${key}`,
+        title,
       }),
     );
-    await ds
-      .getRepository(LegacyChannelAgent)
-      .insert({ channelId: saved.id, agentName });
     return saved.id;
   }
 
   /** A turn of `name` in `channelId` that reached its provider. */
   async function turn(name: string, channelId: number): Promise<Session> {
-    const agent = await agents.resolve(name);
+    const definitions = moduleRef.get(Definitions);
+    const agent = resolveAgent(
+      await requireAgent(definitions, name),
+      await definitions.defaults(),
+    );
     const session = await inTransaction(ds, (manager) =>
       moduleRef.get(SessionService).beginWithin(manager, channelId, agent),
     );
@@ -96,13 +94,9 @@ describe('AgentViews', () => {
   }
 
   it('lists Agents by name with defaults resolved and the main one marked', async () => {
-    await agents.create({ name: 'notes', providerOptions: { model: 'm1' } });
-    await agents.create({
-      name: 'coder',
-      provider: 'codex',
-      workingDirectory: own,
-    });
-    await settings.update({ mainAgent: 'coder' });
+    await ws.agent('Notes', { model: 'm1' });
+    await ws.agent('Coder', { provider: 'codex', 'working-directory': own });
+    await ws.pero({ 'main-agent': 'Coder' });
 
     expect(await views.list()).toEqual([
       expect.objectContaining({
@@ -126,16 +120,14 @@ describe('AgentViews', () => {
   });
 
   it("predicts each Channel's next turn from its active Session", async () => {
-    const notes = await agents.create({ name: 'notes' });
-    const first = await channel(notes.name, '-100:1');
-    const second = await channel(notes.name, '-100:2');
-    await channel(notes.name, '-100:3');
+    await ws.agent('Notes', { topics: ['One', 'Two', 'Three'] });
+    const first = await channel('One', '-100:1');
+    const second = await channel('Two', '-100:2');
+    await channel('Three', '-100:3');
     const session = await turn('notes', first);
     await turn('notes', second);
 
-    await agents.edit('notes', {
-      providerOptions: { model: 'm2', effort: 'high' },
-    });
+    await ws.editAgent('Notes', { model: 'm2', effort: 'high' });
     const edited = await views.details('NOTES');
     expect(edited.channels.map((c) => [c.key, c.nextTurn])).toEqual([
       [
@@ -161,7 +153,7 @@ describe('AgentViews', () => {
       ],
     ]);
 
-    await agents.edit('notes', { provider: 'codex' });
+    await ws.editAgent('Notes', { provider: 'codex' });
     expect((await views.details('notes')).channels[0]!.nextTurn).toEqual({
       kind: 'fresh',
       reason: 'provider',
@@ -171,12 +163,18 @@ describe('AgentViews', () => {
     });
   });
 
-  it('sees a new default folder as a folder change for Agents that follow it', async () => {
-    const notes = await agents.create({ name: 'notes' });
-    const topic = await channel(notes.name, '-100:1');
+  it('sees a new data folder as a folder change for Agents that follow it', async () => {
+    await ws.agent('Notes', { topics: 'One' });
+    const topic = await channel('One', '-100:1');
     await turn('notes', topic);
 
-    await settings.update({ defaultWorkingDirectory: own });
+    // A new data folder applies on restart; the notes stay where they are.
+    writeFileSync(
+      join(ws.stateFolder, 'config.yaml'),
+      'data: own\nsettings: data/Settings\n',
+    );
+    await moduleRef.close();
+    await boot();
 
     expect((await views.details('notes')).channels[0]!.nextTurn).toMatchObject({
       kind: 'fresh',
@@ -187,7 +185,7 @@ describe('AgentViews', () => {
   });
 
   it('warns about a folder that went missing', async () => {
-    await agents.create({ name: 'coder', workingDirectory: own });
+    await ws.agent('Coder', { 'working-directory': own });
     expect((await views.details('coder')).folderProblem).toBeNull();
 
     rmSync(own, { recursive: true });

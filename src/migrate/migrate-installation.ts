@@ -34,6 +34,7 @@ import {
   type HostConfig,
   HOST_CONFIG_FILE,
   readHostConfig,
+  resolveDataFolder,
   resolveSettingsFolder,
   setDataFolder,
 } from '../config/host-config.js';
@@ -126,7 +127,7 @@ export async function migrateInstallation(
     let config: { text: string; value: HostConfig };
     try {
       installation = await readInstallation(dataSource);
-      config = newConfig(layout, workspace, installation, staging);
+      config = newConfig(layout, workspace, installation, staging, homeDir);
       const allowed = new Set(
         config.value.allowedChats.map((chat) => chat.chatKey),
       );
@@ -310,15 +311,17 @@ function copyDatabase(layout: DataDirLayout, staging: string): void {
 
 /**
  * The workspace's `config.yaml`: its own when it has one, or else the
- * legacy one, or else the default; with the data folder set to the old
- * default working directory and every chat still in `allowed_chats`
- * allowed. Worked out in `staging`, written later.
+ * legacy one, or else the default; with the data folder set to the one
+ * the legacy `config.yaml` names, or else the old default working
+ * directory, and every chat still in `allowed_chats` allowed. Worked out
+ * in `staging`, written later.
  */
 function newConfig(
   layout: DataDirLayout,
   workspace: string,
   installation: Installation,
   staging: string,
+  homeDir: string,
 ): { text: string; value: HostConfig } {
   const own = join(workspace, STATE_DIR_NAME, HOST_CONFIG_FILE);
   const start = existsSync(own)
@@ -332,7 +335,14 @@ function newConfig(
     readHostConfig(start);
     writeFileAtomic(scratch, readFileSync(start, 'utf8'), 0o600);
   }
-  const { dataFolder } = installation.defaults;
+  // Since plan step 8.5 the database no longer follows an edit of the
+  // legacy `config.yaml`.
+  const legacy = readHostConfig(layout.configFile);
+  const dataFolder =
+    (legacy === null
+      ? null
+      : resolveDataFolder(legacy, layout.root, false, homeDir)) ??
+    installation.defaults.dataFolder;
   const value = editHostConfig(
     scratch,
     (document) => {

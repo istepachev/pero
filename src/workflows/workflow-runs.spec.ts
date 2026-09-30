@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -7,7 +6,6 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
-import { AgentsService } from '../agents/agents.service.js';
 import { AgentChannelTurns } from '../channels/agent-channel-turns.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelRouter } from '../channels/channel-router.js';
@@ -38,8 +36,7 @@ import type { RunView } from '../control/protocol.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import type { RuntimeRequest } from '../runtimes/agent-runtime.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
 import type { HistoryRead } from './execution-snapshot.js';
@@ -48,18 +45,15 @@ import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 import { WorkflowsService } from './workflows.service.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const OWNER = privateChat('1234');
 const HOME = groupChat('-100777', 'Home');
 
 describe('Workflow Runs and the executor', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let vault: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let agents: AgentsService;
-  let settings: SettingsService;
   let workflows: WorkflowsService;
   let triggers: TriggersService;
   let runs: WorkflowRuns;
@@ -70,9 +64,8 @@ describe('Workflow Runs and the executor', () => {
   async function boot() {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         ChannelsModule,
         WorkflowsModule,
         TriggersModule,
@@ -83,8 +76,7 @@ describe('Workflow Runs and the executor', () => {
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    agents = moduleRef.get(AgentsService);
-    settings = moduleRef.get(SettingsService);
+    ws.use(moduleRef);
     workflows = moduleRef.get(WorkflowsService);
     triggers = moduleRef.get(TriggersService);
     runs = moduleRef.get(WorkflowRuns);
@@ -92,22 +84,19 @@ describe('Workflow Runs and the executor', () => {
   }
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-workflow-runs-'));
-    vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-workflow-runs-');
+    vault = ws.dataFolder;
+    await ws.pero();
+    await ws.agent('Main');
+    await ws.agent('Coach');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
-    await settings.update({
-      defaultProvider: 'claude',
-      defaultWorkingDirectory: vault,
-    });
-    await agents.create({ name: 'coach' });
   });
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /** A Workflow of `agent` that can be run by hand. */
@@ -192,7 +181,7 @@ describe('Workflow Runs and the executor', () => {
 
   describe('concurrency', () => {
     it('runs no more than max-concurrent-runs at once', async () => {
-      await settings.update({ maxConcurrentRuns: 2 });
+      await ws.editPero({ 'max-concurrent-runs': 2 });
       for (const name of ['a', 'b', 'c']) await manualWorkflow(name);
       const held = [claude.hold(), claude.hold(), claude.hold()];
 
@@ -221,7 +210,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('applies a raised limit on the next wake, without a restart', async () => {
-      await settings.update({ maxConcurrentRuns: 1 });
+      await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
       await manualWorkflow('b');
       const held = [claude.hold(), claude.hold()];
@@ -232,7 +221,7 @@ describe('Workflow Runs and the executor', () => {
       await tick();
       expect((await run(b.id)).status).toBe('pending');
 
-      await settings.update({ maxConcurrentRuns: 2 });
+      await ws.editPero({ 'max-concurrent-runs': 2 });
       await executor.wake();
 
       expect((await held[1]!.started).input).toBe('Run b.');
@@ -243,7 +232,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('runs one run of a Workflow at a time, and other Workflows alongside', async () => {
-      await settings.update({ maxConcurrentRuns: 3 });
+      await ws.editPero({ 'max-concurrent-runs': 3 });
       await manualWorkflow('a');
       await manualWorkflow('b');
       const held = [claude.hold(), claude.hold()];
@@ -277,20 +266,24 @@ describe('Workflow Runs and the executor', () => {
   });
 
   it('runs with the settings captured when it started, whatever is edited meanwhile', async () => {
-    await settings.update({ sharedInstructions: 'Be kind.' });
+    await ws.editPero({}, 'Be kind.');
     await manualWorkflow('brief', 'First input.');
     const held = claude.hold();
 
     const { id } = await runs.start('brief');
     const request = await held.started;
-    const own = join(tmp, 'own');
+    const own = join(ws.root, 'own');
     mkdirSync(own);
-    await agents.edit('coach', {
-      provider: 'codex',
-      providerOptions: { model: 'gpt-6', effort: 'high' },
-      instructions: 'Be brief.',
-      workingDirectory: own,
-    });
+    await ws.editAgent(
+      'Coach',
+      {
+        provider: 'codex',
+        model: 'gpt-6',
+        effort: 'high',
+        'working-directory': own,
+      },
+      'Be brief.',
+    );
     await workflows.edit('brief', { inputTemplate: 'Second input.' });
     held.release();
     await executor.idle();
@@ -519,7 +512,7 @@ describe('Workflow Runs and the executor', () => {
       await workflows.edit('a', { enabled: false });
       await restart();
       const b = await stopMidRun('b');
-      await agents.edit('coach', { enabled: false });
+      await ws.editAgent('Coach', { enabled: false });
 
       await restart();
 
@@ -553,7 +546,7 @@ describe('Workflow Runs and the executor', () => {
 
   describe('cancelling', () => {
     it('cancels a pending run before it starts', async () => {
-      await settings.update({ maxConcurrentRuns: 1 });
+      await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
       await manualWorkflow('b');
       const held = claude.hold();
@@ -626,7 +619,7 @@ describe('Workflow Runs and the executor', () => {
   });
 
   it('fails a queued run whose Workflow was disabled before it started', async () => {
-    await settings.update({ maxConcurrentRuns: 1 });
+    await ws.editPero({ 'max-concurrent-runs': 1 });
     await manualWorkflow('a');
     await manualWorkflow('b');
     const held = claude.hold();
@@ -803,7 +796,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('posts why a run failed, including one refused before it started', async () => {
-      await settings.update({ maxConcurrentRuns: 1 });
+      await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
       await manualWorkflow('b');
       await target('a');
@@ -952,7 +945,7 @@ describe('Workflow Runs and the executor', () => {
     let adapter: FakeChannelAdapter;
 
     beforeEach(async () => {
-      await settings.update({ timezone: 'UTC' });
+      await ws.editPero({ timezone: 'UTC' });
       for (const chat of [OWNER, HOME]) {
         await moduleRef.get(AllowedChatsService).allow({
           integrationKind: 'telegram',
@@ -1314,7 +1307,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('retries a cancelled run, and an interrupted one Pero did not retry', async () => {
-      await settings.update({ maxConcurrentRuns: 1 });
+      await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
       await manualWorkflow('b');
       const held = claude.hold();
@@ -1400,7 +1393,7 @@ describe('Workflow Runs and the executor', () => {
         ),
       );
       await workflows.edit('brief', { enabled: true });
-      await agents.edit('coach', { enabled: false });
+      await ws.editAgent('Coach', { enabled: false });
       await expect(runs.retry(id)).rejects.toThrow(
         new InvalidInputError(
           'Agent coach is disabled; enable it first (enabled: true in its note)',
@@ -1483,7 +1476,7 @@ describe('Workflow Runs and the executor', () => {
       );
       await workflows.edit('brief', { enabled: true });
 
-      await agents.edit('coach', { enabled: false });
+      await ws.editAgent('Coach', { enabled: false });
       await expect(runs.start('brief')).rejects.toThrow(
         'Agent coach is disabled; enable it first (enabled: true in its note)',
       );

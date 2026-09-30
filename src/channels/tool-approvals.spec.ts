@@ -1,6 +1,3 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
@@ -10,8 +7,7 @@ import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { AgentChannelTurns } from './agent-channel-turns.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type { InboundChat } from './channel-adapter.js';
@@ -26,14 +22,13 @@ import {
   type SentRecord,
 } from './testing/fake-channel-adapter.js';
 import { TOOL_APPROVAL_TIMEOUT_MS } from './tool-approvals.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
 const STRANGER = privateChat('999');
 
 describe('ToolApprovals', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let adapter: FakeChannelAdapter;
   let claude: FakeAgentRuntime;
@@ -42,9 +37,8 @@ describe('ToolApprovals', () => {
   async function boot(timeoutMs = 60_000) {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ChannelsModule,
       ],
@@ -56,9 +50,6 @@ describe('ToolApprovals', () => {
       .compile();
     await moduleRef.init();
     closed = false;
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: join(tmp, 'vault') });
     for (const chat of [GROUP, OWNER]) {
       await moduleRef.get(AllowedChatsService).allow({
         integrationKind: 'telegram',
@@ -72,15 +63,15 @@ describe('ToolApprovals', () => {
   }
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-approvals-'));
-    mkdirSync(join(tmp, 'vault'));
+    ws = TestWorkspace.create('pero-approvals-');
+    await ws.agent('Main');
     claude = new FakeAgentRuntime('claude');
     await boot();
   });
 
   afterEach(async () => {
     if (!closed) await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   function idle(): Promise<void> {

@@ -97,6 +97,7 @@ export class BackupService implements BeforeApplicationShutdown {
     );
     try {
       const snapshot = join(staging, DATABASE_ENTRY);
+      const workingDirectories = await this.workingDirectories();
       await this.connection().backup(snapshot);
       await chmod(snapshot, 0o600);
       // A workspace keeps its token in .env, which is never backed up.
@@ -121,7 +122,8 @@ export class BackupService implements BeforeApplicationShutdown {
         createdAt: new Date().toISOString(),
         sourceDataDir: this.layout.root,
         sourceWorkspace: this.layout.workspace,
-        ...describeSnapshot(snapshot),
+        lastMigration: describeSnapshot(snapshot),
+        workingDirectories,
         secrets,
         ...(dataFolder === null ? {} : { includesData: true }),
       };
@@ -197,6 +199,25 @@ export class BackupService implements BeforeApplicationShutdown {
     return folder;
   }
 
+  /**
+   * The folders the installation's Agents work in, which a restore checks
+   * for: the data folder, and each Agent's own.
+   */
+  private async workingDirectories(): Promise<
+    BackupManifest['workingDirectories']
+  > {
+    const { dataFolder } = await this.definitions.defaults();
+    const agents = await this.definitions.agents();
+    return [
+      ...(dataFolder === null ? [] : [{ path: dataFolder, agent: null }]),
+      ...agents.flatMap(({ name, ownWorkingDirectory }) =>
+        ownWorkingDirectory === null
+          ? []
+          : [{ path: ownWorkingDirectory, agent: name }],
+      ),
+    ];
+  }
+
   /** The better-sqlite3 connection TypeORM holds. */
   private connection(): Database.Database {
     return (
@@ -214,13 +235,10 @@ function isInside(path: string, folder: string): boolean {
 }
 
 /**
- * Reads what the manifest records from the snapshot itself, so it matches
- * the backed-up records exactly, and leaves the snapshot as one standalone
+ * The last migration the snapshot has, and leaves it as one standalone
  * file without a WAL.
  */
-function describeSnapshot(
-  snapshot: string,
-): Pick<BackupManifest, 'lastMigration' | 'workingDirectories'> {
+function describeSnapshot(snapshot: string): string | null {
   const db = new Database(snapshot);
   try {
     db.pragma('journal_mode = DELETE');
@@ -229,24 +247,7 @@ function describeSnapshot(
         'SELECT "name" FROM "migrations" ORDER BY "timestamp" DESC LIMIT 1',
       )
       .get();
-    const settings = db
-      .prepare<[], { folder: string | null }>(
-        'SELECT "default_working_directory" AS "folder" FROM "settings"',
-      )
-      .get();
-    const agents = db
-      .prepare<[], { name: string; folder: string }>(
-        'SELECT "name", "working_directory" AS "folder" FROM "agents" ' +
-          'WHERE "working_directory" IS NOT NULL ORDER BY "name"',
-      )
-      .all();
-    return {
-      lastMigration: migration?.name ?? null,
-      workingDirectories: [
-        ...(settings?.folder ? [{ path: settings.folder, agent: null }] : []),
-        ...agents.map(({ name, folder }) => ({ path: folder, agent: name })),
-      ],
-    };
+    return migration?.name ?? null;
   } finally {
     db.close();
   }

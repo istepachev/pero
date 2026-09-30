@@ -1,22 +1,22 @@
-import { homedir } from 'node:os';
 import { Command, CommandRunner, SubCommand } from 'nest-commander';
 import { InvalidInputError } from '../../common/errors.js';
 import { TELEGRAM_TOKEN_ENV } from '../../config/settings-input.js';
 import type { SettingsChange } from '../../config/settings-input.js';
 import type { ControlClient } from '../../control/client.js';
+import { SETTING_HOMES } from '../../settings-files/note-hints.js';
 import { CliError } from '../errors.js';
-import { formatSettings } from '../format-settings.js';
+import { formatSettings, formatToken } from '../format-settings.js';
 import { settingStub } from '../note-stubs.js';
 import { PeroCommand } from '../pero-command.js';
 import { isPromptExit, readStdin, terminalPrompts } from '../prompts.js';
-import {
-  findSettingsKey,
-  renameField,
-  SETTINGS_KEYS,
-  type SettingsKey,
-} from '../settings-keys.js';
 
-const KEY_LIST = SETTINGS_KEYS.map((key) => key.name).join(', ');
+/** The one setting Pero stores itself; notes and `config.yaml` hold the rest. */
+const TOKEN_KEY = 'telegram-bot-token';
+
+/** Every key `pero settings` knows: the old ones name where they live now. */
+const KEYS = [...Object.keys(SETTING_HOMES), TOKEN_KEY];
+
+const KEY_LIST = KEYS.join(', ');
 
 @SubCommand({
   name: 'show',
@@ -26,7 +26,9 @@ const KEY_LIST = SETTINGS_KEYS.map((key) => key.name).join(', ');
 export class SettingsShowCommand extends PeroCommand {
   async run(): Promise<void> {
     const { client } = await this.requireDaemon();
-    console.log(formatSettings(await client.call('settings.get')));
+    console.log(
+      formatSettings(await client.call('settings.get'), this.config().dataDir),
+    );
   }
 }
 
@@ -39,22 +41,19 @@ export class SettingsShowCommand extends PeroCommand {
 })
 export class SettingsSetCommand extends PeroCommand {
   async run([name, value]: string[]): Promise<void> {
-    const key = findSettingsKey(name!);
-    settingStub(this.config(), key.name);
-    if (key.secret && value !== undefined) {
+    checkKey(name!);
+    settingStub(this.config(), name!);
+    if (value !== undefined) {
       // The value is not repeated: it is already in the shell history.
       throw new CliError(
-        `Pass ${key.name} on stdin or at the prompt, not as an argument, so it stays out of shell history`,
+        `Pass ${TOKEN_KEY} on stdin or at the prompt, not as an argument, so it stays out of shell history`,
       );
     }
     const { client } = await this.requireDaemon();
-    const input = value ?? (await readValue(key));
-    if (input.trim() === '') {
-      throw new CliError(`No value given for ${key.name}`);
-    }
-
-    const change = key.set(input, { cwd: process.cwd(), home: homedir() });
-    await apply(client, key, change);
+    const token = await readToken();
+    if (token.trim() === '')
+      throw new CliError(`No value given for ${TOKEN_KEY}`);
+    await apply(client, { telegramBotToken: token });
   }
 }
 
@@ -67,11 +66,10 @@ export class SettingsSetCommand extends PeroCommand {
 })
 export class SettingsUnsetCommand extends PeroCommand {
   async run([name]: string[]): Promise<void> {
-    const key = findSettingsKey(name!);
-    settingStub(this.config(), key.name);
-    if (typeof key.unset === 'string') throw new CliError(key.unset);
+    checkKey(name!);
+    settingStub(this.config(), name!);
     const { client } = await this.requireDaemon();
-    await apply(client, key, key.unset);
+    await apply(client, { telegramBotToken: null });
   }
 }
 
@@ -87,10 +85,19 @@ export class SettingsCommand extends CommandRunner {
   }
 }
 
-/** Sends `change`, then prints the new value of `key`. */
+/**
+ * A `CliError` listing the valid keys unless `name` is one. `settingStub`
+ * then stops at any but the bot token, naming where it lives now.
+ */
+function checkKey(name: string): void {
+  if (!KEYS.includes(name)) {
+    throw new CliError(`Unknown setting "${name}". Settings: ${KEY_LIST}`);
+  }
+}
+
+/** Sends `change`, then prints where the token now comes from. */
 async function apply(
   client: ControlClient,
-  key: SettingsKey,
   change: SettingsChange,
 ): Promise<void> {
   let view;
@@ -98,26 +105,25 @@ async function apply(
     view = await client.call('settings.update', change);
   } catch (error) {
     if (!(error instanceof InvalidInputError)) throw error;
-    throw new InvalidInputError(renameField(error.message, key));
+    // The daemon names the field as it stores it.
+    throw new InvalidInputError(
+      error.message.replace(/^telegramBotToken: /, `${TOKEN_KEY}: `),
+    );
   }
-  console.log(`${key.name} is now ${key.show(view)}`);
-  const note = typeof key.note === 'function' ? key.note(view) : key.note;
-  if (note !== undefined && note !== null) console.log(note);
-  if (key.secret && view.telegramBotToken.source === 'environment') {
+  console.log(`${TOKEN_KEY} is now ${formatToken(view)}`);
+  if (view.telegramBotToken.source === 'environment') {
     console.error(
       `${TELEGRAM_TOKEN_ENV} overrides the stored token while it is set`,
     );
   }
 }
 
-/** A value from the prompt on a terminal, otherwise all of stdin. */
-async function readValue(key: SettingsKey): Promise<string> {
+/** The token from the prompt on a terminal, otherwise all of stdin. */
+async function readToken(): Promise<string> {
   if (!process.stdin.isTTY) return readStdin();
   const prompts = await terminalPrompts();
   try {
-    return key.secret
-      ? await prompts.password({ message: key.name })
-      : await prompts.input({ message: key.name });
+    return await prompts.password({ message: TOKEN_KEY });
   } catch (error) {
     if (isPromptExit(error)) throw new CliError('Cancelled', 130);
     throw error;

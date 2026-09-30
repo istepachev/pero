@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -10,20 +9,17 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message as HistoryMessage } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramCredentials } from './telegram-credentials.service.js';
 import { TelegramStatus } from './telegram-status.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 const OTHER = '987654321:BBEhBOweik6ad9r_QXMENQjcrGbqCr4K-xy';
@@ -47,7 +43,7 @@ const DIRECT: Chat.PrivateChat = {
 const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('TelegramAdapter', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let secretsDir: string;
   let api: FakeBotApi;
   let runtime: FakeAgentRuntime;
@@ -55,10 +51,10 @@ describe('TelegramAdapter', () => {
   let nextMessageId: number;
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-telegram-'));
-    secretsDir = join(tmp, 'secrets');
+    ws = TestWorkspace.create('pero-telegram-');
+    await ws.agent('Main');
+    secretsDir = join(ws.root, 'secrets');
     mkdirSync(secretsDir, { mode: 0o700 });
-    mkdirSync(join(tmp, 'vault'));
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
@@ -69,7 +65,7 @@ describe('TelegramAdapter', () => {
     await moduleRef?.close();
     moduleRef = undefined;
     await api.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /**
@@ -81,9 +77,8 @@ describe('TelegramAdapter', () => {
   ) {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ChannelsModule,
         TelegramModule.forRoot({
@@ -97,9 +92,6 @@ describe('TelegramAdapter', () => {
       .useValue([runtime])
       .compile();
     // The database opens during compilation; set up before intake starts.
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: join(tmp, 'vault') });
     for (const chat of options.allow ?? [DIRECT]) await allow(chat);
     await moduleRef.init();
   }
@@ -274,6 +266,8 @@ describe('TelegramAdapter', () => {
 
   describe('addresses', () => {
     it('answers a forum topic in that topic', async () => {
+      // A topic whose title Pero hasn't seen goes to the main Agent.
+      await ws.pero({ 'new-topics': 'main-agent' });
       await start({ allow: [FORUM] });
 
       api.push(inTopic(FORUM, 42, { text: 'Hello' }));
@@ -285,7 +279,7 @@ describe('TelegramAdapter', () => {
           message_thread_id: 42,
         });
       }
-      expect(welcome?.text).toMatch(/^This topic talks to Agent topic-42/);
+      expect(welcome?.text).toMatch(/^This topic talks to Agent main/);
       expect(reply?.text).toBe('echo: Hello');
     });
 
@@ -350,9 +344,7 @@ describe('TelegramAdapter', () => {
           externalKey: '-1001234567890:42',
           title: 'Fitness',
         });
-        expect(
-          await db().getRepository(Agent).findOneBy({ name: 'health' }),
-        ).toMatchObject({ title: 'Fitness' });
+        expect(ws.read('Agents/Health.md')).toContain('- Fitness');
       });
     });
 
@@ -410,9 +402,9 @@ describe('TelegramAdapter', () => {
       expect(
         (await get(AllowedChatsService).list('telegram')).map((c) => c.chatKey),
       ).toEqual(['-1009876543210']);
-      expect(readFileSync(join(tmp, 'config.yaml'), 'utf8')).toContain(
-        '- id: -1009876543210\n',
-      );
+      expect(
+        readFileSync(join(ws.stateFolder, 'config.yaml'), 'utf8'),
+      ).toContain('- id: -1009876543210\n');
       expect(await db().getRepository(Channel).find()).toEqual([
         expect.objectContaining({
           id: before!.id,
@@ -524,6 +516,10 @@ describe('TelegramAdapter', () => {
     it('flags a group the bot has left', async () => {
       await start({ allow: [FORUM] });
       await connected();
+      // The check at connection must not answer after the event does.
+      await vi.waitFor(() =>
+        expect(get(TelegramStatus).access()).toHaveLength(1),
+      );
 
       api.push({
         my_chat_member: {

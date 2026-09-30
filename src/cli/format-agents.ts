@@ -1,7 +1,7 @@
 import type { AgentDetails, AgentView, NextTurn } from '../control/protocol.js';
 import type { ValueOrigin } from '../settings-files/origins.js';
 import { table } from './format-status.js';
-import { preview } from './settings-keys.js';
+import { preview } from './preview.js';
 
 const DEFAULT = 'default';
 

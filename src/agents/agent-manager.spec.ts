@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -20,7 +19,6 @@ import {
   topicCreated,
 } from '../channels/testing/fake-channel-adapter.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -28,24 +26,18 @@ import { ComponentHealth } from '../health/component-health.js';
 import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
-import { AgentsService } from './agents.service.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
 
 describe('AgentManager', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let vault: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let agents: AgentsService;
-  let settings: SettingsService;
   let adapter: FakeChannelAdapter;
   let claude: FakeAgentRuntime;
   let codex: FakeAgentRuntime;
@@ -54,9 +46,8 @@ describe('AgentManager', () => {
   async function boot(runtimes: AgentRuntime[] = [claude, codex]) {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ChannelsModule,
       ],
@@ -66,8 +57,7 @@ describe('AgentManager', () => {
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    agents = moduleRef.get(AgentsService);
-    settings = moduleRef.get(SettingsService);
+    ws.use(moduleRef);
     const allowedChats = moduleRef.get(AllowedChatsService);
     for (const chat of [GROUP, OWNER]) {
       if ((await allowedChats.find('telegram', chat.key)) !== null) continue;
@@ -88,22 +78,19 @@ describe('AgentManager', () => {
   }
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-agent-manager-'));
-    vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-agent-manager-');
+    vault = ws.dataFolder;
+    await ws.pero();
+    await ws.agent('Main');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
-    await settings.update({
-      defaultProvider: 'claude',
-      defaultWorkingDirectory: vault,
-    });
   });
 
   afterEach(async () => {
     await moduleRef.close();
     vi.restoreAllMocks();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /** Settles once every accepted turn has answered. */
@@ -137,17 +124,6 @@ describe('AgentManager', () => {
     return ds
       .getRepository(Channel)
       .findOneByOrFail({ integrationKind: 'telegram', externalKey: key });
-  }
-
-  /**
-   * Points Channel `id` at Agent `agentName`, and enables or disables it,
-   * as a legacy data directory keeps it; notes change routes the same way.
-   */
-  function route(
-    id: number,
-    change: { agentName?: string; enabled?: boolean },
-  ): Promise<unknown> {
-    return ds.getRepository(LegacyChannelAgent).update(id, change);
   }
 
   /** Lets queued promise callbacks and database work run. */
@@ -212,12 +188,13 @@ describe('AgentManager', () => {
   });
 
   it("builds the request from the Agent's resolved settings", async () => {
-    await settings.update({ sharedInstructions: 'Be kind.' });
+    await ws.pero({}, 'Be kind.');
     await say(OWNER, 'Hello');
-    await agents.edit('main', {
-      instructions: 'Be brief.',
-      providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
-    });
+    await ws.editAgent(
+      'Main',
+      { model: 'claude-opus-5-5', effort: 'high' },
+      'Be brief.',
+    );
 
     await say(OWNER, 'Again');
 
@@ -250,7 +227,7 @@ describe('AgentManager', () => {
     }
 
     it('starts a fresh Session when the provider changes', async () => {
-      await agents.edit('main', { provider: 'codex' });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say(OWNER, 'Again');
 
@@ -264,9 +241,14 @@ describe('AgentManager', () => {
     });
 
     it('starts a fresh Session when the default folder it follows changes', async () => {
-      const other = join(tmp, 'other');
+      // A new data folder applies on restart; the notes stay where they are.
+      const other = join(ws.root, 'other');
       mkdirSync(other);
-      await settings.update({ defaultWorkingDirectory: other });
+      writeFileSync(
+        join(ws.stateFolder, 'config.yaml'),
+        'data: other\nsettings: data/Settings\n',
+      );
+      await restart();
 
       await say(OWNER, 'Again');
 
@@ -276,9 +258,9 @@ describe('AgentManager', () => {
     });
 
     it('starts a fresh Session when the Agent gets its own folder', async () => {
-      const own = join(tmp, 'own');
+      const own = join(ws.root, 'own');
       mkdirSync(own);
-      await agents.edit('main', { workingDirectory: own });
+      await ws.editAgent('Main', { 'working-directory': own });
 
       await say(OWNER, 'Again');
 
@@ -287,9 +269,7 @@ describe('AgentManager', () => {
     });
 
     it('resumes the same Session when the model or effort changes', async () => {
-      await agents.edit('main', {
-        providerOptions: { model: 'claude-sonnet-5', effort: 'low' },
-      });
+      await ws.editAgent('Main', { model: 'claude-sonnet-5', effort: 'low' });
 
       await say(OWNER, 'Again');
 
@@ -318,13 +298,6 @@ describe('AgentManager', () => {
 
     const general = await channelFor(GROUP.key);
     const direct = await channelFor(OWNER.key);
-    const routes = ds.getRepository(LegacyChannelAgent);
-    expect(await routes.findOneBy({ channelId: general.id })).toMatchObject({
-      agentName: 'main',
-    });
-    expect(await routes.findOneBy({ channelId: direct.id })).toMatchObject({
-      agentName: 'main',
-    });
     const sessions = await allSessions();
     expect(
       sessions.map(({ channelId, agentName, providerSessionId }) => ({
@@ -460,15 +433,8 @@ describe('AgentManager', () => {
   });
 
   it("passes the workspace's settings folder to the runtime, in Channels and Workflow runs", async () => {
+    const { settingsFolder } = ws;
     await say(OWNER, 'Hello');
-    expect(claude.requests[0]).not.toHaveProperty('settingsFolder');
-
-    const settingsFolder = join(vault, 'Settings');
-    vi.spyOn(moduleRef.get(SettingsNotes), 'folders').mockReturnValue({
-      workspace: tmp,
-      dataFolder: vault,
-      settingsFolder,
-    });
     await say(OWNER, 'Again');
     await moduleRef.get(AgentManager).runIsolated({
       agent: {
@@ -484,6 +450,7 @@ describe('AgentManager', () => {
       label: 'test',
     });
 
+    expect(claude.requests[0]!.settingsFolder).toBe(settingsFolder);
     expect(claude.requests[1]!.settingsFolder).toBe(settingsFolder);
     expect(claude.requests[2]!.settingsFolder).toBe(settingsFolder);
     expect(claude.requests[2]).not.toHaveProperty('approve');
@@ -505,7 +472,7 @@ describe('AgentManager', () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await agents.edit('main', { enabled: false });
+    await ws.editAgent('Main', { enabled: false });
 
     held.release();
     await idle();
@@ -524,12 +491,12 @@ describe('AgentManager', () => {
   it('skips a turn whose Channel went to another Agent after it was accepted', async () => {
     await say(OWNER, 'Hello');
     const channel = await channelFor(OWNER.key);
-    await agents.create({ name: 'other' });
+    await ws.agent('Other');
     const held = claude.hold();
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await route(channel.id, { agentName: 'other' });
+    await ws.editPero({ 'main-agent': 'Other' });
 
     held.release();
     await idle();
@@ -552,12 +519,11 @@ describe('AgentManager', () => {
 
   it('starts afresh when a Channel goes back to an Agent it had before', async () => {
     await say(OWNER, 'Hello');
-    const channel = await channelFor(OWNER.key);
-    await agents.create({ name: 'other' });
+    await ws.agent('Other');
 
-    await route(channel.id, { agentName: 'other' });
+    await ws.editPero({ 'main-agent': 'Other' });
     await say(OWNER, 'to other');
-    await route(channel.id, { agentName: 'main' });
+    await ws.editPero({ 'main-agent': null });
     await say(OWNER, 'back');
 
     // Main's first Session ended; its return starts a new one.
@@ -575,36 +541,6 @@ describe('AgentManager', () => {
       { agentName: 'other', status: 'closed' },
       { agentName: 'main', status: 'active' },
     ]);
-  });
-
-  it('skips a turn whose legacy Channel was disabled after it was accepted, and resumes once enabled', async () => {
-    await say(OWNER, 'Hello');
-    const channel = await channelFor(OWNER.key);
-    const held = claude.hold();
-    await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
-    await held.started;
-    await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await route(channel.id, { enabled: false });
-
-    held.release();
-    await idle();
-    expect(claude.requests.map((request) => request.input)).toEqual([
-      'Hello',
-      'one',
-    ]);
-
-    await say(OWNER, 'ignored');
-    expect(claude.requests).toHaveLength(2);
-    // A legacy Channel stays silent, as it always did.
-    expect(sentTexts().at(-1)).toBe('echo: one');
-
-    await route(channel.id, { enabled: true });
-    await say(OWNER, 'three');
-    expect(claude.requests.at(-1)).toMatchObject({
-      input: 'three',
-      providerSessionId: 'fake-claude-1',
-    });
-    expect(await allSessions()).toHaveLength(1);
   });
 
   describe('message history', () => {
@@ -687,10 +623,10 @@ describe('AgentManager', () => {
     });
 
     it('carries the latest messages into the first turn after a provider change, and none after', async () => {
-      await settings.update({ historyCarryover: 3 });
+      await ws.pero({ 'history-carryover': 3 });
       await say(OWNER, 'one');
       await say(OWNER, 'two');
-      await agents.edit('main', { provider: 'codex' });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say(OWNER, 'three');
       await say(OWNER, 'four');
@@ -713,9 +649,9 @@ describe('AgentManager', () => {
 
     it('carries over when the Agent moves to another folder', async () => {
       await say(OWNER, 'one');
-      const own = join(tmp, 'own');
+      const own = join(ws.root, 'own');
       mkdirSync(own);
-      await agents.edit('main', { workingDirectory: own });
+      await ws.editAgent('Main', { 'working-directory': own });
 
       await say(OWNER, 'two');
 
@@ -732,7 +668,7 @@ describe('AgentManager', () => {
     it("carries only the Channel's own messages", async () => {
       await say(GROUP, 'In the group');
       await say(OWNER, 'In the chat');
-      await agents.edit('main', { provider: 'codex' });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say(OWNER, 'Again');
 
@@ -743,8 +679,8 @@ describe('AgentManager', () => {
 
     it('carries nothing when history-carryover is 0', async () => {
       await say(OWNER, 'one');
-      await settings.update({ historyCarryover: 0 });
-      await agents.edit('main', { provider: 'codex' });
+      await ws.pero({ 'history-carryover': 0 });
+      await ws.editAgent('Main', { provider: 'codex' });
 
       await say(OWNER, 'two');
 

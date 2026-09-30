@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -9,12 +9,12 @@ import type { Prompts } from '../src/cli/prompts.js';
 import { runInteractiveSetup } from '../src/cli/setup/interactive-setup.js';
 import { NotFoundError } from '../src/common/errors.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
+import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
   type ControlClient,
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
-import { Agent } from '../src/persistence/entities/agent.entity.js';
 import { Channel } from '../src/persistence/entities/channel.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import {
@@ -39,7 +39,7 @@ const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('Telegram chats and pairing (e2e)', () => {
   let tmp: string;
-  let dataDir: string;
+  let workspace: string;
   let client: ControlClient;
   let daemon: Daemon | undefined;
   let api: FakeBotApi;
@@ -50,10 +50,10 @@ describe('Telegram chats and pairing (e2e)', () => {
     api.chats.set(String(FORUM.id), FORUM);
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    dataDir = join(tmp, 'pero');
-    mkdirSync(join(tmp, 'vault'));
-    client = createControlClient(join(dataDir, 'run', 'pero.sock'));
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    workspace = join(tmp, 'ws');
+    initWorkspace(workspace, tmp);
+    client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
   });
 
@@ -67,17 +67,19 @@ describe('Telegram chats and pairing (e2e)', () => {
   /** A daemon on the fake Bot API whose Agents answer with an echo. */
   async function start() {
     daemon = await startDaemon({
-      config: resolveBootstrapConfig({ dataDir, env: {} }),
+      config: resolveBootstrapConfig({ workspace, env: {} }),
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
-    await client.call('settings.update', {
-      defaultWorkingDirectory: join(tmp, 'vault'),
-      telegramBotToken: TOKEN,
-    });
+    await client.call('settings.update', { telegramBotToken: TOKEN });
     await vi.waitFor(async () =>
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );
+  }
+
+  /** The Agent notes, by file name. */
+  function agentNotes(): string[] {
+    return readdirSync(join(workspace, 'data', 'Settings', 'Agents')).sort();
   }
 
   function db(): DataSource {
@@ -166,7 +168,7 @@ describe('Telegram chats and pairing (e2e)', () => {
       }),
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(await db().getRepository(Agent).count()).toBe(1);
+    expect(agentNotes()).toEqual(['Main.md', '_Template.md']);
   });
 
   it('allows a chat that sends its first message during interactive setup', async () => {
@@ -201,8 +203,6 @@ describe('Telegram chats and pairing (e2e)', () => {
       {
         client,
         prompts,
-        cwd: tmp,
-        home: tmp,
         print: () => undefined,
         pollIntervalMs: 20,
       },

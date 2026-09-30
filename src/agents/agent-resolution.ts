@@ -32,22 +32,6 @@ export function resolveAgent(
   };
 }
 
-/** The folder an Agent works in: its own, otherwise the shared default. */
-export function effectiveWorkingDirectory(
-  agent: { workingDirectory: string | null },
-  settings: { defaultWorkingDirectory: string | null },
-): string {
-  const folder = agent.workingDirectory ?? settings.defaultWorkingDirectory;
-  // Creation and edits refuse to follow an unset default, so this means a
-  // row was changed outside the services.
-  if (folder === null) {
-    throw new Error(
-      'Agent follows the default working directory, which is unset',
-    );
-  }
-  return folder;
-}
-
 /**
  * The instructions sent to the runtime: the shared instructions, unless the
  * Agent opts out, then the Agent's own, separated by a blank line. Empty

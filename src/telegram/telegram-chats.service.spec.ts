@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -11,18 +10,15 @@ import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { NotFoundError } from '../common/errors.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { TelegramChats } from './telegram-chats.service.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 
@@ -41,16 +37,16 @@ const DIRECT: Chat.PrivateChat = {
 const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('TelegramChats', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let api: FakeBotApi;
   let runtime: FakeAgentRuntime;
   let moduleRef: TestingModule | undefined;
   let nextMessageId: number;
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-chats-'));
-    mkdirSync(join(tmp, 'secrets'), { mode: 0o700 });
-    mkdirSync(join(tmp, 'vault'));
+    ws = TestWorkspace.create('pero-chats-');
+    await ws.agent('Main');
+    mkdirSync(join(ws.root, 'secrets'), { mode: 0o700 });
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
@@ -61,20 +57,19 @@ describe('TelegramChats', () => {
     await moduleRef?.close();
     moduleRef = undefined;
     await api.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /** Boots the Telegram path, connected to the fake Bot API. */
   async function start() {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ChannelsModule,
         TelegramModule.forRoot({
-          secretsDir: join(tmp, 'secrets'),
+          secretsDir: join(ws.root, 'secrets'),
           env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },
           apiRoot: api.url,
         }),
@@ -83,13 +78,15 @@ describe('TelegramChats', () => {
       .overrideProvider(AGENT_RUNTIMES)
       .useValue([runtime])
       .compile();
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: join(tmp, 'vault') });
     await moduleRef.init();
     await vi.waitFor(() =>
       expect(telegram()?.detail).toMatch(/^Connected as @pero_test_bot/),
     );
+  }
+
+  /** The Agent notes, by file name. */
+  function agentNotes(): string[] {
+    return readdirSync(join(ws.settingsFolder, 'Agents')).sort();
   }
 
   function chats(): TelegramChats {
@@ -264,7 +261,7 @@ describe('TelegramChats', () => {
     });
     expect(runtime.requests).toHaveLength(1);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(await db().getRepository(Agent).count()).toBe(1);
+    expect(agentNotes()).toEqual(['Main.md']);
 
     await chats().allow('1234');
     api.push(message(DIRECT, 'Three'));
@@ -278,6 +275,6 @@ describe('TelegramChats', () => {
       expect.objectContaining({ id: session!.id, status: 'active' }),
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(await db().getRepository(Agent).count()).toBe(1);
+    expect(agentNotes()).toEqual(['Main.md']);
   });
 });

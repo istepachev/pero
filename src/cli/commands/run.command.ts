@@ -1,4 +1,3 @@
-import { homedir } from 'node:os';
 import { Command, Option } from 'nest-commander';
 import { ensureDataDir } from '../../config/data-dir.js';
 import { ControlError } from '../../control/protocol.js';
@@ -91,8 +90,6 @@ export class RunCommand extends PeroCommand {
         {
           client,
           prompts: await terminalPrompts(),
-          cwd: process.cwd(),
-          home: homedir(),
           print: (text) => console.log(text),
         },
         state,

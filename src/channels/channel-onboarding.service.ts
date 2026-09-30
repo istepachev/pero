@@ -1,8 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
-import { AgentsService, MAIN_AGENT_NAME } from '../agents/agents.service.js';
-import { InvalidInputError } from '../common/errors.js';
 import {
   type AgentDefinition,
   Definitions,
@@ -11,13 +9,11 @@ import {
   type Unanswered,
 } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { topicClaim } from '../settings-files/snapshot.js';
 import { AgentNotes } from '../settings-notes/agent-notes.service.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { AgentNamer } from './agent-namer.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
   ChannelEvent,
@@ -30,8 +26,6 @@ import {
   routeOf,
   unansweredSummary,
 } from './channel-stages.js';
-
-export { MAIN_AGENT_NAME };
 
 /** Posted in a new Channel: who answers there and how to change it. */
 export function welcomeText(
@@ -48,23 +42,14 @@ export function welcomeText(
   );
 }
 
-/** Posted instead of a welcome when no Agent can be created yet. */
-export function setupHint(reason: string): string {
-  return (
-    `Pero can't set up an Agent here yet. ${reason}. ` +
-    `Agents work in a workspace's data folder: run on the Pero host ` +
-    `pero migrate <workspace>, then start Pero there`
-  );
-}
-
 /**
  * Records each new Channel in an allowed chat, and welcomes it when an
  * Agent answers there. In a workspace, notes choose that Agent on every
  * message, and Pero writes the note that answers a topic no Agent claims
  * (with `new-topics: create-agent`) and the main Agent's when a primary
  * Channel finds none; a renamed topic's title follows in the note that
- * claims it. A legacy data directory still assigns an Agent: a topic gets
- * a new one named after it, and a chat's primary Channel the main Agent.
+ * claims it. A legacy data directory has no Agents: its Channels are
+ * only recorded.
  */
 @Injectable()
 export class ChannelOnboardingService extends ChannelOnboarding {
@@ -79,8 +64,6 @@ export class ChannelOnboardingService extends ChannelOnboarding {
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly agents: AgentsService,
-    private readonly namer: AgentNamer,
     private readonly sender: ChannelSender,
     private readonly allowedChats: AllowedChatsService,
     private readonly definitions: Definitions,
@@ -119,31 +102,20 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * The Channel for `inbound`, creating it when new, in a legacy data
-   * directory with its Agent in the same transaction, and welcoming it when
-   * an Agent answers there. Null, after a hint in the Channel, when a
-   * legacy Agent cannot be created yet; the next attempt tries again.
+   * The Channel for `inbound`, creating it when new, and welcoming it when
+   * an Agent answers there.
    */
   private async onboard(
     kind: IntegrationKind,
     inbound: InboundChannel,
   ): Promise<Channel | null> {
-    const legacy = !this.notes.inWorkspace();
-    // Named before the transaction: a namer may be slow, and the
-    // transaction queue must not wait on it.
-    const name =
-      legacy && inbound.topicId !== null
-        ? await this.namer.suggest(inbound)
-        : null;
-
-    let result: { channel: Channel; created: boolean };
-    try {
-      result = await inTransaction(this.dataSource, async (manager) => {
+    const { channel, created } = await inTransaction(
+      this.dataSource,
+      async (manager) => {
         const existing = await findChannel(manager, kind, inbound.key);
         if (existing !== null) return { channel: existing, created: false };
-
         const channels = manager.getRepository(Channel);
-        const channel = await channels.save(
+        await channels.save(
           channels.create({
             integrationKind: kind,
             externalKey: inbound.key,
@@ -151,40 +123,13 @@ export class ChannelOnboardingService extends ChannelOnboarding {
             title: inbound.title,
           }),
         );
-        if (legacy) {
-          const agent =
-            name === null
-              ? await this.agents.mainAgentWithin(manager)
-              : await this.agents.createForTopicWithin(manager, {
-                  base: name,
-                  title: inbound.title,
-                });
-          await manager
-            .getRepository(LegacyChannelAgent)
-            .insert({ channelId: channel.id, agentName: agent.name });
-        }
         return {
           channel: (await findChannel(manager, kind, inbound.key))!,
           created: true,
         };
-      });
-    } catch (error) {
-      if (!(error instanceof InvalidInputError)) throw error;
-      this.logger.warn(
-        `Could not onboard ${kind} Channel ${inbound.key}: ${error.message}`,
-      );
-      // No Channel yet, so the hint has no history to join.
-      await this.notify(kind, inbound.key, () =>
-        this.sender.send(kind, inbound.address, {
-          text: setupHint(error.message),
-        }),
-      );
-      return null;
-    }
-
-    const { channel, created } = result;
+      },
+    );
     if (!created) return channel;
-    if (legacy) this.agents.committed();
     this.logger.log(`Onboarded ${kind} Channel ${inbound.key}`);
     await this.settle(channel, true);
     return channel;
@@ -212,7 +157,6 @@ export class ChannelOnboardingService extends ChannelOnboarding {
    * create-agent`, or a primary Channel without the main Agent's note.
    */
   private writesFor(channel: Channel, reason: Unanswered): boolean {
-    if (!this.notes.inWorkspace()) return false;
     return (
       reason.kind === 'unclaimed' ||
       (reason.kind === 'no-main-agent' && routeQuery(channel).primary)
@@ -291,59 +235,20 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * Retitles a renamed topic's Channel. In a workspace, the note claiming
-   * its old title claims the new one instead, so the topic stays with its
-   * Agent. In a legacy data directory, it retitles the topic's Agent too
-   * while the Agent's title still mirrors the topic's; never the Agent's
-   * name.
+   * Retitles a renamed topic's Channel, first renaming the title in the
+   * `topics` of the one note claiming it; runs in the queue, so no message
+   * routes between the two. The note is left as it is when another Agent
+   * claims the new title already, and keeps the old title too while
+   * another topic Pero knows has it.
    */
-  private async rename(
+  private rename(
     kind: IntegrationKind,
     inbound: InboundChannel,
   ): Promise<void> {
-    const legacy = !this.notes.inWorkspace();
-    if (!legacy) {
-      await this.serially(() => this.renameInNotes(kind, inbound));
-      return;
-    }
-    const found = await inTransaction(this.dataSource, async (manager) => {
-      const channel = await findChannel(manager, kind, inbound.key);
-      if (channel === null) return false;
-      if (legacy && inbound.topicId !== null) {
-        const route = await manager
-          .getRepository(LegacyChannelAgent)
-          .findOneBy({ channelId: channel.id });
-        if (route !== null) {
-          await this.agents.retitleWithin(
-            manager,
-            route.agentName,
-            channel.title,
-            inbound.title,
-          );
-        }
-      }
-      await manager
-        .getRepository(Channel)
-        .update(channel.id, { title: inbound.title });
-      return true;
-    });
-    if (found && legacy && inbound.topicId !== null) this.agents.committed();
-    if (!found) {
-      this.logger.debug(
-        `Ignored the rename of unknown ${kind} Channel ${inbound.key}; ` +
-          `its next message onboards it`,
-      );
-    }
+    return this.serially(() => this.retitle(kind, inbound));
   }
 
-  /**
-   * Retitles a renamed topic's Channel in a workspace, first renaming the
-   * title in the `topics` of the one note claiming it; runs in the queue,
-   * so no message routes between the two. The note is left as it is when
-   * another Agent claims the new title already, and keeps the old title
-   * too while another topic Pero knows has it.
-   */
-  private async renameInNotes(
+  private async retitle(
     kind: IntegrationKind,
     inbound: InboundChannel,
   ): Promise<void> {

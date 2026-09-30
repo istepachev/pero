@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -7,15 +6,12 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import { Definitions } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type { InboundChat } from './channel-adapter.js';
 import { ChannelRouter, pairingHint } from './channel-router.js';
@@ -30,7 +26,6 @@ import {
   privateChat,
   topicCreated,
 } from './testing/fake-channel-adapter.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 
 // Beyond Number.MAX_SAFE_INTEGER, like real supergroup IDs can be.
 const GROUP = groupChat('-1009007199254740993', 'Household');
@@ -38,11 +33,10 @@ const STRANGER = groupChat('-100555', 'Somewhere else');
 const OWNER = privateChat('1234');
 
 describe('ChannelRouter', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let router: ChannelRouter;
-  let agents: AgentsService;
   let allowedChats: AllowedChatsService;
   let adapter: FakeChannelAdapter;
   const turns = {
@@ -61,14 +55,11 @@ describe('ChannelRouter', () => {
   };
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-channels-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-channels-');
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        hostConfigIn(tmp),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         ChannelsModule,
       ],
@@ -81,11 +72,8 @@ describe('ChannelRouter', () => {
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     router = moduleRef.get(ChannelRouter);
-    agents = moduleRef.get(AgentsService);
     allowedChats = moduleRef.get(AllowedChatsService);
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: vault });
+    ws.use(moduleRef);
     adapter = new FakeChannelAdapter();
     await router.connect(adapter);
   });
@@ -95,7 +83,7 @@ describe('ChannelRouter', () => {
     vi.useRealTimers();
     vi.clearAllMocks();
     vi.restoreAllMocks();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   function allow(chat: InboundChat, title: string | null = chat.title) {
@@ -107,25 +95,30 @@ describe('ChannelRouter', () => {
     });
   }
 
-  /** A Channel a legacy data directory assigned to a new Agent. */
-  async function channel(key: string, agentName: string) {
-    await agents.create({ name: agentName });
-    const saved = await ds.getRepository(Channel).save({
+  /**
+   * A Channel that Agent `agentName` answers: a note of its own claims a
+   * topic's `title`, and the main Agent answers a primary Channel.
+   */
+  async function channel(
+    key: string,
+    agentName: string,
+    title: string | null = key.includes(':') ? noteTitle(agentName) : null,
+  ) {
+    await ws.agent(
+      noteTitle(agentName),
+      key.includes(':') && title !== null ? { topics: title } : {},
+    );
+    return ds.getRepository(Channel).save({
       integrationKind: 'telegram',
       externalKey: key,
       address: {},
-      title: null,
+      title,
     });
-    await ds
-      .getRepository(LegacyChannelAgent)
-      .insert({ channelId: saved.id, agentName });
-    return saved;
   }
 
-  function disable(channelId: number) {
-    return ds
-      .getRepository(LegacyChannelAgent)
-      .update(channelId, { enabled: false });
+  /** The note title of the Agent named `name`. */
+  function noteTitle(name: string): string {
+    return name.charAt(0).toUpperCase() + name.slice(1);
   }
 
   function messageCount(): Promise<number> {
@@ -276,9 +269,9 @@ describe('ChannelRouter', () => {
       );
     });
 
-    it('drops a message when onboarding returns a disabled Channel', async () => {
+    it('drops a message when onboarding returns a Channel whose Agent is disabled', async () => {
       const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
-      await disable(onboarded.id);
+      await ws.editAgent('Groceries', { enabled: false });
       onboarding.onUnknownChannel.mockResolvedValueOnce(onboarded);
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
@@ -316,11 +309,11 @@ describe('ChannelRouter', () => {
       ]);
     });
 
-    it('drops messages for a disabled Channel or Agent', async () => {
-      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+    it('drops messages for a disabled Agent', async () => {
+      await channel(`${GROUP.key}:7`, 'groceries');
       await channel(GROUP.key, 'main');
-      await disable(topic.id);
-      await agents.edit('main', { enabled: false });
+      await ws.editAgent('Groceries', { enabled: false });
+      await ws.editAgent('Main', { enabled: false });
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '7' }));
       await adapter.deliver(inboundMessage(GROUP));
@@ -330,7 +323,7 @@ describe('ChannelRouter', () => {
     });
 
     it("learns a topic's title from a message, and keeps one it knows", async () => {
-      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+      const topic = await channel(`${GROUP.key}:7`, 'groceries', null);
       const primary = await channel(GROUP.key, 'main');
       const titleOf = async (id: number) =>
         (await ds.getRepository(Channel).findOneByOrFail({ id })).title;
@@ -393,7 +386,7 @@ describe('ChannelRouter', () => {
 
     it('remembers a new chat title without writing config.yaml', async () => {
       await allow(OWNER, null);
-      const file = join(tmp, 'config.yaml');
+      const file = join(ws.stateFolder, 'config.yaml');
       const written = readFileSync(file, 'utf8');
       await adapter.deliver(inboundMessage(groupChat(GROUP.key, 'Home')));
       await adapter.deliver(inboundMessage(OWNER));

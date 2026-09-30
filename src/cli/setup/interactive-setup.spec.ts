@@ -1,16 +1,6 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { parseInput } from '../../common/errors.js';
 import { settingsChangeSchema } from '../../config/settings-input.js';
-import { validateWorkingDirectory } from '../../config/working-directory.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
   AllowedChatView,
@@ -33,18 +23,18 @@ class FakeDaemon {
       claude: { model: null, effort: null },
       codex: { model: null, effort: null },
     },
-    defaultWorkingDirectory: null,
+    defaultWorkingDirectory: '/home/owner/workspace/data',
     sharedInstructions: null,
-    mainAgent: null,
+    mainAgent: 'main',
     historyCarryover: 50,
     historyRetentionDays: null,
     defaultPermissions: 'ask',
     timezone: 'UTC',
     maxConcurrentRuns: 2,
     telegramBotToken: { set: false, source: null },
-    files: null,
-    newTopics: null,
-    setInPero: null,
+    files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+    newTopics: 'create-agent',
+    setInPero: [],
   };
   signedIn = new Set<string>();
   checks = 0;
@@ -122,14 +112,6 @@ class FakeDaemon {
       }
       if (op !== 'settings.update') throw new Error(`unexpected ${op}`);
       const change = parseInput(settingsChangeSchema, params);
-      if (change.defaultWorkingDirectory !== undefined) {
-        this.settings = {
-          ...this.settings,
-          defaultWorkingDirectory: await validateWorkingDirectory(
-            change.defaultWorkingDirectory,
-          ),
-        };
-      }
       if (change.telegramBotToken) {
         this.settings = {
           ...this.settings,
@@ -196,31 +178,20 @@ function scripted(answers: (string | boolean | typeof WAIT)[]) {
 }
 
 describe('runInteractiveSetup', () => {
-  let tmp: string;
-  let home: string;
   let daemon: FakeDaemon;
   let printed: string[];
 
   beforeEach(() => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-setup-'));
-    home = join(tmp, 'home');
-    mkdirSync(home);
     daemon = new FakeDaemon();
     printed = [];
   });
 
-  afterEach(() => {
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  function run(answers: (string | boolean | typeof WAIT)[], cwd = home) {
+  function run(answers: (string | boolean | typeof WAIT)[]) {
     const { prompts, asked } = scripted(answers);
     const done = runInteractiveSetup(
       {
         client: daemon.client,
         prompts,
-        cwd,
-        home,
         print: (text) => printed.push(text),
         pollIntervalMs: 5,
       },
@@ -229,50 +200,32 @@ describe('runInteractiveSetup', () => {
     return { done, asked };
   }
 
-  it('suggests ~/workspace from home and creates it', async () => {
+  it('asks for the token, and is done once the provider is signed in', async () => {
     daemon.signedIn.add('claude');
-    const { done, asked } = run(['', TOKEN]);
+    const { done, asked } = run([TOKEN]);
     await done;
 
-    const workspace = join(home, 'workspace');
-    expect(asked).toEqual([
-      `Working folder [${workspace}]`,
-      'Bot token (Enter to skip) (hidden)',
-    ]);
-    expect(existsSync(workspace)).toBe(true);
-    expect(printed).toContain(`Created ${workspace}`);
-    expect(daemon.settings.defaultWorkingDirectory).toBe(workspace);
+    expect(asked).toEqual(['Bot token (Enter to skip) (hidden)']);
     expect(daemon.settings.telegramBotToken.set).toBe(true);
     expect(printed.at(-1)).toBe('Setup complete');
     expect(printed.join('\n')).not.toContain(TOKEN);
   });
 
-  it('suggests the folder it was started from', async () => {
-    const notes = join(home, 'notes');
-    mkdirSync(notes);
+  it('asks nothing about folders in a legacy data directory, and says to migrate', async () => {
+    daemon.settings = { ...daemon.settings, files: null };
     daemon.signedIn.add('claude');
-    const { done, asked } = run(['', ''], notes);
+    const { done, asked } = run([TOKEN]);
     await done;
 
-    expect(asked[0]).toBe(`Working folder [${notes}]`);
-    expect(daemon.settings.defaultWorkingDirectory).toBe(notes);
-    expect(printed).not.toContain(`Created ${notes}`);
-  });
-
-  it('asks again for a folder the daemon refuses', async () => {
-    const file = join(home, 'file');
-    writeFileSync(file, '');
-    daemon.signedIn.add('claude');
-    const { done } = run([file, '~/vault', '']);
-    await done;
-
-    expect(printed).toContain(`Working directory ${file} is not a folder`);
-    expect(daemon.settings.defaultWorkingDirectory).toBe(join(home, 'vault'));
+    expect(asked).toEqual(['Bot token (Enter to skip) (hidden)']);
+    expect(printed.at(-1)).toMatch(
+      /^Setup needed:\n {2}This legacy data directory has no Agents — pero migrate <workspace>/,
+    );
   });
 
   it('skips the token, and asks again for one that is not valid', async () => {
     daemon.signedIn.add('claude');
-    const { done, asked } = run(['', 'nope', '']);
+    const { done, asked } = run(['nope', '']);
     await done;
 
     expect(asked.filter((q) => q.startsWith('Bot token'))).toHaveLength(2);
@@ -285,7 +238,7 @@ describe('runInteractiveSetup', () => {
   });
 
   it('checks sign-in again until the provider in use is ready', async () => {
-    const { done, asked } = run(['', TOKEN, '', '']);
+    const { done, asked } = run([TOKEN, '', '']);
     // Signs in between the first and second check.
     const original = daemon.client.call.bind(daemon.client);
     (daemon.client as { call: unknown }).call = (
@@ -311,7 +264,7 @@ describe('runInteractiveSetup', () => {
   });
 
   it('lets the owner skip a sign-in', async () => {
-    const { done } = run(['', TOKEN, 's']);
+    const { done } = run([TOKEN, 's']);
     await done;
 
     expect(daemon.checks).toBe(0);
@@ -324,12 +277,10 @@ describe('runInteractiveSetup', () => {
   });
 
   it('stops when a prompt is closed, keeping what was set', async () => {
-    const { done } = run(['']);
+    const { done } = run([TOKEN]);
 
     await expect(done).rejects.toMatchObject({ name: 'ExitPromptError' });
-    expect(daemon.settings.defaultWorkingDirectory).toBe(
-      join(home, 'workspace'),
-    );
+    expect(daemon.settings.telegramBotToken.set).toBe(true);
   });
 
   describe('pairing a Telegram chat', () => {
@@ -338,7 +289,6 @@ describe('runInteractiveSetup', () => {
     beforeEach(() => {
       daemon.settings = {
         ...daemon.settings,
-        defaultWorkingDirectory: home,
         telegramBotToken: { set: true, source: 'secrets' },
       };
       daemon.signedIn.add('claude');

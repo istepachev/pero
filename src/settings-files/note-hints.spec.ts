@@ -104,7 +104,7 @@ describe('note hints', () => {
 
   it('says to migrate a legacy data directory', () => {
     expect(legacyHint('/home/me/.pero')).toBe(
-      "/home/me/.pero is a legacy data directory: its Agents and settings can't be changed any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.",
+      '/home/me/.pero is a legacy data directory, which has no Agents any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.',
     );
   });
 });

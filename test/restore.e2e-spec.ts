@@ -24,7 +24,6 @@ import {
 } from '../src/control/client.js';
 import type { RunDetails } from '../src/control/protocol.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
-import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import {
   type RuntimeRequest,
@@ -266,32 +265,31 @@ describe('Restore drill (e2e)', () => {
   }
 
   it('brings back definitions and resumable Sessions on a fresh machine', async () => {
-    // An installation in use: Channels with Sessions, an Agent with its own
-    // folder, and a Workflow that reads history and notifies a topic.
-    await start(join(tmp, 'pero'));
-    await client.call('settings.update', {
-      defaultWorkingDirectory: vault,
-      telegramBotToken: TOKEN,
-      timezone: 'Europe/Lisbon',
-      historyCarryover: 20,
-      sharedInstructions: 'Be brief.',
+    // A workspace in use, whose data folder is the owner's vault: Channels
+    // with Sessions, an Agent with its own folder, and a Workflow that
+    // reads history and notifies a topic.
+    const ws = join(tmp, 'ws');
+    mkdirSync(join(ws, '.pero'), { recursive: true });
+    writeFileSync(join(ws, '.pero', 'config.yaml'), `data: ${vault}\n`);
+    initWorkspace(ws, tmp);
+    const settings = join(vault, 'Settings');
+    writeFileSync(
+      join(settings, 'Pero.md'),
+      '---\ntimezone: Europe/Lisbon\nhistory-carryover: 20\n---\nBe brief.\n',
+    );
+    writeFileSync(
+      join(settings, 'Agents', 'Coder.md'),
+      `---\ntopics: Kitchen\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
+    );
+    writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
+      mode: 0o600,
     });
+    await start(join(ws, '.pero'), ws);
     await connected();
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: String(DIRECT.id) });
     await createTopic(ENGLISH, 'English');
     await createTopic(KITCHEN, 'Kitchen');
-    await client.call('agents.create', {
-      name: 'coder',
-      provider: 'codex',
-      workingDirectory: own,
-      codexSkipGitRepoCheck: true,
-    });
-    // Where a 0.1 installation's pero channels assign put it.
-    await daemon!.app
-      .get<DataSource>(getDataSourceToken())
-      .getRepository(LegacyChannelAgent)
-      .update(await channelId(FORUM, KITCHEN), { agentName: 'coder' });
     for (const [chat, topic] of CHANNELS) {
       expect(await say(chat, topic, 'Hello')).toBe('echo: Hello');
     }
@@ -336,7 +334,7 @@ describe('Restore drill (e2e)', () => {
     const file = join(tmp, 'pero.tgz');
     await client.call('backup.create', { file });
     await stop();
-    rmSync(join(tmp, 'pero'), { recursive: true });
+    rmSync(ws, { recursive: true });
 
     // A fresh machine: the working folders come back from the owner's own
     // backup, at the same paths, then Pero's backup is restored.
@@ -345,14 +343,17 @@ describe('Restore drill (e2e)', () => {
       rmSync(folder, { recursive: true });
       cpSync(`${folder}.owner-backup`, folder, { recursive: true });
     }
-    const restored = join(tmp, 'restored');
-    expect(await pero(['restore', file, '--data-dir', restored])).toEqual({
+    expect(await pero(['restore', file, '--workspace', ws])).toEqual({
       code: 0,
       stderr: '',
     });
+    // The token is written again on the new host.
+    writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
+      mode: 0o600,
+    });
 
     // The same definitions, and every Channel resumes its provider session.
-    await start(restored);
+    await start(join(ws, '.pero'), ws);
     await connected();
     expect(await definitions()).toEqual(before);
     for (const [index, [chat, topic]] of CHANNELS.entries()) {
@@ -424,12 +425,6 @@ describe('Restore drill (e2e)', () => {
   it('restores a workspace into a fresh clone of it, with its data folder', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, tmp);
-    // Until onboarding writes notes (plan step 8.3), a topic is answered
-    // only by an Agent whose note claims it.
-    writeFileSync(
-      join(ws, 'data', 'Settings', 'Agents', 'English.md'),
-      '---\ntopics: English\n---\nYou teach English.\n',
-    );
     await start(join(ws, '.pero'), ws);
     await client.call('settings.update', { telegramBotToken: TOKEN });
     await connected();

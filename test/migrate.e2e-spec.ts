@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import Database from 'better-sqlite3';
 import type { Chat, Message, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -21,7 +22,6 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
-import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
@@ -33,7 +33,9 @@ import {
 /*
  * `pero migrate` on an installation in use: a legacy data directory with
  * Agents, topics, a Workflow with two schedules, and Sessions becomes a
- * workspace whose notes pass `pero check`, and whose Pero carries on.
+ * workspace whose notes pass `pero check`, and whose Pero carries on. A
+ * legacy data directory's Pero no longer runs Agents, so its Channels are
+ * recorded by Pero and the rest is written as an older Pero left it.
  */
 
 // `npm run test:e2e` builds first.
@@ -155,10 +157,68 @@ describe('pero migrate (e2e)', () => {
     );
   }
 
-  async function channelId(topic: number): Promise<number> {
-    const { channels } = await client.call('channels.list');
-    return channels.find((channel) => channel.key === `${FORUM.id}:${topic}`)!
-      .id;
+  /**
+   * Writes into the legacy database what an older Pero, whose Agents
+   * answered in the Channels this one recorded, would have left: its
+   * Agents and settings, which Channel each Agent answered in, a Session
+   * in each, and a Workflow with two schedules that notifies English.
+   */
+  function useLegacyInstallation() {
+    const db = new Database(join(legacy, 'pero.sqlite'));
+    try {
+      const channel = (key: string) =>
+        (
+          db
+            .prepare('SELECT "id" FROM "channels" WHERE "external_key" = ?')
+            .get(key) as { id: number }
+        ).id;
+      const agent = db.prepare(
+        `INSERT INTO "legacy_agents" ("name", "title", "provider", "provider_options", "tool_policy_json") ` +
+          `VALUES (?, ?, ?, '{"model":null,"effort":null}', '{"permissions":"ask"}')`,
+      );
+      const main = agent.run('main', null, 'claude').lastInsertRowid;
+      agent.run('english', 'English', 'claude');
+      agent.run('kitchen', 'Kitchen', 'claude');
+      agent.run('coder', null, 'codex');
+      db.prepare(
+        `UPDATE "legacy_settings" SET "default_working_directory" = ?, ` +
+          `"timezone" = 'Europe/Lisbon', "main_agent_id" = ?`,
+      ).run(vault, main);
+      const routes: [string, string, 'claude' | 'codex'][] = [
+        [`${FORUM.id}:${ENGLISH}`, 'english', 'claude'],
+        // Where a 0.1 installation's pero channels assign put it.
+        [`${FORUM.id}:${KITCHEN}`, 'coder', 'codex'],
+        [String(FORUM.id), 'main', 'claude'],
+        [String(DIRECT.id), 'main', 'claude'],
+      ];
+      for (const [index, [key, name, provider]] of routes.entries()) {
+        const id = channel(key);
+        db.prepare(
+          `INSERT INTO "legacy_channel_agents" ("channel_id", "agent_name") VALUES (?, ?)`,
+        ).run(id, name);
+        db.prepare(
+          `INSERT INTO "sessions" ("agent_name", "channel_id", "provider_session_id", "provider", "working_directory") ` +
+            `VALUES (?, ?, ?, ?, ?)`,
+        ).run(name, id, `old-${provider}-${index}`, provider, vault);
+      }
+      const workflow = db
+        .prepare(
+          `INSERT INTO "workflows" ("name", "title", "agent_name", "input_template") ` +
+            `VALUES ('english', 'English review', 'english', 'Suggest better English.')`,
+        )
+        .run().lastInsertRowid;
+      for (const cron of ['0 21 * * *', '30 7 * * 1-5']) {
+        db.prepare(
+          `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone") ` +
+            `VALUES (?, 'schedule', ?, 'Europe/Lisbon')`,
+        ).run(workflow, JSON.stringify({ cron }));
+      }
+      db.prepare(
+        `INSERT INTO "workflow_notification_targets" ("workflow_id", "channel_id") VALUES (?, ?)`,
+      ).run(workflow, channel(`${FORUM.id}:${ENGLISH}`));
+    } finally {
+      db.close();
+    }
   }
 
   function pero(
@@ -197,49 +257,22 @@ describe('pero migrate (e2e)', () => {
   }
 
   it('turns an installation in use into a workspace that carries on', async () => {
-    await start(resolveBootstrapConfig({ dataDir: legacy, env: {} }));
-    await client.call('settings.update', {
-      defaultWorkingDirectory: vault,
-      telegramBotToken: TOKEN,
-      timezone: 'Europe/Lisbon',
-    });
+    const legacyConfig = resolveBootstrapConfig({ dataDir: legacy, env: {} });
+    await start(legacyConfig);
+    await client.call('settings.update', { telegramBotToken: TOKEN });
     await connected();
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: String(DIRECT.id) });
     await createTopic(ENGLISH, 'English');
     await createTopic(KITCHEN, 'Kitchen');
-    await client.call('agents.create', { name: 'coder', provider: 'codex' });
-    // Where a 0.1 installation's pero channels assign put it.
-    await daemon!.app
-      .get<DataSource>(getDataSourceToken())
-      .getRepository(LegacyChannelAgent)
-      .update(await channelId(KITCHEN), { agentName: 'coder' });
-    for (const [chat, topic] of [
-      [FORUM, ENGLISH],
-      [FORUM, KITCHEN],
-      [FORUM, null],
-      [DIRECT, null],
-    ] as const) {
-      await say(chat, topic, 'Hello');
-    }
-    await client.call('workflows.create', {
-      name: 'english',
-      title: 'English review',
-      agent: 'english',
-      inputTemplate: 'Suggest better English.',
-    });
-    for (const cron of ['0 21 * * *', '30 7 * * 1-5']) {
-      await client.call('triggers.add', {
-        workflow: 'english',
-        kind: 'schedule',
-        cron,
-      });
-    }
-    await client.call('workflows.notify', {
-      name: 'english',
-      channel: await channelId(ENGLISH),
-      notify: true,
-    });
+    send(FORUM, null, { text: 'Hello' });
+    send(DIRECT, null, { text: 'Hello' });
+    await vi.waitFor(async () =>
+      expect((await client.call('channels.list')).channels).toHaveLength(4),
+    );
+    await stop();
+    useLegacyInstallation();
+    await start(legacyConfig);
     const recorded = await sessions();
     expect(recorded).toHaveLength(4);
 

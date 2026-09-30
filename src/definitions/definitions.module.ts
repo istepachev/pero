@@ -9,7 +9,7 @@ import { SqliteDefinitions } from './sqlite-definitions.js';
 /**
  * The definitions runtime code reads: `Definitions`. In a workspace, the
  * Agents and defaults come from its notes and the Workflows from SQLite;
- * a legacy data directory keeps all of them in SQLite until plan step 8.5.
+ * a legacy data directory has no Agents until `pero migrate` moves it.
  * Needs the database from `PersistenceModule`.
  */
 @Module({

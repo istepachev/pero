@@ -6,7 +6,6 @@ import { RuntimesModule } from '../runtimes/runtimes.module.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
 import { AgentManager } from './agent-manager.js';
 import { AgentViews } from './agent-views.service.js';
-import { AgentsService } from './agents.service.js';
 
 @Module({
   imports: [
@@ -16,7 +15,7 @@ import { AgentsService } from './agents.service.js';
     HistoryModule,
     HealthModule,
   ],
-  providers: [AgentsService, AgentManager, AgentViews],
-  exports: [AgentsService, AgentManager, AgentViews],
+  providers: [AgentManager, AgentViews],
+  exports: [AgentManager, AgentViews],
 })
 export class AgentsModule {}

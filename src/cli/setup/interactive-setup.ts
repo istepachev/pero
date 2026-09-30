@@ -1,7 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { InvalidInputError } from '../../common/errors.js';
-import { resolvePath } from '../../config/bootstrap-config.js';
 import { PROVIDERS } from '../../config/provider-options.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
@@ -31,9 +28,6 @@ const CONNECT_WAIT_MS = 15_000;
 export interface SetupContext {
   client: ControlClient;
   prompts: Prompts;
-  /** Where `pero run` was started; the suggested working folder. */
-  cwd: string;
-  home: string;
   print: (text: string) => void;
   /** How often to ask the daemon about Telegram chats; for tests. */
   pollIntervalMs?: number;
@@ -45,9 +39,8 @@ export interface SetupState {
 }
 
 /**
- * Guides the owner through what `pero run` found missing: the folder all
- * Agents share, the Telegram bot token and a first chat to serve, and
- * provider sign-in. Every answer goes to the daemon at once, so an
+ * Guides the owner through what `pero run` found missing: the Telegram bot
+ * token and a first chat to serve, and provider sign-in. Every answer goes to the daemon at once, so an
  * interrupted setup keeps what was done.
  */
 export async function runInteractiveSetup(
@@ -56,9 +49,6 @@ export async function runInteractiveSetup(
 ): Promise<void> {
   const { status } = initial;
   let { settings } = initial;
-  if (settings.defaultWorkingDirectory === null) {
-    settings = await askWorkingDirectory(context);
-  }
   const token = settings.telegramBotToken;
   if (!token.set && token.source !== 'environment') {
     settings = await askTelegramToken(context, settings);
@@ -77,41 +67,6 @@ export async function runInteractiveSetup(
       ? 'Setup complete'
       : formatPendingSetup(pending, 'Run pero run again to finish setting up.'),
   );
-}
-
-async function askWorkingDirectory(
-  context: SetupContext,
-): Promise<SettingsView> {
-  const { client, prompts, cwd, home, print } = context;
-  const suggested = cwd === home ? join(home, 'workspace') : cwd;
-  print(
-    'Choose the folder all Agents work in, such as a notes vault. ' +
-      'An Agent can get its own folder later.',
-  );
-  for (;;) {
-    const answer = await prompts.input({
-      message: 'Working folder',
-      initial: suggested,
-    });
-    const folder = resolvePath(answer.trim() || suggested, cwd, home);
-    if (!existsSync(folder)) {
-      try {
-        mkdirSync(folder, { recursive: true });
-      } catch (error) {
-        print(`Cannot create ${folder}: ${(error as Error).message}`);
-        continue;
-      }
-      print(`Created ${folder}`);
-    }
-    try {
-      return await client.call('settings.update', {
-        defaultWorkingDirectory: folder,
-      });
-    } catch (error) {
-      if (!(error instanceof InvalidInputError)) throw error;
-      print(error.message);
-    }
-  }
 }
 
 async function askTelegramToken(

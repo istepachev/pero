@@ -105,7 +105,7 @@ telegram:
 ```
 
 - **Created on first start.** A workspace gets `data: data` (the folder is created when missing); an existing installation gets its default working directory, relative to the workspace when it is inside it. The allowed chats move from the database into the file once, keeping their titles.
-- **Edited with comments kept.** `pero telegram allow` and `deny`, a chat's new ID when a group turns on topics, and `pero settings set default-working-directory` change only their own lines, read the file again right before, and replace it in one step.
+- **Edited with comments kept.** `pero telegram allow` and `deny`, and a chat's new ID when a group turns on topics, change only their own lines, read the file again right before, and replace it in one step.
 - **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason. In a workspace, a `data` folder that doesn't exist stops it too; a legacy data directory only warns.
 - **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
 - **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
@@ -212,6 +212,6 @@ What to expect afterwards:
 - **Schedules** that came due while Pero was down run once, as one catch-up run that records how many times it stands for.
 - **Notifications** still waiting to be delivered are delivered, and a Workflow that reads history goes on from where its last successful run stopped.
 - **A workspace at a new path** keeps working: its data folder is relative to it. Each Channel then starts a fresh Session that begins with its recent messages, since a provider conversation belongs to its folder.
-- **Folders at new paths:** point Pero at them with `pero settings set default-working-directory <folder>`, or `pero agents edit <agent> --working-directory <folder>` for an Agent with its own. A provider conversation belongs to its folder, so each affected Channel then starts a fresh Session that begins with its recent messages.
+- **Folders at new paths:** point Pero at them with `data` in `.pero/config.yaml`, then restart it, or `working-directory` in the note of an Agent with its own. A provider conversation belongs to its folder, so each affected Channel then starts a fresh Session that begins with its recent messages.
 - **Provider conversations not restored:** when a provider no longer has a Session's conversation, Pero closes that Session and answers the same message in a fresh one that begins with the Channel's recent messages, so the Channel keeps working. The same happens when a provider has deleted an old transcript.
 - **A newer Pero** applies its migrations to the restored database as it starts.

@@ -1,12 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentsService } from '../agents/agents.service.js';
-import { InvalidInputError } from '../common/errors.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
@@ -14,8 +9,7 @@ import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
 import { HistoryRetention, RETENTION_BATCH_SIZE } from './history-retention.js';
@@ -25,19 +19,17 @@ const DAY_MS = 24 * 60 * 60_000;
 const NOW = new Date('2026-09-29T12:00:00Z');
 
 describe('HistoryRetention', () => {
-  let tmp: string;
-  let vault: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let retention: HistoryRetention;
-  let settings: SettingsService;
   let channelId: number;
 
   async function boot(): Promise<void> {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         WorkflowsModule,
         HistoryRetentionModule,
       ],
@@ -48,16 +40,14 @@ describe('HistoryRetention', () => {
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     retention = moduleRef.get(HistoryRetention);
-    settings = moduleRef.get(SettingsService);
+    ws.use(moduleRef);
   }
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-retention-'));
-    vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-retention-');
+    await ws.pero();
+    await ws.agent('Coach');
     await boot();
-    await settings.update({ defaultWorkingDirectory: vault });
-    await moduleRef.get(AgentsService).create({ name: 'coach' });
     const channels = ds.getRepository(Channel);
     channelId = (
       await channels.save(
@@ -73,7 +63,7 @@ describe('HistoryRetention', () => {
 
   afterEach(async () => {
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /** Records a person's message `text`, sent `daysAgo` days before NOW. */
@@ -122,7 +112,7 @@ describe('HistoryRetention', () => {
     await message('Thirty-one days ago', 31);
     await message('Twenty-nine days ago', 29);
     await message('Today', 0);
-    await settings.update({ historyRetentionDays: 30 });
+    await ws.editPero({ 'history-retention-days': 30 });
 
     expect(await retention.prune(NOW)).toBe(2);
     expect(await texts()).toEqual(['Twenty-nine days ago', 'Today']);
@@ -164,7 +154,7 @@ describe('HistoryRetention', () => {
       notificationId: notification.id,
     });
     await sentAt((identifiers[0] as { id: number }).id, 10);
-    await settings.update({ historyRetentionDays: 7 });
+    await ws.editPero({ 'history-retention-days': 7 });
 
     expect(await retention.prune(NOW)).toBe(1);
     expect(await texts()).toEqual([]);
@@ -197,7 +187,7 @@ describe('HistoryRetention', () => {
       `UPDATE "messages" SET "created_at" = '2026-01-01 00:00:00'`,
     );
     await message('Today', 0);
-    await settings.update({ historyRetentionDays: 1 });
+    await ws.editPero({ 'history-retention-days': 1 });
 
     expect(await retention.prune(NOW)).toBe(count);
     expect(await texts()).toEqual(['Today']);
@@ -206,22 +196,11 @@ describe('HistoryRetention', () => {
   it('deletes older messages when Pero starts', async () => {
     await message('Long ago', 400);
     await message('Now', 0);
-    await settings.update({ historyRetentionDays: 30 });
+    await ws.editPero({ 'history-retention-days': 30 });
 
     await moduleRef.close();
     await boot();
 
     await vi.waitFor(async () => expect(await texts()).toEqual(['Now']));
-  });
-
-  it('refuses a retention that is not a whole number of days from 1', async () => {
-    for (const days of [0, -1, 1.5, 36_501]) {
-      await expect(
-        settings.update({ historyRetentionDays: days }),
-      ).rejects.toThrow(InvalidInputError);
-    }
-    await settings.update({ historyRetentionDays: 36_500 });
-    await settings.update({ historyRetentionDays: null });
-    expect((await settings.get()).historyRetentionDays).toBeNull();
   });
 });

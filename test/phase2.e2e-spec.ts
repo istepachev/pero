@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -7,6 +14,7 @@ import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import type { Provider } from '../src/config/provider-options.js';
+import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
   type ControlClient,
   createControlClient,
@@ -16,6 +24,7 @@ import { Session } from '../src/persistence/entities/session.entity.js';
 import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
+import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,
@@ -23,8 +32,9 @@ import {
 
 /*
  * The Phase 2 exit criteria as one story, through the fake Bot API and the
- * echo runtime: pairing, topic onboarding, the main Agent's General topic
- * and direct chat, a daemon restart, and provider and folder changes.
+ * echo runtime, in a workspace: pairing, topic onboarding, the main
+ * Agent's General topic and direct chat, a daemon restart, and provider
+ * and folder changes made in notes.
  */
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -51,7 +61,7 @@ const DIRECT_KEY = String(DIRECT.id);
 
 describe('Phase 2 end to end (e2e)', () => {
   let tmp: string;
-  let dataDir: string;
+  let workspace: string;
   let vault: string;
   let other: string;
   let client: ControlClient;
@@ -60,21 +70,24 @@ describe('Phase 2 end to end (e2e)', () => {
   let nextMessageId: number;
   /** How many answers `say` has waited for. */
   let answers: number;
+  /** Each edit gets a later modification time, whatever the clock. */
+  let clock: number;
 
   beforeEach(async () => {
     api = new FakeBotApi();
     api.chats.set(String(FORUM.id), FORUM);
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    dataDir = join(tmp, 'pero');
-    vault = join(tmp, 'vault');
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    workspace = join(tmp, 'ws');
+    initWorkspace(workspace, tmp);
+    vault = join(workspace, 'data');
     other = join(tmp, 'other');
-    mkdirSync(vault);
     mkdirSync(other);
-    client = createControlClient(join(dataDir, 'run', 'pero.sock'));
+    client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
     answers = 0;
+    clock = Date.parse('2026-01-01T00:00:00Z');
   });
 
   afterEach(async () => {
@@ -84,10 +97,19 @@ describe('Phase 2 end to end (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
+  /** Writes the Agent note `Agents/<title>.md` and has Pero read it. */
+  async function note(title: string, properties: string[], body: string) {
+    const path = join(vault, 'Settings', 'Agents', `${title}.md`);
+    writeFileSync(path, ['---', ...properties, '---', body, ''].join('\n'));
+    clock += 1_000;
+    utimesSync(path, new Date(clock), new Date(clock));
+    await daemon!.app.get(SettingsNotes).rescan();
+  }
+
   /** A daemon on the fake Bot API whose Agents answer with an echo. */
   async function start() {
     daemon = await startDaemon({
-      config: resolveBootstrapConfig({ dataDir, env: {} }),
+      config: resolveBootstrapConfig({ workspace, env: {} }),
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
@@ -99,7 +121,7 @@ describe('Phase 2 end to end (e2e)', () => {
     );
   }
 
-  /** Stops the daemon and starts a new one on the same data directory. */
+  /** Stops the daemon and starts a new one on the same workspace. */
   async function restart() {
     await daemon!.stop('restart');
     daemon = undefined;
@@ -218,10 +240,7 @@ describe('Phase 2 end to end (e2e)', () => {
 
   it('onboards topics, serves the main Agent, resumes after a restart, and carries history into a new provider', async () => {
     await start();
-    await client.call('settings.update', {
-      defaultWorkingDirectory: vault,
-      telegramBotToken: TOKEN,
-    });
+    await client.call('settings.update', { telegramBotToken: TOKEN });
     await connected();
 
     // A chat that is not allowed gets only the pairing hint.
@@ -236,13 +255,15 @@ describe('Phase 2 end to end (e2e)', () => {
           .some((call) => Number(call.payload.offset) > unpaired),
       ).toBe(true),
     );
-    expect((await client.call('agents.list')).agents).toEqual([]);
+    expect(
+      (await client.call('agents.list')).agents.map((agent) => agent.name),
+    ).toEqual(['main']);
     expect((await client.call('channels.list')).channels).toEqual([]);
     expect(requests('claude')).toEqual([]);
     expect(requests('codex')).toEqual([]);
 
     // The forum group and the direct chat are allowed; each new topic
-    // onboards an Agent of its own, which answers there.
+    // gets an Agent note of its own, whose Agent answers there.
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: DIRECT_KEY });
     await createTopic(GROCERIES, 'Groceries');
@@ -368,10 +389,11 @@ describe('Phase 2 end to end (e2e)', () => {
     );
 
     // A new provider starts a fresh Session with the Channel's history.
-    await client.call('agents.edit', {
-      name: 'groceries',
-      change: { provider: 'codex' },
-    });
+    await note(
+      'Groceries',
+      ['topics: Groceries', 'provider: codex'],
+      'You shop.',
+    );
     const carried = await say(FORUM, GROCERIES, 'Bread');
     const request = lastRequest('codex');
     expect(request.providerSessionId).toBeUndefined();
@@ -395,10 +417,11 @@ describe('Phase 2 end to end (e2e)', () => {
     ]);
 
     // An Agent with its own folder works there; the other stays in the vault.
-    await client.call('agents.edit', {
-      name: 'kitchen',
-      change: { workingDirectory: other },
-    });
+    await note(
+      'Kitchen',
+      ['topics: Kitchen', `working-directory: ${other}`],
+      'You cook.',
+    );
     await say(FORUM, KITCHEN, 'Pan');
     const ownFolder = lastRequest('claude');
     expect(ownFolder.workingDirectory).toBe(other);
@@ -413,10 +436,11 @@ describe('Phase 2 end to end (e2e)', () => {
     });
 
     // A new model continues the same conversation.
-    await client.call('agents.edit', {
-      name: 'main',
-      change: { providerOptions: { model: 'claude-sonnet-5' } },
-    });
+    await note(
+      'Main',
+      ['model: claude-sonnet-5'],
+      'You help with everyday questions and keep my notes tidy.',
+    );
     expect(await say(DIRECT, null, 'Again')).toBe('echo: Again');
     expect(lastRequest('claude')).toMatchObject({
       input: 'Again',

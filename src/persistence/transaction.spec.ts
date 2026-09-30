@@ -4,17 +4,25 @@ import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dataSourceOptions } from './data-source-options.js';
-import { SETTINGS_ID, Settings } from './entities/settings.entity.js';
+import { Workflow } from './entities/workflow.entity.js';
 import { openDatabase } from './open-database.js';
 import { inTransaction } from './transaction.js';
 
 describe('inTransaction', () => {
   let tmp: string;
   let ds: DataSource;
+  let id: number;
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-db-'));
     ds = await openDatabase(dataSourceOptions(join(tmp, 'pero.sqlite')));
+    ({ id } = await ds.getRepository(Workflow).save({
+      name: 'brief',
+      title: null,
+      agentName: 'coach',
+      inputTemplate: 'Go',
+      history: null,
+    }));
   });
 
   afterEach(async () => {
@@ -22,18 +30,18 @@ describe('inTransaction', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Reads the limit, yields, then writes it back plus one. */
+  /** Reads the attempts, yields, then writes them back plus one. */
   async function increment(run: typeof inTransaction) {
     return run(ds, async (manager) => {
-      const repo = manager.getRepository(Settings);
-      const { maxConcurrentRuns } = await repo.findOneByOrFail({
-        id: SETTINGS_ID,
-      });
+      const repo = manager.getRepository(Workflow);
+      const { maxAttempts } = await repo.findOneByOrFail({ id });
       await new Promise((resolve) => setTimeout(resolve, 5));
-      await repo.update(SETTINGS_ID, {
-        maxConcurrentRuns: maxConcurrentRuns + 1,
-      });
+      await repo.update(id, { maxAttempts: maxAttempts + 1 });
     });
+  }
+
+  function workflow(): Promise<Workflow> {
+    return ds.getRepository(Workflow).findOneByOrFail({ id });
   }
 
   it('shows why it exists: TypeORM overlaps transactions on SQLite', async () => {
@@ -54,27 +62,18 @@ describe('inTransaction', () => {
       increment(inTransaction),
     ]);
 
-    const settings = await ds
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
-    expect(settings.maxConcurrentRuns).toBe(5);
+    expect((await workflow()).maxAttempts).toBe(4);
   });
 
   it('keeps going after a transaction fails, which rolls back', async () => {
     const failed = inTransaction(ds, async (manager) => {
-      await manager
-        .getRepository(Settings)
-        .update(SETTINGS_ID, { timezone: 'Pacific/Chatham' });
+      await manager.getRepository(Workflow).update(id, { title: 'Failed' });
       throw new Error('boom');
     });
     const next = increment(inTransaction);
 
     await expect(failed).rejects.toThrow('boom');
     await next;
-    const settings = await ds
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID });
-    expect(settings.timezone).not.toBe('Pacific/Chatham');
-    expect(settings.maxConcurrentRuns).toBe(3);
+    expect(await workflow()).toMatchObject({ title: null, maxAttempts: 2 });
   });
 });

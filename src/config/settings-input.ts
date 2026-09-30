@@ -1,7 +1,4 @@
 import { z } from 'zod';
-import { PROVIDERS, providerDefaultsPatchSchema } from './provider-options.js';
-import { slugSchema } from './slug.js';
-import { permissionModeSchema } from './tool-policy.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -31,42 +28,6 @@ export const timeZoneSchema = z.string().transform((value, ctx) => {
 /** The longest `historyRetentionDays`: a hundred years. */
 export const MAX_HISTORY_RETENTION_DAYS = 36_500;
 
-/** Changes to installation settings; an omitted field keeps its value. */
-export const settingsUpdateSchema = z.strictObject({
-  defaultProvider: z.enum(PROVIDERS).optional(),
-  providerDefaults: providerDefaultsPatchSchema.optional(),
-  /** An absolute folder; once set it can be changed but not cleared. */
-  defaultWorkingDirectory: z
-    .string({
-      error: (issue) =>
-        issue.input === null
-          ? 'cannot be cleared once set; choose another folder instead'
-          : undefined,
-    })
-    .optional(),
-  sharedInstructions: z.string().nullable().optional(),
-  /**
-   * The name of an enabled Agent that primary Channels onboarded from now
-   * on get; null returns to `main`, created when first needed.
-   */
-  mainAgent: slugSchema.nullable().optional(),
-  /** Messages a replacing Session starts with; 0 turns carry-over off. */
-  historyCarryover: z.int().min(0).optional(),
-  /** Days of message history kept; null keeps all of it. */
-  historyRetentionDays: z
-    .int()
-    .min(1)
-    .max(MAX_HISTORY_RETENTION_DAYS)
-    .nullable()
-    .optional(),
-  /** How new Agents' tools are approved; existing Agents keep theirs. */
-  defaultPermissions: permissionModeSchema.optional(),
-  timezone: timeZoneSchema.optional(),
-  maxConcurrentRuns: z.int().min(1).optional(),
-});
-
-export type SettingsUpdate = z.input<typeof settingsUpdateSchema>;
-
 /** Environment variable with a Telegram bot token; wins over a stored one. */
 export const TELEGRAM_TOKEN_ENV = 'PERO_TELEGRAM_BOT_TOKEN';
 
@@ -83,11 +44,11 @@ export const telegramBotTokenSchema = z
   );
 
 /**
- * Changes through the control endpoint: settings plus the Telegram bot
- * token, which is stored as a secret rather than in SQLite. A null token
- * removes the stored one.
+ * Changes through the control endpoint: only the Telegram bot token, which
+ * Pero stores itself; notes and `config.yaml` hold the other settings. A
+ * null token removes the stored one.
  */
-export const settingsChangeSchema = settingsUpdateSchema.extend({
+export const settingsChangeSchema = z.strictObject({
   telegramBotToken: telegramBotTokenSchema.nullable().optional(),
 });
 

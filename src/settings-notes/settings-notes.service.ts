@@ -21,7 +21,7 @@ export const SETTINGS_COMPONENT = 'settings';
 
 /** What the `settings` component says in a legacy data directory. */
 export const LEGACY_SETTINGS_DETAIL =
-  "legacy data directory: its Agents and settings can't be changed; run pero migrate <workspace>";
+  'legacy data directory: no Agents answer until you run pero migrate <workspace>';
 
 /** Where the notes are, and the folders they are read against. */
 export interface SettingsFolders {

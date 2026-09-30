@@ -10,8 +10,6 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
 import { SessionService } from './session.service.js';
 import { SessionsModule } from './sessions.module.js';
 
@@ -30,7 +28,6 @@ describe('SessionService', () => {
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
         AgentsModule,
         SessionsModule,
       ],
@@ -38,9 +35,6 @@ describe('SessionService', () => {
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     sessions = moduleRef.get(SessionService);
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: vault });
     const channels = ds.getRepository(Channel);
     channelId = (
       await channels.save(

@@ -40,11 +40,9 @@ export class UnansweredReplies {
       `No one answers in ${channel.integrationKind} Channel ${channel.id}: ` +
         unansweredSummary(reason),
     );
-    const text = unansweredText(reason);
-    if (text === null) return;
     try {
       await this.sender.send(channel.integrationKind, channel.address, {
-        text,
+        text: unansweredText(reason),
       });
     } catch (error) {
       this.logger.warn(

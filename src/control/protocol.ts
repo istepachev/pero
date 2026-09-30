@@ -1,6 +1,5 @@
 import type { Socket } from 'node:net';
 import { z } from 'zod';
-import { agentCreateSchema, agentEditSchema } from '../config/agent-input.js';
 import {
   PROVIDERS,
   providerDefaultsSchema,
@@ -108,7 +107,7 @@ export const settingsViewSchema = z.object({
   /**
    * In a workspace, where the settings are: `Pero.md` and `config.yaml`,
    * relative to the workspace when inside it; null in a legacy data
-   * directory, whose settings are in its database.
+   * directory, whose settings can't be changed until it is migrated.
    */
   files: z.object({ pero: z.string(), config: z.string() }).nullable(),
   /** What a topic no Agent claims gets; null in a legacy data directory. */
@@ -572,12 +571,6 @@ export const CONTROL_OPERATIONS = {
   },
   'agents.get': {
     params: z.strictObject({ name: agentNameSchema }),
-    result: agentDetailsSchema,
-  },
-  'agents.create': { params: agentCreateSchema, result: agentDetailsSchema },
-  /** Also enables and disables an Agent. */
-  'agents.edit': {
-    params: z.strictObject({ name: agentNameSchema, change: agentEditSchema }),
     result: agentDetailsSchema,
   },
   /** Every Channel, by ID. */

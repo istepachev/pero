@@ -13,6 +13,7 @@ import type {
   Defaults,
   WorkflowDefinition,
 } from './definitions.js';
+import { readLegacyDefinitions } from './legacy-definitions.js';
 import { SqliteDefinitions } from './sqlite-definitions.js';
 
 // What `pero migrate` reads from a legacy installation's database, and the
@@ -64,7 +65,7 @@ export interface Installation {
 export async function readInstallation(
   dataSource: DataSource,
 ): Promise<Installation> {
-  const definitions = new SqliteDefinitions(dataSource);
+  const legacy = await readLegacyDefinitions(dataSource);
   const ids = new DefinitionIds(dataSource);
   const workflowNames = await ids.workflowNames();
 
@@ -88,10 +89,10 @@ export async function readInstallation(
   });
 
   return {
-    defaults: await definitions.defaults(),
-    agents: await definitions.agents(),
-    mainAgent: (await definitions.mainAgent())?.name ?? null,
-    workflows: await definitions.workflows(),
+    defaults: legacy.defaults,
+    agents: legacy.agents,
+    mainAgent: legacy.mainAgent,
+    workflows: await new SqliteDefinitions(dataSource).workflows(),
     triggers: triggers.map((trigger) => ({
       id: trigger.id,
       workflow: workflowNames.get(trigger.workflowId)!,

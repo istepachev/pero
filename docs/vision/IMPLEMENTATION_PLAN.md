@@ -451,6 +451,14 @@ Today Claude `ask` Agents run in `acceptEdits` mode, which approves edits in the
 
 A migration drops `agents` and `settings`. It must keep what `pero migrate` reads from a legacy database (Agents, defaults, the main Agent), as 8.2's `legacy_channel_agents` does for Channel routes, since a newer daemon may migrate a legacy database before its owner runs `pero migrate`. Remove `SettingsService`, the create and edit parts of `AgentsService`, `SqliteDefinitions`' Agent side, and the settings keys the stubs and a legacy data directory's `settings show` still use (`src/cli/settings-keys.ts`). A legacy data directory then has no Agents: it starts degraded and says to run `pero migrate`.
 
+- **Found while building:**
+  - **The tables are renamed, not dropped:** `agents` becomes `legacy_agents` and `settings` becomes `legacy_settings`, whole and without entities, beside `legacy_channel_agents`. `pero migrate` reads them with plain SQL (`src/definitions/legacy-definitions.ts`), and all three go with legacy data directories, after 0.2.0. Renaming keeps every row and the main Agent's foreign key, and reverting only renames them back.
+  - **A legacy data directory keeps its defaults:** `SqliteDefinitions` serves it with no Agents, and with the time zone, history limits, and run limit `legacy_settings` holds; the data folder is the one `config.yaml` names. Every Channel gets one reply saying to run `pero migrate`, through a new route reason, `legacy`, which replaces `undefined-agent` and `channel-disabled`. Its onboarding records Channels without Agents, and `pero settings show` prints the migrate hint and the bot token.
+  - **`settings.update` takes only the bot token,** and `agents.create` and `agents.edit` are gone from the control endpoint. The interactive setup no longer asks for a working folder, which only a legacy data directory needed; `pero run` lists its migration as pending instead.
+  - **Readers of the settings row** moved: a schedule without a time zone takes the installation's from `Definitions`, `config.yaml`'s data folder is no longer copied into a row (a missing `config.yaml` still starts from the legacy default working directory), and a backup records the data folder and each Agent's own folder from `Definitions`, not from the snapshot's tables.
+  - **`pero migrate` takes the data folder from the legacy `config.yaml`** when it names one, and from `legacy_settings` otherwise, since the row no longer follows edits of the file.
+  - **Specs build workspaces:** Agents that tests needed only as fixtures are notes now, written through a shared `TestWorkspace` helper (`src/settings-notes/testing/test-workspace.ts`) that rescans after each write.
+
 **Done when:**
 - The schema has no Agent or settings tables.
 - No dead code remains for them.

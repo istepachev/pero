@@ -18,9 +18,8 @@ import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
 import { Definitions } from '../definitions/definitions.js';
 import { FileDefinitions } from '../definitions/file-definitions.js';
 import { HostConfigModule } from '../host-config/host-config.module.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
@@ -101,7 +100,6 @@ describe('Topic routing by notes in a workspace', () => {
           workspace,
           base: workspace,
         }),
-        SettingsModule,
         AgentsModule,
         ChannelsModule,
         WorkflowsModule,
@@ -159,7 +157,7 @@ describe('Topic routing by notes in a workspace', () => {
     });
   });
 
-  it('sends General topics and direct chats to the main Agent, and stores no Agent', async () => {
+  it('sends General topics and direct chats to the main Agent, and stores no route', async () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'Hi' }));
     await adapter.deliver(inboundMessage(GROUP, { text: 'Hi' }));
 
@@ -168,7 +166,7 @@ describe('Topic routing by notes in a workspace', () => {
       expect.stringMatching(/^This chat talks to Agent coach: claude/),
       expect.stringMatching(/^This chat talks to Agent coach: claude/),
     ]);
-    expect(await ds.getRepository(Agent).count()).toBe(0);
+    expect(await ds.getRepository(LegacyChannelAgent).count()).toBe(0);
   });
 
   it('sends a topic to the Agent that claims its title', async () => {

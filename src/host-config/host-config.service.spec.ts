@@ -18,10 +18,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/bootstrap-config.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
-import {
-  SETTINGS_ID,
-  Settings,
-} from '../persistence/entities/settings.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { HostConfigModule } from './host-config.module.js';
 import {
@@ -86,19 +82,22 @@ describe('HostConfigService', () => {
     return moduleRef.get(HostConfigService);
   }
 
-  const defaultFolder = () =>
-    moduleRef!
-      .get<DataSource>(getDataSourceToken())
-      .getRepository(Settings)
-      .findOneByOrFail({ id: SETTINGS_ID })
-      .then((settings) => settings.defaultWorkingDirectory);
+  /** The data folder the running Pero uses. */
+  const dataFolder = () => moduleRef!.get(HostConfigService).dataFolder();
+
+  /** Sets the default working directory a legacy installation kept. */
+  const setLegacyFolder = (dataSource: DataSource, folder: string) =>
+    dataSource.query(
+      `UPDATE "legacy_settings" SET "default_working_directory" = ?`,
+      [folder],
+    );
 
   it('creates config.yaml with the data folder once, in a new workspace', async () => {
     await start();
 
     expect(readFileSync(file, 'utf8')).toContain('\ndata: data\n');
     expect(existsSync(join(workspace, 'data'))).toBe(true);
-    expect(await defaultFolder()).toBe(join(workspace, 'data'));
+    expect(dataFolder()).toBe(join(workspace, 'data'));
 
     await moduleRef!.close();
     writeFileSync(file, `${readFileSync(file, 'utf8')}# kept\n`);
@@ -110,9 +109,7 @@ describe('HostConfigService', () => {
     const vault = join(workspace, 'vault');
     mkdirSync(vault);
     await withDatabase(async (dataSource) => {
-      await dataSource
-        .getRepository(Settings)
-        .update(SETTINGS_ID, { defaultWorkingDirectory: vault });
+      await setLegacyFolder(dataSource, vault);
       await dataSource.getRepository(AllowedChat).insert([
         {
           integrationKind: 'telegram',
@@ -142,7 +139,7 @@ describe('HostConfigService', () => {
     );
     const dataSource = moduleRef!.get<DataSource>(getDataSourceToken());
     expect(await dataSource.getRepository(AllowedChat).count()).toBe(0);
-    expect(await defaultFolder()).toBe(vault);
+    expect(dataFolder()).toBe(vault);
 
     // Denied by hand, it stays denied on the next start.
     await moduleRef!.close();
@@ -167,13 +164,18 @@ describe('HostConfigService', () => {
     expect(service.allowedChats()).toEqual([{ chatKey: '42', title: null }]);
   });
 
-  it('points the settings row at the data folder config.yaml names', async () => {
+  it('serves the data folder config.yaml names', async () => {
     mkdirSync(join(tmp, 'notes'));
     writeFileSync(file, `data: ${join(tmp, 'notes')}\n`);
 
-    await start();
+    const service = await start();
 
-    expect(await defaultFolder()).toBe(join(tmp, 'notes'));
+    expect(dataFolder()).toBe(join(tmp, 'notes'));
+    expect(service.folders()).toEqual({
+      workspace,
+      dataFolder: join(tmp, 'notes'),
+      settingsFolder: join(tmp, 'notes', 'Settings'),
+    });
   });
 
   it('stops startup when a data folder it names is missing', async () => {
@@ -204,15 +206,12 @@ describe('HostConfigService', () => {
     expect(service.allow('12', null)).toBe(true);
     expect(service.deny('12')).toBe(true);
     expect(service.deny('12')).toBe(false);
-    mkdirSync(join(tmp, 'elsewhere'));
-    service.setDataFolder(join(tmp, 'elsewhere'));
-    service.setDataFolder(join(workspace, 'notes'));
 
     expect(service.allowedChats()).toEqual([
       { chatKey: '-100777', title: 'Family' },
     ]);
     const text = readFileSync(file, 'utf8');
-    expect(text).toContain('\ndata: notes\n');
+    expect(text).toContain('\ndata: data\n');
     expect(text).toContain('    - id: -100777\n      title: Family\n');
   });
 
@@ -288,7 +287,7 @@ describe('HostConfigService', () => {
       errors.mockRestore();
     });
 
-    it('says a changed data folder waits for a restart, unless Pero set it', async () => {
+    it('says a changed data folder waits for a restart, and keeps the old one', async () => {
       const service = await start();
 
       edit(readFileSync(file, 'utf8').replace('data: data', 'data: notes'));
@@ -297,9 +296,10 @@ describe('HostConfigService', () => {
         state: 'degraded',
         detail: `data changed in ${file}; restart Pero to apply`,
       });
+      expect(dataFolder()).toBe(join(workspace, 'data'));
 
-      mkdirSync(join(workspace, 'vault'));
-      service.setDataFolder(join(workspace, 'vault'));
+      edit(readFileSync(file, 'utf8').replace('data: notes', 'data: data'));
+      service.reload();
       expect(component()).toMatchObject({ state: 'ok' });
     });
 
@@ -328,22 +328,19 @@ describe('HostConfigService', () => {
 
       const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
       expect(text).toContain('\n# data: data\n');
-      expect(await defaultFolder()).toBeNull();
+      expect(dataFolder()).toBeNull();
+      expect(moduleRef!.get(HostConfigService).folders()).toBeNull();
     });
 
     it('writes the default working directory as an absolute path, and only warns when it is gone', async () => {
       const vault = join(tmp, 'vault');
-      await withDatabase((dataSource) =>
-        dataSource
-          .getRepository(Settings)
-          .update(SETTINGS_ID, { defaultWorkingDirectory: vault }),
-      );
+      await withDatabase((dataSource) => setLegacyFolder(dataSource, vault));
 
       await start({ legacy: true });
 
       const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
       expect(text).toContain(`\ndata: ${vault}\n`);
-      expect(await defaultFolder()).toBe(vault);
+      expect(dataFolder()).toBe(vault);
     });
   });
 });

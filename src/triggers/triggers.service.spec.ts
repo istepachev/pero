@@ -1,12 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -15,41 +11,34 @@ import {
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
 import { scheduleFingerprint } from './schedule.js';
 import { TriggersModule } from './triggers.module.js';
 import { TriggersService } from './triggers.service.js';
 
 describe('TriggersService', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
-  let settings: SettingsService;
   let triggers: TriggersService;
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-triggers-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-triggers-');
+    await ws.pero({ timezone: 'Europe/Berlin' });
+    await ws.agent('Coach');
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         TriggersModule,
       ],
     }).compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
-    settings = moduleRef.get(SettingsService);
     triggers = moduleRef.get(TriggersService);
-    await settings.update({
-      defaultWorkingDirectory: vault,
-      timezone: 'Europe/Berlin',
-    });
-    await moduleRef.get(AgentsService).create({ name: 'coach' });
+    ws.use(moduleRef);
     const workflows = moduleRef.get(WorkflowsService);
     await workflows.create({
       name: 'review',
@@ -66,7 +55,7 @@ describe('TriggersService', () => {
   afterEach(async () => {
     vi.useRealTimers();
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   it('adds a schedule in the installation time zone, copied when added', async () => {
@@ -91,7 +80,7 @@ describe('TriggersService', () => {
       enabled: true,
     });
 
-    await settings.update({ timezone: 'Asia/Tokyo' });
+    await ws.editPero({ timezone: 'Asia/Tokyo' });
     expect((await triggers.list('review'))[0]!.timezone).toBe('Europe/Berlin');
   });
 

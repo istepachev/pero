@@ -13,18 +13,20 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import Database from 'better-sqlite3';
+import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { AgentsService } from '../agents/agents.service.js';
 import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { type DataDirLayout, ensureDataDir } from '../config/data-dir.js';
 import { writeSecret } from '../config/secret-store.js';
+import { HostConfigModule } from '../host-config/host-config.module.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import { MIGRATIONS } from '../persistence/migrations/index.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { DATABASE_ENTRY, extractBackupArchive } from './archive.js';
 import { BackupModule } from './backup.module.js';
 import { BackupService } from './backup.service.js';
@@ -44,17 +46,33 @@ describe('BackupService', () => {
     own = join(tmp, 'own');
     mkdirSync(vault);
     mkdirSync(own);
+    await boot();
+  });
+
+  /** Starts the backup service on the data directory, with `config`. */
+  async function boot(config?: string) {
+    if (config !== undefined) writeFileSync(layout.configFile, config);
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: layout.database }),
-        SettingsModule,
+        HostConfigModule.forRoot({
+          file: layout.configFile,
+          workspace: null,
+          base: layout.root,
+        }),
         AgentsModule,
         BackupModule.forRoot({ layout }),
       ],
     }).compile();
     await moduleRef.init();
     backups = moduleRef.get(BackupService);
-  });
+  }
+
+  /** Starts over with `config.yaml` naming `folder` as the data folder. */
+  async function withDataFolder(folder: string) {
+    await moduleRef.close();
+    await boot(`data: ${folder}\n`);
+  }
 
   afterEach(async () => {
     await moduleRef.close();
@@ -69,14 +87,14 @@ describe('BackupService', () => {
   }
 
   it('snapshots committed work still in the WAL, with config.yaml, the secrets, and a manifest', async () => {
-    await moduleRef.get(SettingsService).update({
-      defaultWorkingDirectory: vault,
-      sharedInstructions: 'Answer in English.',
+    await withDataFolder(vault);
+    const ds = moduleRef.get<DataSource>(getDataSourceToken());
+    await ds.getRepository(Channel).save({
+      integrationKind: 'telegram',
+      externalKey: '1234',
+      address: { chatId: '1234' },
+      title: 'Ada',
     });
-    await moduleRef.get(AgentsService).create({ name: 'assistant' });
-    await moduleRef
-      .get(AgentsService)
-      .create({ name: 'coder', workingDirectory: own });
     writeSecret(layout.secrets, 'telegram-bot-token', 'secret-token');
     writeFileSync(layout.configFile, '# mine\ndata: /srv/vault\n');
     // Not checkpointed: a copy of pero.sqlite alone would miss these rows.
@@ -100,10 +118,8 @@ describe('BackupService', () => {
       sourceDataDir: layout.root,
       sourceWorkspace: null,
       lastMigration: MIGRATIONS.at(-1)!.name,
-      workingDirectories: [
-        { path: vault, agent: null },
-        { path: own, agent: 'coder' },
-      ],
+      // A legacy data directory has no Agents, so no folders of their own.
+      workingDirectories: [{ path: vault, agent: null }],
       secrets: ['telegram-bot-token'],
     });
     expect(readdirSync(dir).sort()).toEqual([
@@ -121,12 +137,9 @@ describe('BackupService', () => {
     });
     try {
       expect(snapshot.pragma('journal_mode', { simple: true })).toBe('delete');
-      expect(
-        snapshot.prepare('SELECT "shared_instructions" FROM "settings"').get(),
-      ).toEqual({ shared_instructions: 'Answer in English.' });
-      expect(
-        snapshot.prepare('SELECT "name" FROM "agents" ORDER BY "name"').all(),
-      ).toEqual([{ name: 'assistant' }, { name: 'coder' }]);
+      expect(snapshot.prepare('SELECT "title" FROM "channels"').all()).toEqual([
+        { title: 'Ada' },
+      ]);
     } finally {
       snapshot.close();
     }
@@ -140,16 +153,16 @@ describe('BackupService', () => {
     expect(result.includesSecrets).toBe(false);
     const { dir, manifest } = await extract(file);
     expect(manifest).toMatchObject({ workingDirectories: [], secrets: [] });
+    // Pero writes config.yaml as it starts.
     expect(readdirSync(dir).sort()).toEqual([
+      'config.yaml',
       'pero-backup.json',
       'pero.sqlite',
     ]);
   });
 
   it('includes the data folder when asked, without links or the state directory', async () => {
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: vault });
+    await withDataFolder(vault);
     mkdirSync(join(vault, 'Settings'));
     writeFileSync(join(vault, 'Settings', 'Pero.md'), 'Be brief.\n');
     symlinkSync('/etc', join(vault, 'etc'));
@@ -174,28 +187,66 @@ describe('BackupService', () => {
   });
 
   it('leaves out the state directory and .env of a workspace inside its data folder', async () => {
-    const workspace = join(tmp, 'ws');
-    await moduleRef.close();
-    layout = ensureDataDir(join(workspace, '.pero'), workspace);
-    writeFileSync(join(workspace, '.env'), 'PERO_TELEGRAM_BOT_TOKEN=x\n');
-    writeFileSync(join(workspace, 'note.md'), 'Hi');
-    moduleRef = await Test.createTestingModule({
-      imports: [
-        PersistenceModule.forRoot({ database: layout.database }),
-        SettingsModule,
-        BackupModule.forRoot({ layout }),
-      ],
-    }).compile();
-    await moduleRef.init();
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: workspace });
-    const file = join(tmp, 'backup.tgz');
+    const ws = TestWorkspace.create('pero-backup-ws-');
+    try {
+      await moduleRef.close();
+      writeFileSync(join(ws.stateFolder, 'config.yaml'), 'data: .\n');
+      writeFileSync(join(ws.root, '.env'), 'PERO_TELEGRAM_BOT_TOKEN=x\n');
+      writeFileSync(join(ws.root, 'note.md'), 'Hi');
+      const workspaceLayout = ensureDataDir(ws.stateFolder, ws.root);
+      moduleRef = await Test.createTestingModule({
+        imports: [
+          PersistenceModule.forRoot({ database: workspaceLayout.database }),
+          ws.hostConfig(),
+          AgentsModule,
+          BackupModule.forRoot({ layout: workspaceLayout }),
+        ],
+      }).compile();
+      await moduleRef.init();
+      const file = join(tmp, 'backup.tgz');
 
-    await moduleRef.get(BackupService).create(file, { includeData: true });
+      await moduleRef.get(BackupService).create(file, { includeData: true });
 
-    const { dir } = await extract(file);
-    expect(readdirSync(join(dir, 'data'))).toEqual(['note.md']);
+      const { dir, manifest } = await extract(file);
+      expect(readdirSync(join(dir, 'data')).sort()).toEqual([
+        'data',
+        'note.md',
+      ]);
+      expect(manifest.workingDirectories).toEqual([
+        { path: ws.root, agent: null },
+      ]);
+    } finally {
+      ws.delete();
+    }
+  });
+
+  it("records a workspace's data folder and its Agents' own folders", async () => {
+    const ws = TestWorkspace.create('pero-backup-ws-');
+    try {
+      await ws.agent('Coder', { 'working-directory': own });
+      await ws.agent('Notes');
+      await moduleRef.close();
+      const workspaceLayout = ensureDataDir(ws.stateFolder, ws.root);
+      moduleRef = await Test.createTestingModule({
+        imports: [
+          PersistenceModule.forRoot({ database: workspaceLayout.database }),
+          ws.hostConfig(),
+          AgentsModule,
+          BackupModule.forRoot({ layout: workspaceLayout }),
+        ],
+      }).compile();
+      await moduleRef.init();
+      const file = join(tmp, 'backup.tgz');
+
+      await moduleRef.get(BackupService).create(file);
+
+      expect((await extract(file)).manifest.workingDirectories).toEqual([
+        { path: ws.dataFolder, agent: null },
+        { path: own, agent: 'coder' },
+      ]);
+    } finally {
+      ws.delete();
+    }
   });
 
   it('refuses to include data it has not got, or into itself', async () => {
@@ -203,9 +254,7 @@ describe('BackupService', () => {
       backups.create(join(tmp, 'backup.tgz'), { includeData: true }),
     ).rejects.toThrow(/no data folder to include/);
 
-    await moduleRef
-      .get(SettingsService)
-      .update({ defaultWorkingDirectory: vault });
+    await withDataFolder(vault);
     const result = backups.create(join(vault, 'backup.tgz'), {
       includeData: true,
     });

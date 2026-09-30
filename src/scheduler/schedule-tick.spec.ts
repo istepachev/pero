@@ -1,13 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentsService } from '../agents/agents.service.js';
-import { Agent } from '../persistence/entities/agent.entity.js';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
@@ -17,8 +12,7 @@ import { openDatabase } from '../persistence/open-database.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { SettingsService } from '../settings/settings.service.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { scheduleFingerprint } from '../triggers/schedule.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { TriggersService } from '../triggers/triggers.service.js';
@@ -30,7 +24,7 @@ import { SchedulerModule } from './scheduler.module.js';
 const HOUR_MS = 60 * 60 * 1000;
 
 describe('ScheduleTick', () => {
-  let tmp: string;
+  let ws: TestWorkspace;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let triggers: TriggersService;
@@ -42,8 +36,8 @@ describe('ScheduleTick', () => {
   async function boot() {
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
-        SettingsModule,
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         TriggersModule,
         SchedulerModule,
       ],
@@ -57,25 +51,20 @@ describe('ScheduleTick', () => {
     workflows = moduleRef.get(WorkflowsService);
     executor = moduleRef.get(WorkflowExecutor);
     scheduler = moduleRef.get(ScheduleTick);
+    ws.use(moduleRef);
   }
 
   beforeEach(async () => {
-    tmp = mkdtempSync(join(tmpdir(), 'pero-scheduler-'));
-    const vault = join(tmp, 'vault');
-    mkdirSync(vault);
+    ws = TestWorkspace.create('pero-scheduler-');
+    await ws.agent('Coach');
     claude = new FakeAgentRuntime('claude');
     await boot();
-    await moduleRef.get(SettingsService).update({
-      defaultProvider: 'claude',
-      defaultWorkingDirectory: vault,
-    });
-    await moduleRef.get(AgentsService).create({ name: 'coach' });
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
     await moduleRef.close();
-    rmSync(tmp, { recursive: true, force: true });
+    ws.delete();
   });
 
   /**
@@ -251,9 +240,7 @@ describe('ScheduleTick', () => {
       // Down since the top of the hour three hours ago.
       const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
       const due = new Date(lastHour - 3 * HOUR_MS);
-      const offline = await openDatabase(
-        dataSourceOptions(join(tmp, 'pero.sqlite')),
-      );
+      const offline = await openDatabase(dataSourceOptions(ws.database));
       await offline
         .getRepository(ScheduleState)
         .update({ workflowName: 'brief' }, { nextRunAt: due });
@@ -291,10 +278,9 @@ describe('ScheduleTick', () => {
     const before = new Date(due.getTime() - HOUR_MS);
     const sqlTime = (date: Date) =>
       date.toISOString().replace('T', ' ').replace('Z', '');
-    const offline = await openDatabase(
-      dataSourceOptions(join(tmp, 'pero.sqlite')),
-    );
-    // Channel routes, then schedule state.
+    const offline = await openDatabase(dataSourceOptions(ws.database));
+    // Legacy definitions, Channel routes, then schedule state.
+    await offline.undoLastMigration({ transaction: 'each' });
     await offline.undoLastMigration({ transaction: 'each' });
     await offline.undoLastMigration({ transaction: 'each' });
     await offline.query(
@@ -363,7 +349,6 @@ describe('ScheduleTick', () => {
   it('passes times with no run while the Workflow or its Agent is disabled', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
     const { id: workflowId } = await workflows.get('brief');
-    const { id: agentId } = await moduleRef.get(AgentsService).get('coach');
 
     await ds.getRepository(Workflow).update(workflowId, { enabled: false });
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
@@ -372,7 +357,7 @@ describe('ScheduleTick', () => {
     );
 
     await ds.getRepository(Workflow).update(workflowId, { enabled: true });
-    await ds.getRepository(Agent).update(agentId, { enabled: false });
+    await ws.editAgent('Coach', { enabled: false });
     const warn = vi.spyOn(Logger.prototype, 'warn').mockReturnValue();
     await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
     expect(warn).toHaveBeenCalledWith(
@@ -383,7 +368,7 @@ describe('ScheduleTick', () => {
     );
 
     // Enabled again, it runs from its next time, not the ones it passed.
-    await ds.getRepository(Agent).update(agentId, { enabled: true });
+    await ws.editAgent('Coach', { enabled: true });
     await scheduler.tick(new Date('2026-09-28T12:00:01Z'));
     await executor.idle();
     const runs = await allRuns();

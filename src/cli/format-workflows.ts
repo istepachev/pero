@@ -6,7 +6,7 @@ import type {
 } from '../control/protocol.js';
 import { describeChannel, localDateTime } from './format-channels.js';
 import { table } from './format-status.js';
-import { preview } from './settings-keys.js';
+import { preview } from './preview.js';
 
 /** `pero workflows ls`: one row per Workflow. */
 export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
