@@ -19,6 +19,7 @@ import { WorkflowsService } from '../workflows/workflows.service.js';
 import { DefinitionIds } from './definition-ids.js';
 import { Definitions, requireAgent, requireWorkflow } from './definitions.js';
 import { DefinitionsModule } from './definitions.module.js';
+import { SqliteDefinitions } from './sqlite-definitions.js';
 
 describe('SqliteDefinitions', () => {
   let tmp: string;
@@ -60,6 +61,10 @@ describe('SqliteDefinitions', () => {
   afterEach(async () => {
     await moduleRef.close();
     rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('serves a legacy data directory', () => {
+    expect(definitions).toBe(moduleRef.get(SqliteDefinitions));
   });
 
   it('reads the defaults from the settings', async () => {
@@ -166,20 +171,22 @@ describe('SqliteDefinitions', () => {
 
     it('has a main Agent once one is chosen', async () => {
       expect(await definitions.mainAgent()).toBeNull();
+      expect(await definitions.mainAgentName()).toBeNull();
       await settings.update({ mainAgent: 'notes' });
       expect((await definitions.mainAgent())?.name).toBe('notes');
+      expect(await definitions.mainAgentName()).toBe('notes');
     });
 
     it('maps row IDs and names both ways', async () => {
-      const id = await ids.agentId('Coder');
+      const id = (await ids.findAgentId('Coder'))!;
       expect(await ids.agentName(id)).toBe('coder');
+      expect(await ids.findAgentId('nobody')).toBeNull();
       expect(await ids.agentNames()).toEqual(
         new Map([
           [id, 'coder'],
-          [await ids.agentId('notes'), 'notes'],
+          [(await ids.findAgentId('notes'))!, 'notes'],
         ]),
       );
-      await expect(ids.agentId('nobody')).rejects.toThrow(NotFoundError);
       await expect(ids.agentName(999)).rejects.toThrow(NotFoundError);
     });
   });
@@ -193,7 +200,7 @@ describe('SqliteDefinitions', () => {
       await agents.create({ name: 'coach' });
       const ds = moduleRef.get<DataSource>(getDataSourceToken());
       const channels = ds.getRepository(Channel);
-      const agentId = await ids.agentId('coach');
+      const agentId = (await ids.findAgentId('coach'))!;
       [direct, english] = (
         await channels.save([
           channels.create({
@@ -358,7 +365,7 @@ describe('SqliteDefinitions', () => {
     await agents.create({ name: 'coach' });
     const ds = moduleRef.get<DataSource>(getDataSourceToken());
     const channels = ds.getRepository(Channel);
-    const agentId = await ids.agentId('coach');
+    const agentId = (await ids.findAgentId('coach'))!;
     const { id: channel } = await channels.save(
       channels.create({
         integrationKind: 'telegram',

@@ -20,7 +20,7 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-import { routedChannel } from './channel-stages.js';
+import { assignedAgent } from './channel-stages.js';
 
 /**
  * Channels as the CLI shows them: their Agent, what the next turn there
@@ -44,20 +44,22 @@ export class ChannelViews {
     const agents = new Map(
       (await this.definitions.agents()).map((agent) => [agent.name, agent]),
     );
-    return channels.map((channel) =>
-      // The foreign key guarantees the Agent.
-      channelView(channel, agents.get(names.get(channel.agentId)!)!),
-    );
+    return channels.map((channel) => {
+      // The foreign key guarantees the name; a note may not define it.
+      const name = names.get(channel.agentId)!;
+      return channelView(channel, name, agents.get(name) ?? null);
+    });
   }
 
   /** The Channel with ID `id`; `NotFoundError` if none. */
   async details(id: number): Promise<ChannelDetails> {
     const { historyCarryover } = await this.definitions.defaults();
     return inTransaction(this.dataSource, async (manager) => {
-      const channel = await this.withAgent(await findChannel(manager, id));
+      const channel = await findChannel(manager, id);
+      const { name, agent } = await this.agentOf(channel);
       const active = await manager.getRepository(Session).findOneBy({
         channelId: id,
-        agentName: channel.agent.name,
+        agentName: name,
         status: 'active',
       });
       const withHistory = await this.messages.channelsWithHistoryWithin(
@@ -66,11 +68,14 @@ export class ChannelViews {
       );
       const { count, lastAt } = await this.messages.statsWithin(manager, id);
       return {
-        ...channelView(channel, channel.agent),
-        nextTurn: nextTurn(active, channel.agent, {
-          hasHistory: withHistory.has(id),
-          carryover: historyCarryover,
-        }),
+        ...channelView(channel, name, agent),
+        nextTurn:
+          agent === null
+            ? null
+            : nextTurn(active, agent, {
+                hasHistory: withHistory.has(id),
+                carryover: historyCarryover,
+              }),
         messages: count,
         lastMessageAt: lastAt?.toISOString() ?? null,
       };
@@ -83,10 +88,11 @@ export class ChannelViews {
     limit: number,
   ): Promise<{ channel: ChannelView; messages: HistoryMessage[] }> {
     return inTransaction(this.dataSource, async (manager) => {
-      const channel = await this.withAgent(await findChannel(manager, id));
+      const channel = await findChannel(manager, id);
+      const { name, agent } = await this.agentOf(channel);
       const messages = await this.messages.latestWithin(manager, id, limit);
       return {
-        channel: channelView(channel, channel.agent),
+        channel: channelView(channel, name, agent),
         messages: messages.map((message) => ({
           id: message.id,
           createdAt: message.createdAt.toISOString(),
@@ -101,8 +107,8 @@ export class ChannelViews {
     });
   }
 
-  private withAgent(channel: Channel) {
-    return routedChannel(channel, this.definitions, this.ids);
+  private agentOf(channel: Channel) {
+    return assignedAgent(channel, this.definitions, this.ids);
   }
 }
 
@@ -121,15 +127,17 @@ function channelView(
     Channel,
     'id' | 'integrationKind' | 'externalKey' | 'title' | 'enabled' | 'createdAt'
   >,
-  agent: Pick<AgentDefinition, 'name' | 'enabled'>,
+  name: string,
+  agent: Pick<AgentDefinition, 'enabled'> | null,
 ): ChannelView {
   return {
     id: channel.id,
     integrationKind: channel.integrationKind,
     key: channel.externalKey,
     title: channel.title,
-    agent: agent.name,
-    agentEnabled: agent.enabled,
+    agent: name,
+    agentEnabled: agent?.enabled ?? false,
+    agentDefined: agent !== null,
     enabled: channel.enabled,
     createdAt: channel.createdAt.toISOString(),
   };

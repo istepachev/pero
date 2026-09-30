@@ -32,7 +32,7 @@ export function pendingSetup(
     pending.push({
       name: 'default-working-directory',
       message:
-        'Default working directory is not set — pero settings set default-working-directory <folder>',
+        'Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
     });
   }
 

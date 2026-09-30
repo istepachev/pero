@@ -163,6 +163,11 @@ export class HostConfigService implements OnModuleInit {
     return () => this.listeners.delete(listener);
   }
 
+  /** Whether Pero runs from a workspace, not a legacy data directory. */
+  inWorkspace(): boolean {
+    return this.options.workspace !== null;
+  }
+
   /**
    * Where the running Pero's data and settings folders are: as they were
    * at startup, since changing them takes a restart. Null for a legacy

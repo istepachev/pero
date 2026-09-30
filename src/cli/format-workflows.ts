@@ -185,7 +185,7 @@ export function agentWarning(workflow: WorkflowView): string | null {
   if (workflow.agentEnabled) return null;
   return (
     `Warning: Agent ${workflow.agent} is disabled, so this Workflow cannot ` +
-    `run until pero agents enable ${workflow.agent}.`
+    `run until it is enabled again (enabled: true in its note).`
   );
 }
 

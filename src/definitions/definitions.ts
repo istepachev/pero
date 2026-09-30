@@ -75,7 +75,7 @@ export interface WorkflowDefinition {
 
 /**
  * What Pero is configured to run: the defaults, the Agents, and the
- * Workflows. Read-only; the create and edit services change the
+ * Workflows. Read-only; notes, or the create and edit services, change the
  * definitions, and `onChange` says when they have. Runtime code reads
  * definitions only through this, whatever holds them.
  */
@@ -90,6 +90,12 @@ export abstract class Definitions {
 
   /** The Agent primary Channels get; null while none is chosen. */
   abstract mainAgent(): Promise<AgentDefinition | null>;
+
+  /**
+   * The name of the Agent primary Channels get, even while it is not
+   * defined; null while none is chosen.
+   */
+  abstract mainAgentName(): Promise<string | null>;
 
   /** The Workflow named `name`, in any case; null if none. */
   abstract workflow(name: string): Promise<WorkflowDefinition | null>;

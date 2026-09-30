@@ -22,10 +22,11 @@ import type {
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 import {
+  assignedAgent,
   ChannelOnboarding,
   ChannelTurns,
   type RoutedChannel,
-  routedChannel,
+  undefinedAgentHint,
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
@@ -196,10 +197,24 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       integrationKind: kind,
       externalKey: message.channel.key,
     });
-    const channel =
-      known === null
-        ? await this.onboarding.onUnknownChannel(message)
-        : await routedChannel(known, this.definitions, this.ids);
+    let channel: RoutedChannel | null;
+    if (known === null) {
+      channel = await this.onboarding.onUnknownChannel(message);
+    } else {
+      const { name, agent } = await assignedAgent(
+        known,
+        this.definitions,
+        this.ids,
+      );
+      if (agent === null) {
+        this.logger.warn(
+          `Ignored ${kind} update ${updateId} in Channel ${known.id}: ` +
+            undefinedAgentHint(name),
+        );
+        return null;
+      }
+      channel = Object.assign(known, { agent });
+    }
     if (channel === null) return null;
     if (!channel.enabled || !channel.agent.enabled) {
       this.logger.debug(

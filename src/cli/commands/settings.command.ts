@@ -6,6 +6,7 @@ import type { SettingsChange } from '../../config/settings-input.js';
 import type { ControlClient } from '../../control/client.js';
 import { CliError } from '../errors.js';
 import { formatSettings } from '../format-settings.js';
+import { settingStub } from '../note-stubs.js';
 import { PeroCommand } from '../pero-command.js';
 import { isPromptExit, readStdin, terminalPrompts } from '../prompts.js';
 import {
@@ -33,12 +34,13 @@ export class SettingsShowCommand extends PeroCommand {
   name: 'set',
   arguments: '<key> [value]',
   description:
-    'Change a setting; without a value it is read from the prompt or stdin',
+    'Set the Telegram bot token, read from the prompt or stdin; other settings are in Pero.md and config.yaml, and this says where',
   argsDescription: { key: KEY_LIST },
 })
 export class SettingsSetCommand extends PeroCommand {
   async run([name, value]: string[]): Promise<void> {
     const key = findSettingsKey(name!);
+    settingStub(this.config(), key.name);
     if (key.secret && value !== undefined) {
       // The value is not repeated: it is already in the shell history.
       throw new CliError(
@@ -60,12 +62,13 @@ export class SettingsSetCommand extends PeroCommand {
   name: 'unset',
   arguments: '<key>',
   description:
-    'Clear a setting: provider options return to the provider default',
+    'Delete the stored Telegram bot token; other settings are in Pero.md and config.yaml, and this says where',
   argsDescription: { key: KEY_LIST },
 })
 export class SettingsUnsetCommand extends PeroCommand {
   async run([name]: string[]): Promise<void> {
     const key = findSettingsKey(name!);
+    settingStub(this.config(), key.name);
     if (typeof key.unset === 'string') throw new CliError(key.unset);
     const { client } = await this.requireDaemon();
     await apply(client, key, key.unset);
@@ -74,7 +77,7 @@ export class SettingsUnsetCommand extends PeroCommand {
 
 @Command({
   name: 'settings',
-  description: 'Show or change the installation settings',
+  description: 'Show the installation settings, or set the Telegram bot token',
   subCommands: [SettingsShowCommand, SettingsSetCommand, SettingsUnsetCommand],
 })
 export class SettingsCommand extends CommandRunner {

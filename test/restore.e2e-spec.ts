@@ -315,7 +315,7 @@ describe('Restore drill (e2e)', () => {
     expect((await runEnglish()).history).toMatchObject({ count: 4 });
 
     const before = await definitions();
-    expect(before.channels.map((channel) => channel.nextTurn.kind)).toEqual([
+    expect(before.channels.map((channel) => channel.nextTurn!.kind)).toEqual([
       'resume',
       'resume',
       'resume',
@@ -415,13 +415,19 @@ describe('Restore drill (e2e)', () => {
       }),
     ]);
     expect(
-      (await client.call('channels.get', { id: english })).nextTurn.kind,
+      (await client.call('channels.get', { id: english })).nextTurn!.kind,
     ).toBe('resume');
   }, 90_000);
 
   it('restores a workspace into a fresh clone of it, with its data folder', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, tmp);
+    // Until onboarding writes notes (plan step 8.3), a topic's Agent needs
+    // one to answer.
+    writeFileSync(
+      join(ws, 'data', 'Settings', 'Agents', 'English.md'),
+      'You teach English.\n',
+    );
     await start(join(ws, '.pero'), ws);
     await client.call('settings.update', { telegramBotToken: TOKEN });
     await connected();

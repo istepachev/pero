@@ -62,6 +62,10 @@ export class SqliteDefinitions extends Definitions {
     return row === null ? null : agentDefinition(row, settings);
   }
 
+  async mainAgentName(): Promise<string | null> {
+    return (await this.mainAgent())?.name ?? null;
+  }
+
   async workflow(name: string): Promise<WorkflowDefinition | null> {
     const row = await this.dataSource
       .getRepository(Workflow)

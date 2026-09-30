@@ -343,7 +343,7 @@ The old installation is left untouched.
 
 ## Phase 8 — Agents from notes
 
-Switch Agents, defaults, and topic routing to notes. From here, a workspace without notes, or a legacy data directory that hasn't been migrated, starts degraded and says to run `pero migrate`.
+Switch Agents, defaults, and topic routing to notes. From 8.1, a legacy data directory that hasn't been migrated has its `settings` component degraded, saying to run `pero migrate`, and its Agents and settings can't be changed from the CLI; it keeps answering from SQLite until 8.5 drops the tables.
 
 ### 8.1 Agents and defaults from the snapshot
 
@@ -354,6 +354,13 @@ Add `FileDefinitions` for Agents and defaults, backed by the 6.4 snapshot, and m
 - **`pero agents ls`/`show`** show the note path, effective values with where each comes from (note or `Pero.md`), topics, and the note's errors.
 - **Stubs:** `pero agents create`/`edit`/`enable`/`disable` and `pero settings set`/`unset` (except `telegram-bot-token`) name the note to edit.
 - **`pero settings show`** reads `config.yaml` and `Pero.md`.
+- **Found while building:**
+  - **A legacy data directory keeps `SqliteDefinitions`** until 8.5, read-only: the stubs apply there too and say to run `pero migrate`, and its `settings` component is degraded with that hint. The daemon still takes Agent and settings changes over the control endpoint there, for the interactive setup and tests. In a workspace it refuses them, naming the file to edit, since they would change nothing.
+  - **`agents` rows only anchor Channels** until 8.2, since `channels.agent_id` still points at one. A primary Channel is anchored to the row named after `Pero.md`'s `main-agent`, created when missing, through a new `Definitions.mainAgentName()`, which names the main Agent even before its note exists. `pero channels assign` anchors any Agent a note defines. Onboarding still creates a row for a new topic; until 8.3 writes notes, that topic is answered only once a note of that name exists, and each message it gets logs the note to add.
+  - **The snapshot loads on first use** (`SettingsNotes.ready()`), since recovering Workflow runs reads Agents before the daemon's bootstrap hooks run.
+  - **The snapshot records the properties `Pero.md` sets**, so `ls`/`show` can tell `Pero.md`'s values from Pero's own defaults.
+  - **Which providers health depends on follows every change to the definitions**, since a note's `provider` can change without a command.
+  - **Stubs accept any of the old options**, and `src/cli/agent-options.ts` is gone already.
 
 **Done when:**
 - Editing an Agent note's body, `model`, or `effort` changes the next turn in the same Session.
@@ -415,7 +422,7 @@ Today Claude `ask` Agents run in `acceptEdits` mode, which approves edits in the
 
 ### 8.5 Drop Agent tables
 
-A migration drops `agents` and `settings`. Remove `SettingsService`, the create and edit parts of `AgentsService`, `SqliteDefinitions`' Agent side, and their CLI option parsing (`src/cli/agent-options.ts`, `src/cli/settings-keys.ts`).
+A migration drops `agents` and `settings`. Remove `SettingsService`, the create and edit parts of `AgentsService`, `SqliteDefinitions`' Agent side, and the settings keys the stubs and a legacy data directory's `settings show` still use (`src/cli/settings-keys.ts`). A legacy data directory then has no Agents: it starts degraded and says to run `pero migrate`.
 
 **Done when:**
 - The schema has no Agent or settings tables.

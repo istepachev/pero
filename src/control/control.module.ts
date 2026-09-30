@@ -2,12 +2,14 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { AgentsModule } from '../agents/agents.module.js';
 import { BackupModule } from '../backup/backup.module.js';
 import { ChannelsModule } from '../channels/channels.module.js';
+import { DefinitionsModule } from '../definitions/definitions.module.js';
 import type { DataDirLayout } from '../config/data-dir.js';
 import { HealthModule } from '../health/health.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsNotesModule } from '../settings-notes/settings-notes.module.js';
+import { WorkspaceChecks } from '../settings-notes/workspace-checks.service.js';
 import { TriggersModule } from '../triggers/triggers.module.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
@@ -27,6 +29,7 @@ export class ControlModule {
       module: ControlModule,
       imports: [
         HealthModule,
+        DefinitionsModule,
         SettingsModule,
         ProvidersModule,
         AgentsModule,
@@ -39,6 +42,7 @@ export class ControlModule {
       ],
       providers: [
         { provide: CONTROL_LAYOUT, useValue: options.layout },
+        WorkspaceChecks,
         ControlService,
       ],
       exports: [ControlService],

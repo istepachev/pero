@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest';
+import type { SettingsView } from '../control/protocol.js';
+import { formatSettings } from './format-settings.js';
+
+const workspace: SettingsView = {
+  defaultProvider: 'claude',
+  providerDefaults: {
+    claude: { model: 'opus', effort: null },
+    codex: { model: null, effort: null },
+  },
+  defaultWorkingDirectory: '/home/me/workspace/data',
+  sharedInstructions: 'Be calm and brief.\nReply in my language.',
+  mainAgent: 'main',
+  historyCarryover: 50,
+  historyRetentionDays: 90,
+  defaultPermissions: 'ask',
+  timezone: 'Europe/Berlin',
+  maxConcurrentRuns: 2,
+  telegramBotToken: { set: true, source: 'env-file' },
+  files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+  newTopics: 'create-agent',
+  setInPero: ['claude-model', 'history-retention-days', 'timezone'],
+};
+
+describe('formatSettings in a workspace', () => {
+  it("shows Pero.md, marking Pero's own defaults, then config.yaml and the token", () => {
+    expect(formatSettings(workspace)).toBe(
+      [
+        'data/Settings/Pero.md',
+        '  provider                claude (default)',
+        '  claude-model            opus',
+        '  claude-effort           (provider default)',
+        '  codex-model             (provider default)',
+        '  codex-effort            (provider default)',
+        '  permissions             ask (default)',
+        '  timezone                Europe/Berlin',
+        '  main-agent              main (default)',
+        '  new-topics              create-agent (default)',
+        '  history-carryover       50 (default)',
+        '  history-retention-days  90',
+        '  max-concurrent-runs     2 (default)',
+        '  (body)                  Be calm and brief. (2 lines)',
+        '.pero/config.yaml',
+        '  data                    /home/me/workspace/data',
+        'Telegram bot token: set (.env)',
+      ].join('\n'),
+    );
+  });
+});

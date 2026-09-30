@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, In } from 'typeorm';
-import { findAgent } from '../agents/agents.service.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -17,8 +16,12 @@ import {
   workflowCreateSchema,
   workflowEditSchema,
 } from '../config/workflow-input.js';
+import {
+  type AgentDefinition,
+  Definitions,
+  requireAgent,
+} from '../definitions/definitions.js';
 import { SqliteDefinitions } from '../definitions/sqlite-definitions.js';
-import type { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
@@ -34,7 +37,20 @@ export class WorkflowsService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: SqliteDefinitions,
+    /** Where the Agents are: notes in a workspace. */
+    private readonly current: Definitions,
   ) {}
+
+  /** The Agent named `name`, which must be enabled to take on a Workflow. */
+  private async enabledAgent(name: string): Promise<AgentDefinition> {
+    const agent = await requireAgent(this.current, name);
+    if (!agent.enabled) {
+      throw new InvalidInputError(
+        `Agent ${agent.name} is disabled; enable it first (enabled: true in its note)`,
+      );
+    }
+    return agent;
+  }
 
   get(name: string): Promise<Workflow> {
     return findWorkflow(this.dataSource.manager, name);
@@ -50,7 +66,7 @@ export class WorkflowsService {
           `A Workflow named ${fields.name} already exists`,
         );
       }
-      const agent = await enabledAgent(manager, fields.agent);
+      const agent = await this.enabledAgent(fields.agent);
       const history =
         fields.history === undefined
           ? null
@@ -83,7 +99,7 @@ export class WorkflowsService {
       const agentName =
         patch.agent === undefined
           ? undefined
-          : (await enabledAgent(manager, patch.agent)).name;
+          : (await this.enabledAgent(patch.agent)).name;
       const history =
         patch.history === undefined || patch.history === null
           ? patch.history
@@ -206,18 +222,4 @@ async function existingChannel(
     );
   }
   return channel;
-}
-
-/** The Agent named `name`, which must be enabled to take on a Workflow. */
-async function enabledAgent(
-  manager: EntityManager,
-  name: string,
-): Promise<Agent> {
-  const agent = await findAgent(manager, name);
-  if (!agent.enabled) {
-    throw new InvalidInputError(
-      `Agent ${agent.name} is disabled; enable it first with pero agents enable ${agent.name}`,
-    );
-  }
-  return agent;
 }

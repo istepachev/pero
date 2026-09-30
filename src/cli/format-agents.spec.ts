@@ -4,8 +4,6 @@ import {
   describeNextTurn,
   formatAgentDetails,
   formatAgentList,
-  sessionEffect,
-  summarize,
 } from './format-agents.js';
 
 const notes: AgentView = {
@@ -22,6 +20,49 @@ const notes: AgentView = {
   codexSkipGitRepoCheck: false,
   enabled: true,
   main: true,
+  file: null,
+  topics: [],
+  origins: null,
+  errors: [],
+};
+
+const fromNote = {
+  model: 'opus',
+  file: 'data/Settings/Agents/Main.md',
+  origins: {
+    provider: 'default',
+    model: 'pero',
+    effort: 'default',
+    permissions: 'default',
+    workingDirectory: 'data',
+  },
+} satisfies Partial<AgentView>;
+
+const health: AgentView = {
+  ...notes,
+  name: 'health',
+  title: 'Health',
+  model: 'sonnet',
+  effort: 'high',
+  workingDirectory: '/ws/data/Health',
+  effectiveWorkingDirectory: '/ws/data/Health',
+  instructions: 'Coach me.',
+  main: false,
+  file: 'data/Settings/Agents/Health.md',
+  topics: ['Health', 'Running'],
+  origins: {
+    provider: 'default',
+    model: 'note',
+    effort: 'pero',
+    permissions: 'pero',
+    workingDirectory: 'note',
+  },
+  errors: [
+    {
+      property: 'effort',
+      message: 'must be low, medium, high, xhigh, or max for claude',
+    },
+  ],
 };
 
 const coder: AgentView = {
@@ -64,7 +105,53 @@ describe('formatAgentList', () => {
 
   it('says how to create the first Agent', () => {
     expect(formatAgentList([])).toBe(
-      'No Agents yet. Create a topic in an allowed Telegram group, or run pero agents create <name>.',
+      'No Agents yet. Add a note to the Agents folder in the settings folder.',
+    );
+  });
+
+  it('shows the topics and note of each, and marks notes with errors', () => {
+    expect(formatAgentList([health, { ...notes, ...fromNote }])).toBe(
+      [
+        'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPICS           NOTE',
+        'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health, Running  data/Settings/Agents/Health.md',
+        'notes *   claude    opus    default  /vault (data folder)  ask          enabled  —                data/Settings/Agents/Main.md',
+        '',
+        '* the main Agent: General topics and direct chats',
+        '! its note has errors, so its last good version is in use; pero check lists them',
+      ].join('\n'),
+    );
+  });
+});
+
+describe('formatAgentDetails in a workspace', () => {
+  it('shows the note, its topics, where each value comes from, and its errors', () => {
+    expect(
+      formatAgentDetails({
+        ...health,
+        channels: [],
+        folderProblem: null,
+      }),
+    ).toBe(
+      [
+        'Agent health "Health"',
+        '  note                 data/Settings/Agents/Health.md',
+        '  topics               Health, Running',
+        '  provider             claude (default)',
+        '  model                sonnet',
+        '  effort               high (Pero.md)',
+        '  working directory    /ws/data/Health',
+        '  instructions         Coach me.',
+        '  shared instructions  on',
+        '  permissions          ask (Pero.md)',
+        '  codex git check      required',
+        '  state                enabled',
+        '  main agent           no',
+        '',
+        'Its note has errors, so its last good version is in use:',
+        '  effort: must be low, medium, high, xhigh, or max for claude',
+        '',
+        'No Channel is assigned to it yet.',
+      ].join('\n'),
     );
   });
 });
@@ -148,56 +235,5 @@ describe('describeNextTurn', () => {
         from: '/vault',
       }),
     ).toBe('fresh Session: folder was /vault');
-  });
-});
-
-describe('summarize', () => {
-  it('names the provider, model, effort, and folder', () => {
-    expect(summarize(notes)).toBe(
-      'claude, default model, default effort, working in /vault (default)',
-    );
-    expect(summarize(coder)).toBe(
-      'codex, gpt-5.5, high effort, working in /srv/code',
-    );
-  });
-});
-
-describe('sessionEffect', () => {
-  const channel = {
-    id: 1,
-    integrationKind: 'telegram' as const,
-    key: '1',
-    title: null,
-    enabled: true,
-    nextTurn: resume,
-  };
-  const details = (...channels: AgentDetails['channels']): AgentDetails => ({
-    ...notes,
-    folderProblem: null,
-    channels,
-  });
-
-  it('counts the Channels that start a fresh Session', () => {
-    const fresh = {
-      ...channel,
-      nextTurn: {
-        ...resume,
-        kind: 'fresh' as const,
-        reason: 'provider' as const,
-        from: 'codex',
-        carriesOver: true,
-      },
-    };
-    expect(sessionEffect(details(fresh, fresh, channel), false)).toBe(
-      "Its next turn in 2 Channels starts a fresh Session, with that Channel's recent messages.",
-    );
-  });
-
-  it('says a change within the Session applies from its next turn', () => {
-    expect(sessionEffect(details(channel), true)).toBe(
-      'The change applies from the next turn of the same Session.',
-    );
-    expect(sessionEffect(details(channel), false)).toBeNull();
-    expect(sessionEffect(details(), true)).toBeNull();
   });
 });

@@ -57,6 +57,7 @@ describe('buildSnapshot', () => {
       maxConcurrentRuns: 2,
     });
     expect(result.sharedInstructions).toBeNull();
+    expect(result.peroProperties.size).toBe(0);
     expect(result.agents.size).toBe(0);
     expect(result.workflows.size).toBe(0);
     expect(result.mainAgent).toBe('main');
@@ -471,5 +472,21 @@ Go`,
         'Pero.md': '---\nprovidr: x\n---',
       }).errors.map((error) => error.file),
     ).toEqual(['Agents/A.md', 'Pero.md', 'Workflows/B.md']);
+  });
+
+  it('lists the properties Pero.md sets, leaving out empty ones', () => {
+    const result = snapshot({
+      'Pero.md':
+        '---\nclaude-model: opus\ntimezone:\nprovider: codex\n---\nBe kind.',
+    });
+    expect([...result.peroProperties].sort()).toEqual([
+      'claude-model',
+      'provider',
+    ]);
+  });
+
+  it('lists no Pero.md properties while it is broken', () => {
+    const result = snapshot({ 'Pero.md': '---\nprovider: gemini\n---' });
+    expect(result.peroProperties.size).toBe(0);
   });
 });

@@ -45,6 +45,9 @@ const settings: SettingsView = {
   timezone: 'UTC',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
+  files: null,
+  newTopics: null,
+  setInPero: null,
 };
 
 describe('pendingSetup', () => {
@@ -65,7 +68,7 @@ describe('pendingSetup', () => {
     expect(formatPendingSetup(pending)).toBe(
       [
         'Setup needed:',
-        '  Default working directory is not set — pero settings set default-working-directory <folder>',
+        '  Default working directory is not set — pero migrate <workspace> moves this data directory to a workspace, whose data folder Agents work in',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
