@@ -1,4 +1,23 @@
-import { Document } from 'yaml';
+import {
+  closeSync,
+  fsyncSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  rmSync,
+  writeSync,
+} from 'node:fs';
+import { dirname, posix } from 'node:path';
+import {
+  Document,
+  isMap,
+  isScalar,
+  isSeq,
+  parseDocument,
+  type Scalar,
+} from 'yaml';
+import { slugify, SLUG_MAX_LENGTH } from '../config/slug.js';
+import { NOTE_FOLDERS, noteIdentity } from './note-files.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -29,4 +48,217 @@ export function formatNote(
           version: '1.2',
         }).toString({ lineWidth: 0 });
   return ['---', `${frontmatter}---`, ...lines, ''].join('\n');
+}
+
+/** The template a new topic's Agent note starts from, in `Agents/`. */
+export const AGENT_TEMPLATE = posix.join(NOTE_FOLDERS.agent, '_Template.md');
+
+/** The note that would define the Agent named `name`, such as the main one. */
+export function agentNoteFor(name: string): string {
+  const title = name.charAt(0).toUpperCase() + name.slice(1);
+  return posix.join(NOTE_FOLDERS.agent, `${title}.md`);
+}
+
+/** How long a new note's file name may be, before ` 2` and `.md`. */
+const TITLE_MAX_LENGTH = 80;
+
+/**
+ * The file name, without `.md`, of the Agent note for a topic titled
+ * `title`: characters that file systems or Obsidian links don't allow
+ * become spaces, and a leading `_` or `.`, which would hide the note, is
+ * dropped. Short enough that its name, and those of `<title> 2` and so
+ * on, stay apart. `Topic <id>` when no letter or digit is left.
+ */
+export function topicNoteTitle(title: string, topicId: string): string {
+  let cleaned = title
+    .replace(/[/\\:*?"<>|#^[\]\p{Cc}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s._]+/, '')
+    .replace(/[\s.]+$/, '');
+  const characters = Array.from(
+    new Intl.Segmenter().segment(cleaned),
+    ({ segment }) => segment,
+  ).slice(0, TITLE_MAX_LENGTH);
+  cleaned = characters.join('').trimEnd();
+  while ((slugify(cleaned)?.length ?? 0) > SLUG_MAX_LENGTH - 4) {
+    characters.pop();
+    cleaned = characters.join('').trimEnd();
+  }
+  return slugify(cleaned) === null ? `Topic ${topicId}` : cleaned;
+}
+
+/**
+ * A path for a new Agent note titled `title`, among `files`, the notes in
+ * the settings folder: `Agents/<title>.md`, or `<title> 2.md` and so on,
+ * past files that exist and titles whose name an Agent note already has.
+ */
+export function freeAgentNote(title: string, files: readonly string[]): string {
+  const taken = new Set<string>();
+  const paths = new Set(files.map((file) => file.toLowerCase()));
+  for (const file of files) {
+    const found = noteIdentity(file);
+    if (found.ok && found.identity.kind === 'agent') {
+      taken.add(found.identity.name);
+    }
+  }
+  for (let n = 1; ; n += 1) {
+    const candidate = n === 1 ? title : `${title} ${n}`;
+    const file = posix.join(NOTE_FOLDERS.agent, `${candidate}.md`);
+    if (paths.has(file.toLowerCase())) continue;
+    if (taken.has(slugify(candidate)!)) continue;
+    return file;
+  }
+}
+
+/** A note's text split around its frontmatter, kept exactly as written. */
+interface SplitNote {
+  /** Everything up to and including the opening `---` line. */
+  opening: string;
+  /** The YAML between the delimiters. */
+  frontmatter: string;
+  /** The closing `---` line and everything after it. */
+  rest: string;
+}
+
+/** `text` split around its frontmatter; null when it has none. */
+function splitNote(text: string): SplitNote | null {
+  const open = /^﻿?---[ \t]*\r?\n/.exec(text);
+  if (open === null) return null;
+  const close = /^---[ \t]*(?:\r?\n|$)/gm;
+  close.lastIndex = open[0].length;
+  const end = close.exec(text);
+  if (end === null) return null;
+  return {
+    opening: open[0],
+    frontmatter: text.slice(open[0].length, end.index),
+    rest: text.slice(end.index),
+  };
+}
+
+const YAML_OPTIONS = { version: '1.2' } as const;
+const PRINT_OPTIONS = { lineWidth: 0, flowCollectionPadding: false } as const;
+
+/**
+ * The Agent note for the topic titled `title`, from `template`, the text of
+ * `_Template.md`: its properties, comments, and body, with `topics` set to
+ * the title. Without a template, or with one whose properties don't
+ * parse, `topics` alone; `problem` then says what was wrong with it.
+ */
+export function noteFromTemplate(
+  template: string | null,
+  title: string,
+): { text: string; problem: string | null } {
+  const bare = formatNote([['topics', [title]]], null);
+  if (template === null) return { text: bare, problem: null };
+  const split = splitNote(template);
+  const document: Document = parseDocument(
+    split?.frontmatter ?? '',
+    YAML_OPTIONS,
+  );
+  if (document.errors.length > 0) {
+    return {
+      text: bare,
+      problem: `its properties don't parse: ${document.errors[0]!.message.split('\n')[0]}`,
+    };
+  }
+  if (document.contents !== null && !isMap(document.contents)) {
+    return {
+      text: bare,
+      problem: 'its properties must be "name: value" lines',
+    };
+  }
+  if (isMap(document.contents)) document.contents.delete('topics');
+  document.set('topics', [title]);
+  // After the closing `---`: a line break, then the body, as written.
+  const after =
+    split === null ? `\n${template}` : split.rest.replace(/^---[ \t]*/, '');
+  const text = `---\n${document.toString(PRINT_OPTIONS)}---${after}`;
+  return { text: text.endsWith('\n') ? text : `${text}\n`, problem: null };
+}
+
+/**
+ * `text`, a note whose `topics` lists `from` in any case, with that title
+ * replaced by `to`, or `to` added after it when `keep` is set. The rest of
+ * the frontmatter keeps its comments, and the body stays as written. Null
+ * when the note doesn't list `from` or its properties don't parse.
+ */
+export function renameTopicIn(
+  text: string,
+  from: string,
+  to: string,
+  keep = false,
+): string | null {
+  const split = splitNote(text);
+  if (split === null) return null;
+  const document: Document = parseDocument(split.frontmatter, YAML_OPTIONS);
+  if (document.errors.length > 0 || !isMap(document.contents)) return null;
+  const node = document.contents.get('topics', true);
+  const matches = (item: unknown) =>
+    isScalar(item) &&
+    String(item.value).trim().toLowerCase() === from.trim().toLowerCase();
+  if (isScalar(node) && matches(node)) {
+    if (keep) {
+      const list = document.createNode([node.value, to]);
+      document.contents.set('topics', list);
+    } else {
+      node.value = to;
+      node.type = undefined;
+    }
+  } else if (isSeq(node)) {
+    const index = node.items.findIndex(matches);
+    if (index === -1) return null;
+    if (keep) {
+      node.items.splice(index + 1, 0, document.createNode(to));
+    } else {
+      const item = node.items[index] as Scalar;
+      item.value = to;
+      item.type = undefined;
+    }
+  } else {
+    return null;
+  }
+  return `${split.opening}${document.toString(PRINT_OPTIONS)}${split.rest}`;
+}
+
+/**
+ * Writes `text` to `path` unless it exists, in one step: the text goes to a
+ * temporary file beside it, which is synced and linked to `path`, so
+ * readers never see half a note and an existing one is never replaced.
+ * False when `path` exists. Where hard links aren't supported, the file is
+ * created in place instead.
+ */
+export function createFileExclusive(path: string, text: string): boolean {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  rmSync(temporary, { force: true });
+  writeSynced(temporary, text);
+  try {
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return false;
+    if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'ENOSYS') {
+      throw error;
+    }
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+  try {
+    writeSynced(path, text);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  }
+  return true;
+}
+
+function writeSynced(path: string, text: string): void {
+  const fd = openSync(path, 'wx', 0o644);
+  try {
+    writeSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }

@@ -4,6 +4,7 @@ import { join, posix } from 'node:path';
 import type { ProviderOptions } from '../config/provider-options.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { shownPath } from '../settings-files/note-hints.js';
+import { agentNoteFor } from '../settings-files/note-writer.js';
 import { NOTE_FOLDERS } from '../settings-files/note-files.js';
 import {
   type AgentDefinition as NoteAgent,
@@ -85,11 +86,10 @@ export class FileDefinitions extends Definitions {
     const answered = (name: string): Route => {
       const agent = snapshot.agents.get(name);
       if (agent === undefined) {
-        const title = name.charAt(0).toUpperCase() + name.slice(1);
         return unanswered({
           kind: 'no-main-agent',
           agent: name,
-          note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
+          note: shown(agentNoteFor(name)),
         });
       }
       if (!agent.enabled) {

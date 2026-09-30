@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { Definitions } from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
@@ -24,7 +23,6 @@ import {
   ChannelOnboarding,
   ChannelTurns,
   type RoutedChannel,
-  routeOf,
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
@@ -59,7 +57,6 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly onboarding: ChannelOnboarding,
     private readonly history: MessageHistory,
     private readonly approvals: ToolApprovals,
-    private readonly definitions: Definitions,
     private readonly unanswered: UnansweredReplies,
   ) {}
 
@@ -205,7 +202,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       await repository.update(channel.id, { title: message.channel.title });
       channel.title = message.channel.title;
     }
-    const route = await routeOf(channel, this.definitions);
+    const route = await this.onboarding.answer(channel);
     if (route.kind === 'unanswered') {
       await this.unanswered.explain(channel, route.reason);
       return null;

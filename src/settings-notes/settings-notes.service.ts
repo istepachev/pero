@@ -162,6 +162,15 @@ export class SettingsNotes
     return this.current;
   }
 
+  /**
+   * Scans the settings folder once more after any scan under way, so a
+   * note Pero just wrote is in the snapshot when this resolves.
+   */
+  async refresh(): Promise<void> {
+    await this.current;
+    await this.rescan();
+  }
+
   private async reload(reloader: SettingsReloader): Promise<void> {
     const first = reloader.current() === null;
     const reload = await reloader.rescan();

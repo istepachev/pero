@@ -410,6 +410,14 @@ Rewrite `ChannelOnboardingService` around notes:
 - **A topic rename** rewrites that title in the claiming note's `topics` through the `yaml` document API.
 - **Every note write** is atomic (temporary file, then rename) and logged.
 - **No reload wait:** the new note enters the snapshot at once, without waiting for the next scan.
+- **Found while building:**
+  - **Onboarding decides who answers** through a new `ChannelOnboarding.answer(channel)`, which the router calls on every message instead of routing itself. A topic Pero knew before 8.3, or whose title it learns later, gets its note on its next message, not only on the topic-created event.
+  - **One note per topic** comes from a single in-process queue for note writes and renames: whoever writes routes again inside it first, so the topic-created event and first messages write one note between them. The welcome is posted once per Channel, by whoever created the Channel or wrote its note.
+  - **New notes are linked into place:** a synced temporary file is hard-linked to the note's path, which fails when it exists, so a note is never replaced and never seen half written; where hard links aren't supported it is created in place with `wx`. A rename rewrites the note with the existing `writeFileAtomic`. `SettingsNotes.refresh()` rescans after any scan under way, so the note is in the snapshot when the write resolves.
+  - **File names:** `/ \ : * ? " < > |`, control characters, and the characters Obsidian links can't hold (`# ^ [ ]`) become spaces, and a leading `_` or `.`, which would hide the note, is dropped. A title left with no letter or digit gives `Topic <id>.md`. Numbering (`Health 2.md`) skips files that exist and names any Agent note already has, in subfolders and broken notes too; the title is shortened so the numbered names stay apart within the 64-character name limit.
+  - **The template:** `topics` is added after the template's properties, since a leading comment belongs to the first property in YAML. A template whose properties don't parse, or whose note would have errors, is left out with a warning, and the note gets `topics` alone, so the topic is answered at once. Pero writes one note per title while it runs; if that note is still there and doesn't answer, it doesn't write another.
+  - **The main Agent's note** is written as `agentNoteFor(main-agent)` (`Main.md` for the default), only for a primary Channel, and never when an Agent note of that name exists anywhere, even one with errors; that case keeps 8.2's reply.
+  - **Renames** keep the old title too while another topic Pero knows has it, since `topics` names titles, not topics. The note is left alone when another Agent, or several notes, claim the new title: the topic then goes where the notes say.
 
 **Done when:**
 - A created topic yields exactly one note even when the topic-created event and the first message race.
@@ -542,7 +550,7 @@ A later release removes the command stubs, the legacy data directory (`--data-di
 
 | Question | Needed by | Proposed default |
 |---|---|---|
-| Unclaimed topic: new note or main Agent? | 8.3 | New note (`create-agent`), as today |
+| Unclaimed topic: new note or main Agent? | 8.3 | Settled in 8.3: new note (`create-agent`) by default |
 | Report Codex changes under the settings folder? | 8.4 | No: documented limitation |
 | Accept topic IDs in `topics`? | 8.2 | Settled in 8.2: titles only |
 | Several schedules per Workflow note? | 7.4 | Settled in 7.4: one note per schedule |
