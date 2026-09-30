@@ -24,6 +24,7 @@ import { Session } from '../src/persistence/entities/session.entity.js';
 import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
+import { BrokenNoteReports } from '../src/notifications/broken-note-reports.js';
 import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import {
   FakeBotApi,
@@ -245,11 +246,23 @@ describe('Agents from notes (e2e)', () => {
     expect(await say('Milk')).toBe('echo: Milk');
     const [first] = await sessions();
 
-    // Claimed twice: neither answers, and Pero says why once.
+    // Claimed twice: Pero reports both notes in the topic, neither
+    // answers, and Pero says why once.
     await edit(
       'Agents/Pantry.md',
       '---\ntopics: Groceries\nmodel: haiku\n---\nYou stock up.',
     );
+    await daemon!.app.get(BrokenNoteReports).idle();
+    expect(api.sent().at(-1)).toMatchObject({
+      message_thread_id: TOPIC,
+      text: [
+        'Errors in data/Settings/Agents/Groceries.md:',
+        'topics: "Groceries" is also claimed by Agents/Pantry.md, so neither answers there',
+        '',
+        'Errors in data/Settings/Agents/Pantry.md:',
+        'topics: "Groceries" is also claimed by Agents/Groceries.md, so neither answers there',
+      ].join('\n'),
+    });
     expect(await say('Eggs')).toBe(
       'No one answers in this topic: data/Settings/Agents/Groceries.md and ' +
         'data/Settings/Agents/Pantry.md claim "Groceries" in their topics. ' +

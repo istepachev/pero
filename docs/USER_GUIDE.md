@@ -29,6 +29,8 @@ printf '%s' "$TOKEN" | pero settings set telegram-bot-token
 
 The installation defaults are properties of `Pero.md` in the settings folder, and its body is the shared instructions; the data folder is `data` in `.pero/config.yaml`. `pero settings set` stores only the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. The old keys, such as `timezone` or `default-working-directory`, say where their value lives now. Changes apply without a restart.
 
+Pero rereads the notes every 10 seconds, so an edit applies without a restart. A note with errors doesn't stop Pero: `pero status` counts it, and `pero check` lists each error. Since you may edit on your phone, Pero also posts once per broken version of a note in Telegram, in the topics it relates to (an Agent's `topics`, a Workflow's `channel`), or else in the main Agent's primary Channel. The message names each error and what Pero uses meanwhile: the note's last good version, if Pero read one since it started, or nothing. It isn't part of the topic's history. A fix is only logged, and a note already broken when Pero starts is left to `status` and `check`.
+
 ## Telegram
 
 ### Set up Telegram

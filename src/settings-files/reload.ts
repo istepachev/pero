@@ -25,6 +25,16 @@ export interface SettingsReload {
   fixed: SettingsError[];
 }
 
+/** A note the snapshot in use reports errors for. */
+export interface BrokenNote {
+  file: string;
+  /** The version read, which the errors are about. */
+  text: string;
+  /** Whether its last good version is used in place of `text`. */
+  fallback: boolean;
+  errors: SettingsError[];
+}
+
 interface Stat {
   size: number;
   mtimeMs: number;
@@ -150,6 +160,30 @@ export class SettingsReloader {
       appeared: without(this.snapshot.errors, before),
       fixed: without(before, this.snapshot.errors),
     };
+  }
+
+  /**
+   * The notes the snapshot in use reports errors for, by path, each with
+   * the version read; none before the first rescan.
+   */
+  broken(): BrokenNote[] {
+    const byFile = new Map<string, SettingsError[]>();
+    for (const error of this.snapshot?.errors ?? []) {
+      byFile.set(error.file, [...(byFile.get(error.file) ?? []), error]);
+    }
+    const broken: BrokenNote[] = [];
+    for (const [file, errors] of byFile) {
+      const state = this.notes.get(file);
+      if (state?.text == null) continue;
+      const { text, lastGood } = state;
+      broken.push({
+        file,
+        text,
+        fallback: lastGood !== null && lastGood !== text,
+        errors,
+      });
+    }
+    return broken;
   }
 
   private snapshotNotes(): SnapshotNote[] {

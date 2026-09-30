@@ -116,6 +116,14 @@ describe('SettingsReloader', () => {
     });
     expect(agent('health')).toMatchObject({ model: 'opus', effort: null });
     expect(reloader.current()!.errors).toHaveLength(1);
+    expect(reloader.broken()).toEqual([
+      {
+        file: 'Agents/Health.md',
+        text: '---\nmodel: opus\neffort: huge\n---\nCoach',
+        fallback: true,
+        errors: reloader.current()!.errors,
+      },
+    ]);
 
     // Still broken, differently: reported once it settles, still the last good.
     await write(
@@ -135,12 +143,21 @@ describe('SettingsReloader', () => {
       fixed: [{ property: 'efort' }],
     });
     expect(agent('health')!.model).toBe('sonnet');
+    expect(reloader.broken()).toEqual([]);
   });
 
   it('leaves out a note broken since the start until it is fixed', async () => {
+    expect(reloader.broken()).toEqual([]);
     await write('Agents/Health.md', '---\nmodle: opus\n---');
     await reloader.rescan();
     expect(agent('health')).toBeUndefined();
+    expect(reloader.broken()).toMatchObject([
+      {
+        file: 'Agents/Health.md',
+        fallback: false,
+        errors: [{ property: 'modle' }],
+      },
+    ]);
     await write('Agents/Health.md', '---\nmodel: opus\n---');
     expect(await reloader.rescan()).toMatchObject({
       fixed: [{ property: 'modle' }],
@@ -199,6 +216,10 @@ describe('SettingsReloader', () => {
       ],
     });
     expect(reloader.current()!.workflows.has('report')).toBe(false);
+    // Broken though its text is as it was, which is good.
+    expect(reloader.broken()).toMatchObject([
+      { file: 'Workflows/Report.md', fallback: false },
+    ]);
   });
 
   it('applies Pero.md to every Agent', async () => {
