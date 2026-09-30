@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionService } from '../../sessions/session.service.js';
+import { scheduleFingerprint } from '../../triggers/schedule.js';
 import { dataSourceOptions } from '../data-source-options.js';
 import { MIGRATIONS } from '../migrations/index.js';
 import { openDatabase } from '../open-database.js';
@@ -14,6 +15,7 @@ import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
 import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
+import { ScheduleState } from './schedule-state.entity.js';
 import { Session } from './session.entity.js';
 import { Settings } from './settings.entity.js';
 import { Trigger } from './trigger.entity.js';
@@ -28,6 +30,7 @@ const DOMAIN_TABLES = [
   'inbound_updates',
   'messages',
   'notifications',
+  'schedules',
   'sessions',
   'triggers',
   'workflow_notification_targets',
@@ -77,8 +80,16 @@ async function seed(ds: DataSource) {
     kind: 'schedule',
     config: { cron: '0 8 * * *' },
     timezone: 'Europe/Berlin',
-    nextRunAt: new Date('2026-09-28T06:00:00.000Z'),
     lastRunAt: null,
+  });
+  const schedule = await ds.getRepository(ScheduleState).save({
+    workflowName: workflow.name,
+    fingerprint: scheduleFingerprint({
+      cron: '0 8 * * *',
+      timezone: 'Europe/Berlin',
+    }),
+    nextRunAt: new Date('2026-09-28T06:00:00.000Z'),
+    lastRunAt: new Date('2026-09-27T06:00:00.000Z'),
   });
   const run = await ds.getRepository(WorkflowRun).save({
     workflowName: workflow.name,
@@ -131,6 +142,7 @@ async function seed(ds: DataSource) {
     session,
     workflow,
     trigger,
+    schedule,
     run,
     target,
     notification,
@@ -148,6 +160,7 @@ async function readAll(ds: DataSource) {
     sessions: await ds.getRepository(Session).find(),
     workflows: await ds.getRepository(Workflow).find(),
     triggers: await ds.getRepository(Trigger).find(),
+    schedules: await ds.getRepository(ScheduleState).find(),
     runs: await ds.getRepository(WorkflowRun).find(),
     targets: await ds.getRepository(WorkflowNotificationTarget).find(),
     notifications: await ds.getRepository(Notification).find(),
@@ -194,10 +207,10 @@ describe('domain entities', () => {
     const db = await open();
     expect(await tables(db)).toEqual(expect.arrayContaining(DOMAIN_TABLES));
 
-    // Names in state, history retention, Notification delivery, history,
-    // attempts, skipped counts, default permissions, message history, the
-    // allowlist, the Session resume migration, then the domain tables.
-    for (let i = 0; i < 11; i++) {
+    // Schedule state, names in state, history retention, Notification delivery,
+    // history, attempts, skipped counts, default permissions, message history,
+    // the allowlist, the Session resume migration, then the domain tables.
+    for (let i = 0; i < 12; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).toEqual([
@@ -219,10 +232,10 @@ describe('domain entities', () => {
       .update(1, { defaultWorkingDirectory: '/home/owner/vault' });
     const seeded = await seed(db);
 
-    // Names in state, history retention, Notification delivery, Workflow
-    // history, attempts, skipped counts, default permissions, message history,
-    // the allowlist, then the Session resume migration.
-    for (let i = 0; i < 10; i++) {
+    // Schedule state, names in state, history retention, Notification delivery,
+    // Workflow history, attempts, skipped counts, default permissions, message
+    // history, the allowlist, then the Session resume migration.
+    for (let i = 0; i < 11; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(
@@ -264,10 +277,10 @@ describe('domain entities', () => {
     });
     await seed(db);
 
-    // Names in state, history retention, Notification delivery, Workflow
-    // history, attempts, skipped counts, default permissions, message history,
-    // then the allowlist.
-    for (let i = 0; i < 9; i++) {
+    // Schedule state, names in state, history retention, Notification delivery,
+    // Workflow history, attempts, skipped counts, default permissions, message
+    // history, then the allowlist.
+    for (let i = 0; i < 10; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('allowed_chats');
@@ -304,10 +317,10 @@ describe('domain entities', () => {
       historyCarryover: 10,
     });
 
-    // Names in state, history retention, Notification delivery, Workflow
-    // history, attempts, skipped counts, default permissions, then message
-    // history.
-    for (let i = 0; i < 8; i++) {
+    // Schedule state, names in state, history retention, Notification delivery,
+    // Workflow history, attempts, skipped counts, default permissions, then
+    // message history.
+    for (let i = 0; i < 9; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     expect(await tables(db)).not.toContain('messages');
@@ -337,9 +350,9 @@ describe('domain entities', () => {
       defaultPermissions: 'bypass',
     });
 
-    // Names in state, history retention, Notification delivery, history,
-    // attempts, skipped counts, then default permissions.
-    for (let i = 0; i < 7; i++) {
+    // Schedule state, names in state, history retention, Notification delivery,
+    // history, attempts, skipped counts, then default permissions.
+    for (let i = 0; i < 8; i++) {
       await db.undoLastMigration({ transaction: 'each' });
     }
     const columns = await db.query<{ name: string }[]>(
@@ -376,8 +389,9 @@ describe('domain entities', () => {
     const { run, notification } = await seed(db);
     await db.getRepository(WorkflowRun).update(run.id, { skippedCount: 4 });
 
-    // Names in state, history retention, Notification delivery, history,
-    // attempts, then skipped counts.
+    // Schedule state, names in state, history retention, Notification delivery,
+    // history, attempts, then skipped counts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -411,8 +425,9 @@ describe('domain entities', () => {
     ).toMatchObject({ maxAttempts: 1 });
     await db.getRepository(Workflow).update(workflow.id, { maxAttempts: 3 });
 
-    // Names in state, history retention, Notification delivery, history, then
-    // attempts.
+    // Schedule state, names in state, history retention, Notification delivery,
+    // history, then attempts.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -464,7 +479,9 @@ describe('domain entities', () => {
       },
     });
 
-    // Names in state, history retention, Notification delivery, then history.
+    // Schedule state, names in state, history retention, Notification delivery,
+    // then history.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -502,7 +519,9 @@ describe('domain entities', () => {
       notificationId: notification.id,
     });
 
-    // Names in state, history retention, then Notification delivery.
+    // Schedule state, names in state, history retention, then Notification
+    // delivery.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
@@ -549,7 +568,8 @@ describe('domain entities', () => {
       historyRetentionDays: 30,
     });
 
-    // Names in state, then history retention.
+    // Schedule state, names in state, then history retention.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = await db.query<{ name: string }[]>(
@@ -575,7 +595,7 @@ describe('domain entities', () => {
     // 0.1.0 shipped every migration up to history retention.
     const old = await openDatabase({
       ...dataSourceOptions(database),
-      migrations: MIGRATIONS.slice(0, -1),
+      migrations: MIGRATIONS.slice(0, -2),
     });
     const agentColumns = `"name", "provider", "provider_options", "tool_policy_json"`;
     const agentValues = (name: string) =>
@@ -660,6 +680,8 @@ describe('domain entities', () => {
     const db = await open();
     const { agent, session, message, workflow, run } = await seed(db);
 
+    // Schedule state, then names in state.
+    await db.undoLastMigration({ transaction: 'each' });
     await db.undoLastMigration({ transaction: 'each' });
     const columns = async (table: string) =>
       (
@@ -704,6 +726,92 @@ describe('domain entities', () => {
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
+  it('moves the times of enabled schedules into their own table', async () => {
+    const old = await openDatabase({
+      ...dataSourceOptions(database),
+      migrations: MIGRATIONS.slice(0, -1),
+    });
+    const trigger = (
+      cron: string,
+      enabled: number,
+      next: string | null,
+      last: string | null,
+    ) =>
+      old.query(
+        `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone", "enabled", "next_run_at", "last_run_at") ` +
+          `VALUES (1, 'schedule', ?, 'Europe/Berlin', ?, ?, ?)`,
+        [JSON.stringify({ cron }), enabled, next, last],
+      );
+    for (const sql of [
+      `INSERT INTO "agents" ("name", "provider", "provider_options", "tool_policy_json") ` +
+        `VALUES ('coach', 'claude', '{"model":null,"effort":null}', '{"permissions":"ask"}')`,
+      `INSERT INTO "workflows" ("name", "agent_name", "input_template") VALUES ('brief', 'coach', 'Sum up.')`,
+      `INSERT INTO "triggers" ("workflow_id", "kind", "config_json") VALUES (1, 'manual', '{}')`,
+    ]) {
+      await old.query(sql);
+    }
+    await trigger(
+      '0 8 * * *',
+      1,
+      '2026-09-28 06:00:00.000',
+      '2026-09-27 06:00:03.000',
+    );
+    await trigger('0 12 * * *', 0, null, '2026-09-20 10:00:00.000');
+    await trigger('0 18 * * *', 1, null, null);
+    await old.destroy();
+
+    const db = await open();
+    expect(
+      await db.query(
+        `SELECT "workflow_name", "fingerprint", "next_run_at", "last_run_at" FROM "schedules"`,
+      ),
+    ).toEqual([
+      {
+        workflow_name: 'brief',
+        fingerprint: scheduleFingerprint({
+          cron: '0 8 * * *',
+          timezone: 'Europe/Berlin',
+        }),
+        next_run_at: '2026-09-28 06:00:00.000',
+        last_run_at: '2026-09-27 06:00:03.000',
+      },
+    ]);
+    const columns = await db.query<{ name: string }[]>(
+      `SELECT "name" FROM pragma_table_info('triggers')`,
+    );
+    expect(columns.map((column) => column.name)).not.toContain('next_run_at');
+    expect(await db.getRepository(Trigger).count()).toBe(4);
+  });
+
+  it('gives schedule times back to their Triggers and migrates again', async () => {
+    const db = await open();
+    const { trigger, schedule } = await seed(db);
+
+    await db.undoLastMigration({ transaction: 'each' });
+    expect(await tables(db)).not.toContain('schedules');
+    expect(
+      await db.query(
+        `SELECT "id", "next_run_at", "last_run_at" FROM "triggers"`,
+      ),
+    ).toEqual([
+      {
+        id: trigger.id,
+        next_run_at: '2026-09-28 06:00:00.000',
+        last_run_at: '2026-09-27 06:00:00.000',
+      },
+    ]);
+
+    await db.runMigrations({ transaction: 'each' });
+    expect(await db.getRepository(ScheduleState).find()).toEqual([
+      expect.objectContaining({
+        workflowName: schedule.workflowName,
+        fingerprint: schedule.fingerprint,
+        nextRunAt: schedule.nextRunAt,
+        lastRunAt: schedule.lastRunAt,
+      }),
+    ]);
+  });
+
   it('keeps every record across closing and reopening the database', async () => {
     let db = await open();
     await seed(db);
@@ -721,7 +829,7 @@ describe('domain entities', () => {
       toolPolicy: { permissions: 'bypass' },
       enabled: true,
     });
-    expect(before.triggers[0]!.nextRunAt).toEqual(
+    expect(before.schedules[0]!.nextRunAt).toEqual(
       new Date('2026-09-28T06:00:00.000Z'),
     );
     expect(before.runs[0]).toMatchObject({
@@ -761,15 +869,15 @@ describe('domain entities', () => {
     const instant = new Date('2026-03-29T01:30:00.000Z');
     expect(instant.getHours()).toBe(6);
     const db = await open();
-    const { trigger } = await seed(db);
-    const repo = db.getRepository(Trigger);
+    const { schedule } = await seed(db);
+    const repo = db.getRepository(ScheduleState);
 
-    await repo.update(trigger.id, { nextRunAt: instant });
+    await repo.update(schedule.id, { nextRunAt: instant });
 
-    expect(await db.query(`SELECT "next_run_at" FROM "triggers"`)).toEqual([
+    expect(await db.query(`SELECT "next_run_at" FROM "schedules"`)).toEqual([
       { next_run_at: '2026-03-29 01:30:00.000' },
     ]);
-    expect((await repo.findOneByOrFail({ id: trigger.id })).nextRunAt).toEqual(
+    expect((await repo.findOneByOrFail({ id: schedule.id })).nextRunAt).toEqual(
       instant,
     );
     // SQLite's own datetime('now') default is UTC too.

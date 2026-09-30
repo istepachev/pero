@@ -15,7 +15,6 @@ export { TRIGGER_KINDS, type TriggerKind };
 
 /** A rule that starts a Workflow; removed along with its Workflow. */
 @Entity('triggers')
-@Index('IDX_triggers_due', ['enabled', 'nextRunAt'])
 @Index('IDX_triggers_workflow_id', ['workflowId'])
 @Check('CHK_triggers_kind', oneOf('kind', TRIGGER_KINDS))
 @Check('CHK_triggers_config_json', `json_valid("config_json")`)
@@ -48,10 +47,10 @@ export class Trigger {
   @Column({ type: 'text', nullable: true })
   timezone: string | null;
 
-  /** The authoritative next occurrence, in UTC. */
-  @Column({ name: 'next_run_at', type: 'datetime', nullable: true })
-  nextRunAt: Date | null;
-
+  /**
+   * When a manual Trigger last started a run. A schedule's times are in
+   * `schedules`.
+   */
   @Column({ name: 'last_run_at', type: 'datetime', nullable: true })
   lastRunAt: Date | null;
 

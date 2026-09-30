@@ -12,12 +12,13 @@ import {
   InvalidInputError,
   NotFoundError,
 } from '../common/errors.js';
-import { Trigger } from '../persistence/entities/trigger.entity.js';
+import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
+import { scheduleFingerprint } from './schedule.js';
 import { TriggersModule } from './triggers.module.js';
 import { TriggersService } from './triggers.service.js';
 
@@ -244,46 +245,69 @@ describe('TriggersService', () => {
     expect(await triggers.list()).toEqual([]);
   });
 
-  it('schedules enabled schedules saved without a next run on startup', async () => {
+  it("keeps each enabled schedule's times by its Workflow's name, and shows them", async () => {
     vi.useFakeTimers({
       toFake: ['Date'],
       now: new Date('2026-09-28T12:00:00Z'),
     });
-    const unscheduled = await triggers.add({
+    const evening = await triggers.add({
       workflow: 'review',
       kind: 'schedule',
       cron: '0 21 * * *',
     });
-    const overdue = await triggers.add({
-      workflow: 'brief',
+    const morning = await triggers.add({
+      workflow: 'review',
       kind: 'schedule',
       cron: '0 7 * * *',
     });
-    const disabled = await triggers.add({
-      workflow: 'brief',
-      kind: 'schedule',
-      cron: '0 8 * * *',
-    });
-    await triggers.setEnabled(disabled.id, false);
     const manual = await triggers.add({ workflow: 'review', kind: 'manual' });
-    const repo = ds.getRepository(Trigger);
-    await repo.update(unscheduled.id, { nextRunAt: null });
-    await repo.update(overdue.id, {
-      nextRunAt: new Date('2026-09-28T05:00:00Z'),
-    });
+    const states = ds.getRepository(ScheduleState);
+    const saved = async () =>
+      (await states.find({ order: { id: 'ASC' } })).map((row) => [
+        row.workflowName,
+        row.fingerprint,
+        row.nextRunAt?.toISOString(),
+      ]);
+    expect(await saved()).toEqual([
+      [
+        'review',
+        scheduleFingerprint({ cron: '0 21 * * *', timezone: 'Europe/Berlin' }),
+        '2026-09-28T19:00:00.000Z',
+      ],
+      [
+        'review',
+        scheduleFingerprint({ cron: '0 7 * * *', timezone: 'Europe/Berlin' }),
+        '2026-09-29T05:00:00.000Z',
+      ],
+    ]);
 
-    await triggers.onApplicationBootstrap();
-
-    const nextRuns = Object.fromEntries(
-      (await triggers.list()).map((trigger) => [trigger.id, trigger.nextRunAt]),
+    // What the scheduler saves is what the views show.
+    await states.update(
+      {
+        fingerprint: scheduleFingerprint({
+          cron: '0 21 * * *',
+          timezone: 'Europe/Berlin',
+        }),
+      },
+      {
+        nextRunAt: new Date('2026-09-29T19:00:00Z'),
+        lastRunAt: new Date('2026-09-28T19:00:04Z'),
+      },
     );
-    expect(nextRuns).toEqual({
-      [unscheduled.id]: '2026-09-28T19:00:00.000Z',
-      // An overdue run is the scheduler's to catch up, not this.
-      [overdue.id]: '2026-09-28T05:00:00.000Z',
-      [disabled.id]: null,
-      [manual.id]: null,
-    });
+    // In any case, like every name.
+    expect(await triggers.list('Review')).toEqual([
+      {
+        ...evening,
+        nextRunAt: '2026-09-29T19:00:00.000Z',
+        lastRunAt: '2026-09-28T19:00:04.000Z',
+      },
+      morning,
+      manual,
+    ]);
+
+    await triggers.setEnabled(evening.id, false);
+    await triggers.remove(morning.id);
+    expect(await saved()).toEqual([]);
   });
 
   it('removes a Trigger and keeps the runs it created', async () => {

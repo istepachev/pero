@@ -7,8 +7,10 @@ import {
   SETTINGS_ID,
   Settings,
 } from '../persistence/entities/settings.entity.js';
+import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
+import type { Schedule } from '../triggers/schedule.js';
 import {
   type AgentDefinition,
   type Defaults,
@@ -17,9 +19,9 @@ import {
 } from './definitions.js';
 
 /**
- * The definitions as the `settings`, `agents`, `workflows`, and
- * `workflow_notification_targets` tables hold them, read
- * afresh on every call. It opens no transaction of its own, so it can be
+ * The definitions as the `settings`, `agents`, `workflows`, `triggers`,
+ * and `workflow_notification_targets` tables hold them, read afresh on
+ * every call. It opens no transaction of its own, so it can be
  * read inside a caller's: on SQLite's one connection, those reads see
  * what the transaction has written.
  */
@@ -65,15 +67,23 @@ export class SqliteDefinitions extends Definitions {
       .getRepository(Workflow)
       .findOneBy({ name: name.toLowerCase() });
     if (row === null) return null;
-    return workflowDefinition(row, (await this.targets([row.id])).get(row.id));
+    return workflowDefinition(
+      row,
+      (await this.targets([row.id])).get(row.id),
+      (await this.schedules([row.id])).get(row.id),
+    );
   }
 
   async workflows(): Promise<WorkflowDefinition[]> {
     const rows = await this.dataSource
       .getRepository(Workflow)
       .find({ order: { name: 'ASC' } });
-    const targets = await this.targets(rows.map((row) => row.id));
-    return rows.map((row) => workflowDefinition(row, targets.get(row.id)));
+    const ids = rows.map((row) => row.id);
+    const targets = await this.targets(ids);
+    const schedules = await this.schedules(ids);
+    return rows.map((row) =>
+      workflowDefinition(row, targets.get(row.id), schedules.get(row.id)),
+    );
   }
 
   onChange(listener: () => void): () => void {
@@ -109,6 +119,26 @@ export class SqliteDefinitions extends Definitions {
       targets.set(workflowId, channels);
     }
     return targets;
+  }
+
+  /**
+   * The enabled schedule Triggers of Workflows `ids`, oldest first, by
+   * Workflow ID.
+   */
+  private async schedules(ids: number[]): Promise<Map<number, Schedule[]>> {
+    const rows = await this.dataSource.getRepository(Trigger).find({
+      where: { workflowId: In(ids), kind: 'schedule', enabled: true },
+      order: { id: 'ASC' },
+    });
+    const schedules = new Map<number, Schedule[]>();
+    for (const { workflowId, config, timezone } of rows) {
+      // Every schedule has both; see `TriggersService.add`.
+      if (typeof config.cron !== 'string' || timezone === null) continue;
+      const list = schedules.get(workflowId) ?? [];
+      list.push({ cron: config.cron, timezone });
+      schedules.set(workflowId, list);
+    }
+    return schedules;
   }
 
   private settings(): Promise<Settings> {
@@ -154,12 +184,13 @@ export function agentDefinition(
 }
 
 /**
- * The Workflow in row `row`, loaded with its Agent, which notifies the
- * Channels `targets`.
+ * The Workflow in row `row`, which notifies the Channels `targets` and
+ * runs on `schedules`.
  */
 export function workflowDefinition(
   row: Workflow,
   targets: number[] = [],
+  schedules: Schedule[] = [],
 ): WorkflowDefinition {
   return {
     name: row.name,
@@ -169,6 +200,7 @@ export function workflowDefinition(
     history: row.history,
     targets,
     maxAttempts: row.maxAttempts,
+    schedules,
     enabled: row.enabled,
   };
 }

@@ -6,6 +6,7 @@ import type {
 } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
 import type { WorkflowHistory } from '../config/workflow-input.js';
+import type { Schedule } from '../triggers/schedule.js';
 
 /** Installation defaults that Agents and Pero's own limits follow. */
 export interface Defaults {
@@ -64,6 +65,11 @@ export interface WorkflowDefinition {
   targets: number[];
   /** How many times a run of it may start in all. */
   maxAttempts: number;
+  /**
+   * When it runs by itself: each a cron expression in a time zone; empty
+   * for none. A note gives at most one.
+   */
+  schedules: Schedule[];
   enabled: boolean;
 }
 

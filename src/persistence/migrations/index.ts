@@ -10,6 +10,7 @@ import { WorkflowHistory1790623147117 } from './1790623147117-WorkflowHistory.js
 import { NotificationDelivery1790658397489 } from './1790658397489-NotificationDelivery.js';
 import { HistoryRetention1790680000000 } from './1790680000000-HistoryRetention.js';
 import { StateByName1790700000000 } from './1790700000000-StateByName.js';
+import { ScheduleState1790710000000 } from './1790710000000-ScheduleState.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
@@ -28,4 +29,5 @@ export const MIGRATIONS = [
   NotificationDelivery1790658397489,
   HistoryRetention1790680000000,
   StateByName1790700000000,
+  ScheduleState1790710000000,
 ];

@@ -12,6 +12,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsModule } from '../settings/settings.module.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { TriggersModule } from '../triggers/triggers.module.js';
+import { TriggersService } from '../triggers/triggers.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { WorkflowsService } from '../workflows/workflows.service.js';
 import { DefinitionIds } from './definition-ids.js';
@@ -28,6 +30,7 @@ describe('SqliteDefinitions', () => {
   let settings: SettingsService;
   let agents: AgentsService;
   let workflows: WorkflowsService;
+  let triggers: TriggersService;
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-definitions-'));
@@ -42,6 +45,7 @@ describe('SqliteDefinitions', () => {
         SettingsModule,
         AgentsModule,
         WorkflowsModule,
+        TriggersModule,
       ],
     }).compile();
     await moduleRef.init();
@@ -50,6 +54,7 @@ describe('SqliteDefinitions', () => {
     settings = moduleRef.get(SettingsService);
     agents = moduleRef.get(AgentsService);
     workflows = moduleRef.get(WorkflowsService);
+    triggers = moduleRef.get(TriggersService);
   });
 
   afterEach(async () => {
@@ -238,6 +243,7 @@ describe('SqliteDefinitions', () => {
         },
         targets: [direct, english],
         maxAttempts: 3,
+        schedules: [],
         enabled: true,
       });
     });
@@ -251,8 +257,51 @@ describe('SqliteDefinitions', () => {
         history: null,
         targets: [],
         maxAttempts: 1,
+        schedules: [],
         enabled: true,
       });
+    });
+
+    it('reads the enabled schedules of a Workflow, oldest first', async () => {
+      await triggers.add({ workflow: 'brief', kind: 'manual' });
+      await triggers.add({
+        workflow: 'brief',
+        kind: 'schedule',
+        cron: '0 9 * * *',
+        timezone: 'Europe/Berlin',
+      });
+      const off = await triggers.add({
+        workflow: 'brief',
+        kind: 'schedule',
+        cron: '0 12 * * *',
+        timezone: 'UTC',
+      });
+      await triggers.setEnabled(off.id, false);
+      await triggers.add({
+        workflow: 'brief',
+        kind: 'schedule',
+        cron: '0 18 * * 1-5',
+        timezone: 'UTC',
+      });
+      await workflows.edit('brief', { enabled: false });
+
+      const expected = [
+        { cron: '0 9 * * *', timezone: 'Europe/Berlin' },
+        { cron: '0 18 * * 1-5', timezone: 'UTC' },
+      ];
+      // A disabled Workflow keeps its schedules; their times pass unrun.
+      expect((await definitions.workflow('brief'))?.schedules).toEqual(
+        expected,
+      );
+      expect(
+        (await definitions.workflows()).map(({ name, schedules }) => ({
+          name,
+          schedules,
+        })),
+      ).toEqual([
+        { name: 'brief', schedules: expected },
+        { name: 'evening-review', schedules: [] },
+      ]);
     });
 
     it('finds a Workflow in any case, and none that does not exist', async () => {
@@ -279,7 +328,6 @@ describe('SqliteDefinitions', () => {
 
     it('maps row IDs and names both ways', async () => {
       const id = await ids.workflowId('Brief');
-      expect(await ids.workflowName(id)).toBe('brief');
       expect(await ids.workflowNames()).toEqual(
         new Map([
           [id, 'brief'],
@@ -289,7 +337,6 @@ describe('SqliteDefinitions', () => {
       await expect(ids.workflowId('nothing')).rejects.toThrow(
         new NotFoundError('No Workflow named nothing'),
       );
-      await expect(ids.workflowName(999)).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -334,10 +381,21 @@ describe('SqliteDefinitions', () => {
     await workflows.stopNotifying('brief', channel);
     expect(listener).toHaveBeenCalledTimes(4);
 
+    // Its schedules are definitions too.
+    const { id } = await triggers.add({
+      workflow: 'brief',
+      kind: 'schedule',
+      cron: '0 9 * * *',
+    });
+    await triggers.setEnabled(id, false);
+    await triggers.remove(id);
+    expect(listener).toHaveBeenCalledTimes(7);
+
     // Nothing is told of a write that fails.
     await expect(workflows.edit('nothing', { enabled: false })).rejects.toThrow(
       NotFoundError,
     );
-    expect(listener).toHaveBeenCalledTimes(4);
+    await expect(triggers.remove(id)).rejects.toThrow(NotFoundError);
+    expect(listener).toHaveBeenCalledTimes(7);
   });
 });
