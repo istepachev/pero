@@ -496,7 +496,7 @@ describe('Workflow and Trigger definitions (e2e)', () => {
       agent: 'coach',
       inputTemplate: 'Check the inbox.',
     });
-    const trigger = await client.call('triggers.add', {
+    await client.call('triggers.add', {
       workflow: 'hourly',
       kind: 'schedule',
       cron: '0 * * * *',
@@ -509,18 +509,17 @@ describe('Workflow and Trigger definitions (e2e)', () => {
     const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
     const due = new Date(lastHour - 3 * HOUR_MS);
     const db = new Database(join(dataDir, 'pero.sqlite'));
-    db.prepare(`UPDATE "triggers" SET "next_run_at" = ? WHERE "id" = ?`).run(
-      due.toISOString().replace('T', ' ').replace('Z', ''),
-      trigger.id,
-    );
+    db.prepare(
+      `UPDATE "schedules" SET "next_run_at" = ? WHERE "workflow_name" = ?`,
+    ).run(due.toISOString().replace('T', ' ').replace('Z', ''), 'hourly');
     db.close();
 
     await start();
     await vi.waitFor(async () => {
       expect(await client.call('runs.get', { id: 1 })).toMatchObject({
         workflow: 'hourly',
-        triggerId: trigger.id,
-        triggerKey: `schedule:${trigger.id}:${due.toISOString()}`,
+        triggerId: null,
+        triggerKey: `schedule:hourly:${due.toISOString()}`,
         // The three hours since; the first missed time is the run itself.
         skippedCount: 3,
         status: 'completed',

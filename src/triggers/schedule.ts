@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Cron } from 'croner';
 
 // Pure: no Nest or TypeORM. Croner matches the cron fields against a naive
@@ -65,6 +66,19 @@ export function countOccurrences(
     next = nextOccurrence(schedule, next);
   }
   return count;
+}
+
+/**
+ * What identifies `schedule` in its saved state: a hash of the cron
+ * expression, spacing aside, and the time zone. A schedule whose
+ * fingerprint changes is a new one, whose next run is computed afresh.
+ */
+export function scheduleFingerprint(schedule: Schedule): string {
+  const cron = schedule.cron.trim().split(/\s+/).join(' ');
+  return createHash('sha256')
+    .update(`${cron}\n${schedule.timezone}`)
+    .digest('hex')
+    .slice(0, 16);
 }
 
 const crons = new Map<string, Cron>();

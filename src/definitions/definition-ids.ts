@@ -7,8 +7,9 @@ import { Workflow } from '../persistence/entities/workflow.entity.js';
 
 /**
  * Between the IDs some state still refers to definitions by and their
- * names. `Definitions` knows names only. Triggers switch to names in plan
- * step 7.3, and Channels' Agents in 8.2; this goes once nothing needs it.
+ * names. `Definitions` knows names only. Channels keep their Agent's ID
+ * until plan step 8.2, and Triggers their Workflow's until 9.4; this goes
+ * once nothing needs it.
  */
 @Injectable()
 export class DefinitionIds {
@@ -38,15 +39,6 @@ export class DefinitionIds {
       .getRepository(Agent)
       .find({ select: { id: true, name: true } });
     return new Map(rows.map((row) => [row.id, row.name]));
-  }
-
-  /** The name of the Workflow with row ID `id`; `NotFoundError` if none. */
-  async workflowName(id: number): Promise<string> {
-    const row = await this.dataSource
-      .getRepository(Workflow)
-      .findOne({ select: { name: true }, where: { id } });
-    if (row === null) throw new NotFoundError(`No Workflow with ID ${id}`);
-    return row.name;
   }
 
   /**

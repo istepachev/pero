@@ -57,7 +57,7 @@ describe('run formatting', () => {
 
   it('names what started a run', () => {
     expect(startedBy({ triggerKey: 'manual:6f1c' })).toBe('manual');
-    expect(startedBy({ triggerKey: 'schedule:3:2026-09-29T07:00' })).toBe(
+    expect(startedBy({ triggerKey: 'schedule:brief:2026-09-29T07:00' })).toBe(
       'schedule',
     );
     expect(startedBy({ triggerKey: 'retry:5' })).toBe('retry of run 5');
@@ -133,7 +133,7 @@ describe('run formatting', () => {
       result: null,
       error: 'The model is overloaded',
       skippedCount: 2,
-      triggerKey: 'schedule:3:2026-09-29T07:00',
+      triggerKey: 'schedule:brief:2026-09-29T07:00',
     };
     const text = formatRunDetails(failed);
     expect(text).toContain('  coalesced   2 later scheduled times');

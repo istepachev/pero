@@ -309,7 +309,7 @@ Add a `schedules` table: `workflow_name`, `fingerprint` (a hash of the cron expr
 - **Fingerprint changed:** `next_run_at` is computed afresh.
 - **Schedule removed:** its row is dropped.
 
-Trigger keys stay `schedule:<workflow>:<due time>`. A Workflow with several schedule Triggers keeps one row per Trigger until `pero migrate` splits them (7.4).
+Trigger keys become `schedule:<workflow>:<due time>`, and a time that comes due while the Workflow's previous scheduled run waits adds to that run's skipped count. A Workflow with several schedule Triggers keeps one row per Trigger until `pero migrate` splits them (7.4).
 
 **Done when:**
 - Recovery and catch-up tests pass on the new table.

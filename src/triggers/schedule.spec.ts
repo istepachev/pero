@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { countOccurrences, nextOccurrence, type Schedule } from './schedule.js';
+import {
+  countOccurrences,
+  nextOccurrence,
+  type Schedule,
+  scheduleFingerprint,
+} from './schedule.js';
 
 /** The next `count` occurrences of `cron` in `timezone` after `from`. */
 function occurrences(
@@ -363,5 +368,31 @@ describe('countOccurrences', () => {
         10_000,
       ),
     ).toBe(10_000);
+  });
+});
+
+describe('scheduleFingerprint', () => {
+  const daily: Schedule = { cron: '0 9 * * *', timezone: 'Europe/Berlin' };
+
+  it('is short and stable', () => {
+    expect(scheduleFingerprint(daily)).toMatch(/^[0-9a-f]{16}$/);
+    expect(scheduleFingerprint({ ...daily })).toBe(scheduleFingerprint(daily));
+  });
+
+  it('ignores spacing in the cron expression', () => {
+    expect(scheduleFingerprint({ ...daily, cron: ' 0  9 * *\t* ' })).toBe(
+      scheduleFingerprint(daily),
+    );
+  });
+
+  it('changes with the cron expression or the time zone', () => {
+    const fingerprints = new Set(
+      [
+        daily,
+        { ...daily, cron: '0 10 * * *' },
+        { ...daily, timezone: 'UTC' },
+      ].map(scheduleFingerprint),
+    );
+    expect(fingerprints.size).toBe(3);
   });
 });

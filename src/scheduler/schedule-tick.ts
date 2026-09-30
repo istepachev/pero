@@ -6,18 +6,26 @@ import {
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
-import { DefinitionIds } from '../definitions/definition-ids.js';
+import { type DataSource, type EntityManager, Like } from 'typeorm';
 import { Definitions } from '../definitions/definitions.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { countOccurrences, nextOccurrence } from '../triggers/schedule.js';
+import {
+  countOccurrences,
+  nextOccurrence,
+  type Schedule,
+  scheduleFingerprint,
+} from '../triggers/schedule.js';
+import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import {
   advanceScheduleWithin,
-  dueScheduleIds,
+  type DefinedSchedule,
+  dropScheduleWithin,
+  dueSchedules,
   dueScheduleWithin,
-} from '../triggers/triggers.service.js';
-import { WorkflowExecutor } from '../workflows/workflow-executor.js';
+  type Reconciled,
+  reconcileSchedulesWithin,
+} from './schedule-state.js';
 
 /** How often the scheduler looks for schedules that have come due. */
 export const SCHEDULE_TICK_MS = 10_000;
@@ -29,25 +37,39 @@ export const SCHEDULE_TICK_MS = 10_000;
  */
 export const MAX_SKIPPED_COUNT = 10_000;
 
-/** What coming due did to a schedule Trigger, for the log. */
+/** What coming due did to a schedule, for the log. */
 type Fired =
-  | { kind: 'queued'; runId: number; workflow: string; skipped: number }
-  | { kind: 'coalesced'; runId: number; workflow: string; skipped: number }
+  | { kind: 'queued'; runId: number; skipped: number }
+  | { kind: 'coalesced'; runId: number; skipped: number }
   | {
       kind: 'held';
-      workflow: string;
       /** A Workflow disabled on purpose, rather than a missing piece. */
       paused: boolean;
       /** What keeps it from running, such as `Agent coach is disabled`. */
       problem: string;
     }
-  | { kind: 'duplicate'; workflow: string; triggerKey: string };
+  | { kind: 'duplicate'; triggerKey: string }
+  /** Due at the same time as another schedule of its Workflow. */
+  | { kind: 'shared'; runId: number }
+  /** No longer defined: its state was dropped. */
+  | { kind: 'dropped' };
+
+/** A schedule that came due, and what that did. */
+interface FiredSchedule {
+  workflow: string;
+  /** Null when it is no longer defined. */
+  schedule: Schedule | null;
+  result: Fired;
+}
 
 /**
- * Turns schedules that have come due into pending Workflow Runs. The saved
- * `next_run_at` is the schedule, not this tick: each Trigger that has come
- * due gets one short transaction that creates its run and advances it, so a
- * time missed while Pero was down is found on the next tick after startup.
+ * Turns schedules that have come due into pending Workflow Runs. The
+ * schedules come from `Definitions`; where each stands is in `schedules`,
+ * whose saved `next_run_at` is the schedule, not this tick. Each tick first
+ * brings those rows in line with the definitions, then gives each row that
+ * has come due one short transaction that creates its run and advances it,
+ * so a time missed while Pero was down is found on the next tick after
+ * startup.
  */
 @Injectable()
 export class ScheduleTick
@@ -57,12 +79,13 @@ export class ScheduleTick
   /** The tick under way, if any. */
   private current: Promise<void> | null = null;
   private stopping = false;
+  /** Schedules whose first time could not be computed, already logged. */
+  private failing = new Set<string>();
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
   ) {}
 
   /** Catches up at once, rather than a tick interval after startup. */
@@ -82,26 +105,30 @@ export class ScheduleTick
   }
 
   /**
-   * Queues a run for each schedule Trigger due by `now`. Missed times
-   * coalesce into one run that records how many it stands for. Ticks may
-   * overlap: each Trigger's transaction reads it afresh, and the trigger key
-   * leaves one run per time however often it comes due.
+   * Brings the saved schedules in line with the definitions, then queues a
+   * run for each schedule due by `now`. A new or changed schedule starts
+   * from `now`, so it catches nothing up; a removed one loses its state.
+   * Missed times coalesce into one run that records how many it stands
+   * for. Ticks may overlap: each schedule's transaction reads it afresh,
+   * and the trigger key leaves one run per time however often it comes due.
    */
   async tick(now: Date = new Date()): Promise<void> {
-    const due = await dueScheduleIds(this.dataSource.manager, now);
+    await this.reconcile(now);
+    const due = await dueSchedules(this.dataSource.manager, now);
     let queued = false;
-    for (const id of due) {
+    for (const { id, workflowName } of due) {
       if (this.stopping) return;
       try {
         const fired = await inTransaction(this.dataSource, (manager) =>
           this.fireWithin(manager, id, now),
         );
         if (fired === null) continue;
-        this.report(id, fired);
-        queued ||= fired.kind === 'queued' || fired.kind === 'coalesced';
+        this.report(fired.workflow, fired.schedule, fired.result);
+        queued ||=
+          fired.result.kind === 'queued' || fired.result.kind === 'coalesced';
       } catch (error) {
         this.logger.error(
-          `Could not start schedule Trigger ${id}: ${describe(error)}`,
+          `Could not start a schedule of Workflow ${workflowName}: ${describe(error)}`,
         );
       }
     }
@@ -123,55 +150,83 @@ export class ScheduleTick
     return this.current;
   }
 
+  /** Gives each defined schedule a row, and drops the rest. */
+  private async reconcile(now: Date): Promise<void> {
+    const defined: DefinedSchedule[] = (
+      await this.definitions.workflows()
+    ).flatMap((workflow) =>
+      workflow.schedules.map((schedule) => ({
+        workflow: workflow.name,
+        schedule,
+      })),
+    );
+    const reconciled = await inTransaction(this.dataSource, (manager) =>
+      reconcileSchedulesWithin(manager, defined, now),
+    );
+    this.reportReconciled(reconciled);
+  }
+
   /**
-   * Advances Trigger `id` past `now` and queues the run its due time
-   * starts, unless it is no longer due. A Workflow or Agent that is
-   * disabled or gone gets no run, and the time passes; a run of this
-   * Trigger still waiting to start takes the new times into its skipped
-   * count instead.
+   * Advances schedule row `id` past `now` and queues the run its due time
+   * starts, unless it is no longer due. A schedule no longer defined,
+   * such as one of a Workflow that is gone, loses its row. One whose
+   * Workflow is disabled, or whose Agent is disabled or gone, gets no run,
+   * and the time passes; a scheduled run of its Workflow still waiting to
+   * start takes the new times into its skipped count instead.
    */
   private async fireWithin(
     manager: EntityManager,
     id: number,
     now: Date,
-  ): Promise<Fired | null> {
-    const trigger = await dueScheduleWithin(manager, id, now);
-    if (trigger === null) return null;
-    const { due, schedule } = trigger;
+  ): Promise<FiredSchedule | null> {
+    const row = await dueScheduleWithin(manager, id, now);
+    if (row === null) return null;
+    const { due } = row;
+    const name = row.workflowName;
+    const workflow = await this.definitions.workflow(name);
+    const schedule =
+      workflow?.schedules.find(
+        (candidate) => scheduleFingerprint(candidate) === row.fingerprint,
+      ) ?? null;
+    if (workflow === null || schedule === null) {
+      await dropScheduleWithin(manager, id);
+      return { workflow: name, schedule, result: { kind: 'dropped' } };
+    }
+    const fired = (result: Fired) => ({ workflow: name, schedule, result });
+
     const skipped = countOccurrences(schedule, due, now, MAX_SKIPPED_COUNT);
     const nextRunAt = nextOccurrence(schedule, now);
-    const name = await this.ids.workflowName(trigger.workflowId);
-    const workflow = await this.definitions.workflow(name);
-    const agent =
-      workflow === null ? null : await this.definitions.agent(workflow.agent);
-
-    if (
-      workflow === null ||
-      !workflow.enabled ||
-      agent === null ||
-      !agent.enabled
-    ) {
+    const agent = await this.definitions.agent(workflow.agent);
+    if (!workflow.enabled || agent === null || !agent.enabled) {
       await advanceScheduleWithin(manager, id, { nextRunAt });
-      return {
+      return fired({
         kind: 'held',
-        workflow: name,
-        paused: workflow?.enabled === false,
-        problem:
-          workflow === null
-            ? `Workflow ${name} no longer exists`
-            : !workflow.enabled
-              ? `Workflow ${name} is disabled`
-              : agent === null
-                ? `Agent ${workflow.agent} no longer exists`
-                : `Agent ${agent.name} is disabled`,
-      };
+        paused: !workflow.enabled,
+        problem: !workflow.enabled
+          ? `Workflow ${name} is disabled`
+          : agent === null
+            ? `Agent ${workflow.agent} no longer exists`
+            : `Agent ${agent.name} is disabled`,
+      });
     }
 
+    // From the saved time, not `now`: every tick that reads this row
+    // builds the same key, so the unique index allows one run per time.
+    const triggerKey = `schedule:${name}:${due.toISOString()}`;
     const runs = manager.getRepository(WorkflowRun);
     const waiting = await runs.findOne({
-      where: { triggerId: id, status: 'pending' },
+      where: {
+        workflowName: name,
+        triggerKey: Like('schedule:%'),
+        status: 'pending',
+      },
       order: { id: 'DESC' },
     });
+    // Another schedule of the Workflow may have come due at the same time.
+    if (waiting?.triggerKey === triggerKey) {
+      await advanceScheduleWithin(manager, id, { nextRunAt, lastRunAt: now });
+      return fired({ kind: 'shared', runId: waiting.id });
+    }
     if (waiting !== null) {
       const total = Math.min(
         waiting.skippedCount + skipped + 1,
@@ -179,23 +234,15 @@ export class ScheduleTick
       );
       await runs.update(waiting.id, { skippedCount: total });
       await advanceScheduleWithin(manager, id, { nextRunAt });
-      return {
-        kind: 'coalesced',
-        runId: waiting.id,
-        workflow: workflow.name,
-        skipped: total,
-      };
+      return fired({ kind: 'coalesced', runId: waiting.id, skipped: total });
     }
 
-    // From the saved time, not `now`: every tick that reads this row
-    // builds the same key, so the unique index allows one run per time.
-    const triggerKey = `schedule:${id}:${due.toISOString()}`;
     const inserted = await runs
       .createQueryBuilder()
       .insert()
       .values({
         workflowName: name,
-        triggerId: id,
+        triggerId: null,
         triggerKey,
         status: 'pending',
         attempt: 1,
@@ -208,12 +255,22 @@ export class ScheduleTick
       nextRunAt,
       ...(runId === undefined ? {} : { lastRunAt: now }),
     });
-    return runId === undefined
-      ? { kind: 'duplicate', workflow: workflow.name, triggerKey }
-      : { kind: 'queued', runId, workflow: workflow.name, skipped };
+    return fired(
+      runId === undefined
+        ? { kind: 'duplicate', triggerKey }
+        : { kind: 'queued', runId, skipped },
+    );
   }
 
-  private report(id: number, fired: Fired): void {
+  private report(
+    workflow: string,
+    schedule: Schedule | null,
+    fired: Fired,
+  ): void {
+    const which =
+      schedule === null
+        ? `A schedule of Workflow ${workflow}`
+        : `The schedule ${describeSchedule(schedule)} of Workflow ${workflow}`;
     const skipped = (count: number) =>
       count === 0
         ? ''
@@ -221,33 +278,68 @@ export class ScheduleTick
     switch (fired.kind) {
       case 'queued':
         this.logger.log(
-          `Run ${fired.runId} of Workflow ${fired.workflow} queued by schedule Trigger ${id}${skipped(fired.skipped)}`,
+          `Run ${fired.runId} of Workflow ${workflow} queued by its schedule ${describeSchedule(schedule!)}${skipped(fired.skipped)}`,
         );
         break;
       case 'coalesced':
         this.logger.log(
-          `Schedule Trigger ${id} came due while run ${fired.runId} of Workflow ${fired.workflow} waited to start; it now stands for ${fired.skipped} more ${fired.skipped === 1 ? 'time' : 'times'}`,
+          `${which} came due while run ${fired.runId} waited to start; it now stands for ${fired.skipped} more ${fired.skipped === 1 ? 'time' : 'times'}`,
         );
         break;
       case 'held':
         // A disabled Workflow is paused on purpose; a disabled Agent may not be.
         if (fired.paused) {
-          this.logger.debug(
-            `Schedule Trigger ${id} came due, but ${fired.problem}; no run`,
-          );
+          this.logger.debug(`${which} came due, but ${fired.problem}; no run`);
         } else {
-          this.logger.warn(
-            `Schedule Trigger ${id} of Workflow ${fired.workflow} came due, but ${fired.problem}; no run`,
-          );
+          this.logger.warn(`${which} came due, but ${fired.problem}; no run`);
         }
         break;
       case 'duplicate':
         this.logger.warn(
-          `Schedule Trigger ${id} of Workflow ${fired.workflow} already has run ${fired.triggerKey}`,
+          `${which} came due, but Workflow ${workflow} already has run ${fired.triggerKey}`,
+        );
+        break;
+      case 'shared':
+        this.logger.debug(
+          `${which} came due with another of its schedules; run ${fired.runId} stands for both`,
+        );
+        break;
+      case 'dropped':
+        this.logger.log(
+          `${which} is no longer defined; its saved times are dropped`,
         );
         break;
     }
   }
+
+  /** Logs new and dropped schedules, and each failure once. */
+  private reportReconciled({ added, dropped, failed }: Reconciled): void {
+    for (const { workflow, schedule, nextRunAt } of added) {
+      this.logger.log(
+        `Workflow ${workflow} runs on the schedule ${describeSchedule(schedule)}, ${nextRunAt === null ? 'which never comes due' : `next at ${nextRunAt.toISOString()}`}`,
+      );
+    }
+    for (const { workflow } of dropped) {
+      this.logger.log(
+        `A schedule of Workflow ${workflow} is no longer defined; its saved times are dropped`,
+      );
+    }
+    const failing = new Set<string>();
+    for (const { workflow, schedule, error } of failed) {
+      const key = `${workflow}\n${scheduleFingerprint(schedule)}`;
+      failing.add(key);
+      if (this.failing.has(key)) continue;
+      this.logger.error(
+        `Could not schedule Workflow ${workflow} on ${describeSchedule(schedule)}: ${describe(error)}`,
+      );
+    }
+    this.failing = failing;
+  }
+}
+
+/** `schedule` for the log, such as `0 9 * * * (Europe/Berlin)`. */
+function describeSchedule(schedule: Schedule): string {
+  return `${schedule.cron} (${schedule.timezone})`;
 }
 
 function describe(error: unknown): string {
