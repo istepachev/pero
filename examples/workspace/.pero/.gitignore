@@ -1,0 +1,4 @@
+# Written by Pero. Everything here is its state, except config.yaml.
+*
+!.gitignore
+!config.yaml

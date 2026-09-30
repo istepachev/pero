@@ -1,0 +1,12 @@
+# Host settings: where the data folder is, and which chats Pero serves.
+# Agents can't change this file. See docs/vision/CONFIGURATION.md.
+
+# Data folder: the vault Agents work in, relative to the workspace.
+data: data
+
+telegram:
+  # Replace the ID with your group's, or run pero telegram allow <chat ID>.
+  # pero telegram chats lists a group that wrote to Pero, with its ID.
+  allowed-chats:
+    - id: -1001234567890
+      title: Home
