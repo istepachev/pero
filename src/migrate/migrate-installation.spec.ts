@@ -139,7 +139,7 @@ async function legacyDataDir(
   const database = join(source, 'pero.sqlite');
   const old = await openDatabase({
     ...dataSourceOptions(database),
-    migrations: MIGRATIONS.slice(0, -2),
+    migrations: MIGRATIONS.slice(0, -3),
   });
   const rows = [
     agent('main', 'Main', 'claude', { model: 'opus', effort: 'high' }),

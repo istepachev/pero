@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NotFoundError } from '../common/errors.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
@@ -56,7 +57,8 @@ describe('AgentViews', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  async function channel(agentId: number, key: string): Promise<number> {
+  /** A topic Channel that goes to Agent `agentName`. */
+  async function channel(agentName: string, key: string): Promise<number> {
     const channels = ds.getRepository(Channel);
     const saved = await channels.save(
       channels.create({
@@ -64,9 +66,11 @@ describe('AgentViews', () => {
         externalKey: key,
         address: { chatId: key },
         title: `Topic ${key}`,
-        agentId,
       }),
     );
+    await ds
+      .getRepository(LegacyChannelAgent)
+      .insert({ channelId: saved.id, agentName });
     return saved.id;
   }
 
@@ -123,9 +127,9 @@ describe('AgentViews', () => {
 
   it("predicts each Channel's next turn from its active Session", async () => {
     const notes = await agents.create({ name: 'notes' });
-    const first = await channel(notes.id, '-100:1');
-    const second = await channel(notes.id, '-100:2');
-    await channel(notes.id, '-100:3');
+    const first = await channel(notes.name, '-100:1');
+    const second = await channel(notes.name, '-100:2');
+    await channel(notes.name, '-100:3');
     const session = await turn('notes', first);
     await turn('notes', second);
 
@@ -169,7 +173,7 @@ describe('AgentViews', () => {
 
   it('sees a new default folder as a folder change for Agents that follow it', async () => {
     const notes = await agents.create({ name: 'notes' });
-    const topic = await channel(notes.id, '-100:1');
+    const topic = await channel(notes.name, '-100:1');
     await turn('notes', topic);
 
     await settings.update({ defaultWorkingDirectory: own });

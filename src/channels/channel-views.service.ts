@@ -7,11 +7,7 @@ import type {
   ChannelView,
   HistoryMessage,
 } from '../control/protocol.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
-import {
-  type AgentDefinition,
-  Definitions,
-} from '../definitions/definitions.js';
+import { Definitions, type Route } from '../definitions/definitions.js';
 import {
   MessageHistory,
   workflowOf,
@@ -20,11 +16,11 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-import { assignedAgent } from './channel-stages.js';
+import { routeOf, unansweredSummary } from './channel-stages.js';
 
 /**
- * Channels as the CLI shows them: their Agent, what the next turn there
- * does with its Session, and their message history.
+ * Channels as the CLI shows them: the Agent that answers there now, what
+ * the next turn there does with its Session, and their message history.
  */
 @Injectable()
 export class ChannelViews {
@@ -32,7 +28,6 @@ export class ChannelViews {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly messages: MessageHistory,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
   ) {}
 
   /** Every Channel, by ID. */
@@ -40,15 +35,11 @@ export class ChannelViews {
     const channels = await this.dataSource
       .getRepository(Channel)
       .find({ order: { id: 'ASC' } });
-    const names = await this.ids.agentNames();
-    const agents = new Map(
-      (await this.definitions.agents()).map((agent) => [agent.name, agent]),
+    return Promise.all(
+      channels.map(async (channel) =>
+        channelView(channel, await routeOf(channel, this.definitions)),
+      ),
     );
-    return channels.map((channel) => {
-      // The foreign key guarantees the name; a note may not define it.
-      const name = names.get(channel.agentId)!;
-      return channelView(channel, name, agents.get(name) ?? null);
-    });
   }
 
   /** The Channel with ID `id`; `NotFoundError` if none. */
@@ -56,19 +47,23 @@ export class ChannelViews {
     const { historyCarryover } = await this.definitions.defaults();
     return inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, id);
-      const { name, agent } = await this.agentOf(channel);
-      const active = await manager.getRepository(Session).findOneBy({
-        channelId: id,
-        agentName: name,
-        status: 'active',
-      });
+      const route = await routeOf(channel, this.definitions);
+      const agent = route.kind === 'agent' ? route.agent : null;
+      const active =
+        agent === null
+          ? null
+          : await manager.getRepository(Session).findOneBy({
+              channelId: id,
+              agentName: agent.name,
+              status: 'active',
+            });
       const withHistory = await this.messages.channelsWithHistoryWithin(
         manager,
         [id],
       );
       const { count, lastAt } = await this.messages.statsWithin(manager, id);
       return {
-        ...channelView(channel, name, agent),
+        ...channelView(channel, route),
         nextTurn:
           agent === null
             ? null
@@ -89,10 +84,10 @@ export class ChannelViews {
   ): Promise<{ channel: ChannelView; messages: HistoryMessage[] }> {
     return inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, id);
-      const { name, agent } = await this.agentOf(channel);
+      const route = await routeOf(channel, this.definitions);
       const messages = await this.messages.latestWithin(manager, id, limit);
       return {
-        channel: channelView(channel, name, agent),
+        channel: channelView(channel, route),
         messages: messages.map((message) => ({
           id: message.id,
           createdAt: message.createdAt.toISOString(),
@@ -105,10 +100,6 @@ export class ChannelViews {
         })),
       };
     });
-  }
-
-  private agentOf(channel: Channel) {
-    return assignedAgent(channel, this.definitions, this.ids);
   }
 }
 
@@ -125,20 +116,24 @@ export async function findChannel(
 function channelView(
   channel: Pick<
     Channel,
-    'id' | 'integrationKind' | 'externalKey' | 'title' | 'enabled' | 'createdAt'
+    'id' | 'integrationKind' | 'externalKey' | 'title' | 'createdAt'
   >,
-  name: string,
-  agent: Pick<AgentDefinition, 'enabled'> | null,
+  route: Route,
 ): ChannelView {
+  const { agent, agentEnabled } =
+    route.kind === 'agent'
+      ? { agent: route.agent.name, agentEnabled: true }
+      : route.reason.kind === 'disabled'
+        ? { agent: route.reason.agent, agentEnabled: false }
+        : { agent: null, agentEnabled: false };
   return {
     id: channel.id,
     integrationKind: channel.integrationKind,
     key: channel.externalKey,
     title: channel.title,
-    agent: name,
-    agentEnabled: agent?.enabled ?? false,
-    agentDefined: agent !== null,
-    enabled: channel.enabled,
+    agent,
+    agentEnabled,
+    unanswered: route.kind === 'agent' ? null : unansweredSummary(route.reason),
     createdAt: channel.createdAt.toISOString(),
   };
 }

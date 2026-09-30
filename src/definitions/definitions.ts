@@ -73,6 +73,59 @@ export interface WorkflowDefinition {
   enabled: boolean;
 }
 
+/** A Channel as routing sees it. */
+export interface RouteQuery {
+  /** Its ID, which a legacy data directory routes by. */
+  id: number;
+  /** A group's General topic, a group without topics, or a direct chat. */
+  primary: boolean;
+  /** The topic's title; null while Pero hasn't seen it. */
+  title: string | null;
+}
+
+/**
+ * A Channel, by its key, as routing sees it. A primary Channel's key is
+ * its chat's; a topic's adds the topic's ID after a colon.
+ */
+export function routeQuery(channel: {
+  id: number;
+  externalKey: string;
+  title: string | null;
+}): RouteQuery {
+  return {
+    id: channel.id,
+    primary: !channel.externalKey.includes(':'),
+    title: channel.title,
+  };
+}
+
+/**
+ * Why no Agent answers in a Channel. Files are notes' paths as the owner
+ * reads them: inside the workspace, relative to it.
+ */
+export type Unanswered =
+  /** Its Agent is disabled; `file` is its note, null outside a workspace. */
+  | { kind: 'disabled'; agent: string; file: string | null }
+  /** Several Agents' notes, in `files`, claim the topic. */
+  | { kind: 'conflict'; title: string; files: string[] }
+  /** Only notes that have errors and never loaded, in `files`, claim it. */
+  | { kind: 'unloaded'; title: string; files: string[] }
+  /** No Agent claims the topic; `note` is one that could. */
+  | { kind: 'unclaimed'; title: string; note: string }
+  /** Pero hasn't seen the topic's title yet, so nothing can claim it. */
+  | { kind: 'untitled' }
+  /** No note defines the main Agent; `note` is the one to add. */
+  | { kind: 'no-main-agent'; agent: string; note: string }
+  /** A legacy Channel's Agent is gone; null when it never had one. */
+  | { kind: 'undefined-agent'; agent: string | null }
+  /** A legacy Channel is disabled. */
+  | { kind: 'channel-disabled' };
+
+/** Who answers in a Channel now: an enabled Agent, or no one and why. */
+export type Route =
+  | { kind: 'agent'; agent: AgentDefinition }
+  | { kind: 'unanswered'; reason: Unanswered };
+
 /**
  * What Pero is configured to run: the defaults, the Agents, and the
  * Workflows. Read-only; notes, or the create and edit services, change the
@@ -96,6 +149,13 @@ export abstract class Definitions {
    * defined; null while none is chosen.
    */
   abstract mainAgentName(): Promise<string | null>;
+
+  /**
+   * Who answers in `channel` now. In a workspace, a primary Channel gets
+   * the main Agent, and a topic the Agent whose `topics` claims its title;
+   * `new-topics` decides an unclaimed one.
+   */
+  abstract route(channel: RouteQuery): Promise<Route>;
 
   /** The Workflow named `name`, in any case; null if none. */
   abstract workflow(name: string): Promise<WorkflowDefinition | null>;

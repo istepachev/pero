@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentHint,
+  channelHint,
   findAgentNote,
   legacyHint,
   SETTING_HOMES,
@@ -60,6 +61,26 @@ describe('note hints', () => {
     );
     expect(agentHint('edit', 'coach', null, FILES)).toBe(
       'Agents are configured in notes now, and no note is named coach: add data/Settings/Agents/coach.md (Agents/_Template.md shows the properties).',
+    );
+  });
+
+  it('names the note to edit instead of each Channel command', () => {
+    const seen =
+      "pero channels ls shows each topic's title and who answers there.";
+    expect(channelHint('assign', 'coach', 'Agents/Home/Coach.md', FILES)).toBe(
+      "Topics are routed by the Agent notes' topics now: add the topic's " +
+        `title to topics in data/Settings/Agents/Home/Coach.md; ${seen}`,
+    );
+    expect(channelHint('assign', 'chef', null, FILES)).toBe(
+      "Topics are routed by the Agent notes' topics now, and no note is " +
+        "named chef: add data/Settings/Agents/chef.md with the topic's " +
+        `title in its topics; ${seen}`,
+    );
+    expect(channelHint('disable', null, null, FILES)).toMatch(
+      /so a Channel isn't disabled on its own: set enabled: false in the note of the Agent that answers there/,
+    );
+    expect(channelHint('enable', null, null, FILES)).toMatch(
+      /so a Channel isn't enabled on its own: set enabled: true in the note of the Agent that claims the topic/,
     );
   });
 

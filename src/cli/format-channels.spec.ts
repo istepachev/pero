@@ -5,7 +5,6 @@ import type {
   HistoryMessage,
 } from '../control/protocol.js';
 import {
-  formatAssigned,
   formatChannelDetails,
   formatChannelList,
   formatHistory,
@@ -18,8 +17,7 @@ const general: ChannelView = {
   title: 'Household',
   agent: 'main',
   agentEnabled: true,
-  agentDefined: true,
-  enabled: true,
+  unanswered: null,
   createdAt: '2026-09-28T09:00:00.000Z',
 };
 
@@ -69,17 +67,32 @@ describe('Channel formatting', () => {
     else process.env.TZ = zone;
   });
 
-  it('lists Channels with their Agent and state', () => {
+  it('lists Channels with the Agent that answers in each now', () => {
     expect(
       formatChannelList([
         general,
-        { ...groceries, agentEnabled: false, enabled: false, title: null },
+        {
+          ...groceries,
+          agentEnabled: false,
+          unanswered: 'Agent groceries is disabled',
+          title: null,
+        },
+        {
+          ...groceries,
+          id: 13,
+          key: '-1001234567890:43',
+          title: 'Chores',
+          agent: null,
+          agentEnabled: false,
+          unanswered: 'no Agent claims "Chores"',
+        },
       ]),
     ).toBe(
       [
-        'ID  CHANNEL                     TITLE      AGENT                 STATE',
-        '1   telegram -1001234567890     Household  main                  enabled',
-        '12  telegram -1001234567890:42  —          groceries (disabled)  disabled',
+        'ID  CHANNEL                     TITLE      AGENT',
+        '1   telegram -1001234567890     Household  main',
+        '12  telegram -1001234567890:42  —          groceries (disabled)',
+        '13  telegram -1001234567890:43  Chores     none',
       ].join('\n'),
     );
   });
@@ -96,7 +109,6 @@ describe('Channel formatting', () => {
         'Channel 12 "Groceries"',
         '  address    telegram -1001234567890:42',
         '  agent      groceries',
-        '  state      enabled',
         '  next turn  resumes Session 3',
         '  history    4 messages, the latest at 2026-09-28 15:04',
         '  created    2026-09-28 14:00',
@@ -104,52 +116,28 @@ describe('Channel formatting', () => {
     );
   });
 
-  it('warns when the Agent is disabled', () => {
+  it('says why no one answers', () => {
     expect(
       formatChannelDetails({
         ...details,
+        agent: null,
         agentEnabled: false,
-        agentDefined: true,
+        unanswered: '"Groceries" is claimed by a.md and b.md',
+        nextTurn: null,
         messages: 0,
         lastMessageAt: null,
       }),
-    ).toMatch(
-      /history {4}no messages yet\n.*\n\nWarning: Agent groceries is disabled, so this Channel gets no answer until it is enabled again \(enabled: true in its note\)\.$/,
-    );
-  });
-
-  it('says what an assignment does to the next turn', () => {
-    const assigned: ChannelDetails = {
-      ...details,
-      agent: 'chef',
-      nextTurn: {
-        kind: 'new',
-        reason: null,
-        from: null,
-        sessionId: null,
-        carriesOver: true,
-      },
-    };
-    expect(formatAssigned(assigned, false)).toBe(
-      'Channel 12 (telegram -1001234567890:42 "Groceries") now talks to Agent chef.\n' +
-        "Its next turn starts a fresh Session, with the Channel's recent messages.",
-    );
-    expect(
-      formatAssigned(
-        {
-          ...assigned,
-          enabled: false,
-          nextTurn: { ...assigned.nextTurn!, carriesOver: false },
-        },
-        false,
-      ),
     ).toBe(
-      'Channel 12 (telegram -1001234567890:42 "Groceries") now talks to Agent chef.\n' +
-        'Its next turn starts a fresh Session.\n' +
-        'It is disabled, so it gets no answer until pero channels enable 12.',
-    );
-    expect(formatAssigned(details, true)).toBe(
-      'Channel 12 (telegram -1001234567890:42 "Groceries") already talks to Agent groceries.',
+      [
+        'Channel 12 "Groceries"',
+        '  address    telegram -1001234567890:42',
+        '  agent      none',
+        '  next turn  none: no one answers here',
+        '  history    no messages yet',
+        '  created    2026-09-28 14:00',
+        '',
+        'Warning: no one answers here: "Groceries" is claimed by a.md and b.md.',
+      ].join('\n'),
     );
   });
 

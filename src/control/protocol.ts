@@ -255,14 +255,13 @@ export const nextTurnSchema = z.object({
 
 export type NextTurn = z.infer<typeof nextTurnSchema>;
 
-/** A Channel assigned to an Agent. */
+/** A Channel that goes to an Agent now. */
 export const agentChannelSchema = z.object({
   id: z.int(),
   integrationKind: z.enum(INTEGRATION_KINDS),
   /** The integration's address, such as `<chat_id>:<topic_id>`. */
   key: z.string(),
   title: z.string().nullable(),
-  enabled: z.boolean(),
   nextTurn: nextTurnSchema,
 });
 
@@ -286,12 +285,15 @@ export const channelViewSchema = z.object({
   /** The integration's address, such as `<chat_id>:<topic_id>`. */
   key: z.string(),
   title: z.string().nullable(),
-  /** The name of the Agent it is assigned. */
-  agent: z.string(),
+  /**
+   * The Agent that answers there now, chosen from the notes on each
+   * message; with `agentEnabled` false, the disabled Agent that would.
+   * Null when no Agent would.
+   */
+  agent: z.string().nullable(),
   agentEnabled: z.boolean(),
-  /** False when no note defines that Agent, so nothing answers here. */
-  agentDefined: z.boolean(),
-  enabled: z.boolean(),
+  /** Why no one answers there now; null when an Agent does. */
+  unanswered: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
 
@@ -300,7 +302,7 @@ export type ChannelView = z.infer<typeof channelViewSchema>;
 export const channelDetailsSchema = channelViewSchema.extend({
   /**
    * What the next turn with its Agent does with its Session; null when no
-   * note defines that Agent.
+   * one answers there.
    */
   nextTurn: nextTurnSchema.nullable(),
   /** How many messages its history holds. */
@@ -389,7 +391,6 @@ export const notificationTargetSchema = z.object({
   /** Its address, as `pero channels ls` shows it. */
   key: z.string(),
   title: z.string().nullable(),
-  enabled: z.boolean(),
 });
 
 export type NotificationTargetView = z.infer<typeof notificationTargetSchema>;
@@ -586,19 +587,6 @@ export const CONTROL_OPERATIONS = {
   },
   'channels.get': {
     params: z.strictObject({ id: channelIdSchema }),
-    result: channelDetailsSchema,
-  },
-  /** Points a Channel at another enabled Agent and closes its Session. */
-  'channels.assign': {
-    params: z.strictObject({ id: channelIdSchema, agent: agentNameSchema }),
-    result: z.object({
-      channel: channelDetailsSchema,
-      alreadyAssigned: z.boolean(),
-    }),
-  },
-  /** A disabled Channel ignores messages and is not onboarded again. */
-  'channels.setEnabled': {
-    params: z.strictObject({ id: channelIdSchema, enabled: z.boolean() }),
     result: channelDetailsSchema,
   },
   /** The Channel's latest messages, oldest first. */

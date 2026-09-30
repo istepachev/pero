@@ -115,7 +115,6 @@ describe('NotificationDelivery', () => {
 
   /** The owner's direct chat as a Channel `brief` notifies. */
   async function target(): Promise<Channel> {
-    const coach = await moduleRef.get(AgentsService).get('coach');
     const channels = ds.getRepository(Channel);
     const channel = await channels.save(
       channels.create({
@@ -123,7 +122,6 @@ describe('NotificationDelivery', () => {
         externalKey: OWNER.key,
         address: OWNER.address,
         title: null,
-        agentId: coach.id,
       }),
     );
     await workflows.notify('brief', channel.id);
@@ -268,17 +266,6 @@ describe('NotificationDelivery', () => {
       nextAttemptAt: null,
     });
     expect(await workflowMessages()).toEqual([]);
-  });
-
-  it('delivers to a disabled Channel', async () => {
-    const channel = await target();
-    await ds.getRepository(Channel).update(channel.id, { enabled: false });
-    const notification = await finishedRun();
-
-    await delivery.tick(after(notification.nextAttemptAt!, 1));
-
-    expect(adapter.sent).toHaveLength(1);
-    expect((await reload(notification)).status).toBe('delivered');
   });
 
   it('sends a Notification once when ticks overlap', async () => {
@@ -453,7 +440,7 @@ describe('NotificationDelivery', () => {
         id: first.id,
         runId: first.workflowRunId,
         workflow: 'brief',
-        channel: { id: channel.id, key: OWNER.key, title: null, enabled: true },
+        channel: { id: channel.id, key: OWNER.key, title: null },
         status: 'delivered',
         attempt: 1,
         maxAttempts: MAX_DELIVERY_ATTEMPTS,

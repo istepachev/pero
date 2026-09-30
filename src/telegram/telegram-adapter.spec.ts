@@ -10,6 +10,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { ComponentHealth } from '../health/component-health.js';
+import { Agent } from '../persistence/entities/agent.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message as HistoryMessage } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -343,15 +344,15 @@ describe('TelegramAdapter', () => {
       );
 
       await vi.waitFor(async () => {
-        const channels = await db()
-          .getRepository(Channel)
-          .find({ relations: { agent: true } });
+        const channels = await db().getRepository(Channel).find();
         expect(channels).toHaveLength(1);
         expect(channels[0]).toMatchObject({
           externalKey: '-1001234567890:42',
           title: 'Fitness',
-          agent: { name: 'health', title: 'Fitness' },
         });
+        expect(
+          await db().getRepository(Agent).findOneBy({ name: 'health' }),
+        ).toMatchObject({ title: 'Fitness' });
       });
     });
 

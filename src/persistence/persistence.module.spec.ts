@@ -76,9 +76,8 @@ describe('PersistenceModule', () => {
 
     await expect(
       ds.query(
-        `INSERT INTO "channels" ` +
-          `("integration_kind", "external_key", "address_json", "agent_id") ` +
-          `VALUES ('telegram', '1', '{}', 42)`,
+        `INSERT INTO "legacy_channel_agents" ("channel_id", "agent_name") ` +
+          `VALUES (42, 'main')`,
       ),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },

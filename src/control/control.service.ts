@@ -9,7 +9,6 @@ import { AgentViews } from '../agents/agent-views.service.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { BackupService } from '../backup/backup.service.js';
 import { ChannelViews } from '../channels/channel-views.service.js';
-import { ChannelsService } from '../channels/channels.service.js';
 import { InvalidInputError, parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import { withoutUndefined } from '../common/without-undefined.js';
@@ -54,7 +53,6 @@ import { WorkflowsService } from '../workflows/workflows.service.js';
 import { ControlServer } from './control-server.js';
 import type {
   AgentDetails,
-  ChannelDetails,
   ControlResult,
   SettingsView,
   StatusResult,
@@ -88,7 +86,6 @@ export class ControlService implements OnModuleDestroy {
     private readonly backup: BackupService,
     private readonly agents: AgentsService,
     private readonly agentViews: AgentViews,
-    private readonly channels: ChannelsService,
     private readonly channelViews: ChannelViews,
     private readonly workflows: WorkflowsService,
     private readonly workflowViews: WorkflowViews,
@@ -130,9 +127,6 @@ export class ControlService implements OnModuleDestroy {
           channels: await this.channelViews.list(),
         }),
         'channels.get': ({ id }) => this.channelViews.details(id),
-        'channels.assign': ({ id, agent }) => this.assignChannel(id, agent),
-        'channels.setEnabled': ({ id, enabled }) =>
-          this.setChannelEnabled(id, enabled),
         'channels.history': ({ id, limit }) =>
           this.channelViews.history(id, limit),
         'workflows.list': async () => ({
@@ -338,26 +332,6 @@ export class ControlService implements OnModuleDestroy {
       `Agent ${agent.name} changed: ${changed.join(', ') || 'nothing'}`,
     );
     return this.agentViews.details(agent.name);
-  }
-
-  async assignChannel(
-    id: number,
-    agent: string,
-  ): Promise<ControlResult<'channels.assign'>> {
-    const { from, to, alreadyAssigned } = await this.channels.assign(id, agent);
-    if (!alreadyAssigned) {
-      this.logger.log(`Channel ${id} reassigned from Agent ${from} to ${to}`);
-    }
-    return { channel: await this.channelViews.details(id), alreadyAssigned };
-  }
-
-  async setChannelEnabled(
-    id: number,
-    enabled: boolean,
-  ): Promise<ChannelDetails> {
-    await this.channels.setEnabled(id, enabled);
-    this.logger.log(`Channel ${id} ${enabled ? 'enabled' : 'disabled'}`);
-    return this.channelViews.details(id);
   }
 
   async createWorkflow(input: WorkflowCreate): Promise<WorkflowDetails> {

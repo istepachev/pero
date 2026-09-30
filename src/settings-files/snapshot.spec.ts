@@ -4,6 +4,7 @@ import {
   buildSnapshot,
   type SnapshotContext,
   type TopicLookup,
+  topicClaim,
   type TopicResolution,
 } from './snapshot.js';
 
@@ -229,6 +230,63 @@ permissions: bypass
       'Agents/Health.md topics: "Health" is also claimed by Agents/Running.md, so neither answers there',
       'Agents/Running.md topics: "health" is also claimed by Agents/Health.md, so neither answers there',
     ]);
+  });
+
+  it('records the topics of Agent notes left out for errors', () => {
+    const result = snapshot({
+      'Agents/Health.md': '---\ntopics: [Health, Sleep]\neffort: extreme\n---',
+      'Agents/Coach.md': '---\ntopics: Running\nmodle: x\n---',
+      'Agents/Sleep.md': '---\ntopics: Sleep\n---',
+      'Agents/a/Chat.md': '---\ntopics: Chat\n---',
+      'Agents/b/Chat.md': '---\ntopics: [Chat, Talk]\n---',
+      'Agents/Broken.md': '---\ntopics: [\n---',
+    });
+    expect(result.unloadedTopics).toEqual(
+      new Map([
+        ['health', ['Agents/Health.md']],
+        ['running', ['Agents/Coach.md']],
+        ['chat', ['Agents/a/Chat.md', 'Agents/b/Chat.md']],
+        ['talk', ['Agents/b/Chat.md']],
+      ]),
+    );
+    // Sleep is claimed by a note that loaded.
+    expect(result.topicClaims.get('sleep')).toBe('sleep');
+  });
+
+  it('keeps a note loaded from its last good version out of unloaded topics', () => {
+    const result = buildSnapshot(
+      [
+        {
+          file: 'Agents/Health.md',
+          text: '---\ntopics: Health\nmodle: x\n---',
+          fallback: '---\ntopics: Health\n---',
+        },
+      ],
+      CONTEXT,
+    );
+    expect(result.unloadedTopics.size).toBe(0);
+    expect(result.topicClaims.get('health')).toBe('health');
+  });
+
+  it('tells who answers a topic by its title', () => {
+    const result = snapshot({
+      'Agents/Health.md': '---\ntopics: [Health, Sleep]\n---',
+      'Agents/Running.md': '---\ntopics: [sleep]\n---',
+      'Agents/Coach.md': '---\ntopics: Coaching\nmodle: x\n---',
+    });
+    expect(topicClaim(result, ' HEALTH ')).toEqual({
+      kind: 'agent',
+      agent: 'health',
+    });
+    expect(topicClaim(result, 'Sleep')).toEqual({
+      kind: 'conflict',
+      files: ['Agents/Health.md', 'Agents/Running.md'],
+    });
+    expect(topicClaim(result, 'coaching')).toEqual({
+      kind: 'unloaded',
+      files: ['Agents/Coach.md'],
+    });
+    expect(topicClaim(result, 'Groceries')).toEqual({ kind: 'unclaimed' });
   });
 
   it('lets a disabled Agent keep its topics', () => {

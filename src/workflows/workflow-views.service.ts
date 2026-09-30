@@ -81,7 +81,6 @@ function targetView(channel: Channel): NotificationTargetView {
     integrationKind: channel.integrationKind,
     key: channel.externalKey,
     title: channel.title,
-    enabled: channel.enabled,
   };
 }
 

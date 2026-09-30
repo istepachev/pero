@@ -1,6 +1,7 @@
 import type { DataSource } from 'typeorm';
 import { AllowedChat } from '../persistence/entities/allowed-chat.entity.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { Trigger } from '../persistence/entities/trigger.entity.js';
 import { WorkflowNotificationTarget } from '../persistence/entities/workflow-notification-target.entity.js';
@@ -36,8 +37,11 @@ export interface InstallationChannel {
   key: string;
   /** The topic's title, or the chat's for a primary Channel. */
   title: string | null;
-  /** The name of the Agent it is assigned to. */
-  agent: string;
+  /**
+   * The name of the Agent it is assigned to; null when it has none, as a
+   * Channel a workspace's daemon onboarded.
+   */
+  agent: string | null;
   enabled: boolean;
 }
 
@@ -62,7 +66,6 @@ export async function readInstallation(
 ): Promise<Installation> {
   const definitions = new SqliteDefinitions(dataSource);
   const ids = new DefinitionIds(dataSource);
-  const agentNames = await ids.agentNames();
   const workflowNames = await ids.workflowNames();
 
   const triggers = await dataSource
@@ -72,6 +75,13 @@ export async function readInstallation(
     where: { integrationKind: 'telegram' },
     order: { id: 'ASC' },
   });
+  // Kept apart from `channels` since plan step 8.2, which routes by notes.
+  const routes = new Map(
+    (await dataSource.getRepository(LegacyChannelAgent).find()).map((route) => [
+      route.channelId,
+      route,
+    ]),
+  );
   const allowedChats = await dataSource.getRepository(AllowedChat).find({
     where: { integrationKind: 'telegram' },
     order: { id: 'ASC' },
@@ -95,8 +105,8 @@ export async function readInstallation(
       id: channel.id,
       key: channel.externalKey,
       title: channel.title,
-      agent: agentNames.get(channel.agentId)!,
-      enabled: channel.enabled,
+      agent: routes.get(channel.id)?.agentName ?? null,
+      enabled: routes.get(channel.id)?.enabled ?? true,
     })),
     allowedChats: allowedChats.map(({ chatKey, title }) => ({
       chatKey,

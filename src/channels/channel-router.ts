@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { DefinitionIds } from '../definitions/definition-ids.js';
 import { Definitions } from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -22,15 +21,15 @@ import type {
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 import {
-  assignedAgent,
   ChannelOnboarding,
   ChannelTurns,
   type RoutedChannel,
-  undefinedAgentHint,
+  routeOf,
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
 import { PairingRequests } from './pairing-requests.js';
 import { ToolApprovals } from './tool-approvals.js';
+import { UnansweredReplies } from './unanswered-replies.js';
 
 /** The reply a chat that is not allowed gets, at most once an hour. */
 export function pairingHint(kind: IntegrationKind, chatKey: string): string {
@@ -43,8 +42,8 @@ export function pairingHint(kind: IntegrationKind, chatKey: string): string {
 /**
  * Takes every update from the connected adapters. Only allowed chats get
  * past it, each update only once; a message then joins its Channel's
- * history and goes to the Channel's Agent, through onboarding first when
- * its Channel is new.
+ * history and goes to the Agent that answers there now, through onboarding
+ * first when its Channel is new. Where no one answers, Pero says why once.
  */
 @Injectable()
 export class ChannelRouter implements BeforeApplicationShutdown {
@@ -61,7 +60,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly history: MessageHistory,
     private readonly approvals: ToolApprovals,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
+    private readonly unanswered: UnansweredReplies,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -188,42 +187,31 @@ export class ChannelRouter implements BeforeApplicationShutdown {
   }
 
   /**
-   * The enabled Channel, with its enabled Agent, that `message` goes to,
-   * onboarding it when new; null when there is none.
+   * The Channel `message` goes to, onboarding it when new, with the Agent
+   * that answers there now; null, after saying why once, when no one does.
+   * The route follows the notes on every message, so it isn't stored.
    */
   private async route(message: InboundMessage): Promise<RoutedChannel | null> {
-    const { integrationKind: kind, updateId } = message;
-    const known = await this.dataSource.getRepository(Channel).findOneBy({
+    const { integrationKind: kind } = message;
+    const repository = this.dataSource.getRepository(Channel);
+    let channel = await repository.findOneBy({
       integrationKind: kind,
       externalKey: message.channel.key,
     });
-    let channel: RoutedChannel | null;
-    if (known === null) {
+    if (channel === null) {
       channel = await this.onboarding.onUnknownChannel(message);
-    } else {
-      const { name, agent } = await assignedAgent(
-        known,
-        this.definitions,
-        this.ids,
-      );
-      if (agent === null) {
-        this.logger.warn(
-          `Ignored ${kind} update ${updateId} in Channel ${known.id}: ` +
-            undefinedAgentHint(name),
-        );
-        return null;
-      }
-      channel = Object.assign(known, { agent });
+      if (channel === null) return null;
+    } else if (learnsTitle(channel, message.channel)) {
+      await repository.update(channel.id, { title: message.channel.title });
+      channel.title = message.channel.title;
     }
-    if (channel === null) return null;
-    if (!channel.enabled || !channel.agent.enabled) {
-      this.logger.debug(
-        `Ignored ${kind} update ${updateId}: Channel ${channel.id} or ` +
-          `its Agent is disabled`,
-      );
+    const route = await routeOf(channel, this.definitions);
+    if (route.kind === 'unanswered') {
+      await this.unanswered.explain(channel, route.reason);
       return null;
     }
-    return channel;
+    this.unanswered.answered(channel.id);
+    return Object.assign(channel, { agent: route.agent });
   }
 
   /** Runs `work` for an update seen for the first time. */
@@ -269,6 +257,20 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       );
     }
   }
+}
+
+/**
+ * Whether `inbound` tells `channel` a title it doesn't have: a chat's
+ * current title, or the title of a topic first seen in a reply, which
+ * carries none. A topic's messages carry the title it was created with,
+ * so a known one changes only when the topic is renamed.
+ */
+function learnsTitle(
+  channel: Pick<Channel, 'title'>,
+  inbound: InboundMessage['channel'],
+): boolean {
+  if (inbound.title === null || inbound.title === channel.title) return false;
+  return inbound.topicId === null || channel.title === null;
 }
 
 function describe(error: unknown): string {

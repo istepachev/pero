@@ -21,6 +21,7 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
+import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
@@ -208,10 +209,11 @@ describe('pero migrate (e2e)', () => {
     await createTopic(ENGLISH, 'English');
     await createTopic(KITCHEN, 'Kitchen');
     await client.call('agents.create', { name: 'coder', provider: 'codex' });
-    await client.call('channels.assign', {
-      id: await channelId(KITCHEN),
-      agent: 'coder',
-    });
+    // Where a 0.1 installation's pero channels assign put it.
+    await daemon!.app
+      .get<DataSource>(getDataSourceToken())
+      .getRepository(LegacyChannelAgent)
+      .update(await channelId(KITCHEN), { agentName: 'coder' });
     for (const [chat, topic] of [
       [FORUM, ENGLISH],
       [FORUM, KITCHEN],

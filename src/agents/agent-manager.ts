@@ -7,8 +7,11 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
-import { Definitions, requireAgent } from '../definitions/definitions.js';
+import {
+  Definitions,
+  requireAgent,
+  routeQuery,
+} from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -102,7 +105,6 @@ export class AgentManager implements BeforeApplicationShutdown {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
     private readonly sessions: SessionService,
     private readonly runtimes: AgentRuntimes,
     private readonly history: MessageHistory,
@@ -111,8 +113,8 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   /**
    * Accepts a turn behind the Session's earlier ones and settles when it
-   * has run: with the answer, null when the Agent or Channel was disabled
-   * or the Channel reassigned meanwhile, or a `TurnError`.
+   * has run: with the answer, null when the Channel no longer goes to the
+   * Agent, or a `TurnError`.
    */
   runTurn(turn: TurnInput): Promise<TurnResult | null> {
     if (this.draining !== null) {
@@ -267,14 +269,22 @@ export class AgentManager implements BeforeApplicationShutdown {
     agent: ResolvedAgent,
     begin: (agent: ResolvedAgent) => Promise<Session>,
   ): Promise<PreparedTurn> {
-    const skipped = await skipReasonWithin(manager, this.ids, turn, agent);
+    const skipped = await skipReasonWithin(
+      manager,
+      this.definitions,
+      turn,
+      agent,
+    );
     if (skipped !== null) {
       return { agent, session: null, skipped };
     }
+    // The Channel went to another Agent before: its Session ends, so going
+    // back to it later starts afresh with the Channel's latest messages.
+    await this.sessions.closeOthersWithin(manager, turn.channelId, agent.name);
     const session = await begin(agent);
     await this.history.attachSessionWithin(manager, turn.messageId, session.id);
     // Without a provider session, the provider has none of the
-    // conversation: a changed provider or folder, a reassigned Channel, a
+    // conversation: a changed provider or folder, a changed route, a
     // first turn that failed before it began, or a lost conversation.
     const { input, posted, carried } = await this.history.turnInputWithin(
       manager,
@@ -450,11 +460,12 @@ function lostConversation(error: unknown, resumed: string | null): boolean {
 
 /**
  * Why a turn accepted earlier no longer runs: its Agent was disabled, or
- * its Channel was disabled or reassigned meanwhile. Null when it runs.
+ * its Channel went to another Agent or no one meanwhile, as when notes
+ * changed. Null when it runs.
  */
 async function skipReasonWithin(
   manager: EntityManager,
-  ids: DefinitionIds,
+  definitions: Definitions,
   turn: Pick<TurnInput, 'channelId' | 'agent'>,
   agent: Pick<ResolvedAgent, 'enabled'>,
 ): Promise<string | null> {
@@ -462,10 +473,11 @@ async function skipReasonWithin(
   const channel = await manager
     .getRepository(Channel)
     .findOneByOrFail({ id: turn.channelId });
-  if (!channel.enabled) return 'the Channel is disabled';
   // Otherwise the old Agent would open a Session where it no longer answers.
-  if ((await ids.agentName(channel.agentId)) !== turn.agent) {
-    return 'the Channel was assigned another Agent';
+  const route = await definitions.route(routeQuery(channel));
+  if (route.kind === 'unanswered') return 'no one answers in the Channel now';
+  if (route.agent.name !== turn.agent) {
+    return `the Channel goes to Agent ${route.agent.name} now`;
   }
   return null;
 }

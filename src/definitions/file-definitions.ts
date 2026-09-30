@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { homedir } from 'node:os';
+import { join, posix } from 'node:path';
 import type { ProviderOptions } from '../config/provider-options.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+import { shownPath } from '../settings-files/note-hints.js';
+import { NOTE_FOLDERS } from '../settings-files/note-files.js';
 import {
   type AgentDefinition as NoteAgent,
   buildSnapshot,
   type SettingsSnapshot,
+  topicClaim,
 } from '../settings-files/snapshot.js';
 import {
   type AgentDefinition,
   type Defaults,
   Definitions,
+  type Route,
+  type RouteQuery,
+  type Unanswered,
   type WorkflowDefinition,
 } from './definitions.js';
 import { SqliteDefinitions } from './sqlite-definitions.js';
@@ -67,6 +74,64 @@ export class FileDefinitions extends Definitions {
     return (await this.current()).snapshot.mainAgent;
   }
 
+  async route(channel: RouteQuery): Promise<Route> {
+    const { snapshot, settingsFolder, workspace } = await this.current();
+    const shown = (file: string) =>
+      shownPath(workspace, join(settingsFolder, file));
+    const unanswered = (reason: Unanswered): Route => ({
+      kind: 'unanswered',
+      reason,
+    });
+    const answered = (name: string): Route => {
+      const agent = snapshot.agents.get(name);
+      if (agent === undefined) {
+        const title = name.charAt(0).toUpperCase() + name.slice(1);
+        return unanswered({
+          kind: 'no-main-agent',
+          agent: name,
+          note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
+        });
+      }
+      if (!agent.enabled) {
+        return unanswered({
+          kind: 'disabled',
+          agent: agent.name,
+          file: shown(agent.file),
+        });
+      }
+      return { kind: 'agent', agent: agentDefinition(agent) };
+    };
+    const toMain = snapshot.defaults.newTopics === 'main-agent';
+
+    if (channel.primary) return answered(snapshot.mainAgent);
+    const title = channel.title?.trim() ?? '';
+    if (title === '') {
+      return toMain
+        ? answered(snapshot.mainAgent)
+        : unanswered({ kind: 'untitled' });
+    }
+    const claim = topicClaim(snapshot, title);
+    switch (claim.kind) {
+      case 'agent':
+        return answered(claim.agent);
+      case 'conflict':
+      case 'unloaded':
+        return unanswered({
+          kind: claim.kind,
+          title,
+          files: claim.files.map(shown),
+        });
+      case 'unclaimed':
+        return toMain
+          ? answered(snapshot.mainAgent)
+          : unanswered({
+              kind: 'unclaimed',
+              title,
+              note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
+            });
+    }
+  }
+
   workflow(name: string): Promise<WorkflowDefinition | null> {
     return this.sqlite.workflow(name);
   }
@@ -92,6 +157,8 @@ export class FileDefinitions extends Definitions {
   private async current(): Promise<{
     snapshot: SettingsSnapshot;
     dataFolder: string;
+    settingsFolder: string;
+    workspace: string;
   }> {
     const snapshot = await this.notes.ready();
     const folders = this.notes.folders();
@@ -108,6 +175,8 @@ export class FileDefinitions extends Definitions {
           hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       dataFolder: folders.dataFolder,
+      settingsFolder: folders.settingsFolder,
+      workspace: folders.workspace,
     };
   }
 }

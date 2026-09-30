@@ -9,11 +9,11 @@ import type {
   AgentDetails,
   AgentView,
 } from '../control/protocol.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
 import {
   type AgentDefinition,
   type Defaults,
   Definitions,
+  routeQuery,
 } from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -34,7 +34,6 @@ export class AgentViews {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly history: MessageHistory,
     private readonly definitions: Definitions,
-    private readonly ids: DefinitionIds,
     private readonly notes: SettingsNotes,
   ) {}
 
@@ -52,10 +51,9 @@ export class AgentViews {
     if (agent === null) throw this.notFound(name);
     const main = (await this.definitions.mainAgent())?.name ?? null;
     const defaults = await this.definitions.defaults();
-    const id = await this.ids.findAgentId(agent.name);
     const view = {
       ...this.view(agent, main),
-      channels: id === null ? [] : await this.channels(id, agent, defaults),
+      channels: await this.channels(agent, defaults),
     };
     return { ...view, folderProblem: await folderProblem(view) };
   }
@@ -113,16 +111,28 @@ export class AgentViews {
     return new NotFoundError(`No Agent named ${name}`);
   }
 
-  /** The Channels Agent `id` answers in, with what its next turn does. */
+  /**
+   * The Channels that go to `agent` now, or would were it enabled, with
+   * what its next turn there does.
+   */
   private channels(
-    id: number,
     agent: AgentDefinition,
     defaults: Defaults,
   ): Promise<AgentChannelView[]> {
     return inTransaction(this.dataSource, async (manager) => {
-      const channels = await manager
+      const channels: Channel[] = [];
+      for (const channel of await manager
         .getRepository(Channel)
-        .find({ where: { agentId: id }, order: { id: 'ASC' } });
+        .find({ order: { id: 'ASC' } })) {
+        const route = await this.definitions.route(routeQuery(channel));
+        const name =
+          route.kind === 'agent'
+            ? route.agent.name
+            : route.reason.kind === 'disabled'
+              ? route.reason.agent
+              : null;
+        if (name === agent.name) channels.push(channel);
+      }
       const sessions = await manager
         .getRepository(Session)
         .findBy({ agentName: agent.name, status: 'active' });
@@ -135,7 +145,6 @@ export class AgentViews {
         integrationKind: channel.integrationKind,
         key: channel.externalKey,
         title: channel.title,
-        enabled: channel.enabled,
         nextTurn: nextTurn(
           sessions.find((session) => session.channelId === channel.id) ?? null,
           agent,

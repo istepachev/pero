@@ -188,6 +188,15 @@ const topics = oneOrMore(topicTitle).transform((titles) => {
   });
 });
 
+/**
+ * The topic titles `value`, a `topics` property as YAML gives it, names;
+ * null when it names none, as for a value of the wrong type.
+ */
+export function topicTitles(value: unknown): string[] | null {
+  const read = topics.safeParse(value);
+  return read.success ? read.data : null;
+}
+
 const CHANNEL_EXPECTED = 'must be a topic title or a Channel ID';
 
 const channelRef = z.union([z.int().positive(CHANNEL_EXPECTED), text], {

@@ -294,6 +294,8 @@ describe('ScheduleTick', () => {
     const offline = await openDatabase(
       dataSourceOptions(join(tmp, 'pero.sqlite')),
     );
+    // Channel routes, then schedule state.
+    await offline.undoLastMigration({ transaction: 'each' });
     await offline.undoLastMigration({ transaction: 'each' });
     await offline.query(
       `UPDATE "triggers" SET "next_run_at" = ?, "last_run_at" = ? WHERE "id" = ?`,

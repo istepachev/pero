@@ -356,7 +356,7 @@ Add `FileDefinitions` for Agents and defaults, backed by the 6.4 snapshot, and m
 - **`pero settings show`** reads `config.yaml` and `Pero.md`.
 - **Found while building:**
   - **A legacy data directory keeps `SqliteDefinitions`** until 8.5, read-only: the stubs apply there too and say to run `pero migrate`, and its `settings` component is degraded with that hint. The daemon still takes Agent and settings changes over the control endpoint there, for the interactive setup and tests. In a workspace it refuses them, naming the file to edit, since they would change nothing.
-  - **`agents` rows only anchor Channels** until 8.2, since `channels.agent_id` still points at one. A primary Channel is anchored to the row named after `Pero.md`'s `main-agent`, created when missing, through a new `Definitions.mainAgentName()`, which names the main Agent even before its note exists. `pero channels assign` anchors any Agent a note defines. Onboarding still creates a row for a new topic; until 8.3 writes notes, that topic is answered only once a note of that name exists, and each message it gets logs the note to add.
+  - **`agents` rows only anchored Channels** until 8.2, since `channels.agent_id` still pointed at one. A primary Channel is anchored to the row named after `Pero.md`'s `main-agent`, created when missing, through a new `Definitions.mainAgentName()`, which names the main Agent even before its note exists. `pero channels assign` anchors any Agent a note defines. Onboarding still creates a row for a new topic; until 8.3 writes notes, that topic is answered only once a note of that name exists, and each message it gets logs the note to add.
   - **The snapshot loads on first use** (`SettingsNotes.ready()`), since recovering Workflow runs reads Agents before the daemon's bootstrap hooks run.
   - **The snapshot records the properties `Pero.md` sets**, so `ls`/`show` can tell `Pero.md`'s values from Pero's own defaults.
   - **Which providers health depends on follows every change to the definitions**, since a note's `provider` can change without a command.
@@ -382,6 +382,17 @@ The change comes with a migration and CLI updates:
 - **Topics that can't be answered** get one reply saying why: a disabled Agent, a conflict, or a broken note that never loaded.
 - **`pero channels ls`/`show`** show the current route.
 - **Stubs:** `pero channels assign`/`enable`/`disable`.
+- **Found while building:**
+  - **`Definitions.route(channel)`** replaces `agentForTopic(title)`. It takes the Channel's ID, whether it is primary, and its title, and gives the enabled Agent that answers or why none does. One method covers primary Channels, and a legacy data directory, which routes by Channel ID.
+  - **A legacy data directory keeps its routes in `legacy_channel_agents`.** The migration moves each Channel's Agent name and enabled flag there.
+    - `pero migrate` reads that table. It migrates its copy before reading it, and a newer daemon may already have migrated a legacy database, so `agent_id` can't be the source.
+    - A legacy data directory routes from it exactly as before: onboarding still creates an Agent per topic and adds its row, and a disabled Channel stays silent.
+    - The table goes with legacy data directories, after 0.2.0.
+  - **Titles are learned from messages.** Telegram names a topic only in `forum_topic_created`, attached to messages that aren't replies to other messages, so a topic first seen in a reply has no title. The router fills a missing topic title from a later message. It never replaces a known one, since messages carry the title the topic was created with; only a rename changes it. A chat's own title follows each message.
+  - **Until 8.3, an unclaimed topic** gets a reply naming the note to add with `new-topics: create-agent`, and goes to the main Agent with `main-agent`. A topic whose title isn't known yet is handled the same way. A missing main Agent note gets a reply too, until 8.3 writes `Main.md`.
+  - **"Once" means once per reason, in memory.** Pero replies again when the reason changes, or after the topic was answered in between. A restart may repeat a reply. The reply is sent outside the Channel's history, and the message isn't kept.
+  - **The new Agent's first turn closes the other Agents' active Sessions** in the Channel, rather than a command closing them. Otherwise an Agent the topic comes back to would resume its old Session without the messages in between. A turn accepted before the route changed is skipped.
+  - **`pero agents show`** lists the Channels that route to the Agent now, found by routing every Channel.
 
 **Done when:**
 - Adding a title to an Agent's `topics` moves that topic on its next message.
@@ -422,7 +433,7 @@ Today Claude `ask` Agents run in `acceptEdits` mode, which approves edits in the
 
 ### 8.5 Drop Agent tables
 
-A migration drops `agents` and `settings`. Remove `SettingsService`, the create and edit parts of `AgentsService`, `SqliteDefinitions`' Agent side, and the settings keys the stubs and a legacy data directory's `settings show` still use (`src/cli/settings-keys.ts`). A legacy data directory then has no Agents: it starts degraded and says to run `pero migrate`.
+A migration drops `agents` and `settings`. It must keep what `pero migrate` reads from a legacy database (Agents, defaults, the main Agent), as 8.2's `legacy_channel_agents` does for Channel routes, since a newer daemon may migrate a legacy database before its owner runs `pero migrate`. Remove `SettingsService`, the create and edit parts of `AgentsService`, `SqliteDefinitions`' Agent side, and the settings keys the stubs and a legacy data directory's `settings show` still use (`src/cli/settings-keys.ts`). A legacy data directory then has no Agents: it starts degraded and says to run `pero migrate`.
 
 **Done when:**
 - The schema has no Agent or settings tables.
@@ -533,5 +544,5 @@ A later release removes the command stubs, the legacy data directory (`--data-di
 |---|---|---|
 | Unclaimed topic: new note or main Agent? | 8.3 | New note (`create-agent`), as today |
 | Report Codex changes under the settings folder? | 8.4 | No: documented limitation |
-| Accept topic IDs in `topics`? | 8.2 | No: titles only |
+| Accept topic IDs in `topics`? | 8.2 | Settled in 8.2: titles only |
 | Several schedules per Workflow note? | 7.4 | Settled in 7.4: one note per schedule |

@@ -240,6 +240,53 @@ describe('Agents from notes (e2e)', () => {
     });
   });
 
+  it('moves a topic to the Agent that claims it from its next message, with recent messages', async () => {
+    await groceries();
+    expect(await say('Milk')).toBe('echo: Milk');
+    const [first] = await sessions();
+
+    // Claimed twice: neither answers, and Pero says why once.
+    await edit(
+      'Agents/Pantry.md',
+      '---\ntopics: Groceries\nmodel: haiku\n---\nYou stock up.',
+    );
+    expect(await say('Eggs')).toBe(
+      'No one answers in this topic: data/Settings/Agents/Groceries.md and ' +
+        'data/Settings/Agents/Pantry.md claim "Groceries" in their topics. ' +
+        'Keep it in only one of them.',
+    );
+    const told = api.sent().length;
+    const update = inTopic({ text: 'Anyone?' });
+    await vi.waitFor(() =>
+      expect(
+        api
+          .callsOf('getUpdates')
+          .some((call) => Number(call.payload.offset) > update),
+      ).toBe(true),
+    );
+    expect(api.sent()).toHaveLength(told);
+
+    await edit('Agents/Groceries.md', 'You shop.');
+    const carried = await say('Bread');
+    expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
+    expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
+    expect(carried).toMatch(/\n\nBread$/);
+    expect(lastRequest('claude')).toMatchObject({
+      instructions: 'Be brief.\n\nYou stock up.',
+      providerOptions: { model: 'haiku' },
+    });
+    expect(await sessions()).toEqual([
+      expect.objectContaining({ id: first!.id, status: 'closed' }),
+      expect.objectContaining({ agentName: 'pantry', status: 'active' }),
+    ]);
+    expect(
+      (await client.call('channels.list')).channels.map(({ title, agent }) => [
+        title,
+        agent,
+      ]),
+    ).toEqual([['Groceries', 'pantry']]);
+  });
+
   it('refuses to change Agents and settings in the database, naming the note', async () => {
     await start();
     await expect(

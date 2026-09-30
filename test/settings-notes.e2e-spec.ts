@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { AgentsService } from '../src/agents/agents.service.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
@@ -79,7 +78,6 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
 
   /** Channels Pero has seen in the allowed Home group: General and Health. */
   async function seeTopics() {
-    const agent = await app!.app.get(AgentsService).create({ name: 'main' });
     await app!.app
       .get<DataSource>(getDataSourceToken())
       .getRepository(Channel)
@@ -89,14 +87,12 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
           externalKey: HOME_CHAT,
           address: { chatId: HOME_CHAT },
           title: 'Home',
-          agentId: agent.id,
         },
         {
           integrationKind: 'telegram',
           externalKey: `${HOME_CHAT}:5`,
           address: { chatId: HOME_CHAT, messageThreadId: '5' },
           title: 'Health',
-          agentId: agent.id,
         },
         {
           // Not allowed, so not seen.
@@ -104,7 +100,6 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
           externalKey: '-1009:7',
           address: { chatId: '-1009', messageThreadId: '7' },
           title: 'Finance',
-          agentId: agent.id,
         },
       ]);
   }

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
+import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -101,15 +102,25 @@ describe('ChannelRouter', () => {
     });
   }
 
+  /** A Channel a legacy data directory assigned to a new Agent. */
   async function channel(key: string, agentName: string) {
-    const agent = await agents.create({ name: agentName });
-    return ds.getRepository(Channel).save({
+    await agents.create({ name: agentName });
+    const saved = await ds.getRepository(Channel).save({
       integrationKind: 'telegram',
       externalKey: key,
       address: {},
       title: null,
-      agentId: agent.id,
     });
+    await ds
+      .getRepository(LegacyChannelAgent)
+      .insert({ channelId: saved.id, agentName });
+    return saved;
+  }
+
+  function disable(channelId: number) {
+    return ds
+      .getRepository(LegacyChannelAgent)
+      .update(channelId, { enabled: false });
   }
 
   function messageCount(): Promise<number> {
@@ -245,17 +256,16 @@ describe('ChannelRouter', () => {
 
     it('passes a message on to the Channel onboarding returns', async () => {
       const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
-      const found = await ds.getRepository(Channel).findOneOrFail({
-        where: { id: onboarded.id },
-        relations: { agent: true },
-      });
-      onboarding.onUnknownChannel.mockResolvedValueOnce(found);
+      onboarding.onUnknownChannel.mockResolvedValueOnce(onboarded);
       const message = inboundMessage(GROUP, { topic: '9' });
 
       await adapter.deliver(message);
 
       expect(turns.handle).toHaveBeenCalledExactlyOnceWith(
-        found,
+        expect.objectContaining({
+          id: onboarded.id,
+          agent: expect.objectContaining({ name: 'groceries' }),
+        }),
         message,
         expect.any(Number),
       );
@@ -263,13 +273,8 @@ describe('ChannelRouter', () => {
 
     it('drops a message when onboarding returns a disabled Channel', async () => {
       const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
-      await ds.getRepository(Channel).update(onboarded.id, { enabled: false });
-      onboarding.onUnknownChannel.mockResolvedValueOnce(
-        await ds.getRepository(Channel).findOneOrFail({
-          where: { id: onboarded.id },
-          relations: { agent: true },
-        }),
-      );
+      await disable(onboarded.id);
+      onboarding.onUnknownChannel.mockResolvedValueOnce(onboarded);
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
 
@@ -309,7 +314,7 @@ describe('ChannelRouter', () => {
     it('drops messages for a disabled Channel or Agent', async () => {
       const topic = await channel(`${GROUP.key}:7`, 'groceries');
       await channel(GROUP.key, 'main');
-      await ds.getRepository(Channel).update(topic.id, { enabled: false });
+      await disable(topic.id);
       await agents.edit('main', { enabled: false });
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '7' }));
@@ -317,6 +322,30 @@ describe('ChannelRouter', () => {
 
       expect(reachedNextStage()).toBe(false);
       expect(await messageCount()).toBe(0);
+    });
+
+    it("learns a topic's title from a message, and keeps one it knows", async () => {
+      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+      const primary = await channel(GROUP.key, 'main');
+      const titleOf = async (id: number) =>
+        (await ds.getRepository(Channel).findOneByOrFail({ id })).title;
+
+      // A reply carries no title.
+      await adapter.deliver(inboundMessage(GROUP, { topic: '7', title: null }));
+      expect(await titleOf(topic.id)).toBeNull();
+      await adapter.deliver(
+        inboundMessage(GROUP, { topic: '7', title: 'Groceries' }),
+      );
+      expect(await titleOf(topic.id)).toBe('Groceries');
+      // Messages carry the title a topic was created with; only a rename
+      // changes a known one.
+      await adapter.deliver(
+        inboundMessage(GROUP, { topic: '7', title: 'Old' }),
+      );
+      expect(await titleOf(topic.id)).toBe('Groceries');
+
+      await adapter.deliver(inboundMessage({ ...GROUP, title: 'Home' }));
+      expect(await titleOf(primary.id)).toBe('Home');
     });
 
     it("records a message in its Channel's history as it hands it on", async () => {

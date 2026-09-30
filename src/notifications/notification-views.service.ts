@@ -127,7 +127,6 @@ export function notificationView(notification: Notification): NotificationView {
       integrationKind: channel.integrationKind,
       key: channel.externalKey,
       title: channel.title,
-      enabled: channel.enabled,
     },
     status: notification.status,
     attempt: notification.attempt,
