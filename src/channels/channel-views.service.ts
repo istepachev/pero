@@ -57,7 +57,7 @@ export class ChannelViews {
       const channel = await this.withAgent(await findChannel(manager, id));
       const active = await manager.getRepository(Session).findOneBy({
         channelId: id,
-        agentId: channel.agentId,
+        agentName: channel.agent.name,
         status: 'active',
       });
       const withHistory = await this.messages.channelsWithHistoryWithin(
@@ -92,7 +92,7 @@ export class ChannelViews {
           createdAt: message.createdAt.toISOString(),
           direction: message.direction,
           origin: message.origin,
-          agent: message.agent?.name ?? null,
+          agent: message.agentName,
           workflow: workflowOf(message),
           senderId: message.senderId,
           text: message.text,

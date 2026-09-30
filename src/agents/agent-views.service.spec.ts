@@ -82,7 +82,7 @@ describe('AgentViews', () => {
     await inTransaction(ds, (manager) =>
       moduleRef.get(MessageHistory).recordInboundWithin(manager, {
         channelId,
-        agentId: agent.id,
+        agentName: agent.name,
         externalMessageId: `m-${session.id}`,
         senderId: '1',
         text: 'Hello',

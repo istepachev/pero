@@ -11,14 +11,13 @@ import {
 import { jsonObject, jsonTransformer } from '../json-transformer.js';
 import { oneOf, RUN_STATUSES, type RunStatus } from './sql.js';
 import { Trigger } from './trigger.entity.js';
-import { Workflow } from './workflow.entity.js';
 
 export { RUN_STATUSES, type RunStatus };
 
 /** One execution of a Workflow. */
 @Entity('workflow_runs')
 // One run per trigger occurrence, however often it is created.
-@Index('UQ_workflow_runs_trigger_key', ['workflowId', 'triggerKey'], {
+@Index('UQ_workflow_runs_trigger_key', ['workflowName', 'triggerKey'], {
   unique: true,
 })
 @Index('IDX_workflow_runs_status', ['status', 'createdAt'])
@@ -34,15 +33,9 @@ export class WorkflowRun {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
 
-  @Column({ name: 'workflow_id', type: 'integer' })
-  workflowId: number;
-
-  @ManyToOne(() => Workflow, { onDelete: 'RESTRICT' })
-  @JoinColumn({
-    name: 'workflow_id',
-    foreignKeyConstraintName: 'FK_workflow_runs_workflow_id',
-  })
-  workflow?: Workflow;
+  /** The name of the Workflow it runs. */
+  @Column({ name: 'workflow_name', type: 'text' })
+  workflowName: string;
 
   /** The Trigger that created the run; null once removed, or if none did. */
   @Column({ name: 'trigger_id', type: 'integer', nullable: true })

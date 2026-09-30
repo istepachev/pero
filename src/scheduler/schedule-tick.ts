@@ -194,7 +194,7 @@ export class ScheduleTick
       .createQueryBuilder()
       .insert()
       .values({
-        workflowId: trigger.workflowId,
+        workflowName: name,
         triggerId: id,
         triggerKey,
         status: 'pending',

@@ -23,7 +23,8 @@ import { type ResolvedAgent, resolveAgent } from './agent-resolution.js';
 /** One message for the Agent assigned to a Channel. */
 export interface TurnInput {
   channelId: number;
-  agentId: number;
+  /** The name of the Channel's Agent. */
+  agent: string;
   /** The message as recorded in the Channel's history. */
   messageId: number;
   input: string;
@@ -33,7 +34,6 @@ export interface TurnInput {
 
 /** What the Agent answered, and the Session it answered in. */
 export interface TurnResult {
-  agentId: number;
   agentName: string;
   sessionId: number;
   text: string;
@@ -119,7 +119,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       return Promise.reject(new TurnError(STOPPING, true));
     }
     // One active Session per Channel and Agent, so this pair names it.
-    const key = `${turn.channelId}:${turn.agentId}`;
+    const key = `${turn.channelId}:${turn.agent}`;
     const previous = this.queues.get(key) ?? Promise.resolve();
     const result = previous.then(() => this.execute(turn));
     const settled = result.catch(() => undefined);
@@ -188,13 +188,13 @@ export class AgentManager implements BeforeApplicationShutdown {
     const controller = new AbortController();
     this.running.add(controller);
     const startedAt = Date.now();
-    const base = `Channel ${turn.channelId}, Agent ${turn.agentId}`;
+    const base = `Channel ${turn.channelId}, Agent ${turn.agent}`;
     let where = base;
     let provider: Provider | null = null;
     try {
       // The Agent as the turn starts, then one snapshot of its Session and
       // the history.
-      const resolved = await this.resolve(turn.agentId);
+      const resolved = await this.resolve(turn.agent);
       const first = await inTransaction(this.dataSource, (manager) =>
         this.prepareWithin(manager, turn, resolved, (agent) =>
           this.sessions.beginWithin(manager, turn.channelId, agent),
@@ -239,7 +239,6 @@ export class AgentManager implements BeforeApplicationShutdown {
       );
       this.signedIn(agent.provider);
       return {
-        agentId: agent.id,
         agentName: agent.name,
         sessionId: session.id,
         text,
@@ -251,13 +250,10 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
   }
 
-  /** The Agent with row ID `id`, resolved against the defaults. */
-  private async resolve(id: number): Promise<ResolvedAgent> {
-    const agent = await requireAgent(
-      this.definitions,
-      await this.ids.agentName(id),
-    );
-    return resolveAgent(id, agent, await this.definitions.defaults());
+  /** The Agent named `name`, resolved against the defaults. */
+  private async resolve(name: string): Promise<ResolvedAgent> {
+    const agent = await requireAgent(this.definitions, name);
+    return resolveAgent(agent, await this.definitions.defaults());
   }
 
   /**
@@ -271,7 +267,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     agent: ResolvedAgent,
     begin: (agent: ResolvedAgent) => Promise<Session>,
   ): Promise<PreparedTurn> {
-    const skipped = await skipReasonWithin(manager, turn, agent);
+    const skipped = await skipReasonWithin(manager, this.ids, turn, agent);
     if (skipped !== null) {
       return { agent, session: null, skipped };
     }
@@ -397,7 +393,6 @@ export class AgentManager implements BeforeApplicationShutdown {
     let result: string | null = null;
     let streamed = '';
     for await (const event of runtime.execute({
-      agentId: agent.id,
       input,
       instructions: agent.instructions,
       providerOptions: agent.providerOptions,
@@ -459,7 +454,8 @@ function lostConversation(error: unknown, resumed: string | null): boolean {
  */
 async function skipReasonWithin(
   manager: EntityManager,
-  turn: Pick<TurnInput, 'channelId' | 'agentId'>,
+  ids: DefinitionIds,
+  turn: Pick<TurnInput, 'channelId' | 'agent'>,
   agent: Pick<ResolvedAgent, 'enabled'>,
 ): Promise<string | null> {
   if (!agent.enabled) return 'the Agent is disabled';
@@ -468,7 +464,7 @@ async function skipReasonWithin(
     .findOneByOrFail({ id: turn.channelId });
   if (!channel.enabled) return 'the Channel is disabled';
   // Otherwise the old Agent would open a Session where it no longer answers.
-  if (channel.agentId !== turn.agentId) {
+  if ((await ids.agentName(channel.agentId)) !== turn.agent) {
     return 'the Channel was assigned another Agent';
   }
   return null;

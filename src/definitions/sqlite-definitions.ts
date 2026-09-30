@@ -61,19 +61,17 @@ export class SqliteDefinitions extends Definitions {
   }
 
   async workflow(name: string): Promise<WorkflowDefinition | null> {
-    const row = await this.dataSource.getRepository(Workflow).findOne({
-      where: { name: name.toLowerCase() },
-      relations: { agent: true },
-    });
+    const row = await this.dataSource
+      .getRepository(Workflow)
+      .findOneBy({ name: name.toLowerCase() });
     if (row === null) return null;
     return workflowDefinition(row, (await this.targets([row.id])).get(row.id));
   }
 
   async workflows(): Promise<WorkflowDefinition[]> {
-    const rows = await this.dataSource.getRepository(Workflow).find({
-      relations: { agent: true },
-      order: { name: 'ASC' },
-    });
+    const rows = await this.dataSource
+      .getRepository(Workflow)
+      .find({ order: { name: 'ASC' } });
     const targets = await this.targets(rows.map((row) => row.id));
     return rows.map((row) => workflowDefinition(row, targets.get(row.id)));
   }
@@ -163,12 +161,10 @@ export function workflowDefinition(
   row: Workflow,
   targets: number[] = [],
 ): WorkflowDefinition {
-  // The foreign key guarantees the Agent.
-  const agent = row.agent!;
   return {
     name: row.name,
     title: row.title,
-    agent: agent.name,
+    agent: row.agentName,
     input: row.inputTemplate,
     history: row.history,
     targets,

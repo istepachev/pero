@@ -4,7 +4,6 @@ import type { AgentDefinition, Defaults } from '../definitions/definitions.js';
 
 /** What a runtime needs from an Agent, with defaults already applied. */
 export interface ResolvedAgent {
-  id: number;
   name: string;
   provider: Provider;
   providerOptions: ProviderOptions;
@@ -16,17 +15,12 @@ export interface ResolvedAgent {
   enabled: boolean;
 }
 
-/**
- * `agent` as a runtime runs it, with the shared instructions composed in.
- * `id` is its row's, which state still refers to it by.
- */
+/** `agent` as a runtime runs it, with the shared instructions composed in. */
 export function resolveAgent(
-  id: number,
   agent: AgentDefinition,
   defaults: Pick<Defaults, 'sharedInstructions'>,
 ): ResolvedAgent {
   return {
-    id,
     name: agent.name,
     provider: agent.provider,
     providerOptions: agent.providerOptions,

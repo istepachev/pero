@@ -69,7 +69,7 @@ describe('SessionService', () => {
   ): Promise<Session> {
     return inTransaction(ds, (manager) =>
       sessions.beginWithin(manager, channelId, {
-        id: agentId,
+        name: 'main',
         provider,
         workingDirectory,
       }),
@@ -85,7 +85,7 @@ describe('SessionService', () => {
 
     expect(session).toMatchObject({
       channelId,
-      agentId,
+      agentName: 'main',
       provider: 'claude',
       workingDirectory: vault,
       providerSessionId: null,
@@ -142,7 +142,7 @@ describe('SessionService', () => {
 
     const fresh = await inTransaction(ds, (manager) =>
       sessions.replaceWithin(manager, first, {
-        id: agentId,
+        name: 'main',
         provider: 'claude',
         workingDirectory: vault,
       }),
@@ -150,7 +150,7 @@ describe('SessionService', () => {
 
     expect(fresh).toMatchObject({
       channelId,
-      agentId,
+      agentName: 'main',
       provider: 'claude',
       workingDirectory: vault,
       providerSessionId: null,

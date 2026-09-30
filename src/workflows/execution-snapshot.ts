@@ -43,7 +43,6 @@ export type HistoryRead = z.infer<typeof historyReadSchema>;
  * later edits to the Agent or the Workflow leave it alone.
  */
 export const executionSnapshotSchema = z.object({
-  agentId: z.int(),
   agentName: z.string(),
   provider: z.enum(PROVIDERS),
   providerOptions: providerOptionsSchema,
@@ -68,7 +67,6 @@ export function executionSnapshot(
   history?: HistoryRead,
 ): ExecutionSnapshot {
   return {
-    agentId: agent.id,
     agentName: agent.name,
     provider: agent.provider,
     providerOptions: agent.providerOptions,

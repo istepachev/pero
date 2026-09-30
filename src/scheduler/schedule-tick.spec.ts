@@ -178,10 +178,9 @@ describe('ScheduleTick', () => {
 
   it('adds no run for a time that already has one', async () => {
     const id = await scheduled('brief', '2026-09-28T10:00:00Z');
-    const { id: workflowId } = await workflows.get('brief');
     // As if the run was made, then the schedule restored from before it.
     await ds.getRepository(WorkflowRun).insert({
-      workflowId,
+      workflowName: 'brief',
       triggerId: id,
       triggerKey: `schedule:${id}:2026-09-28T10:00:00.000Z`,
       status: 'completed',
@@ -297,7 +296,8 @@ describe('ScheduleTick', () => {
 
   it('passes times with no run while the Workflow or its Agent is disabled', async () => {
     const id = await scheduled('brief', '2026-09-28T10:00:00Z');
-    const { id: workflowId, agentId } = await workflows.get('brief');
+    const { id: workflowId } = await workflows.get('brief');
+    const { id: agentId } = await moduleRef.get(AgentsService).get('coach');
 
     await ds.getRepository(Workflow).update(workflowId, { enabled: false });
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));

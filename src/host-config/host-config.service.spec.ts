@@ -217,10 +217,17 @@ describe('HostConfigService', () => {
   });
 
   describe('edits by hand', () => {
-    /** Writes `text` so that its size or modification time surely changes. */
+    let edits = 0;
+
+    /**
+     * Writes `text` so that its modification time surely changes: each edit
+     * is a second later than the last, even when two land in the same
+     * millisecond with the same size.
+     */
     function edit(text: string) {
       writeFileSync(file, text);
-      const later = new Date(Date.now() + 5_000);
+      edits += 1;
+      const later = new Date(Date.now() + 5_000 + edits * 1_000);
       utimesSync(file, later, later);
     }
 

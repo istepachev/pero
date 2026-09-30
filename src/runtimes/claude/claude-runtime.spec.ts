@@ -28,7 +28,6 @@ const ENV = { PATH: '/usr/bin', HOME: '/home/owner' };
 
 function request(overrides: Partial<RuntimeRequest> = {}): RuntimeRequest {
   return {
-    agentId: 1,
     input: 'Hello',
     instructions: '',
     providerOptions: { model: null, effort: null },

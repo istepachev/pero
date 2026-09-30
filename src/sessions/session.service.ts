@@ -38,12 +38,12 @@ export class SessionService {
   async beginWithin(
     manager: EntityManager,
     channelId: number,
-    agent: Pick<ResolvedAgent, 'id' | 'provider' | 'workingDirectory'>,
+    agent: Pick<ResolvedAgent, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     const sessions = manager.getRepository(Session);
     const active = await sessions.findOneBy({
       channelId,
-      agentId: agent.id,
+      agentName: agent.name,
       status: 'active',
     });
     if (active !== null && resumes(active, agent)) return active;
@@ -54,7 +54,7 @@ export class SessionService {
     return sessions.save(
       sessions.create({
         channelId,
-        agentId: agent.id,
+        agentName: agent.name,
         provider: agent.provider,
         workingDirectory: agent.workingDirectory,
         providerSessionId: null,
@@ -70,7 +70,7 @@ export class SessionService {
   async replaceWithin(
     manager: EntityManager,
     session: Pick<Session, 'id' | 'channelId'>,
-    agent: Pick<ResolvedAgent, 'id' | 'provider' | 'workingDirectory'>,
+    agent: Pick<ResolvedAgent, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     await manager
       .getRepository(Session)

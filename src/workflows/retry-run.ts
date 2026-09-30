@@ -17,7 +17,7 @@ export async function queueRetryWithin(
   manager: EntityManager,
   run: Pick<
     WorkflowRun,
-    'id' | 'workflowId' | 'triggerId' | 'attempt' | 'executionConfig'
+    'id' | 'workflowName' | 'triggerId' | 'attempt' | 'executionConfig'
   >,
 ): Promise<number> {
   const runs = manager.getRepository(WorkflowRun);
@@ -27,7 +27,7 @@ export async function queueRetryWithin(
     .createQueryBuilder()
     .insert()
     .values({
-      workflowId: run.workflowId,
+      workflowName: run.workflowName,
       triggerId: run.triggerId,
       triggerKey,
       status: 'pending',
@@ -40,6 +40,6 @@ export async function queueRetryWithin(
   // Found rather than taken from the insert, which an earlier retry may
   // have made a no-op.
   return (
-    await runs.findOneByOrFail({ workflowId: run.workflowId, triggerKey })
+    await runs.findOneByOrFail({ workflowName: run.workflowName, triggerKey })
   ).id;
 }

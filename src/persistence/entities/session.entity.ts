@@ -10,7 +10,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { PROVIDERS, type Provider } from '../../config/provider-options.js';
-import { Agent } from './agent.entity.js';
 import { Channel } from './channel.entity.js';
 import { oneOf } from './sql.js';
 
@@ -21,26 +20,20 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 /** Conversational context of a Channel with an Agent. */
 @Entity('sessions')
 // At most one active Session per Channel and Agent; also the lookup index.
-@Index('UQ_sessions_active', ['channelId', 'agentId'], {
+@Index('UQ_sessions_active', ['channelId', 'agentName'], {
   unique: true,
   where: `"status" = 'active'`,
 })
-@Index('IDX_sessions_agent_id', ['agentId'])
+@Index('IDX_sessions_agent_name', ['agentName'])
 @Check('CHK_sessions_status', oneOf('status', SESSION_STATUSES))
 @Check('CHK_sessions_provider', oneOf('provider', PROVIDERS))
 export class Session {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
 
-  @Column({ name: 'agent_id', type: 'integer' })
-  agentId: number;
-
-  @ManyToOne(() => Agent, { onDelete: 'RESTRICT' })
-  @JoinColumn({
-    name: 'agent_id',
-    foreignKeyConstraintName: 'FK_sessions_agent_id',
-  })
-  agent?: Agent;
+  /** The name of the Agent it talks to. */
+  @Column({ name: 'agent_name', type: 'text' })
+  agentName: string;
 
   @Column({ name: 'channel_id', type: 'integer' })
   channelId: number;

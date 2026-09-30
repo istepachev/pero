@@ -59,7 +59,7 @@ export class WorkflowsService {
         workflows.create({
           name: fields.name,
           title: fields.title ?? null,
-          agentId: agent.id,
+          agentName: agent.name,
           inputTemplate: fields.inputTemplate,
           history,
           ...(fields.maxAttempts === undefined
@@ -80,10 +80,10 @@ export class WorkflowsService {
     return this.committing(async (manager) => {
       const workflows = manager.getRepository(Workflow);
       const workflow = await findWorkflow(manager, name);
-      const agentId =
+      const agentName =
         patch.agent === undefined
           ? undefined
-          : (await enabledAgent(manager, patch.agent)).id;
+          : (await enabledAgent(manager, patch.agent)).name;
       const history =
         patch.history === undefined || patch.history === null
           ? patch.history
@@ -93,7 +93,7 @@ export class WorkflowsService {
             );
       const fields = withoutUndefined({
         title: patch.title,
-        agentId,
+        agentName,
         inputTemplate: patch.inputTemplate,
         maxAttempts: patch.maxAttempts,
         enabled: patch.enabled,

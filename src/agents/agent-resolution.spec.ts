@@ -80,10 +80,9 @@ describe('composeInstructions', () => {
 });
 
 describe('resolveAgent', () => {
-  it('composes the instructions and keeps the row ID state refers to', () => {
+  it('composes the instructions', () => {
     expect(
       resolveAgent(
-        7,
         {
           name: 'coach',
           title: null,
@@ -100,7 +99,6 @@ describe('resolveAgent', () => {
         { sharedInstructions: 'Answer in English.' },
       ),
     ).toEqual({
-      id: 7,
       name: 'coach',
       provider: 'codex',
       providerOptions: { model: 'gpt-5', effort: 'high' },

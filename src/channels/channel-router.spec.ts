@@ -329,7 +329,7 @@ describe('ChannelRouter', () => {
       expect(recorded).toEqual([
         expect.objectContaining({
           channelId: topic.id,
-          agentId: topic.agentId,
+          agentName: 'groceries',
           sessionId: null,
           direction: 'in',
           origin: 'user',

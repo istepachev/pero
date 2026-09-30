@@ -4,8 +4,6 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  JoinColumn,
-  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -15,7 +13,6 @@ import {
   workflowHistorySchema,
 } from '../../config/workflow-input.js';
 import { jsonTransformer } from '../json-transformer.js';
-import { Agent } from './agent.entity.js';
 import {
   CONCURRENCY_POLICIES,
   type ConcurrencyPolicy,
@@ -29,7 +26,6 @@ export { CONCURRENCY_POLICIES, type ConcurrencyPolicy };
 @Entity('workflows')
 @Index('UQ_workflows_name', ['name'], { unique: true })
 @Check('CHK_workflows_name', isSlug('name', SLUG_MAX_LENGTH))
-@Index('IDX_workflows_agent_id', ['agentId'])
 @Check(
   'CHK_workflows_concurrency_policy',
   oneOf('concurrency_policy', CONCURRENCY_POLICIES),
@@ -46,15 +42,9 @@ export class Workflow {
   @Column({ type: 'text', nullable: true })
   title: string | null;
 
-  @Column({ name: 'agent_id', type: 'integer' })
-  agentId: number;
-
-  @ManyToOne(() => Agent, { onDelete: 'RESTRICT' })
-  @JoinColumn({
-    name: 'agent_id',
-    foreignKeyConstraintName: 'FK_workflows_agent_id',
-  })
-  agent?: Agent;
+  /** The name of the Agent that runs it. */
+  @Column({ name: 'agent_name', type: 'text' })
+  agentName: string;
 
   /** The input each run sends to the Agent. */
   @Column({ name: 'input_template', type: 'text' })

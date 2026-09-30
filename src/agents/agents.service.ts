@@ -277,11 +277,7 @@ async function resolveRow(
   agent: Agent,
 ): Promise<ResolvedAgent> {
   const settings = await getSettings(manager);
-  return resolveAgent(
-    agent.id,
-    agentDefinition(agent, settings),
-    defaultsOf(settings),
-  );
+  return resolveAgent(agentDefinition(agent, settings), defaultsOf(settings));
 }
 
 /** The Agent named `name`, in any case; `NotFoundError` otherwise. */

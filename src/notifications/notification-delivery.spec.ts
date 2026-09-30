@@ -18,7 +18,7 @@ import {
   privateChat,
 } from '../channels/testing/fake-channel-adapter.js';
 import { ConflictError, NotFoundError } from '../common/errors.js';
-import { DefinitionIds } from '../definitions/definition-ids.js';
+import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -174,7 +174,7 @@ describe('NotificationDelivery', () => {
     expect(await workflowMessages()).toEqual([
       expect.objectContaining({
         channelId: channel.id,
-        agentId: null,
+        agentName: null,
         sessionId: null,
         direction: 'out',
         externalMessageId: '1',
@@ -496,7 +496,7 @@ describe('NotificationDelivery', () => {
         moduleRef.get(AllowedChatsService),
         delivery,
         moduleRef.get(ComponentHealth),
-        moduleRef.get(DefinitionIds),
+        moduleRef.get(Definitions),
       );
       expect((await unconnected.details(notification.id)).chatAllowed).toBe(
         null,

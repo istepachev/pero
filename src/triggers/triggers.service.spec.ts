@@ -295,7 +295,7 @@ describe('TriggersService', () => {
     const runs = ds.getRepository(WorkflowRun);
     const run = await runs.save(
       runs.create({
-        workflowId: (await moduleRef.get(WorkflowsService).get('review')).id,
+        workflowName: 'review',
         triggerId: trigger.id,
         triggerKey: 'schedule:2026-09-28T19:00:00Z',
       }),

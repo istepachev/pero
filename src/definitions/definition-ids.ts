@@ -6,10 +6,9 @@ import { Agent } from '../persistence/entities/agent.entity.js';
 import { Workflow } from '../persistence/entities/workflow.entity.js';
 
 /**
- * Between the IDs state still refers to definitions by and their names.
- * `Definitions` knows names only. Sessions, messages, and Workflow Runs
- * switch to names in plan step 7.2, and Channels' Agents in 8.2; this
- * goes once nothing needs it.
+ * Between the IDs some state still refers to definitions by and their
+ * names. `Definitions` knows names only. Triggers switch to names in plan
+ * step 7.3, and Channels' Agents in 8.2; this goes once nothing needs it.
  */
 @Injectable()
 export class DefinitionIds {

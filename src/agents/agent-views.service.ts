@@ -67,7 +67,7 @@ export class AgentViews {
         .find({ where: { agentId: id }, order: { id: 'ASC' } });
       const sessions = await manager
         .getRepository(Session)
-        .findBy({ agentId: id, status: 'active' });
+        .findBy({ agentName: agent.name, status: 'active' });
       const withHistory = await this.history.channelsWithHistoryWithin(
         manager,
         channels.map((channel) => channel.id),

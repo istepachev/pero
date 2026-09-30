@@ -189,7 +189,9 @@ describe('AgentManager', () => {
       vault,
       vault,
     ]);
-    expect(new Set(started.map((request) => request.agentId)).size).toBe(2);
+    expect(
+      new Set((await allSessions()).map((session) => session.agentName)).size,
+    ).toBe(2);
     groceries.release();
     health.release();
     await idle();
@@ -207,10 +209,8 @@ describe('AgentManager', () => {
 
     await say(OWNER, 'Again');
 
-    const main = await agents.get('main');
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
     expect(claude.requests[1]).toMatchObject({
-      agentId: main.id,
       input: 'Again',
       instructions: 'Be kind.\n\nBe brief.',
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
@@ -309,20 +309,20 @@ describe('AgentManager', () => {
     expect(general.agentId).toBe(direct.agentId);
     const sessions = await allSessions();
     expect(
-      sessions.map(({ channelId, agentId, providerSessionId }) => ({
+      sessions.map(({ channelId, agentName, providerSessionId }) => ({
         channelId,
-        agentId,
+        agentName,
         providerSessionId,
       })),
     ).toEqual([
       {
         channelId: general.id,
-        agentId: general.agentId,
+        agentName: 'main',
         providerSessionId: 'fake-claude-1',
       },
       {
         channelId: direct.id,
-        agentId: general.agentId,
+        agentName: 'main',
         providerSessionId: 'fake-claude-2',
       },
     ]);
@@ -430,7 +430,7 @@ describe('AgentManager', () => {
 
     await moduleRef.get(AgentManager).runTurn({
       channelId: channel.id,
-      agentId: channel.agentId,
+      agent: 'main',
       messageId: message!.id,
       input: 'Again',
       approve,
@@ -498,11 +498,10 @@ describe('AgentManager', () => {
     // The new Agent starts fresh, with the skipped message carried over.
     await say(OWNER, 'three');
     expect(claude.requests.at(-1)!.input).toMatch(/User: two\n.*\n\nthree$/s);
-    const other = await agents.get('other');
     expect(
       (await allSessions()).filter((session) => session.status === 'active'),
     ).toEqual([
-      expect.objectContaining({ channelId: channel.id, agentId: other.id }),
+      expect.objectContaining({ channelId: channel.id, agentName: 'other' }),
     ]);
   });
 
@@ -550,13 +549,13 @@ describe('AgentManager', () => {
       const [session] = await allSessions();
       const entry = {
         channelId: direct.id,
-        agentId: direct.agentId,
+        agentName: 'main',
         sessionId: session!.id,
       };
       expect(await allMessages()).toEqual([
         expect.objectContaining({
           channelId: direct.id,
-          agentId: null,
+          agentName: null,
           sessionId: null,
           origin: 'pero',
           text: expect.stringMatching(/^This chat talks to Agent main/),
@@ -587,7 +586,7 @@ describe('AgentManager', () => {
       expect((await allMessages()).at(-1)).toMatchObject({
         direction: 'out',
         origin: 'pero',
-        agentId: null,
+        agentName: null,
         sessionId: null,
         text: "Agent main couldn't answer: The model is overloaded.",
       });
@@ -683,7 +682,6 @@ describe('AgentManager', () => {
   describe('isolated turns', () => {
     function isolated(signal: AbortSignal) {
       const agent: RuntimeAgent = {
-        id: 1,
         name: 'main',
         provider: 'claude',
         providerOptions: { model: null, effort: null },
