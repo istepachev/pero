@@ -523,6 +523,16 @@ Startup catch-up applies only to notes that still exist and are enabled.
 
 When a note becomes broken, Pero posts one message per broken version (keyed by content hash), naming the note, property, and reason, and that the last good version stays in use. It goes to the note's related Channels (an Agent's topics, a Workflow's `channel`), or else to the main Agent's primary Channel. The message isn't recorded in Channel history. When the note is fixed, Pero logs it but doesn't post.
 
+- **Found while building:**
+  - **`BrokenNoteReports`** (`src/notifications/broken-note-reports.ts`) follows `SettingsNotes.onChange`, and the reloader lists the notes the snapshot reports errors for, with the version read (`SettingsReloader.broken`). A version is keyed by its file and a SHA-256 of its text, kept in memory only.
+  - **A broken version is reported once it is used:** a note caught mid-write is never reported, and one with errors of its own is reported after the second scan that reads it, as the log and `status` report it.
+  - **Notes broken at startup are only logged:** no edit is waiting for an answer, and posting them would repeat on every restart. Their versions count as known, so a later edit that's still broken posts.
+  - **A fixed note is forgotten,** so breaking it again the same way posts again. A note broken by another note's edit is reported too, with its text unchanged: a Workflow whose `agent` note is deleted, or both Agents claiming one topic.
+  - **The message** reads `Errors in <note path>:`, then each error as `<property>: <message>`, then what Pero uses meanwhile: `Its last good version stays in use.`, `It's left out until it's fixed.` (such as a Workflow whose `channel` doesn't resolve), or `Pero's own defaults are used until it's fixed.` for `Pero.md`. Nothing follows when the note is in use as it is, such as with a topic two Agents claim.
+  - **Related Channels** are those the broken version and the version in use name, among the Channels Pero has seen in the allowed chats: every topic with a title an Agent's `topics` lists, and the Channels a Workflow's `channel` resolves to. **The main Agent's primary Channel** is that of the first chat in `config.yaml` whose primary Channel Pero has seen. Without either, the note is only logged.
+  - **One message per Channel** holds every note broken in the same scan, so two Agents claiming one topic post once there.
+  - **Sending is best effort,** through `ChannelSender.send`, which records no history: a failed send is logged, not retried, since `status` and `check` still report the note.
+
 **Done when:**
 - A typo in a Workflow's `channel` produces exactly one message, a further edit that's still broken produces one more, and fixing it produces none.
 - Messages go to the right Channel.

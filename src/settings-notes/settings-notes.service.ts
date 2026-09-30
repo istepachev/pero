@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import type { DataSource } from 'typeorm';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
-import { SettingsReloader } from '../settings-files/reload.js';
+import { type BrokenNote, SettingsReloader } from '../settings-files/reload.js';
 import type { SettingsError } from '../settings-files/settings-error.js';
 import type { SettingsSnapshot } from '../settings-files/snapshot.js';
 import { allowedChannels } from './allowed-channels.js';
@@ -149,6 +149,14 @@ export class SettingsNotes
   /** The snapshot in use; null in a legacy data directory. */
   snapshot(): SettingsSnapshot | null {
     return this.reloader?.current() ?? null;
+  }
+
+  /**
+   * The notes the snapshot in use reports errors for, each with the
+   * version read; none in a legacy data directory.
+   */
+  broken(): BrokenNote[] {
+    return this.reloader?.broken() ?? [];
   }
 
   /**

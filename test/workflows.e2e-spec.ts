@@ -36,6 +36,7 @@ import { Channel } from '../src/persistence/entities/channel.entity.js';
 import { HostConfigService } from '../src/host-config/host-config.service.js';
 import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
 import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
+import { BrokenNoteReports } from '../src/notifications/broken-note-reports.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 
@@ -296,6 +297,43 @@ describe('Workflows from notes (e2e)', () => {
         message: 'no topic titled "Helth"; seen topics: none yet',
       },
     ]);
+  });
+
+  it('reports each broken version of a Workflow note once in Telegram, in its Channel, and not its fix', async () => {
+    const { channel } = await englishTopic();
+    const reports = () => texts().filter((text) => text.startsWith('Errors'));
+
+    await manualBrief([`channel: [${channel.id}, Helth]`]);
+    await vi.waitFor(() => expect(reports()).toHaveLength(1));
+    expect(api.sent().at(-1)).toMatchObject({
+      chat_id: String(FORUM.id),
+      message_thread_id: 7,
+      text: [
+        'Errors in data/Settings/Workflows/Brief.md:',
+        'channel: no topic titled "Helth"; seen topics: none yet',
+        "It's left out until it's fixed.",
+      ].join('\n'),
+    });
+    // Scanned again, unchanged: not posted again.
+    await daemon!.app.get(SettingsNotes).refresh();
+
+    await manualBrief([`channel: [${channel.id}, Hleth]`]);
+    await vi.waitFor(() => expect(reports()).toHaveLength(2));
+    expect(reports()[1]).toContain('channel: no topic titled "Hleth"');
+
+    await manualBrief([`channel: ${channel.id}`]);
+    await daemon!.app.get(BrokenNoteReports).idle();
+    expect(reports()).toHaveLength(2);
+    expect(
+      (await client.call('workflows.get', { name: 'brief' })).errors,
+    ).toEqual([]);
+    // Not part of the topic's conversation.
+    const { messages } = await client.call('channels.history', {
+      id: channel.id,
+    });
+    expect(messages.map(({ text }) => text)).not.toContainEqual(
+      expect.stringMatching(/^Errors/),
+    );
   });
 
   it('runs any Workflow by hand, whatever its trigger, away from every Channel', async () => {
