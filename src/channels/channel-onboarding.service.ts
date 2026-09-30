@@ -6,11 +6,16 @@ import { InvalidInputError } from '../common/errors.js';
 import {
   type AgentDefinition,
   Definitions,
+  type Route,
+  routeQuery,
+  type Unanswered,
 } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { topicClaim } from '../settings-files/snapshot.js';
+import { AgentNotes } from '../settings-notes/agent-notes.service.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { AgentNamer } from './agent-namer.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
@@ -20,7 +25,11 @@ import type {
   InboundMessage,
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
-import { ChannelOnboarding, routeOf } from './channel-stages.js';
+import {
+  ChannelOnboarding,
+  routeOf,
+  unansweredSummary,
+} from './channel-stages.js';
 
 export { MAIN_AGENT_NAME };
 
@@ -51,13 +60,22 @@ export function setupHint(reason: string): string {
 /**
  * Records each new Channel in an allowed chat, and welcomes it when an
  * Agent answers there. In a workspace, notes choose that Agent on every
- * message. A legacy data directory still assigns one: a topic gets a new
- * Agent named after it, and a chat's primary Channel the main Agent. A
- * renamed topic changes titles only.
+ * message, and Pero writes the note that answers a topic no Agent claims
+ * (with `new-topics: create-agent`) and the main Agent's when a primary
+ * Channel finds none; a renamed topic's title follows in the note that
+ * claims it. A legacy data directory still assigns an Agent: a topic gets
+ * a new one named after it, and a chat's primary Channel the main Agent.
  */
 @Injectable()
 export class ChannelOnboardingService extends ChannelOnboarding {
   private readonly logger = new Logger('Channels');
+  /**
+   * Note writes and topic renames, one at a time, so a topic's first
+   * message and its topic-created event write one note between them.
+   */
+  private queue: Promise<unknown> = Promise.resolve();
+  /** The Channels welcomed while Pero runs, by ID, so none is twice. */
+  private readonly welcomed = new Set<number>();
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -67,8 +85,13 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     private readonly allowedChats: AllowedChatsService,
     private readonly definitions: Definitions,
     private readonly notes: SettingsNotes,
+    private readonly agentNotes: AgentNotes,
   ) {
     super();
+  }
+
+  answer(channel: Channel): Promise<Route> {
+    return this.settle(channel, false);
   }
 
   onUnknownChannel(message: InboundMessage): Promise<Channel | null> {
@@ -151,7 +174,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
         `Could not onboard ${kind} Channel ${inbound.key}: ${error.message}`,
       );
       // No Channel yet, so the hint has no history to join.
-      await this.notify(kind, inbound, () =>
+      await this.notify(kind, inbound.key, () =>
         this.sender.send(kind, inbound.address, {
           text: setupHint(error.message),
         }),
@@ -162,37 +185,127 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     const { channel, created } = result;
     if (!created) return channel;
     if (legacy) this.agents.committed();
-    const route = await routeOf(channel, this.definitions);
-    if (route.kind === 'unanswered') {
-      // The message that onboarded it, if any, is told why.
-      this.logger.log(`Onboarded ${kind} Channel ${inbound.key}`);
-      return channel;
-    }
-    this.logger.log(
-      `Onboarded ${kind} Channel ${inbound.key}, answered by Agent ${route.agent.name}`,
-    );
-    const welcome = welcomeText(
-      route.agent,
-      route.agent.workingDirectory,
-      inbound.topicId === null ? 'chat' : 'topic',
-    );
-    await this.notify(kind, inbound, () =>
-      this.sender.post(channel, welcome, { origin: 'pero' }),
-    );
+    this.logger.log(`Onboarded ${kind} Channel ${inbound.key}`);
+    await this.settle(channel, true);
     return channel;
   }
 
   /**
-   * Retitles a renamed topic's Channel, which may move the topic to the
-   * Agent claiming its new title. In a legacy data directory, it retitles
-   * the topic's Agent too while the Agent's title still mirrors the
-   * topic's; never the Agent's name.
+   * Who answers in `channel` now, writing the note that answers it when
+   * Pero should, and welcoming it when it is new or Pero wrote that note.
+   */
+  private async settle(channel: Channel, created: boolean): Promise<Route> {
+    let route = await routeOf(channel, this.definitions);
+    let wrote = false;
+    if (route.kind === 'unanswered' && this.writesFor(channel, route.reason)) {
+      ({ route, wrote } = await this.serially(() => this.writeFor(channel)));
+    }
+    if (route.kind === 'agent' && (created || wrote)) {
+      await this.welcome(channel, route.agent);
+    }
+    return route;
+  }
+
+  /**
+   * Whether Pero writes a note where no one answers for `reason`: a topic
+   * no Agent claims, which `unclaimed` means only with `new-topics:
+   * create-agent`, or a primary Channel without the main Agent's note.
+   */
+  private writesFor(channel: Channel, reason: Unanswered): boolean {
+    if (!this.notes.inWorkspace()) return false;
+    return (
+      reason.kind === 'unclaimed' ||
+      (reason.kind === 'no-main-agent' && routeQuery(channel).primary)
+    );
+  }
+
+  /**
+   * Writes the note that answers in `channel`, unless one appeared while
+   * this waited its turn; runs in the queue. Where writing fails, the
+   * Channel stays unanswered and is told why as before.
+   */
+  private async writeFor(
+    channel: Channel,
+  ): Promise<{ route: Route; wrote: boolean }> {
+    const route = await routeOf(channel, this.definitions);
+    if (route.kind !== 'unanswered' || !this.writesFor(channel, route.reason)) {
+      return { route, wrote: false };
+    }
+    const { reason } = route;
+    let file: string | null;
+    try {
+      file =
+        reason.kind === 'unclaimed'
+          ? await this.agentNotes.createForTopic(
+              reason.title,
+              topicIdOf(channel),
+            )
+          : reason.kind === 'no-main-agent'
+            ? await this.agentNotes.createMain(reason.agent)
+            : null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not write a note for ${channel.integrationKind} Channel ` +
+          `${channel.externalKey}: ${describe(error)}`,
+      );
+      return { route, wrote: false };
+    }
+    if (file === null) return { route, wrote: false };
+    const after = await routeOf(channel, this.definitions);
+    if (after.kind === 'unanswered') {
+      this.logger.warn(
+        `Wrote ${file}, but no one answers in ${channel.integrationKind} ` +
+          `Channel ${channel.externalKey} yet: ${unansweredSummary(after.reason)}`,
+      );
+    } else {
+      this.logger.log(
+        `${channel.integrationKind} Channel ${channel.externalKey} is ` +
+          `answered by Agent ${after.agent.name}, from the new ${file}`,
+      );
+    }
+    return { route: after, wrote: true };
+  }
+
+  /** Posts the welcome in `channel`, once while Pero runs. */
+  private async welcome(
+    channel: Channel,
+    agent: AgentDefinition,
+  ): Promise<void> {
+    if (this.welcomed.has(channel.id)) return;
+    this.welcomed.add(channel.id);
+    const text = welcomeText(
+      agent,
+      agent.workingDirectory,
+      routeQuery(channel).primary ? 'chat' : 'topic',
+    );
+    await this.notify(channel.integrationKind, channel.externalKey, () =>
+      this.sender.post(channel, text, { origin: 'pero' }),
+    );
+  }
+
+  /** Runs `work` after the note writes and renames before it. */
+  private serially<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(work);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /**
+   * Retitles a renamed topic's Channel. In a workspace, the note claiming
+   * its old title claims the new one instead, so the topic stays with its
+   * Agent. In a legacy data directory, it retitles the topic's Agent too
+   * while the Agent's title still mirrors the topic's; never the Agent's
+   * name.
    */
   private async rename(
     kind: IntegrationKind,
     inbound: InboundChannel,
   ): Promise<void> {
     const legacy = !this.notes.inWorkspace();
+    if (!legacy) {
+      await this.serially(() => this.renameInNotes(kind, inbound));
+      return;
+    }
     const found = await inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, kind, inbound.key);
       if (channel === null) return false;
@@ -221,6 +334,71 @@ export class ChannelOnboardingService extends ChannelOnboarding {
           `its next message onboards it`,
       );
     }
+  }
+
+  /**
+   * Retitles a renamed topic's Channel in a workspace, first renaming the
+   * title in the `topics` of the one note claiming it; runs in the queue,
+   * so no message routes between the two. The note is left as it is when
+   * another Agent claims the new title already, and keeps the old title
+   * too while another topic Pero knows has it.
+   */
+  private async renameInNotes(
+    kind: IntegrationKind,
+    inbound: InboundChannel,
+  ): Promise<void> {
+    const channels = this.dataSource.getRepository(Channel);
+    const channel = await channels.findOneBy({
+      integrationKind: kind,
+      externalKey: inbound.key,
+    });
+    if (channel === null) {
+      this.logger.debug(
+        `Ignored the rename of unknown ${kind} Channel ${inbound.key}; ` +
+          `its next message onboards it`,
+      );
+      return;
+    }
+    const from = channel.title?.trim() ?? '';
+    const to = inbound.title?.trim() ?? '';
+    const snapshot = await this.notes.ready();
+    if (
+      inbound.topicId !== null &&
+      snapshot !== null &&
+      from !== '' &&
+      to !== '' &&
+      from.toLowerCase() !== to.toLowerCase()
+    ) {
+      const claim = topicClaim(snapshot, from);
+      const agent =
+        claim.kind === 'agent' ? snapshot.agents.get(claim.agent) : undefined;
+      const taken = topicClaim(snapshot, to);
+      if (agent !== undefined && taken.kind === 'unclaimed') {
+        const keep = (
+          await channels.find({ where: { integrationKind: kind } })
+        ).some(
+          (other) =>
+            other.id !== channel.id &&
+            !routeQuery(other).primary &&
+            other.title?.trim().toLowerCase() === from.toLowerCase(),
+        );
+        try {
+          await this.agentNotes.renameTopic(agent.file, from, to, keep);
+        } catch (error) {
+          this.logger.warn(
+            `Could not rename topic "${from}" in ${agent.file}: ${describe(error)}`,
+          );
+        }
+      } else if (agent !== undefined) {
+        this.logger.log(
+          `Left ${agent.file} as it is: the renamed topic "${to}" is ` +
+            (taken.kind === 'agent'
+              ? `claimed by Agent ${taken.agent} already`
+              : `claimed by other notes too`),
+        );
+      }
+    }
+    await channels.update(channel.id, { title: inbound.title });
   }
 
   /**
@@ -274,15 +452,14 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   /** Sends Pero's own notice with `send`; a failure is only logged. */
   private async notify(
     kind: IntegrationKind,
-    inbound: InboundChannel,
+    key: string,
     send: () => Promise<unknown>,
   ): Promise<void> {
     try {
       await send();
     } catch (error) {
       this.logger.warn(
-        `Failed to post in ${kind} Channel ${inbound.key}: ` +
-          `${error instanceof Error ? error.message : String(error)}`,
+        `Failed to post in ${kind} Channel ${key}: ${describe(error)}`,
       );
     }
   }
@@ -296,4 +473,13 @@ function findChannel(
   return manager
     .getRepository(Channel)
     .findOneBy({ integrationKind, externalKey });
+}
+
+/** The topic ID in a topic Channel's key, after the chat's. */
+function topicIdOf(channel: Pick<Channel, 'externalKey'>): string {
+  return channel.externalKey.slice(channel.externalKey.indexOf(':') + 1);
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

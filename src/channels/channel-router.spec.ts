@@ -8,6 +8,7 @@ import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AgentsService } from '../agents/agents.service.js';
+import { Definitions } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
@@ -18,7 +19,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type { InboundChat } from './channel-adapter.js';
 import { ChannelRouter, pairingHint } from './channel-router.js';
-import { ChannelOnboarding, ChannelTurns } from './channel-stages.js';
+import { ChannelOnboarding, ChannelTurns, routeOf } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
 import { PAIRING_HINT_INTERVAL_MS } from './pairing-requests.js';
 import {
@@ -53,6 +54,10 @@ describe('ChannelRouter', () => {
       Promise.resolve(null),
     ),
     onEvent: vi.fn(() => Promise.resolve()),
+    // Routes as the real one does where it writes no note.
+    answer: vi.fn((channel: Channel) =>
+      routeOf(channel, moduleRef.get(Definitions)),
+    ),
   };
 
   beforeEach(async () => {

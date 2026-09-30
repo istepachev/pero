@@ -132,6 +132,13 @@ export abstract class ChannelOnboarding {
    */
   abstract onUnknownChannel(message: InboundMessage): Promise<Channel | null>;
 
+  /**
+   * Who answers in `channel` now. In a workspace, Pero first writes the
+   * note that answers there when it should: a new topic's Agent, or the
+   * main Agent's.
+   */
+  abstract answer(channel: Channel): Promise<Route>;
+
   /** Any event from an allowed chat. */
   abstract onEvent(event: ChannelEvent): Promise<void>;
 }

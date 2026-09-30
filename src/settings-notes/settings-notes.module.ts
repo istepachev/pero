@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { HealthModule } from '../health/health.module.js';
+import { AgentNotes } from './agent-notes.service.js';
 import { SettingsNotes } from './settings-notes.service.js';
 
 /**
@@ -10,7 +11,7 @@ import { SettingsNotes } from './settings-notes.service.js';
  */
 @Module({
   imports: [HealthModule],
-  providers: [SettingsNotes],
-  exports: [SettingsNotes],
+  providers: [SettingsNotes, AgentNotes],
+  exports: [SettingsNotes, AgentNotes],
 })
 export class SettingsNotesModule {}
