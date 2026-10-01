@@ -96,6 +96,7 @@ describe('Channel onboarding', () => {
         provider: 'codex',
         'codex-model': 'gpt-5.5-codex',
         'codex-effort': 'low',
+        timezone: 'Asia/Tokyo',
       });
       await ws.agent('Main');
       await boot(ws.database, ws.hostConfig());
@@ -180,6 +181,7 @@ describe('Channel onboarding', () => {
           pero: 'data/Settings/Pero.md',
           agents: 'data/Settings/Agents/',
           workflows: 'data/Settings/Workflows/',
+          timezone: 'Asia/Tokyo',
         },
         'group',
       );
@@ -187,7 +189,9 @@ describe('Channel onboarding', () => {
         /^This chat talks to Agent main: codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: this Agent's personality and instructions are in data\/Settings\/Agents\/Main\.md\./,
       );
       expect(steps).toContain('2. Create a topic for each subject');
-      expect(steps).toContain('in data/Settings/Pero.md.');
+      expect(steps).toContain(
+        '3. Schedules use the time zone Asia/Tokyo. Set yours, and defaults for every Agent such as the provider and model, in data/Settings/Pero.md.',
+      );
       expect(steps).toContain(
         'Workflows are notes in data/Settings/Workflows/.',
       );

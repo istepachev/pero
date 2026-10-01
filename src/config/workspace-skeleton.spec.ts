@@ -16,7 +16,11 @@ import { parseNote } from '../settings-files/note.js';
 import { readAgentNote, readPeroNote } from '../settings-files/schemas.js';
 import { STATE_GITIGNORE } from './workspace-layout.js';
 import { defaultHostConfig, readHostConfig } from './host-config.js';
-import { initWorkspace, WorkspaceInitError } from './workspace-skeleton.js';
+import {
+  initWorkspace,
+  peroNote,
+  WorkspaceInitError,
+} from './workspace-skeleton.js';
 
 describe('initWorkspace', () => {
   let tmp: string;
@@ -113,9 +117,23 @@ describe('initWorkspace', () => {
     ] as const) {
       const parsed = parseNote(file, read(file));
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
-      expect(parsed.note.properties, file).toEqual({});
+      expect(parsed.note.properties, file).toEqual(
+        file.endsWith('Pero.md')
+          ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+          : {},
+      );
       expect(readNote(file, parsed.note).ok, file).toBe(true);
     }
+  });
+
+  it("sets the host's time zone in Pero.md, where the owner can change it", () => {
+    expect(peroNote('UTC')).toContain(
+      "\ntimezone: UTC                 # this server's; set yours, such as Europe/Berlin\n",
+    );
+    // A long name still leaves a space before the comment.
+    expect(peroNote('America/Argentina/Buenos_Aires')).toContain(
+      "\ntimezone: America/Argentina/Buenos_Aires # this server's;",
+    );
   });
 
   it('refuses the home folder', () => {

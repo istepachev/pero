@@ -48,7 +48,7 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 | `data/Settings/` | Defaults, Agents, Workflows | Yes | With `--include-data` |
 | `data/` (the rest) | Your notes and the Agents' work | Your choice | With `--include-data` |
 
-Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the settings folder `Pero.md`, `Agents/Main.md`, and an empty `Workflows/`. It never overwrites a file, so running it in a cloned workspace only fills in what's missing.
+Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the settings folder `Pero.md`, `Agents/Main.md`, and an empty `Workflows/`. `Pero.md` sets `timezone` to the host's, so you can see the zone schedules use and change it to yours; its other defaults are commented out. It never overwrites a file, so running it in a cloned workspace only fills in what's missing.
 
 To set Pero up on another server, clone the workspace and run it:
 

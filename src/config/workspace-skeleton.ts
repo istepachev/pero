@@ -32,7 +32,13 @@ export class WorkspaceInitError extends Error {
   override name = 'WorkspaceInitError';
 }
 
-const PERO_NOTE = `---
+/**
+ * `Pero.md` as `pero init` writes it, with `timeZone`, the host's, set so
+ * the owner sees the zone schedules use and can change it.
+ */
+export function peroNote(timeZone: string): string {
+  const timezone = `timezone: ${timeZone}`;
+  return `---
 # Installation defaults: each applies to every Agent and Workflow that
 # doesn't set its own. Remove the # in front of a line to change it.
 # Instructions go in the Agents' notes, not here.
@@ -41,13 +47,14 @@ const PERO_NOTE = `---
 # claude-effort: high
 # codex-model: gpt-5.5
 # permissions: ask            # ask or bypass
-# timezone: Europe/Berlin     # the host's when not set
+${timezone.padEnd(29)} # this server's; set yours, such as Europe/Berlin
 # main-agent: Main            # the Agent note for General topics and direct chats
 # history-carryover: 50
 # history-retention-days: 90  # keep everything when not set
 # max-concurrent-runs: 2
 ---
 `;
+}
 
 const MAIN_NOTE = `---
 # The main Agent: it answers the General topic of every allowed group,
@@ -64,9 +71,11 @@ You are a calm, concise personal assistant. Reply in the language you're written
 You help with everyday questions and keep my notes tidy.
 `;
 
-/** The notes `pero init` writes, by their path in the settings folder. */
+/**
+ * The notes `pero init` writes as they are, by their path in the settings
+ * folder; `Pero.md`, which holds the host's time zone, is `peroNote`'s.
+ */
 export const SKELETON_NOTES: Readonly<Record<string, string>> = {
-  'Pero.md': PERO_NOTE,
   'Agents/Main.md': MAIN_NOTE,
 };
 
@@ -127,7 +136,10 @@ export function initWorkspace(
     dir,
     home,
   );
-  file(join(settings, 'Pero.md'), PERO_NOTE);
+  file(
+    join(settings, 'Pero.md'),
+    peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
+  );
   folder(join(settings, 'Agents'));
   file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
   const workflows = join(settings, 'Workflows');

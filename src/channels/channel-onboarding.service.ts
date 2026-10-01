@@ -56,6 +56,8 @@ export interface FirstStepsPaths {
   agents: string;
   /** The folder of Workflow notes. */
   workflows: string;
+  /** The time zone schedules use now. */
+  timezone: string;
 }
 
 /**
@@ -90,8 +92,9 @@ export function firstStepsText(
       `with. Or just ask here, such as "be less formal" or "always answer ` +
       `in German".`,
     topics,
-    `3. Set your time zone, and defaults for every Agent such as the ` +
-      `provider and model, in ${paths.pero}.`,
+    `3. Schedules use the time zone ${paths.timezone}. Set yours, and ` +
+      `defaults for every Agent such as the provider and model, in ` +
+      `${paths.pero}.`,
     `4. Put an Agent to work on a schedule: ask it, say, "every evening at ` +
       `9, sum up what we talked about today". Workflows are notes in ` +
       `${paths.workflows}.`,
@@ -332,6 +335,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
             pero: shown('Pero.md'),
             agents: `${shown('Agents')}/`,
             workflows: `${shown('Workflows')}/`,
+            timezone: this.definitions.defaults().timezone,
           },
           chatKind,
         )
