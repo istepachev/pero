@@ -10,6 +10,7 @@ import type {
   TelegramChats,
 } from '../../control/protocol.js';
 import type { Prompts } from '../prompts.js';
+import { BlockOutput } from './block-output.js';
 import { runInteractiveSetup, type SetupState } from './interactive-setup.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -245,7 +246,7 @@ describe('runInteractiveSetup', () => {
   });
 
   it('checks sign-in again until the provider in use is ready', async () => {
-    const { done, asked } = run([TOKEN, '', '']);
+    const { done, asked } = run(['', '', TOKEN]);
     // Signs in between the first and second check.
     const original = daemon.client.call.bind(daemon.client);
     (daemon.client as { call: unknown }).call = (
@@ -271,7 +272,7 @@ describe('runInteractiveSetup', () => {
   });
 
   it('lets the owner skip a sign-in', async () => {
-    const { done } = run([TOKEN, 's']);
+    const { done } = run(['s', TOKEN]);
     await done;
 
     expect(daemon.checks).toBe(0);
@@ -283,7 +284,55 @@ describe('runInteractiveSetup', () => {
     );
   });
 
+  it('asks about sign-in before Telegram', async () => {
+    const { done, asked } = run(['s', '']);
+    await done;
+
+    expect(asked).toEqual([
+      'Sign in in another terminal, then press Enter to check again (s to skip)',
+      'Bot token (Enter to skip) (hidden)',
+    ]);
+    expect(printed[0]).toBe(
+      'Default provider: claude (change with provider: codex in data/Settings/Pero.md)',
+    );
+  });
+
+  it('says nothing about providers that are signed in', async () => {
+    daemon.signedIn.add('claude');
+    const { done } = run([TOKEN]);
+    await done;
+
+    expect(printed.join('\n')).not.toContain('provider');
+  });
+
+  it('separates each step from the next with an empty line', async () => {
+    daemon.telegram = { bot: 'pero_test_bot', allowed: [], pairing: [] };
+    const { prompts } = scripted(['s', TOKEN, 'group', '']);
+    const output: string[] = [];
+    const blocks = new BlockOutput((text) => output.push(text));
+    await runInteractiveSetup(
+      {
+        client: daemon.client,
+        prompts: blocks.prompts(prompts),
+        print: blocks.print,
+        block: blocks.block,
+        pollIntervalMs: 5,
+      },
+      daemon.state(),
+    );
+
+    const text = output.join('\n');
+    expect(text).toMatch(/^Default provider: claude .*\nclaude: Not signed in/);
+    expect(text).toContain('\n\nPero talks to you through a Telegram bot.');
+    expect(text).toContain(
+      'paste the token it gives you.\n\nSet up the group in Telegram:',
+    );
+    expect(text).toMatch(/\n\nSetup needed:\n/);
+  });
+
   it('stops when a prompt is closed, keeping what was set', async () => {
+    daemon.signedIn.add('claude');
+    daemon.telegram = { bot: 'pero_test_bot', allowed: [], pairing: [] };
     const { done } = run([TOKEN]);
 
     await expect(done).rejects.toMatchObject({ name: 'ExitPromptError' });
@@ -292,6 +341,7 @@ describe('runInteractiveSetup', () => {
 
   describe('pairing a Telegram chat', () => {
     const WAITING = 'Waiting for a message to @pero_test_bot (Enter to skip)';
+    const CHOICE = 'Where will you talk to Pero? (select)';
 
     beforeEach(() => {
       daemon.settings = {
@@ -325,10 +375,18 @@ describe('runInteractiveSetup', () => {
     it('offers a chat that messages the bot during setup, and allows it', async () => {
       askToPair(5, '1234', 'Ada');
 
-      const { done, asked } = run([WAIT, true]);
+      const { done, asked } = run(['direct', WAIT, true]);
       await done;
 
-      expect(asked).toEqual([WAITING, 'Allow direct chat "Ada" (1234)? (y/n)']);
+      expect(asked).toEqual([
+        CHOICE,
+        WAITING,
+        'Allow direct chat "Ada" (1234)? (y/n)',
+      ]);
+      expect(printed).toContain(
+        'Open @pero_test_bot in Telegram (https://t.me/pero_test_bot) and send it a message.',
+      );
+      expect(printed.join('\n')).not.toContain('Topics');
       expect(printed).toContain('Waiting for Telegram…');
       expect(printed).toContain('Allowed: direct chat "Ada" (1234)');
       expect(daemon.telegram.allowed.map((chat) => chat.chatId)).toEqual([
@@ -340,10 +398,13 @@ describe('runInteractiveSetup', () => {
     it('keeps waiting after a declined chat, and skips on Enter', async () => {
       askToPair(3, '-100555', 'Strangers');
 
-      const { done, asked } = run([false, '']);
+      const { done, asked } = run(['group', false, '']);
       await done;
 
+      expect(printed).toContain('Set up the group in Telegram:');
+      expect(printed).toContain('  2. In the group settings, turn on Topics.');
       expect(asked).toEqual([
+        CHOICE,
         'Allow group "Strangers" (-100555)? (y/n)',
         WAITING,
       ]);
@@ -364,10 +425,10 @@ describe('runInteractiveSetup', () => {
         }
       };
 
-      const { done, asked } = run([WAIT]);
+      const { done, asked } = run(['group', WAIT]);
       await done;
 
-      expect(asked).toEqual([WAITING]);
+      expect(asked).toEqual([CHOICE, WAITING]);
       expect(printed.at(-1)).toBe('Setup complete');
     });
 
@@ -388,10 +449,11 @@ describe('runInteractiveSetup', () => {
         }
       };
 
-      const { done, asked } = run([true, WAIT]);
+      const { done, asked } = run(['group', true, WAIT]);
       await done;
 
       expect(asked).toEqual([
+        CHOICE,
         'Allow group "Home" (-100777)? (y/n)',
         'Waiting for @pero_test_bot to become an administrator (Enter to skip)',
       ]);

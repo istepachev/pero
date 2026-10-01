@@ -35,6 +35,8 @@ export interface FirstRunContext {
   interactive: boolean;
   prompts: () => Promise<Prompts>;
   print: (text: string) => void;
+  /** Starts a new block of output: the provider, then the workspace. */
+  block?: () => void;
   home?: string;
   /**
    * False to start without settling a provider, as with the echo runtime,
@@ -100,9 +102,11 @@ export async function configOrNewWorkspace(
   }
 
   const note = peroNotePath(workspace, context.home);
+  const block = context.block ?? (() => undefined);
   let provider: Provider | null = null;
   try {
     if (context.checkProviders !== false) {
+      block();
       provider = await settleProvider(context, providerIn(note));
     }
   } catch (error) {
@@ -110,6 +114,7 @@ export async function configOrNewWorkspace(
     throw new CliError('Setup interrupted; Pero was not started.', 130);
   }
 
+  block();
   if (config === null) {
     context.print(formatInit(initWorkspace(suggested, context.home), false));
     config = resolveBootstrapConfig({

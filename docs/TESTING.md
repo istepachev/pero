@@ -73,7 +73,7 @@ Before merging a PR that bumps the version, walk through the README's [Get start
    git clone --branch <branch> https://github.com/perokit/pero.git ~/pero-src && cd ~/pero-src
    npm ci && npm pack
    npm install -g ./perokit-pero-<version>.tgz && cd
-   pero --version   # the new version
+   pero -v          # the new version
    ```
 
 2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, asks which provider to use when both CLIs are installed and waits until it is signed in, then asks for the bot token. It offers to install Pero as a service: accept, and it ends with `pero status` showing the service's Pero, with Telegram and the provider ready. `systemctl --user status pero` (or `launchctl print gui/$(id -u)/com.perokit.pero` on macOS) shows it running, and after a reboot `pero status` shows it running again.
