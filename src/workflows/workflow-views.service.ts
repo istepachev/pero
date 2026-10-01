@@ -17,7 +17,7 @@ import {
   stateOf,
 } from '../scheduler/schedule-state.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { findWorkflowNote, shownPath } from '../settings-files/note-hints.js';
+import { findWorkflowNote, shownPath } from '../settings-files/note-paths.js';
 
 /**
  * Workflows as the CLI shows them: their note, their Agent, when they run

@@ -65,16 +65,11 @@ export function readEnvFile(path: string): Map<string, string> | null {
 }
 
 /**
- * Sets `key` to `value` in the `.env` file at `path`, creating it, or
- * removes the key when `value` is null. Every other line, comments
- * included, is kept as it was. The file is replaced atomically and is
- * owner-only.
+ * Sets `key` to `value` in the `.env` file at `path`, creating it. Every
+ * other line, comments included, is kept as it was. The file is replaced
+ * atomically and is owner-only.
  */
-export function setEnvValue(
-  path: string,
-  key: string,
-  value: string | null,
-): void {
+export function setEnvValue(path: string, key: string, value: string): void {
   let text = '';
   try {
     text = readFileSync(path, 'utf8');
@@ -82,20 +77,19 @@ export function setEnvValue(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');
-  const entry = value === null ? null : `${key}=${quote(value)}`;
+  const entry = `${key}=${quote(value)}`;
   const kept: string[] = [];
   let placed = false;
   for (const line of lines) {
     if (LINE.exec(line)?.[1] !== key) {
       kept.push(line);
-    } else if (entry !== null && !placed) {
+    } else if (!placed) {
       kept.push(entry);
       placed = true;
     }
   }
-  if (entry !== null && !placed) kept.push(entry);
-  if (value === null && kept.length === lines.length) return;
-  writeFileAtomic(path, kept.length === 0 ? '' : `${kept.join('\n')}\n`, 0o600);
+  if (!placed) kept.push(entry);
+  writeFileAtomic(path, `${kept.join('\n')}\n`, 0o600);
 }
 
 function quote(value: string): string {

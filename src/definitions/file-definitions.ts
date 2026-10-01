@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join, posix } from 'node:path';
 import type { ProviderOptions } from '../config/provider-options.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { shownPath } from '../settings-files/note-hints.js';
+import { shownPath } from '../settings-files/note-paths.js';
 import { agentNoteFor } from '../settings-files/note-writer.js';
 import { NOTE_FOLDERS } from '../settings-files/note-files.js';
 import {

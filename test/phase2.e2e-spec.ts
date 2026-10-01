@@ -240,7 +240,7 @@ describe('Phase 2 end to end (e2e)', () => {
 
   it('onboards topics, serves the main Agent, resumes after a restart, and carries history into a new provider', async () => {
     await start();
-    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await client.call('telegram.token', { token: TOKEN });
     await connected();
 
     // A chat that is not allowed gets only the pairing hint.

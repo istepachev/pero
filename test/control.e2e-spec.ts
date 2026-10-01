@@ -127,32 +127,29 @@ describe('Control endpoint (e2e)', () => {
     });
   });
 
-  it('changes the bot token, validating it first, and no other setting', async () => {
+  it('changes the bot token, validating it first', async () => {
     const token = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
     app = await start();
     const before = await client.call('settings.get');
 
     await expect(
-      client.call('settings.update', { telegramBotToken: 'not a token' }),
+      client.call('telegram.token', { token: 'not a token' }),
     ).rejects.toThrow(InvalidInputError);
     await expect(
-      client.call('settings.update', {
+      client.call('telegram.token', {
+        token,
         maxConcurrentRuns: 3,
-        telegramBotToken: token,
       } as never),
     ).rejects.toThrow(InvalidInputError);
     expect(await client.call('settings.get')).toEqual(before);
     expect(existsSync(join(workspace, '.env'))).toBe(false);
 
-    const view = await client.call('settings.update', {
-      telegramBotToken: token,
-    });
+    const view = await client.call('telegram.token', { token });
 
-    expect(view).toMatchObject({
-      maxConcurrentRuns: before.maxConcurrentRuns,
+    expect(view).toEqual({ set: true, source: 'env-file' });
+    expect(await client.call('settings.get')).toMatchObject({
       telegramBotToken: { set: true, source: 'env-file' },
     });
-    expect(JSON.stringify(view)).not.toContain(token);
     await vi.waitFor(async () =>
       expect(
         (await client.status()).components.find((c) => c.name === 'telegram'),
@@ -173,7 +170,7 @@ describe('Control endpoint (e2e)', () => {
     api.rejectToken(token);
     app = await start();
 
-    await client.call('settings.update', { telegramBotToken: token });
+    await client.call('telegram.token', { token });
 
     await vi.waitFor(async () =>
       expect(

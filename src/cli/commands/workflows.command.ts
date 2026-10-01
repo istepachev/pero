@@ -1,12 +1,10 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import type { WorkflowAction } from '../../settings-files/note-hints.js';
 import { CliError } from '../errors.js';
 import {
   formatWorkflowDetails,
   formatWorkflowList,
   runOutcome,
 } from '../format-workflows.js';
-import { workflowStub } from '../note-stubs.js';
 import { PeroCommand } from '../pero-command.js';
 import { waitForRun } from '../wait-for-run.js';
 
@@ -41,57 +39,6 @@ export class WorkflowsShowCommand extends PeroCommand {
       ),
     );
   }
-}
-
-/** A removed command that says which note to edit instead. */
-abstract class WorkflowStubCommand extends PeroCommand {
-  protected abstract readonly action: WorkflowAction;
-
-  async run([name]: string[]): Promise<void> {
-    await workflowStub(this.config(), this.action, name!);
-  }
-}
-
-@SubCommand({
-  name: 'create',
-  arguments: '<name>',
-  description: 'Removed: add a Workflow note instead; this says where',
-  argsDescription: NAME,
-  allowUnknownOptions: true,
-})
-export class WorkflowsCreateCommand extends WorkflowStubCommand {
-  protected readonly action = 'create';
-}
-
-@SubCommand({
-  name: 'edit',
-  arguments: '<name>',
-  description: "Removed: edit the Workflow's note instead; this says where",
-  argsDescription: NAME,
-  allowUnknownOptions: true,
-})
-export class WorkflowsEditCommand extends WorkflowStubCommand {
-  protected readonly action = 'edit';
-}
-
-@SubCommand({
-  name: 'disable',
-  arguments: '<name>',
-  description: "Removed: set enabled: false in the Workflow's note instead",
-  argsDescription: NAME,
-})
-export class WorkflowsDisableCommand extends WorkflowStubCommand {
-  protected readonly action = 'disable';
-}
-
-@SubCommand({
-  name: 'enable',
-  arguments: '<name>',
-  description: "Removed: set enabled: true in the Workflow's note instead",
-  argsDescription: NAME,
-})
-export class WorkflowsEnableCommand extends WorkflowStubCommand {
-  protected readonly action = 'enable';
 }
 
 interface RunOptions {
@@ -131,47 +78,13 @@ export class WorkflowsRunCommand extends PeroCommand {
   }
 }
 
-@SubCommand({
-  name: 'notify',
-  arguments: '<name> [channel]',
-  description:
-    "Removed: name the topic in the channel of the Workflow's note instead",
-  argsDescription: {
-    ...NAME,
-    channel: "the Channel's ID, as pero channels ls lists it",
-  },
-  allowUnknownOptions: true,
-})
-export class WorkflowsNotifyCommand extends PeroCommand {
-  async run([name]: string[], options: { remove?: boolean }): Promise<void> {
-    await workflowStub(
-      this.config(),
-      options.remove === true ? 'stop-notifying' : 'notify',
-      name!,
-    );
-  }
-
-  @Option({
-    flags: '--remove',
-    description: 'stop notifying the Channel',
-  })
-  parseRemove(): true {
-    return true;
-  }
-}
-
 @Command({
   name: 'workflows',
   description: 'List, show, and run the Workflows, which notes define',
   subCommands: [
     WorkflowsListCommand,
     WorkflowsShowCommand,
-    WorkflowsCreateCommand,
-    WorkflowsEditCommand,
-    WorkflowsDisableCommand,
-    WorkflowsEnableCommand,
     WorkflowsRunCommand,
-    WorkflowsNotifyCommand,
   ],
 })
 export class WorkflowsCommand extends CommandRunner {

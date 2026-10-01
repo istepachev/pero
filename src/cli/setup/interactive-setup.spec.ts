@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parseInput } from '../../common/errors.js';
-import { settingsChangeSchema } from '../../config/settings-input.js';
+import { CONTROL_OPERATIONS } from '../../control/protocol.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
   AllowedChatView,
@@ -111,15 +111,13 @@ class FakeDaemon {
         };
         return { chat, alreadyAllowed: false };
       }
-      if (op !== 'settings.update') throw new Error(`unexpected ${op}`);
-      const change = parseInput(settingsChangeSchema, params);
-      if (change.telegramBotToken) {
-        this.settings = {
-          ...this.settings,
-          telegramBotToken: { set: true, source: 'env-file' },
-        };
-      }
-      return this.settings;
+      if (op !== 'telegram.token') throw new Error(`unexpected ${op}`);
+      parseInput(CONTROL_OPERATIONS['telegram.token'].params, params);
+      this.settings = {
+        ...this.settings,
+        telegramBotToken: { set: true, source: 'env-file' },
+      };
+      return this.settings.telegramBotToken;
     },
   } as unknown as ControlClient;
 }

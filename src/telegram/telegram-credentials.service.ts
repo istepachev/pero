@@ -1,14 +1,10 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import {
-  ensureGitignoreLine,
-  EnvFilePermissionError,
-  readEnvFile,
-  setEnvValue,
-} from '../config/env-file.js';
+import { EnvFilePermissionError, readEnvFile } from '../config/env-file.js';
 import {
   TELEGRAM_TOKEN_ENV,
   telegramBotTokenSchema,
 } from '../config/settings-input.js';
+import { storeTelegramToken } from '../config/token-file.js';
 import type { TokenSource } from '../control/protocol.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { CONNECTING_DETAIL } from './telegram-status.js';
@@ -69,19 +65,16 @@ export class TelegramCredentials implements OnModuleInit {
   }
 
   /**
-   * Stores `token`, or removes the stored one when null, and takes it into
-   * use at once. A token in the environment still wins over the stored one.
+   * Stores `token` in `.env` and takes it into use at once. A token in the
+   * environment still wins over the stored one.
    */
-  set(token: string | null): void {
-    const value = token === null ? null : telegramBotTokenSchema.parse(token);
+  set(token: string): void {
+    const value = telegramBotTokenSchema.parse(token);
     const { envFile, gitignore } = this.options;
-    setEnvValue(envFile, TELEGRAM_TOKEN_ENV, value);
-    if (value !== null && ensureGitignoreLine(gitignore, '.env')) {
+    if (storeTelegramToken({ envFile, gitignore }, value)) {
       this.logger.log(`Added .env to ${gitignore}`);
     }
-    this.logger.log(
-      value === null ? 'Stored bot token removed' : 'Bot token stored',
-    );
+    this.logger.log('Bot token stored');
     this.resolve();
     for (const listener of this.listeners) listener(this.current);
   }

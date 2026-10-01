@@ -12,7 +12,6 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { Chat, Message, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InvalidInputError } from '../src/common/errors.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
@@ -98,7 +97,7 @@ describe('Agents from notes (e2e)', () => {
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
-    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await client.call('telegram.token', { token: TOKEN });
     await vi.waitFor(async () =>
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );
@@ -298,17 +297,5 @@ describe('Agents from notes (e2e)', () => {
         agent,
       ]),
     ).toEqual([['Groceries', 'pantry']]);
-  });
-
-  it('takes only the bot token as a setting, and no Agent changes', async () => {
-    await start();
-    await expect(
-      client.call('settings.update', {
-        timezone: 'UTC',
-      } as never),
-    ).rejects.toThrow(InvalidInputError);
-    await expect(
-      client.call('agents.create' as never, { name: 'garden' } as never),
-    ).rejects.toThrow(/agents\.create/);
   });
 });

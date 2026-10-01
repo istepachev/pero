@@ -122,17 +122,6 @@ describe('.env files', () => {
     expect(readEnvFile(file)?.get('B')).toBe('two words "quoted"');
   });
 
-  it('removes a key, and leaves a file without it untouched', () => {
-    writeFileSync(file, '# keep\nA=1\nB=2\n', { mode: 0o600 });
-
-    setEnvValue(file, 'A', null);
-    expect(readFileSync(file, 'utf8')).toBe('# keep\nB=2\n');
-
-    const { mtimeMs } = statSync(file);
-    setEnvValue(file, 'A', null);
-    expect(statSync(file).mtimeMs).toBe(mtimeMs);
-  });
-
   it('makes a readable file owner-only when it writes it', () => {
     writeFileSync(file, 'A=1\n', { mode: 0o644 });
     chmodSync(file, 0o644);

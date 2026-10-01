@@ -77,11 +77,6 @@ describe('TelegramCredentials', () => {
     );
     expect(statSync(envFile).mode & 0o777).toBe(0o600);
     expect(readFileSync(gitignore, 'utf8')).toBe('node_modules/\n.env\n');
-
-    credentials.set(null);
-    expect(stored()).toBe('# Secrets\nOTHER=1\n');
-    expect(credentials.token()).toBeNull();
-    expect(telegram()).toMatchObject({ state: 'unconfigured' });
   });
 
   it('reads .env on start', () => {
@@ -134,11 +129,11 @@ describe('TelegramCredentials', () => {
     const stop = credentials.onChange((token) => seen.push(token));
 
     credentials.set(TOKEN);
-    credentials.set(null);
-    stop();
     credentials.set(OTHER);
+    stop();
+    credentials.set(TOKEN);
 
-    expect(seen).toEqual([TOKEN, null]);
+    expect(seen).toEqual([TOKEN, OTHER]);
   });
 
   it('refuses an invalid token without storing it', () => {

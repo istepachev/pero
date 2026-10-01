@@ -251,14 +251,6 @@ describe('TelegramAdapter', () => {
         expect(api.callsOf('getUpdates').at(-1)?.token).toBe(OTHER),
       );
       await connected();
-
-      get(TelegramCredentials).set(null);
-      await vi.waitFor(() =>
-        expect(telegram()).toMatchObject({
-          state: 'unconfigured',
-          detail: 'Bot token is not set',
-        }),
-      );
     });
   });
 

@@ -12,7 +12,7 @@ import { ChannelSender } from '../channels/channel-sender.js';
 import type { HostAllowedChat } from '../config/host-config.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { shownPath } from '../settings-files/note-hints.js';
+import { shownPath } from '../settings-files/note-paths.js';
 import type { BrokenNote } from '../settings-files/reload.js';
 import {
   type NoteRead,

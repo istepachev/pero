@@ -50,18 +50,15 @@ describe('formatSettings', () => {
 });
 
 describe('formatToken', () => {
-  const token = (telegramBotToken: SettingsView['telegramBotToken']) =>
-    formatToken({ ...workspace, telegramBotToken });
-
   it('says where the token comes from, never what it is', () => {
-    expect(token({ set: true, source: 'environment' })).toBe(
+    expect(formatToken({ set: true, source: 'environment' })).toBe(
       'set (PERO_TELEGRAM_BOT_TOKEN)',
     );
-    expect(token({ set: true, source: 'env-file' })).toBe('set (.env)');
-    expect(token({ set: false, source: 'environment' })).toBe(
+    expect(formatToken({ set: true, source: 'env-file' })).toBe('set (.env)');
+    expect(formatToken({ set: false, source: 'environment' })).toBe(
       'not valid (PERO_TELEGRAM_BOT_TOKEN)',
     );
-    expect(token({ set: false, source: null })).toBe('not set');
+    expect(formatToken({ set: false, source: null })).toBe('not set');
   });
 });
 

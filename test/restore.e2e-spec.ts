@@ -415,7 +415,7 @@ describe('Restore drill (e2e)', () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, tmp);
     await start(ws);
-    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await client.call('telegram.token', { token: TOKEN });
     await connected();
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: String(DIRECT.id) });

@@ -1000,6 +1000,14 @@ Pero works on a workspace and nothing else:
 
 This is the one step that changes the CLI a user sees. Interactive setup already asks for the token itself, so first run doesn't change.
 
+- **Found while building:**
+  - **Commander had to be told a removed command is unknown.** It ignores extra arguments, and hands a word that names no subcommand to the group's default one, so `pero agents create garden` listed the Agents. `StrictArguments` (`src/cli/strict-arguments.ts`) makes every command refuse arguments it doesn't declare, and a group whose default subcommand takes none says `unknown command 'create'`. `pero settings show` is now "too many arguments for 'settings'".
+  - **What stays of `note-hints.ts` is `note-paths.ts`:** `shownPath`, `findAgentNote`, and `findWorkflowNote`, which the views, the settings view, and broken-note reports use. `pero check` itself used none of it.
+  - **`telegram.token` takes `{ token }` and returns only the token's state,** `{ set, source }`, as `tokenViewSchema`, which the settings view reuses. The CLI validates the token before it reaches the daemon, so both paths say "token: must be a bot token from @BotFather…", and empty input is "No bot token given".
+  - **Nothing removes the token any more:** `TelegramCredentials.set` and `setEnvValue` take a string, not null, and their removal tests go. `storeTelegramToken` (`src/config/token-file.ts`) writes `.env` and the `.gitignore` line for the daemon and for the CLI while Pero is stopped.
+  - **The e2e test that used `ping`** checks that a command needing the daemon fails without starting one, which `pero status` doesn't do, so it uses `pero agents`. The control specs' handler lists `satisfies` the handler type, so a removed operation fails to compile there; they still listed the 0.1 `triggers.*`, `channels.assign`, and `workflows.create` operations.
+  - **The [CLI reference](./CLI.md) loses its `pero migrate` row too,** since it described a command that no longer exists; the rest of the legacy prose waits for 11.9. The guides name `pero telegram token` wherever they named `settings set telegram-bot-token`.
+
 **Done when:**
 - Every command in the [CLI reference](./CLI.md) does what it says, and none exists only to name a file.
 - `pero telegram token` works with Pero running and stopped, and a running Pero uses the new token without a restart.
