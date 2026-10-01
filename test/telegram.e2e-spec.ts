@@ -197,6 +197,7 @@ describe('Telegram chats and pairing (e2e)', () => {
         asked.push(text);
         return Promise.resolve(true);
       },
+      select: () => Promise.reject(new Error('not asked')),
     };
 
     await runInteractiveSetup(

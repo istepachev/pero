@@ -35,7 +35,11 @@ describe('checkProviderAuth', () => {
 
     await expect(
       checkProviderAuth('claude', { exec: answer({ code: 0, stdout }) }),
-    ).resolves.toEqual({ state: 'ok', detail: 'Signed in (claude.ai, pro)' });
+    ).resolves.toEqual({
+      state: 'ok',
+      detail: 'Signed in (claude.ai, pro)',
+      installed: true,
+    });
   });
 
   it('reads a signed-out Claude Code', async () => {
@@ -46,6 +50,7 @@ describe('checkProviderAuth', () => {
     ).resolves.toEqual({
       state: 'unconfigured',
       detail: 'Not signed in — run claude auth login',
+      installed: true,
     });
   });
 
@@ -58,7 +63,11 @@ describe('checkProviderAuth', () => {
           stderr: 'WARNING: something\nLogged in using ChatGPT\n',
         }),
       }),
-    ).resolves.toEqual({ state: 'ok', detail: 'Logged in using ChatGPT' });
+    ).resolves.toEqual({
+      state: 'ok',
+      detail: 'Logged in using ChatGPT',
+      installed: true,
+    });
     await expect(
       checkProviderAuth('codex', {
         exec: answer({ code: 1, stdout: 'Not logged in\n' }),
@@ -67,6 +76,7 @@ describe('checkProviderAuth', () => {
       state: 'unconfigured',
       detail:
         'Not signed in — run codex login (on a headless host: codex login --device-auth)',
+      installed: true,
     });
   });
 
@@ -81,6 +91,7 @@ describe('checkProviderAuth', () => {
       state: 'unconfigured',
       detail:
         'Claude Code CLI not found — install it with npm install -g @anthropic-ai/claude-code, then run claude auth login',
+      installed: false,
     });
     await expect(checkProviderAuth('codex', { exec })).resolves.toMatchObject({
       detail: expect.stringMatching(/^Codex CLI not found — .*@openai\/codex/),
@@ -99,6 +110,7 @@ describe('checkProviderAuth', () => {
     ).resolves.toEqual({
       state: 'degraded',
       detail: 'Could not check sign-in: claude did not answer within 2 s',
+      installed: true,
     });
   });
 
@@ -109,6 +121,7 @@ describe('checkProviderAuth', () => {
       ).resolves.toEqual({
         state: 'degraded',
         detail: 'Could not check sign-in: unexpected output from claude',
+        installed: true,
       });
     }
   });
@@ -127,6 +140,7 @@ describe('checkProviderAuth', () => {
       await expect(checkProviderAuth('codex')).resolves.toEqual({
         state: 'ok',
         detail: 'Logged in using an API key',
+        installed: true,
       });
     } finally {
       process.env.PATH = path;

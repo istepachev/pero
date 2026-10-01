@@ -191,6 +191,7 @@ function scripted(answers: (string | boolean | typeof WAIT)[]) {
     input: ({ message, initial, signal }) => next(message, initial, signal),
     password: ({ message }) => next(`${message} (hidden)`),
     confirm: ({ message }) => next(`${message} (y/n)`),
+    select: ({ message }) => next(`${message} (select)`),
   };
   return { prompts, asked };
 }

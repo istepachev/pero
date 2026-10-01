@@ -29,6 +29,11 @@ import {
   RunsRetryCommand,
   RunsShowCommand,
 } from './commands/runs.command.js';
+import {
+  ServiceCommand,
+  ServiceInstallCommand,
+  ServiceUninstallCommand,
+} from './commands/service.command.js';
 import { SettingsCommand } from './commands/settings.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
@@ -61,6 +66,9 @@ import { StrictArguments } from './strict-arguments.js';
     RunCommand,
     StopCommand,
     StatusCommand,
+    ServiceCommand,
+    ServiceInstallCommand,
+    ServiceUninstallCommand,
     LogsCommand,
     SettingsCommand,
     AgentsCommand,
