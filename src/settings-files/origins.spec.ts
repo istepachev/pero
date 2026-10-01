@@ -18,7 +18,6 @@ describe('agentOrigins', () => {
       ],
       {
         workspace: '/ws',
-        dataFolder: '/ws/data',
         homeDir: '/home/me',
         hostTimeZone: 'UTC',
       },
@@ -30,7 +29,7 @@ describe('agentOrigins', () => {
       model: 'note',
       effort: 'pero',
       permissions: 'default',
-      workingDirectory: 'data',
+      workingDirectory: 'workspace',
     });
     expect(
       agentOrigins(snapshot.agents.get('writer')!, snapshot.peroProperties),

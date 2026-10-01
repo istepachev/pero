@@ -14,7 +14,7 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 ## The workspace
 
 ```text
-~/workspace/                         # the workspace: where Pero runs; can be a Git repository
+~/workspace/                         # the workspace: where Pero and its Agents run; can be a Git repository
 ├── .env                             # secrets, owner-only, Git-ignored: PERO_TELEGRAM_BOT_TOKEN=…
 ├── .gitignore                       # Pero makes sure it lists .env
 ├── .pero/                           # Pero's own files
@@ -29,13 +29,13 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 │   │   ├── Agents/
 │   │   │   ├── Main.md              # the main Agent: General topics and direct chats
 │   │   │   ├── Health.md            # answers in the "Health" topic
-│   │   │   └── _Template.md         # starting point for Agents of new topics (not an Agent itself)
+│   │   │   └── _Template.md         # optional: starting point for Agents of new topics (not an Agent itself)
 │   │   └── Workflows/
 │   │       ├── Weekly health report.md
 │   │       └── Evening review.md
 │   ├── Reports/                     # whatever the Agents and you write
 │   └── …
-└── projects/                        # optional: other folders Agents can work in
+└── projects/                        # optional: scripts, repositories, other folders Agents can work in
     └── site/
 ```
 
@@ -47,7 +47,7 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 | `data/Settings/` | Defaults, Agents, Workflows | Yes | With `--include-data` |
 | `data/` (the rest) | Your notes and the Agents' work | Your choice | With `--include-data` |
 
-Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the settings folder `Pero.md`, `Agents/Main.md`, `Agents/_Template.md`, and an empty `Workflows/`. It never overwrites a file, so running it in a cloned workspace only fills in what's missing.
+Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the settings folder `Pero.md`, `Agents/Main.md`, and an empty `Workflows/`. It never overwrites a file, so running it in a cloned workspace only fills in what's missing.
 
 To set Pero up on another server, clone the workspace and run it:
 
@@ -89,10 +89,10 @@ Each workspace has its own `.env`, so two workspaces on one account can run two 
 
 ## `.pero/config.yaml`
 
-Host settings: what describes this installation, and what an Agent working in the data folder must not be able to change.
+Host settings: what describes this installation, and what an Agent must not be able to change.
 
 ```yaml
-# Data folder: the vault Agents work in. Relative to the workspace. Default: data
+# Data folder: the vault Agents keep notes in. Relative to the workspace. Default: data
 data: data
 
 # Settings folder. Relative to the workspace. Default: <data>/Settings
@@ -111,7 +111,7 @@ telegram:
 - **Changing `data` or `settings` needs a restart.** Until then, `pero status` shows the `config` component `degraded` saying so. A folder that doesn't exist stops startup with a message naming the key.
 - **An invalid file** stops startup with the file, line, key, and reason. An invalid edit while Pero runs is logged and shown by `pero status`, and the last valid version stays in use.
 
-The data folder can be an existing vault anywhere, such as `data: ~/notes`. Every Agent works in it unless its note names another folder.
+The data folder can be an existing vault anywhere, such as `data: ~/notes`. Agents work in the workspace, where your scripts, Git repository, and other tools are, unless a note names another folder; Pero tells every Agent, in its instructions, where the data folder is, so that's where they keep notes and other files they write for you.
 
 ## `Settings/Pero.md`
 
@@ -173,7 +173,7 @@ You are my health coach. My training log is in Health/Log.md; append each workou
 | `model` | model name | `Pero.md` `<provider>-model` | Model, for this Agent's provider |
 | `effort` | provider's levels | `Pero.md` `<provider>-effort` | Effort, for this Agent's provider |
 | `permissions` | `ask`, `bypass` | `Pero.md` `permissions` | How its tools are approved |
-| `working-directory` | path | the data folder | The folder it works in, relative to the workspace (such as `projects/site`) |
+| `working-directory` | path | the workspace | The folder it works in, relative to the workspace (such as `projects/site`) |
 | `shared-instructions` | `true`, `false` | `true` | Put `Pero.md`'s body before its own |
 | `skip-git-repo-check` | `true`, `false` | `false` | Let a Codex Agent work outside a Git repository |
 | `enabled` | `true`, `false` | `true` | `false` silences it in its topics and stops its Workflows' schedules |
@@ -182,8 +182,22 @@ You are my health coach. My training log is in Health/Log.md; append each workou
 
 **Which Agent answers a topic:** the Agent whose `topics` contains the topic's title. When two Agents claim the same title, neither answers there, and Pero reports the conflict on both notes. A topic no Agent claims is handled by `new-topics`:
 
-- `create-agent`: Pero writes `Agents/<Topic title>.md` with `topics: [<Topic title>]`, starting from `Agents/_Template.md` when it exists (its properties and body, with `topics` added), and posts a welcome. That Agent answers from the first message.
+- `create-agent`: Pero writes `Agents/<Topic title>.md` with `topics: [<Topic title>]`, starting from `Agents/_Template.md` when you've added one (its properties and body, with `topics` added), and posts a welcome. That Agent answers from the first message. Without a template, the note holds `topics` alone, so the Agent follows `Pero.md`.
 - `main-agent`: the main Agent answers, in a Session of its own for that topic.
+
+**The template for new topics** is `Agents/_Template.md`. `pero init` doesn't write it; add it when the Agents Pero writes for new topics should start with more than `topics`. Its name starts with `_`, so it's never an Agent itself. Pero copies its properties, comments included, and its body, and sets `topics`:
+
+```markdown
+---
+# The starting point for the Agent of a new topic: Pero copies these
+# properties and this text, and sets topics to the topic's title.
+# provider: claude
+# model: sonnet
+# effort: high
+# permissions: ask
+---
+You are my assistant for this topic.
+```
 
 The route is worked out again for every message, so editing `topics` moves a topic to another Agent from its next message. The new Agent's first turn starts a fresh Session that carries over the topic's recent messages.
 
@@ -254,8 +268,8 @@ Pero holds the whole configuration in memory as one snapshot: `Pero.md`, every A
 
 | Change | Takes effect |
 |---|---|
-| Agent `provider` or `working-directory`, or the data folder an Agent follows | Its next turn in each topic, in a fresh Session that carries over recent messages |
-| Agent instructions, `model`, `effort`, `permissions`, `Pero.md` body and defaults | Its next turn, in the same Session |
+| Agent `provider` or `working-directory` | Its next turn in each topic, in a fresh Session that carries over recent messages |
+| Agent instructions, `model`, `effort`, `permissions`, `Pero.md` body and defaults, the data folder its instructions name | Its next turn, in the same Session |
 | Agent `topics` | The next message in the topics gained or lost |
 | Agent removed or `enabled: false` | Its topics stop getting answers; its Workflows' schedules pass without a run |
 | Workflow schedule (`day`, `hour`, `minute`, `cron`, `timezone`) | Its next run is computed from the time of the change; times already passed are not caught up |
@@ -304,13 +318,13 @@ Edits to existing files change only the one value, keeping comments, ordering, a
 
 ## Security
 
-**Agents can edit configuration.** An Agent works in the data folder by default, and the settings folder is inside it. That's deliberate, since "change your prompt to be less formal" should work. But an Agent could also change its own `permissions` or add a Workflow. So:
+**Agents can edit configuration.** An Agent works in the workspace by default, and the settings folder is inside it. That's deliberate, since "change your prompt to be less formal" should work. But an Agent could also change its own `permissions` or add a Workflow. So:
 
-- **Claude Agents with `ask`:** an edit under the settings folder always asks in the Channel, with Allow and Deny buttons, even though the Agent may otherwise edit its folder freely. Workflow runs have no one to ask, so they can't change configuration.
-- **Codex Agents with `ask`:** the `workspace-write` sandbox allows writes anywhere in the folder and can't leave out a subfolder. A Codex Agent that must not touch configuration needs a `working-directory` that doesn't contain the settings folder.
+- **Claude Agents with `ask`:** an edit under the settings folder always asks in the Channel, with Allow and Deny buttons, even though the Agent may otherwise edit its folder freely. So does an edit of `.pero/` or `.env`. Workflow runs have no one to ask, so they can't change configuration.
+- **Codex Agents with `ask`:** the `workspace-write` sandbox allows writes anywhere in the folder and can't leave out a subfolder, so it can edit the settings folder, `.pero/config.yaml`, and `.env` too. A Codex Agent that must not touch configuration needs a `working-directory` that holds none of them, such as `data` or `projects/site`.
 - **`bypass` Agents** can change anything.
 - **Every applied change is logged** with the files that changed. When the workspace is a Git repository, `git diff` shows exactly what an Agent changed.
 
-**Access control stays out of the data folder.** Allowed chats are in `.pero/config.yaml` and the token is in `.env`, both in the workspace root, outside the data folder. An Agent whose folder is the workspace root itself, such as with `data: .`, can read them and edit them as it edits the rest of its folder, whatever its permissions, so keep the data folder, and every Agent's `working-directory`, apart from the workspace root.
+**Access control is in the workspace root.** Allowed chats are in `.pero/config.yaml` and the token is in `.env`, outside the data folder but inside the workspace Agents work in by default. Every Agent can read them, and a Codex `ask` Agent or a `bypass` Agent can edit them. To keep them out of an Agent's reach, give it a `working-directory` that doesn't contain them.
 
 **Committed configuration is not secret.** Chat IDs, prompts, and schedules end up in Git, so keep that repository private. The token never goes there: `.env` is Git-ignored, and Pero reports it if Git would commit it.

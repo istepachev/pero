@@ -168,7 +168,7 @@ describe('Telegram chats and pairing (e2e)', () => {
       }),
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(agentNotes()).toEqual(['Main.md', '_Template.md']);
+    expect(agentNotes()).toEqual(['Main.md']);
   });
 
   it('allows a chat that sends its first message during interactive setup', async () => {

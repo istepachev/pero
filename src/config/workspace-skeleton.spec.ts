@@ -46,7 +46,6 @@ describe('initWorkspace', () => {
       { path: '.pero/config.yaml', action: 'created' },
       { path: 'data/Settings/Pero.md', action: 'created' },
       { path: 'data/Settings/Agents/Main.md', action: 'created' },
-      { path: 'data/Settings/Agents/_Template.md', action: 'created' },
       { path: 'data/Settings/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('.env\n');
@@ -54,6 +53,7 @@ describe('initWorkspace', () => {
     expect(read('.pero/config.yaml')).toBe(defaultHostConfig());
     expect(statSync(join(dir, '.pero')).mode & 0o777).toBe(0o700);
     expect(readdirSync(join(dir, 'data/Settings/Workflows'))).toEqual([]);
+    expect(readdirSync(join(dir, 'data/Settings/Agents'))).toEqual(['Main.md']);
   });
 
   it('changes nothing the second time', () => {
@@ -84,7 +84,6 @@ describe('initWorkspace', () => {
       { path: '.pero/config.yaml', action: 'kept' },
       { path: 'vault/Settings/Pero.md', action: 'created' },
       { path: 'vault/Settings/Agents/Main.md', action: 'kept' },
-      { path: 'vault/Settings/Agents/_Template.md', action: 'created' },
       { path: 'vault/Settings/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('node_modules/\n.env\n');
@@ -111,7 +110,6 @@ describe('initWorkspace', () => {
     for (const [file, readNote] of [
       ['data/Settings/Pero.md', readPeroNote],
       ['data/Settings/Agents/Main.md', readAgentNote],
-      ['data/Settings/Agents/_Template.md', readAgentNote],
     ] as const) {
       const parsed = parseNote(file, read(file));
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));

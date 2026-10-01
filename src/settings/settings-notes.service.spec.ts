@@ -83,7 +83,7 @@ describe('SettingsNotes', () => {
     await boot();
     expect(notes.snapshot()!.agents.get('health')).toMatchObject({
       topics: ['Health'],
-      workingDirectory: join(tmp, 'data'),
+      workingDirectory: tmp,
     });
     expect(health.get('settings')).toMatchObject({
       state: 'ok',

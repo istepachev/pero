@@ -19,7 +19,6 @@ describe('SettingsReloader', () => {
     clock = Date.parse('2026-01-01T00:00:00Z');
     reloader = new SettingsReloader(settings, {
       workspace: root,
-      dataFolder: root,
       homeDir: root,
       hostTimeZone: 'UTC',
     });

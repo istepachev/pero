@@ -13,10 +13,17 @@ export type AgentRequest = Required<
   >
 >;
 
+/** What composing an Agent's instructions takes from the defaults. */
+export interface InstructionDefaults {
+  /** Named in every Agent's instructions as where its notes go. */
+  dataFolder: string;
+  sharedInstructions: string | null;
+}
+
 /** `agent`'s part of a runtime request, with the shared instructions composed in. */
 export function agentRequest(
   agent: Agent,
-  defaults: { sharedInstructions: string | null },
+  defaults: InstructionDefaults,
 ): AgentRequest {
   return {
     instructions: composeInstructions(agent, defaults),
@@ -28,15 +35,16 @@ export function agentRequest(
 }
 
 /**
- * The instructions sent to the runtime: the shared instructions, unless the
- * Agent opts out, then the Agent's own, separated by a blank line. Empty
- * parts are left out.
+ * The instructions sent to the runtime: where the data folder is, the
+ * shared instructions unless the Agent opts out, then the Agent's own,
+ * separated by blank lines. Empty parts are left out.
  */
 export function composeInstructions(
   agent: Pick<Agent, 'instructions' | 'sharedInstructions'>,
-  defaults: { sharedInstructions: string | null },
+  defaults: InstructionDefaults,
 ): string {
   const parts = [
+    dataFolderNote(defaults.dataFolder),
     agent.sharedInstructions ? defaults.sharedInstructions : null,
     agent.instructions,
   ];
@@ -44,4 +52,16 @@ export function composeInstructions(
     .map((part) => part?.trim() ?? '')
     .filter((part) => part !== '')
     .join('\n\n');
+}
+
+/**
+ * Tells the Agent, which works in the workspace unless its note names a
+ * folder, where the owner's notes are and where its own go.
+ */
+export function dataFolderNote(dataFolder: string): string {
+  return (
+    `The owner's notes are in the data folder, ${dataFolder}. ` +
+    'Keep the notes and other files you write for them there, ' +
+    'unless they ask for another place.'
+  );
 }

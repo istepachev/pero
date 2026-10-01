@@ -543,7 +543,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^main \\* +claude +default +high +${escape(join(workspace, 'data'))} \\(data folder\\) +ask +enabled +— +data/Settings/Agents/Main\\.md$`,
+        `^main \\* +claude +default +high +${escape(workspace)} \\(workspace\\) +ask +enabled +— +data/Settings/Agents/Main\\.md$`,
         'm',
       ),
     );
@@ -1276,7 +1276,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '  created  .pero/config.yaml',
         '  created  data/Settings/Pero.md',
         '  created  data/Settings/Agents/Main.md',
-        '  created  data/Settings/Agents/_Template.md',
         '  created  data/Settings/Workflows/',
         '',
         `Start Pero there with: cd ${workspace} && pero run`,

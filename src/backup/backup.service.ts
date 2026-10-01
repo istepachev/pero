@@ -187,7 +187,7 @@ export class BackupService implements BeforeApplicationShutdown {
   }
 
   /**
-   * The folders the workspace's Agents work in, which a restore checks
+   * The folders the workspace's Agents use, which a restore checks
    * for: the data folder, and each Agent's own.
    */
   private workingDirectories(): BackupManifest['workingDirectories'] {

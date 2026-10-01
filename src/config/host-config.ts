@@ -19,9 +19,9 @@ import { ConfigError, resolvePath } from './bootstrap-config.js';
 
 /*
  * `config.yaml` holds what describes this installation and that an Agent
- * working in the data folder must not change: where the data folder is, and
- * which chats Pero serves. It lives in the workspace's `.pero/` and is meant
- * to be committed.
+ * must not change: where the data folder is, and which chats Pero serves.
+ * It lives in the workspace's `.pero/`, where an `ask` Claude Agent's edits
+ * always ask, and is meant to be committed.
  */
 
 /** The file's name inside the state directory. */
@@ -227,7 +227,7 @@ export function defaultHostConfig(): string {
     "# Pero's host settings: where the data folder is and which chats Pero",
     '# serves. Commit this file; the bot token belongs in .env, never here.',
     '',
-    '# Data folder: the vault Agents work in. Relative to the workspace.',
+    '# Data folder: the vault Agents keep notes in. Relative to the workspace.',
     '# Changing it takes a restart.',
     `data: ${DEFAULT_DATA_FOLDER}`,
     '',

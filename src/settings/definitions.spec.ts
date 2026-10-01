@@ -26,7 +26,6 @@ function snapshotOf(files: Record<string, string>): SettingsSnapshot {
     Object.entries(files).map(([file, text]) => ({ file, text })),
     {
       workspace: FOLDERS.workspace,
-      dataFolder: FOLDERS.dataFolder,
       homeDir: '/home/me',
       hostTimeZone: 'UTC',
       topics: TOPICS,
@@ -110,7 +109,7 @@ describe('Definitions', () => {
       enabled: true,
     });
     expect(definitions.agent('main')).toMatchObject({
-      workingDirectory: FOLDERS.dataFolder,
+      workingDirectory: FOLDERS.workspace,
       note: { workingDirectory: null },
     });
     expect(definitions.agent('coach')).toBeNull();

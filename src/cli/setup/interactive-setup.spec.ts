@@ -23,7 +23,7 @@ class FakeDaemon {
       claude: { model: null, effort: null },
       codex: { model: null, effort: null },
     },
-    defaultWorkingDirectory: '/home/owner/workspace/data',
+    dataFolder: '/home/owner/workspace/data',
     sharedInstructions: null,
     mainAgent: 'main',
     historyCarryover: 50,

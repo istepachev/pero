@@ -279,13 +279,13 @@ describe('Interactive path end to end (e2e)', () => {
     expect(groceries).toMatchObject({
       channelId: ids[GROCERIES_KEY],
       provider: 'claude',
-      workingDirectory: vault,
+      workingDirectory: workspace,
       status: 'active',
     });
     expect(kitchen).toMatchObject({
       channelId: ids[KITCHEN_KEY],
       provider: 'claude',
-      workingDirectory: vault,
+      workingDirectory: workspace,
       status: 'active',
     });
     expect(groceries).toMatchObject({ agentName: 'groceries' });
@@ -304,12 +304,12 @@ describe('Interactive path end to end (e2e)', () => {
       {
         input: 'Eggs',
         providerSessionId: groceries!.providerSessionId,
-        workingDirectory: vault,
+        workingDirectory: workspace,
       },
       {
         input: 'Stew',
         providerSessionId: kitchen!.providerSessionId,
-        workingDirectory: vault,
+        workingDirectory: workspace,
       },
     ]);
 
@@ -397,7 +397,7 @@ describe('Interactive path end to end (e2e)', () => {
     const carried = await say(FORUM, GROCERIES, 'Bread');
     const request = lastRequest('codex');
     expect(request.providerSessionId).toBeUndefined();
-    expect(request.workingDirectory).toBe(vault);
+    expect(request.workingDirectory).toBe(workspace);
     expect(request.input).toMatch(/^\[Earlier conversation in this chat/);
     expect(request.input).toMatch(
       / User: Milk\n.* groceries: echo: Milk\n.* User: Back \d+\n.* groceries: echo: Back \d+\n/s,
@@ -416,7 +416,7 @@ describe('Interactive path end to end (e2e)', () => {
       }),
     ]);
 
-    // An Agent with its own folder works there; the other stays in the vault.
+    // An Agent with its own folder works there; the other stays in the workspace.
     await note(
       'Kitchen',
       ['topics: Kitchen', `working-directory: ${other}`],
@@ -431,7 +431,7 @@ describe('Interactive path end to end (e2e)', () => {
     );
     expect(await say(FORUM, GROCERIES, 'Jam')).toBe('echo: Jam');
     expect(lastRequest('codex')).toMatchObject({
-      workingDirectory: vault,
+      workingDirectory: workspace,
       providerSessionId: 'fake-codex-1',
     });
 

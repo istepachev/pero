@@ -30,7 +30,7 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
    pero run
    ```
 
-   `~/workspace` is your workspace: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one. On the first start it has you pick the provider your Agents use, Claude or Codex, among the CLIs it finds, and doesn't start until that CLI is signed in. Then it asks for what it still needs, such as your Telegram bot token, offers to install Pero as a service that starts with the machine, and ends with `pero status`. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
+   `~/workspace` is your workspace: the folder Pero and your Agents run in, with the data folder where Agents keep notes in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one. On the first start it has you pick the provider your Agents use, Claude or Codex, among the CLIs it finds, and doesn't start until that CLI is signed in. Then it asks for what it still needs, such as your Telegram bot token, offers to install Pero as a service that starts with the machine, and ends with `pero status`. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
 
    To make a workspace without starting Pero, such as from a script with no terminal, run `pero init <dir>`. It only writes what's missing, so it also fills in a cloned workspace.
 
@@ -48,13 +48,13 @@ To start from a complete setup instead, with a Health Agent and two Workflows, c
 
 ### Tip: use an Obsidian vault
 
-Agents keep their notes, plans, and results as files in their working folder. Make that folder an [Obsidian](https://obsidian.md) vault, and everything they write becomes plain Markdown notes that you can browse, search, and edit on your desktop and phone.
+Agents keep their notes, plans, and results as files in the data folder. Make that folder an [Obsidian](https://obsidian.md) vault, and everything they write becomes plain Markdown notes that you can browse, search, and edit on your desktop and phone.
 
 1. Use the workspace's `data/` folder as the vault, or point Pero at another folder with `data: ~/notes` in `.pero/config.yaml` and restart it.
 2. Sync it to your devices with a tool that works on a headless server, such as [Syncthing](https://syncthing.net) or Git with the [Obsidian Git](https://github.com/Vinzent03/obsidian-git) plugin.
 3. Open the synced folder as a vault in Obsidian on your desktop and phone.
 
-Codex Agents only work inside a Git repository. If you sync with Git, the vault already is one. Otherwise, run `git init` in the vault.
+Codex Agents only work inside a Git repository. Agents work in the workspace, so make it one with `git init` if it isn't already.
 
 ## Everyday use
 

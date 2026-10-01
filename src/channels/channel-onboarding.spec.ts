@@ -121,7 +121,7 @@ describe('Channel onboarding', () => {
       ]);
       const welcome =
         `This topic talks to Agent groceries-errands: codex, model ` +
-        `gpt-5.5-codex, working in ${ws.dataFolder}. To see where to change ` +
+        `gpt-5.5-codex, working in ${ws.root}. To see where to change ` +
         `it, run on the Pero host: pero agents show groceries-errands`;
       expect(
         welcomeText(
@@ -130,7 +130,7 @@ describe('Channel onboarding', () => {
             provider: 'codex',
             model: 'gpt-5.5-codex',
           },
-          ws.dataFolder,
+          ws.root,
           'topic',
         ),
       ).toBe(welcome);

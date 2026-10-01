@@ -177,10 +177,10 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     expect(await say('Ran 5 km', HEALTH)).toBe('echo: Ran 5 km');
     expect(lastRequest()).toMatchObject({
       instructions: expect.stringMatching(
-        /^You are a calm, concise personal assistant\..*\n\nYou are my health coach\./s,
+        /^The owner's notes are in the data folder, .*\n\nYou are a calm, concise personal assistant\..*\n\nYou are my health coach\./s,
       ),
       providerOptions: { model: 'opus', effort: 'high' },
-      workingDirectory: join(workspace, 'data'),
+      workingDirectory: workspace,
     });
 
     // A new topic writes its note from the template, whose Agent answers.

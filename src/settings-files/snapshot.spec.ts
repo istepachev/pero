@@ -10,7 +10,6 @@ import {
 
 const CONTEXT: SnapshotContext = {
   workspace: '/home/me/workspace',
-  dataFolder: '/home/me/workspace/data',
   homeDir: '/home/me',
   hostTimeZone: 'UTC',
 };
@@ -96,7 +95,7 @@ You are my health coach.`,
       model: 'opus',
       effort: null,
       permissions: 'ask',
-      workingDirectory: '/home/me/workspace/data',
+      workingDirectory: '/home/me/workspace',
       instructions: 'You help with everyday questions.',
     });
     expect(result.agents.get('health')).toMatchObject({

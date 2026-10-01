@@ -54,7 +54,7 @@ export interface Agent {
   /** One of `provider`'s levels; null lets the provider choose. */
   effort: Effort | null;
   permissions: PermissionMode;
-  /** The folder it works in, absolute: its own, or the data folder. */
+  /** The folder it works in, absolute: its own, or the workspace. */
   workingDirectory: string;
   /** Whether `Pero.md`'s body precedes its own instructions. */
   sharedInstructions: boolean;
@@ -168,10 +168,11 @@ export interface TopicLookup {
 }
 
 export interface SnapshotContext {
-  /** The workspace, which relative `working-directory` paths start from. */
+  /**
+   * Absolute; where Agents work unless their note says otherwise, and
+   * where relative `working-directory` paths start from.
+   */
   workspace: string;
-  /** Absolute; where Agents work unless their note says otherwise. */
-  dataFolder: string;
   homeDir: string;
   /** For `Pero.md` without a `timezone`. */
   hostTimeZone: string;
@@ -475,7 +476,7 @@ function defineAgent(
     permissions: note.permissions ?? defaults.permissions,
     workingDirectory:
       note.workingDirectory === null
-        ? context.dataFolder
+        ? context.workspace
         : resolvePath(
             note.workingDirectory,
             context.workspace,

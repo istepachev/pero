@@ -13,7 +13,7 @@ const notes: AgentView = {
   model: null,
   effort: null,
   workingDirectory: null,
-  effectiveWorkingDirectory: '/vault',
+  effectiveWorkingDirectory: '/home/ws',
   instructions: null,
   useSharedInstructions: true,
   permissions: 'ask',
@@ -27,7 +27,7 @@ const notes: AgentView = {
     model: 'default',
     effort: 'default',
     permissions: 'default',
-    workingDirectory: 'data',
+    workingDirectory: 'workspace',
   },
   errors: [],
 };
@@ -99,7 +99,7 @@ describe('formatAgentList', () => {
       [
         'NAME     PROVIDER  MODEL    EFFORT   FOLDER                PERMISSIONS  STATE     TOPICS  NOTE',
         'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code    data/Settings/Agents/Coder.md',
-        'notes *  claude    default  default  /vault (data folder)  ask          enabled   —       data/Settings/Agents/Notes.md',
+        'notes *  claude    default  default  /home/ws (workspace)  ask          enabled   —       data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
       ].join('\n'),
@@ -117,7 +117,7 @@ describe('formatAgentList', () => {
       [
         'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPICS           NOTE',
         'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health, Running  data/Settings/Agents/Health.md',
-        'notes *   claude    opus    default  /vault (data folder)  ask          enabled  —                data/Settings/Agents/Notes.md',
+        'notes *   claude    opus    default  /home/ws (workspace)  ask          enabled  —                data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
         '! its note has errors, so its last good version is in use; pero check lists them',

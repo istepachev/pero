@@ -127,5 +127,5 @@ export function describeNextTurn(turn: NextTurn): string {
 
 function folder(agent: AgentView): string {
   if (agent.workingDirectory !== null) return agent.effectiveWorkingDirectory;
-  return `${agent.effectiveWorkingDirectory} (data folder)`;
+  return `${agent.effectiveWorkingDirectory} (workspace)`;
 }

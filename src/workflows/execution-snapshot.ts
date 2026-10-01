@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { type AgentRequest, agentRequest } from '../agents/agent-request.js';
+import {
+  type AgentRequest,
+  agentRequest,
+  type InstructionDefaults,
+} from '../agents/agent-request.js';
 import {
   PROVIDERS,
   providerOptionsSchema,
@@ -68,7 +72,7 @@ export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
  */
 export function executionSnapshot(
   agent: Agent,
-  defaults: { sharedInstructions: string | null },
+  defaults: InstructionDefaults,
   input: string,
   history?: HistoryRead,
 ): ExecutionSnapshot {

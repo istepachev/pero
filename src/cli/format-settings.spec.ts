@@ -9,7 +9,7 @@ const workspace: SettingsView = {
     claude: { model: 'opus', effort: null },
     codex: { model: null, effort: null },
   },
-  defaultWorkingDirectory: '/home/me/workspace/data',
+  dataFolder: '/home/me/workspace/data',
   sharedInstructions: 'Be calm and brief.\nReply in my language.',
   mainAgent: 'main',
   historyCarryover: 50,

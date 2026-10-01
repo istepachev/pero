@@ -29,9 +29,18 @@ const EDIT_TOOLS: Readonly<Record<string, string>> = {
  * Folders and files that configure Claude Code, Git, editors, or the
  * shell. Claude Code asks before editing them even when it accepts edits,
  * since they can run commands or grant permissions, so they keep asking.
+ * So do Pero's own state folder and `.env` with the bot token, which sit
+ * in the workspace Agents work in by default.
  */
-const CONFIG_FOLDERS = new Set(['.claude', '.git', '.vscode', '.idea']);
+const CONFIG_FOLDERS = new Set([
+  '.claude',
+  '.git',
+  '.vscode',
+  '.idea',
+  '.pero',
+]);
 const CONFIG_FILES = new Set([
+  '.env',
   '.mcp.json',
   '.claude.json',
   '.gitconfig',

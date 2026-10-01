@@ -16,8 +16,8 @@ export interface AgentOrigins {
   model: ValueOrigin;
   effort: ValueOrigin;
   permissions: ValueOrigin;
-  /** Its own `working-directory`, or else the data folder. */
-  workingDirectory: 'note' | 'data';
+  /** Its own `working-directory`, or else the workspace. */
+  workingDirectory: 'note' | 'workspace';
 }
 
 /**
@@ -36,6 +36,6 @@ export function agentOrigins(
     model: from(note.model, `${agent.provider}-model`),
     effort: from(note.effort, `${agent.provider}-effort`),
     permissions: from(note.permissions, 'permissions'),
-    workingDirectory: note.workingDirectory === null ? 'data' : 'note',
+    workingDirectory: note.workingDirectory === null ? 'workspace' : 'note',
   };
 }

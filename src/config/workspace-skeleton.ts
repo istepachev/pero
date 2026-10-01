@@ -63,30 +63,17 @@ const MAIN_NOTE = `---
 You help with everyday questions and keep my notes tidy.
 `;
 
-const TEMPLATE_NOTE = `---
-# The starting point for the Agent of a new topic: Pero copies these
-# properties and this text, and sets topics to the topic's title.
-# Files whose names start with _ are never Agents themselves.
-# provider: claude
-# model: sonnet
-# effort: high
-# permissions: ask
----
-You are my assistant for this topic.
-`;
-
 /** The notes `pero init` writes, by their path in the settings folder. */
 export const SKELETON_NOTES: Readonly<Record<string, string>> = {
   'Pero.md': PERO_NOTE,
   'Agents/Main.md': MAIN_NOTE,
-  'Agents/_Template.md': TEMPLATE_NOTE,
 };
 
 /**
  * Makes `dir` a workspace, writing what is missing of the skeleton and
  * never overwriting a file: `.gitignore` listing `.env`, `.pero/` with its
  * `.gitignore` and a commented `config.yaml`, and in the settings folder
- * `Pero.md`, `Agents/Main.md`, `Agents/_Template.md`, and `Workflows/`.
+ * `Pero.md`, `Agents/Main.md`, and `Workflows/`.
  * In a cloned workspace it only fills in what is missing, and an existing
  * `config.yaml` decides where the settings folder is.
  */
@@ -140,7 +127,6 @@ export function initWorkspace(
   file(join(settings, 'Pero.md'), PERO_NOTE);
   folder(join(settings, 'Agents'));
   file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
-  file(join(settings, 'Agents', '_Template.md'), TEMPLATE_NOTE);
   const workflows = join(settings, 'Workflows');
   entries.push({
     path: `${shown(workflows)}/`,
