@@ -26,11 +26,12 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
    ```sh
    npm install -g @perokit/pero
-   pero init ~/workspace
-   cd ~/workspace && pero run
+   pero run
    ```
 
-   `pero init` makes the workspace: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. On first run, Pero asks for what it still needs: your Telegram bot token and a provider sign-in. You can stop at any step and run `pero run` again later to continue. (A `pero run` with no workspace offers to make one.)
+   From your home folder, `pero run` offers to make the workspace in `~/workspace`: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. (From another folder, it offers that folder.) Then it asks for what it still needs: your Telegram bot token and a provider sign-in. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
+
+   To make a workspace without starting Pero, such as from a script or in another folder, run `pero init <dir>`. It only writes what's missing, so it also fills in a cloned workspace.
 
 2. **Create a Telegram bot** with [@BotFather](https://t.me/BotFather), then paste its token when `pero run` asks for it.
 
