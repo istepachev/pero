@@ -5,11 +5,11 @@
 | Command | What it runs | Where |
 |---|---|---|
 | `npm test` | Unit tests: services against a real temporary SQLite database, adapters against mocked SDKs and a mocked Bot API | CI |
-| `npm run test:e2e` | Builds, then starts real daemons in-process on temporary workspaces (and a few legacy data directories), drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Agents use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
+| `npm run test:e2e` | Builds, then starts real daemons in-process on temporary workspaces, drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Agents use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
 | `npm run test:smoke` | Builds, then runs real Claude and Codex turns through the built runtime adapters. Each is skipped unless enabled, uses a little of the subscription, and never runs in CI. | By hand, on the host |
 | `node scripts/check-doc-links.js` | Checks that every relative link in the committed Markdown files resolves, headings included | CI |
 | `node bin/pero.js check --workspace examples/workspace` | Checks the [example workspace](../examples/workspace/) as committed, after the build | CI |
-| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory: `init`, `run`, what Git commits, a backup with the data folder restored into a `git clone` of the workspace, and a legacy data directory's backup restored into a fresh data directory and into a workspace | CI |
+| `bash scripts/check-packed-install.sh` | Installs the `npm pack` artifact into a temporary global prefix and drives `pero` from a fresh home directory: `run` without a workspace, `init`, `run`, what Git commits, and a backup with the data folder restored into a `git clone` of the workspace | CI |
 
 ## Provider smoke tests under the service's account
 
@@ -63,94 +63,66 @@ To see the Telegram path work end to end before any provider is set up, run Pero
 7. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and its Agent keeps answering with the last good version. `pero check` lists the error.
 8. Stop Pero and start it without `PERO_FAKE_RUNTIME` to use the real providers.
 
-## Phase 2 exit criteria
+## Where each behavior is verified
 
-Where each [Phase 2 exit criterion](./IMPLEMENTATION_PLAN.md#phase-2-exit-criteria) is verified. `test/phase2.e2e-spec.ts` walks through them in one story with the fake Bot API and the echo runtime.
+The tests that matter most guard the boundaries that could lose or misroute work. `test/interactive.e2e-spec.ts` walks through the interactive path in one story with the fake Bot API and the echo runtime.
 
-| Criterion | Verified by |
+### The daemon and the CLI
+
+| Behavior | Verified by |
 |---|---|
-| Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/phase2.e2e-spec.ts`; onboarding edge cases in `src/channels/note-agents.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
-| Two topics keep separate contexts while working in the same shared folder | `test/phase2.e2e-spec.ts`: separate Agents, Sessions, and provider sessions, both in the default folder |
-| An Agent with its own folder works there | `test/phase2.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts` |
-| The General topic and a direct chat reach the main Agent in separate Sessions | `test/phase2.e2e-spec.ts` |
-| A follow-up resumes the right provider session after a restart | `test/phase2.e2e-spec.ts`: each of four Channels resumes its own provider session in a new daemon; real resume from another process in both smoke tests |
-| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/phase2.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a Channel moved to another Agent |
-| Each Channel's history holds the text sent and received there, and nothing else | `test/phase2.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
-| A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/phase2.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
+| `pero init ~/workspace && cd ~/workspace && pero run` sets up a working Pero with its state in `.pero/` and its token in `.env` | `test/cli.e2e-spec.ts`: `init` and a run from home, and the token in `.env`; `test/daemon.e2e-spec.ts`: the state in `.pero/`; `scripts/check-packed-install.sh` |
+| Pero is ready without Telegram or providers, and keeps running when they fail | `test/control.e2e-spec.ts` |
+| One daemon runs per workspace, and a killed one never blocks the next start | `test/lifecycle.e2e-spec.ts`; `test/control.e2e-spec.ts` |
+| A CLI command never loads the database stack or the Telegram client | `test/cli.e2e-spec.ts`, with `test/fixtures/deny-daemon-deps.mjs` preloaded |
+| One migration creates a schema that holds only state | `src/persistence/persistence.module.spec.ts`: a fresh database matches the entities, and the migration reverts cleanly; `src/persistence/entities/domain-entities.spec.ts`: no Agent, Workflow, or settings table, and the constraints on each state table |
+
+### Conversations
+
+| Behavior | Verified by |
+|---|---|
+| Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/interactive.e2e-spec.ts`; onboarding edge cases in `src/channels/note-agents.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
+| Two topics keep separate contexts while working in the same shared folder | `test/interactive.e2e-spec.ts`: separate Agents, Sessions, and provider sessions, both in the default folder |
+| An Agent with its own folder works there | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts` |
+| The General topic and a direct chat reach the main Agent in separate Sessions | `test/interactive.e2e-spec.ts` |
+| A follow-up resumes the right provider session after a restart | `test/interactive.e2e-spec.ts`: each of four Channels resumes its own provider session in a new daemon; real resume from another process in both smoke tests |
+| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a Channel moved to another Agent |
+| Each Channel's history holds the text sent and received there, and nothing else | `test/interactive.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
+| A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/interactive.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
 | Codex and Claude subscription sign-ins each have a documented SDK smoke test under the service's account | `test/smoke/claude-runtime.smoke-spec.ts` and `test/smoke/codex-runtime.smoke-spec.ts`, run as in [the section above](#provider-smoke-tests-under-the-services-account) |
 
-## Phase 3 exit criteria
+### Notes and configuration
 
-Where each [Phase 3 exit criterion](./IMPLEMENTATION_PLAN.md#phase-3-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| A missed scheduled run is found after restart | `test/workflows.e2e-spec.ts`: one catch-up run for the times a schedule missed while Pero was down; `src/scheduler/schedule-tick.spec.ts`: missed times |
-| Duplicate polls create one run per trigger occurrence | `src/scheduler/schedule-tick.spec.ts`: one run per time however often it polls, and when polls overlap |
-| An interrupted run is visibly recorded and handled according to its policy | `test/workflows.e2e-spec.ts`: a run Pero stopped is recorded interrupted and retried as its Workflow allows; `src/workflows/workflow-runs.spec.ts` |
-| A scheduled Workflow reads each message in its Channel history window exactly once across runs | `src/workflows/workflow-runs.spec.ts`: adjacent windows across consecutive runs, and a retry reading the window of the run it retries; `test/restore.e2e-spec.ts` across a restore |
-
-## Phase 4 exit criteria
-
-Where each [Phase 4 exit criterion](./IMPLEMENTATION_PLAN.md#phase-4-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| A Workflow can notify a configured topic | `test/workflows.e2e-spec.ts`: notifies the Channels a Workflow names; `src/notifications/run-notifications.spec.ts` |
-| A daily Workflow can review the previous day's chats and deliver suggestions to a chosen topic, where the owner can reply to them | `test/restore.e2e-spec.ts`: a Workflow reading every Channel's history notifies a topic, and the next message there receives its suggestion; `test/workflows.e2e-spec.ts`: the next turn receives a delivered Notification; schedules as in Phase 3 |
-| A temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs | `test/workflows.e2e-spec.ts`: delivers a Notification once Telegram is back; `src/notifications/notification-delivery.spec.ts`: retries after backoff without another run |
-| Restore brings back definitions and resumable Sessions | `test/restore.e2e-spec.ts`, which follows the drill in [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine): the notes come back with the cloned workspace and the state with the backup, and every Channel resumes its provider session, and a Channel whose provider conversation is gone continues in a fresh Session with its history; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh` for `pero backup` and `pero restore` themselves |
-
-## Phase 5 exit criteria
-
-Where each [Phase 5 exit criterion](./IMPLEMENTATION_PLAN.md#phase-5-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| `pero init ~/workspace && cd ~/workspace && pero run` sets up a working Pero with its state in `.pero/` and its token in `.env` | `test/cli.e2e-spec.ts`: `init` and a run from home, and the token of a workspace in its `.env`; `test/daemon.e2e-spec.ts`: the state in `.pero/`; `scripts/check-packed-install.sh` |
-| Committing the workspace commits `config.yaml` and nothing secret | `scripts/check-packed-install.sh`: `git add -A` in a running workspace stages `config.yaml` and the notes, not `.env`, the database, logs, or `run/`; `test/cli.e2e-spec.ts` and `src/config/env-file.spec.ts`: `pero status` reports a `.env` Git would commit |
-| Allowed chats can be changed by editing `config.yaml` | `src/host-config/host-config.service.spec.ts`: chats added or removed by hand are served or turned away from the next look, and a broken edit keeps the last valid version; `test/cli.e2e-spec.ts`: `telegram allow` and `deny` edit the file while Pero is stopped, and an invalid file stops startup |
-| Backups restore into a cloned workspace | `test/restore.e2e-spec.ts`: a workspace restored into a fresh clone at its path, with its data folder, resumes every Session; `test/cli.e2e-spec.ts`: a clone keeps its `config.yaml` and data files; `src/cli/restore.spec.ts`; `scripts/check-packed-install.sh`: a `git clone` |
-| A legacy data directory still works unchanged | Until plan step 8.5, which leaves it no Agents: `test/cli.e2e-spec.ts` with `--data-dir` runs, backs up, and restores one, and `test/channels.e2e-spec.ts` has it say to run `pero migrate`; `test/cli.e2e-spec.ts` and `scripts/check-packed-install.sh`: a legacy backup restored into a workspace, its token in `.env` |
-
-## Phase 6 exit criteria
-
-Where each [Phase 6 exit criterion](./IMPLEMENTATION_PLAN.md#phase-6-exit-criteria) is verified.
-
-| Criterion | Verified by |
+| Behavior | Verified by |
 |---|---|
 | `pero check` validates any workspace with or without Pero, including in CI | `test/check.e2e-spec.ts`: without Pero, including `--json`; `test/settings-notes.e2e-spec.ts`: topic titles through the daemon; `src/settings-files/check.spec.ts` and `src/settings-files/snapshot.spec.ts`; the CI step that checks the example workspace |
 | The running daemon keeps an up-to-date snapshot of the notes, and `pero status` reports broken ones | `src/settings-files/reload.spec.ts`: an edit within one scan, a note caught mid-write, last good versions, and 500 notes; `src/settings/settings-notes.service.spec.ts` and `test/settings-notes.e2e-spec.ts`: the `settings` component |
-| Behaviour is otherwise unchanged | The full suite, unchanged by phase 6 |
-
-## Phase 7 exit criteria
-
-Where each [Phase 7 exit criterion](./IMPLEMENTATION_PLAN.md#phase-7-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| All runtime code reads definitions through `Definitions`, synchronously | `src/settings/definitions.spec.ts`; `src/settings/settings-notes.service.spec.ts`: the notes load before the startup of modules that read them |
-| State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name Agents and Workflows that no row holds, and one schedule row per Workflow name |
-| Every existing installation can be converted to a workspace with `pero migrate`, and its snapshot matches its database | `src/migrate/migrate-installation.spec.ts`: notes that `pero check` passes and whose snapshot matches the database, conflicts, split schedules, and an untouched source; `test/migrate.e2e-spec.ts`: an installation in use carries on as a workspace |
-
-## Phase 8 exit criteria
-
-Where each [Phase 8 exit criterion](./IMPLEMENTATION_PLAN.md#phase-8-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| Agents, their prompts, defaults, and which topic each answers are configured only by notes, and changes apply within 10 seconds | `test/agent-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, and `topics`; `src/channels/note-agents.spec.ts`: routing by `topics`; `test/cli.e2e-spec.ts`: no command changes them; `src/persistence/entities/domain-entities.spec.ts`: no Agent or settings table |
+| Runtime code reads definitions synchronously, loaded before anything reads them | `src/settings/definitions.spec.ts`; `src/settings/settings-notes.service.spec.ts`: the notes load before the startup of modules that read them |
+| Agents, their prompts, defaults, and which topic each answers are configured only by notes, and changes apply within 10 seconds | `test/agent-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, and `topics`; `src/channels/note-agents.spec.ts`: routing by `topics`; `test/cli.e2e-spec.ts`: no command changes them |
 | New topics create notes | `src/channels/note-agents.spec.ts`: one note when the topic's creation and first message race, the template, numbering, renames, and `new-topics: main-agent`; `test/example-workspace.e2e-spec.ts` |
+| State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name Agents and Workflows that no row holds, and one schedule row per Workflow name |
 | Claude `ask` Agents can't change configuration without asking | `src/runtimes/claude/edit-policy.spec.ts`: an edit under the settings folder, through a symlink or `../`, asks; `src/runtimes/claude/claude-runtime.spec.ts`: refused in a Workflow run; the Claude smoke test |
-| A migrated installation answers every topic as before | `test/migrate.e2e-spec.ts`: each topic answered by its Agent, resuming its Session |
-
-## Phase 9 exit criteria
-
-Where each [Phase 9 exit criterion](./IMPLEMENTATION_PLAN.md#phase-9-exit-criteria) is verified.
-
-| Criterion | Verified by |
-|---|---|
-| Workflows, their schedules, prompts, and targets are configured only by notes | `test/workflows.e2e-spec.ts`: Workflows served from their notes, each edit applying, across a restart; `test/cli.e2e-spec.ts`: no command changes them; `src/persistence/entities/domain-entities.spec.ts`: the schema holds only state |
-| Schedule edits apply within 10 seconds without spurious catch-up runs | `src/scheduler/schedule-tick.spec.ts`: an edit moves the next run at once, a changed schedule catches nothing up, and a renamed note starts afresh; `test/workflows.e2e-spec.ts` |
-| Recovery, retries, and notifications behave as before | `test/workflows.e2e-spec.ts`: one catch-up run after downtime, interrupted runs retried as a Workflow allows, cancellation, and Notifications kept across a restart; `src/scheduler/schedule-tick.spec.ts`: catch-up only for notes that still exist and are enabled |
 | Broken notes are reported in Telegram once | `src/notifications/broken-note-reports.spec.ts`: once per broken version, nothing for a fix, one message per Channel, and only logs at startup; `test/workflows.e2e-spec.ts`: in the Workflow's Channel |
+| Allowed chats can be changed by editing `config.yaml` | `src/host-config/host-config.service.spec.ts`: chats added or removed by hand are served or turned away from the next look, and a broken edit keeps the last valid version; `test/cli.e2e-spec.ts`: `telegram allow` and `deny` edit the file while Pero is stopped, and an invalid file stops startup |
+| Committing the workspace commits `config.yaml` and nothing secret | `scripts/check-packed-install.sh`: `git add -A` in a running workspace stages `config.yaml` and the notes, not `.env`, the database, logs, or `run/`; `test/cli.e2e-spec.ts` and `src/config/env-file.spec.ts`: `pero status` reports a `.env` Git would commit |
+
+### Workflows and Notifications
+
+| Behavior | Verified by |
+|---|---|
+| Workflows, their schedules, prompts, and targets are configured only by notes | `test/workflows.e2e-spec.ts`: Workflows served from their notes, each edit applying, across a restart; `test/cli.e2e-spec.ts`: no command changes them |
+| Schedule edits apply within 10 seconds without spurious catch-up runs | `src/scheduler/schedule-tick.spec.ts`: an edit moves the next run at once, a changed schedule catches nothing up, and a renamed note starts afresh; `test/workflows.e2e-spec.ts` |
+| A missed scheduled run is found after restart | `test/workflows.e2e-spec.ts`: one catch-up run for the times a schedule missed while Pero was down; `src/scheduler/schedule-tick.spec.ts`: missed times, and catch-up only for notes that still exist and are enabled |
+| Duplicate polls create one run per trigger occurrence | `src/scheduler/schedule-tick.spec.ts`: one run per time however often it polls, and when polls overlap |
+| An interrupted run is visibly recorded and handled according to its policy | `test/workflows.e2e-spec.ts`: a run Pero stopped is recorded interrupted and retried as its Workflow allows, and cancellation; `src/workflows/workflow-runs.spec.ts` |
+| A scheduled Workflow reads each message in its Channel history window exactly once across runs | `src/workflows/workflow-runs.spec.ts`: adjacent windows across consecutive runs, and a retry reading the window of the run it retries; `test/restore.e2e-spec.ts` across a restore |
+| A Workflow can notify a configured topic | `test/workflows.e2e-spec.ts`: notifies the Channels a Workflow names; `src/notifications/run-notifications.spec.ts` |
+| A daily Workflow can review the previous day's chats and deliver suggestions to a chosen topic, where the owner can reply to them | `test/restore.e2e-spec.ts`: a Workflow reading every Channel's history notifies a topic, and the next message there receives its suggestion; `test/workflows.e2e-spec.ts`: the next turn receives a delivered Notification |
+| A temporary Telegram delivery failure remains visible and retries without creating duplicate Workflow Runs | `test/workflows.e2e-spec.ts`: delivers a Notification once Telegram is back, and keeps Notifications across a restart; `src/notifications/notification-delivery.spec.ts`: retries after backoff without another run |
+
+### Backup and restore
+
+| Behavior | Verified by |
+|---|---|
+| Restore brings back definitions and resumable Sessions | `test/restore.e2e-spec.ts`, which follows the drill in [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine): the notes come back with the cloned workspace and the state with the backup, every Channel resumes its provider session, and a Channel whose provider conversation is gone continues in a fresh Session with its history |
+| Backups restore into a cloned workspace | `test/restore.e2e-spec.ts`: a workspace restored into a fresh clone at its path, with its data folder; `test/cli.e2e-spec.ts`: a clone keeps its `config.yaml` and data files; `src/cli/restore.spec.ts`; `scripts/check-packed-install.sh`: a `git clone` |

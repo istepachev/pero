@@ -1,6 +1,6 @@
 # Operating Pero
 
-How to install and upgrade Pero, including from 0.1, where its credentials and data live, what its message history keeps, and how to back it up and bring it back on another machine.
+How to install and upgrade Pero, where its credentials and data live, what its message history keeps, and how to back it up and bring it back on another machine.
 
 ## Install and upgrade
 
@@ -47,56 +47,6 @@ pero stop && pero run
 
 A running Pero keeps the version it started with until it is restarted.
 
-### Upgrading from 0.1
-
-Pero 0.1 kept its Agents, Workflows, and settings in the database of its data directory, `~/.pero` (or the one `--data-dir` or `PERO_HOME` names), and changed them through commands. Pero 0.2 runs in a workspace and reads them from notes ([Configuring Pero](./CONFIGURATION.md)). A 0.2 Pero started on a data directory has no Agents and says to migrate it. `pero migrate` converts one into the other while Pero is stopped, and leaves the data directory as it was, so 0.1 stays a fallback.
-
-1. **Back up with 0.1,** while it runs, then stop it, or its service:
-
-   ```sh
-   pero backup ~/backups/pero-0.1.tgz
-   pero stop                          # or: systemctl --user stop pero
-   ```
-
-2. **Install 0.2:**
-
-   ```sh
-   npm install -g @perokit/pero
-   ```
-
-   Don't `pero run` it before migrating: on the data directory, it would answer no topic, and would migrate the database there to a schema 0.1 can't read.
-
-3. **Migrate** into a new workspace. Add `--data-dir <dir>` for a data directory other than `~/.pero`:
-
-   ```sh
-   pero migrate ~/workspace
-   ```
-
-   It copies the database while holding the data directory's lock, and writes:
-   - `.pero/config.yaml`, with the old default working directory as the data folder and the allowed chats;
-   - `Settings/Pero.md` in the data folder, from the installation settings, with the shared instructions as its body;
-   - a note per Agent, with its instructions as the body, only the properties that differ from `Pero.md`, and `topics` listing the titles of the topics it answered;
-   - a note per Workflow, with its input as the body, its schedule as `day`, `hour`, and `minute` (or `cron`), and the topics it notified as `channel`;
-   - the rest of `pero init`'s skeleton, the bot token in `.env`, and the database in `.pero/`, last.
-
-   Names are kept, so every Session, message, and run carries on, and schedules keep their saved times, so no run is missed or repeated. The command lists what notes say differently, such as a disabled Channel (its topic now goes to the Agent that claims it) or a Workflow with several schedules (one note per schedule, `Evening review 1.md` and `Evening review 2.md`). It ends with `pero check` and exits 1 on problems. When two topics with the same title were answered by different Agents, it stops before writing anything: rename one of them in Telegram while 0.1 runs, then migrate again.
-
-4. **Start Pero** from the workspace, and check it:
-
-   ```sh
-   cd ~/workspace && pero run
-   pero status
-   pero agents          # each Agent, its note, and its topics
-   pero channels        # the Agent each topic goes to now
-   pero workflows       # each Workflow's schedule and next run
-   ```
-
-   A service needs the workspace too: `ExecStart=/usr/bin/env pero run --foreground --workspace %h/workspace`, as [above](#install-and-upgrade).
-
-Pero 0.1's setup proposed the folder it was started from as the working folder, or `~/workspace` from the home folder. When the old working folder is `~/workspace`, `pero migrate ~/workspace` makes it the workspace itself, with `data: .`, and the notes go in `~/workspace/Settings/`. The Agents then work in the workspace root, next to `.env` and `.pero/config.yaml`, so they can read the bot token and edit the allowed chats. To keep those out of their folder, migrate into a folder of its own instead, such as `pero migrate ~/pero`: `config.yaml` then names `~/workspace` as the data folder. Commands find that workspace from inside it, or everywhere with `export PERO_WORKSPACE="$HOME/pero"` in your shell profile.
-
-Once 0.2 works, move `~/.pero` aside (`mv ~/.pero ~/pero-0.1`): a command run outside any workspace otherwise still finds it. To go back to 0.1, stop 0.2, move `~/.pero` back, and `npm install -g @perokit/pero@0.1`; what happened since the upgrade stays in the workspace.
-
 ## Configuration
 
 Agents, Workflows, and the installation defaults are notes in the workspace, and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Pero applies edits to them while it runs. A few settings are read when Pero starts, from its command line and environment:
@@ -104,15 +54,14 @@ Agents, Workflows, and the installation defaults are notes in the workspace, and
 | Setting | Source | Default |
 |---|---|---|
 | Workspace | `--workspace`/`-w` (any `pero` command, before or after its name), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/` | none |
-| Legacy data directory | `--data-dir`, then `PERO_HOME`; used when no workspace is given or found | `~/.pero` |
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
-| Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then the workspace's `.env` (or `secrets/telegram-bot-token` in a legacy data directory) | none |
+| Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then the workspace's `.env` | none |
 | Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
 | Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every Agent answers `echo: <message>` instead of running Claude or Codex | unset |
 
-A workspace keeps Pero's state in its `.pero/` folder, which is laid out like a data directory; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace, or the data directory marked `(legacy)`. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.
+A workspace keeps Pero's state in its `.pero/` folder; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.
 
-Pero creates the data directory (`logs/`, `run/`, `secrets/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting. `pero run` passes its own environment to the daemon it starts.
+Pero creates `.pero/` (with `logs/` and `run/`) owner-only on startup and appends JSON logs to `logs/pero.log`; `--foreground` also writes them to stdout. Invalid values stop startup with a message naming the setting. `pero run` passes its own environment to the daemon it starts.
 
 ## Credentials
 
@@ -125,11 +74,11 @@ Pero keeps no provider credentials of its own. It runs Claude Code and Codex wit
 
 Pero never passes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, or `CODEX_API_KEY` on, so a key in its environment cannot switch you to API billing. When a sign-in expires, `pero status` shows that provider `degraded`; sign in again as the same account and run `pero run` to check again.
 
-The Telegram bot token is Pero's one secret. It comes from `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment when that is set, otherwise from the workspace's `.env` (`PERO_TELEGRAM_BOT_TOKEN=…`, a file a systemd `EnvironmentFile=` can read too), or from `secrets/telegram-bot-token` in a legacy data directory. Either file is owner-only and never shown or logged; Pero refuses to read a `.env` that group or others can read, and `pero status` says which `chmod` fixes it. Storing the token writes `.env` atomically, keeping its other lines, and adds `.env` to the workspace's `.gitignore`. When the workspace is in a Git repository, `pero status` reports an error if Git tracks `.env` or would not ignore it. To change it, including after revoking it with @BotFather `/revoke`, run `printf '%s' "$TOKEN" | pero telegram token`; a running Pero switches without a restart. Telegram delivers a bot's updates to one poller at a time, so never run two Peros with the same token: the second shows Telegram `degraded` because another process polls the bot.
+The Telegram bot token is Pero's one secret. It comes from `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment when that is set, otherwise from the workspace's `.env` (`PERO_TELEGRAM_BOT_TOKEN=…`, a file a systemd `EnvironmentFile=` can read too). It is owner-only and never shown or logged; Pero refuses to read a `.env` that group or others can read, and `pero status` says which `chmod` fixes it. Storing the token writes `.env` atomically, keeping its other lines, and adds `.env` to the workspace's `.gitignore`. When the workspace is in a Git repository, `pero status` reports an error if Git tracks `.env` or would not ignore it. To change it, including after revoking it with @BotFather `/revoke`, run `printf '%s' "$TOKEN" | pero telegram token`; a running Pero switches without a restart. Telegram delivers a bot's updates to one poller at a time, so never run two Peros with the same token: the second shows Telegram `degraded` because another process polls the bot.
 
 ## Data layout
 
-Everything Pero owns is in its state directory: a workspace's `.pero/`, or a legacy data directory (`~/.pero` unless `--data-dir` or `PERO_HOME` names another):
+Everything Pero owns is in the workspace's `.pero/`:
 
 ```text
 ~/workspace/.pero/       # owner-only
@@ -138,9 +87,7 @@ Everything Pero owns is in its state directory: a workspace's `.pero/`, or a leg
 │   ├── pero.log         # daemon logs, JSON lines, without message text
 │   └── daemon.out       # raw output of a daemon started by `pero run`
 ├── run/                 # control socket, lock, and process metadata while Pero runs
-├── config.yaml          # the data folder and the chats Pero serves; commit it in a workspace
-└── secrets/             # a legacy data directory only; a workspace uses .env
-    └── telegram-bot-token
+└── config.yaml          # the data folder and the chats Pero serves; commit it
 ```
 
 `config.yaml` holds what describes the installation, and that an Agent working in the data folder must not change:
@@ -154,9 +101,9 @@ telegram:
     - id: 123456789      # a direct chat: your user ID
 ```
 
-- **Created on first start.** A workspace gets `data: data` (the folder is created when missing); an existing installation gets its default working directory, relative to the workspace when it is inside it. The allowed chats move from the database into the file once, keeping their titles.
+- **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` and no allowed chats. The default `data/` folder is created when missing.
 - **Edited with comments kept.** `pero telegram allow` and `deny`, and a chat's new ID when a group turns on topics, change only their own lines, read the file again right before, and replace it in one step.
-- **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason. In a workspace, a `data` folder that doesn't exist stops it too; a legacy data directory only warns.
+- **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason, and so does a `data` folder other than the default that doesn't exist.
 - **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
 - **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
 
@@ -166,7 +113,7 @@ The database holds only state; Agents, Workflows, and the defaults are notes:
 - **Message history:** the text of each Channel (see below).
 - **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
 
-Outside the data directory:
+Outside `.pero/`:
 - **Working folders:** the data folder and each Agent's own folder. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
 - **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
 - **Provider sign-ins:** listed under [Credentials](#credentials).
@@ -190,7 +137,7 @@ History is kept until you set `history-retention-days`; then messages older than
 pero backup ~/backups/pero-$(date +%F).tgz
 ```
 
-`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml` and a manifest as an owner-only gzip tar. The file must be outside the state directory; one already at that path is replaced. Logs, `run/`, and `.env` are never in it, so a backup has no bot token. The backup holds your message history, so keep it as private as the state directory.
+`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml` and a manifest as an owner-only gzip tar. The file must be outside `.pero/`; one already at that path is replaced. Logs, `run/`, and `.env` are never in it, so a backup has no bot token. The backup holds your message history, so keep it as private as `.pero/`.
 
 `--include-data` adds the data folder, as it is at that moment, for when it isn't in Git or synced elsewhere. Only its files and folders are included, not links, and neither `.pero/` nor `.env` should they be inside it. The file must then be outside the data folder too.
 

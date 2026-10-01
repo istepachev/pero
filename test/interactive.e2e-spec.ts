@@ -31,10 +31,10 @@ import {
 } from '../src/telegram/testing/fake-bot-api.js';
 
 /*
- * The Phase 2 exit criteria as one story, through the fake Bot API and the
- * echo runtime, in a workspace: pairing, topic onboarding, the main
- * Agent's General topic and direct chat, a daemon restart, and provider
- * and folder changes made in notes.
+ * The interactive path as one story, through the fake Bot API and the
+ * echo runtime: pairing, topic onboarding, the main Agent's General topic
+ * and direct chat, a daemon restart, and provider and folder changes made
+ * in notes.
  */
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -59,7 +59,7 @@ const KITCHEN_KEY = `${FORUM.id}:${KITCHEN}`;
 const GENERAL_KEY = String(FORUM.id);
 const DIRECT_KEY = String(DIRECT.id);
 
-describe('Phase 2 end to end (e2e)', () => {
+describe('Interactive path end to end (e2e)', () => {
   let tmp: string;
   let workspace: string;
   let vault: string;

@@ -4,7 +4,7 @@ For people using Pero:
 
 - [User guide](./USER_GUIDE.md) — first-run setup, Telegram, Agents and permissions, and Workflows.
 - [Configuring Pero](./CONFIGURATION.md) — the workspace, `.env`, `config.yaml`, and every property of `Pero.md`, Agent notes, and Workflow notes; how edits apply, and what Pero writes.
-- [Operating Pero](./OPERATIONS.md) — install and upgrade (including from 0.1), credentials, data layout, message history, backup, and restoring on a fresh machine.
+- [Operating Pero](./OPERATIONS.md) — install and upgrade, credentials, data layout, message history, backup, and restoring on a fresh machine.
 - [CLI reference](./CLI.md) — every command and what it does.
 
 For people working on Pero:
@@ -16,8 +16,8 @@ For people working on Pero:
 1. [Architecture](./ARCHITECTURE.md) — domain vocabulary, module boundaries, configuration loading, data model, request and workflow flows, recovery, and scaling path.
 2. [Tech stack](./TECH_STACK.md) — chosen technologies, deployment shape, configuration, and operational rules.
 3. [CLI and service lifecycle](./CLI.md) — installation, first run, commands, background process, and local files.
-4. [Implementation plan](./IMPLEMENTATION_PLAN.md) — build order, split into pull requests with acceptance criteria: phases 1–4 for 0.1, and phases 5–10, which moved configuration into files, for 0.2.
-5. [Testing](./TESTING.md) — test layers, provider smoke tests under the service's account, a manual check with a real bot, and where each phase's exit criteria are verified.
+4. [Roadmap](./ROADMAP.md) — the next release, open items, and what was decided against.
+5. [Testing](./TESTING.md) — test layers, provider smoke tests under the service's account, a manual check with a real bot, and which tests verify each behavior.
 6. [Operating Pero](./OPERATIONS.md) — install and upgrade, credentials, data layout, message history, backup, and restoring on a fresh machine.
 
 ## Decision snapshot
