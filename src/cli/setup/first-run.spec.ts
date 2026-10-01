@@ -73,11 +73,19 @@ describe('configOrNewWorkspace', () => {
     answer?: boolean;
     clis?: Record<Provider, CliState>;
     pick?: Provider;
+    /** The data folder picked; the one selected first when not given. */
+    folder?: string;
     inputs?: string[];
     checkProviders?: boolean;
   }) {
     const confirm = vi.fn(() => Promise.resolve(options.answer ?? true));
-    const select = vi.fn(() => Promise.resolve(options.pick ?? 'claude'));
+    const select = vi.fn((question: { message: string; initial?: string }) =>
+      Promise.resolve(
+        question.message.includes('vault')
+          ? (options.folder ?? question.initial)
+          : (options.pick ?? 'claude'),
+      ),
+    );
     const inputs = [...(options.inputs ?? [])];
     const input = vi.fn(() => Promise.resolve(inputs.shift() ?? 'q'));
     const prompts = { confirm, select, input } as unknown as Prompts;
@@ -99,8 +107,8 @@ describe('configOrNewWorkspace', () => {
     return { result, confirm, select, input, clis };
   }
 
-  const peroNote = (workspace: string) =>
-    readFileSync(join(workspace, 'data', 'Settings', 'Pero.md'), 'utf8');
+  const peroNote = (workspace: string, data = 'data') =>
+    readFileSync(join(workspace, data, 'Settings', 'Pero.md'), 'utf8');
 
   it('makes ~/workspace when started from home and asked', async () => {
     const { result, confirm } = run({ cwd: home, interactive: true });
@@ -135,6 +143,66 @@ describe('configOrNewWorkspace', () => {
     await expect(
       run({ cwd: here, interactive: true }).result,
     ).resolves.toMatchObject({ config: { workspace: here } });
+  });
+
+  it('picks the data folder among the folders there, data/ first', async () => {
+    const here = join(tmp, 'notes');
+    for (const name of ['data', 'Journal', 'archive', '.git']) {
+      mkdirSync(join(here, name), { recursive: true });
+    }
+    writeFileSync(join(here, 'README.md'), '');
+
+    const { result, select } = run({ cwd: here, interactive: true });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(select).toHaveBeenCalledWith({
+      message: 'Which folder is the vault your Agents keep notes in?',
+      choices: [
+        { value: 'archive', name: 'archive/' },
+        { value: 'data', name: 'data/' },
+        { value: 'Journal', name: 'Journal/' },
+      ],
+      initial: 'data',
+    });
+    expect(readFileSync(join(here, '.pero', 'config.yaml'), 'utf8')).toMatch(
+      /^data: data$/m,
+    );
+  });
+
+  it('offers to create data/ when it is missing, and keeps the pick', async () => {
+    const here = join(tmp, 'notes');
+    mkdirSync(join(here, 'Vault'), { recursive: true });
+
+    const { result, select } = run({
+      cwd: here,
+      interactive: true,
+      folder: 'Vault',
+    });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(select).toHaveBeenCalledWith({
+      message: 'Which folder is the vault your Agents keep notes in?',
+      choices: [
+        { value: 'data', name: 'Create data/' },
+        { value: 'Vault', name: 'Vault/' },
+      ],
+      initial: 'data',
+    });
+    const config = readFileSync(join(here, '.pero', 'config.yaml'), 'utf8');
+    expect(config).toMatch(/^data: Vault$/m);
+    expect(config).toMatch(/^# settings: Vault\/Settings$/m);
+    expect(existsSync(join(here, 'data'))).toBe(false);
+    expect(peroNote(here, 'Vault')).toMatch(
+      /^provider: claude +# claude or codex$/m,
+    );
+  });
+
+  it('asks no data folder of a workspace that has its config.yaml', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, home);
+    mkdirSync(join(ws, 'Vault'));
+
+    const { result, select } = run({ cwd: ws, interactive: true });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(select).not.toHaveBeenCalled();
   });
 
   it('stops with the pero init to run when declined or not on a terminal', async () => {

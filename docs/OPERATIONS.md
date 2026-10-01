@@ -103,7 +103,7 @@ telegram:
     - id: 123456789      # a direct chat: your user ID
 ```
 
-- **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` and no allowed chats. The default `data/` folder is created when missing.
+- **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` (or the folder picked when `pero run` makes the workspace) and no allowed chats. The default `data/` folder is created when missing.
 - **Edited with comments kept.** `pero telegram allow` and `deny`, and a chat's new ID when a group turns on topics, change only their own lines, read the file again right before, and replace it in one step.
 - **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason, and so does a `data` folder other than the default that doesn't exist.
 - **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.

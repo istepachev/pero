@@ -61,6 +61,11 @@ describe('parseHostConfig', () => {
       settings: null,
       allowedChats: [],
     });
+    expect(parseHostConfig('config.yaml', defaultHostConfig('2024'))).toEqual({
+      data: '2024',
+      settings: null,
+      allowedChats: [],
+    });
   });
 
   it('names the file, line, and key of each problem', () => {

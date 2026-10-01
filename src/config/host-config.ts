@@ -9,6 +9,7 @@ import {
   LineCounter,
   parseDocument,
   type YAMLMap,
+  stringify,
   type YAMLSeq,
 } from 'yaml';
 import { z } from 'zod';
@@ -221,18 +222,21 @@ export function moveChatId(
   return true;
 }
 
-/** The commented `config.yaml` a new workspace starts with. */
-export function defaultHostConfig(): string {
+/**
+ * The commented `config.yaml` a new workspace starts with, its data folder
+ * `data`, relative to the workspace.
+ */
+export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
   return [
     "# Pero's host settings: where the data folder is and which chats Pero",
     '# serves. Commit this file; the bot token belongs in .env, never here.',
     '',
     '# Data folder: the vault Agents keep notes in. Relative to the workspace.',
     '# Changing it takes a restart.',
-    `data: ${DEFAULT_DATA_FOLDER}`,
+    `data: ${yamlScalar(data)}`,
     '',
     '# Settings folder. Relative to the workspace. Default: <data>/Settings',
-    '# settings: data/Settings',
+    `# settings: ${yamlScalar(`${data}/${SETTINGS_FOLDER}`)}`,
     '',
     'telegram:',
     '  # The chats Pero serves. Anyone who can post in an allowed group',
@@ -244,6 +248,11 @@ export function defaultHostConfig(): string {
     '  allowed-chats: []',
     '',
   ].join('\n');
+}
+
+/** `value` as a one-line YAML string, quoted when it must be. */
+function yamlScalar(value: string): string {
+  return stringify(value, { lineWidth: 0 }).trimEnd();
 }
 
 /**

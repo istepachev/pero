@@ -72,14 +72,16 @@ export const SKELETON_NOTES: Readonly<Record<string, string>> = {
 /**
  * Makes `dir` a workspace, writing what is missing of the skeleton and
  * never overwriting a file: `.gitignore` listing `.env`, `.pero/` with its
- * `.gitignore` and a commented `config.yaml`, and in the settings folder
- * `Pero.md`, `Agents/Main.md`, and `Workflows/`.
+ * `.gitignore` and a commented `config.yaml` naming `data` as the data
+ * folder (`data/` by default), and in the settings folder `Pero.md`,
+ * `Agents/Main.md`, and `Workflows/`.
  * In a cloned workspace it only fills in what is missing, and an existing
  * `config.yaml` decides where the settings folder is.
  */
 export function initWorkspace(
   dir: string,
   home?: string,
+  data?: string,
 ): { workspace: string; entries: SkeletonEntry[] } {
   if (isHomeFolder(dir, home)) {
     throw new WorkspaceInitError(
@@ -117,7 +119,7 @@ export function initWorkspace(
   folder(state, 0o700);
   file(join(state, '.gitignore'), STATE_GITIGNORE);
   const configFile = join(state, HOST_CONFIG_FILE);
-  file(configFile, defaultHostConfig());
+  file(configFile, defaultHostConfig(data));
 
   const settings = resolveSettingsFolder(
     readHostConfig(configFile) ?? { data: null, settings: null },
