@@ -1,6 +1,6 @@
 # Pero roadmap
 
-What comes next for Pero. Git keeps how it was built: the plan that led up to 0.2.0, phase by phase with each step's acceptance criteria and what was found while building it, is `docs/IMPLEMENTATION_PLAN.md` as of commit `d937419` (`git show d937419:docs/IMPLEMENTATION_PLAN.md`).
+What comes next for Pero.
 
 ## Open items
 

@@ -83,15 +83,8 @@ npm never lets a published version be reused, even after `npm unpublish`. To ste
 npm deprecate @perokit/pero@<version> "<why>. Install @perokit/pero@latest instead."
 ```
 
-### One-time setup
+### Publishing access
 
-The workflow publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token is stored in GitHub. A trusted publisher is configured on the package itself, and the package doesn't exist before its first publish, so the first release uses a short-lived token:
+The workflow publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no long-lived npm token is needed. On npmjs.com, `@perokit/pero` → Settings → Trusted Publisher names GitHub Actions with organization `perokit`, repository `pero`, workflow filename `release.yml`, and environment `npm`. Publishing by hand, or deprecating a version, needs an account in the `perokit` npm organization (`npm org ls perokit`).
 
-1. **npm organization.** Make sure the `perokit` organization exists on npmjs.com and your account can publish to it (`npm org ls perokit`).
-2. **Bootstrap token.** On npmjs.com, open Access Tokens → Generate New Token → Granular Access Token. Give it read and write access to packages in the `@perokit` scope (or to all packages), a 7-day expiry, and enable bypassing two-factor authentication. In the GitHub repository, open Settings → Secrets and variables → Actions and add it as the repository secret `NPM_TOKEN`.
-3. **GitHub.** If a tag ruleset covers `v*`, let GitHub Actions create tags. The workflow's `npm` environment is created the first time it runs; you can then restrict its deployment branches to `main` under Settings → Environments.
-4. **First release.** Merge the PR that sets the version. Once CI passes, the Release workflow publishes it. Check with `npm view @perokit/pero` and `npm install -g @perokit/pero && pero --version`.
-5. **Trusted publisher.** On npmjs.com, open `@perokit/pero` → Settings → Trusted Publisher, choose GitHub Actions, and enter organization `perokit`, repository `pero`, workflow filename `release.yml`, and environment `npm`.
-6. **Lock it down.** On the same page, set Publishing access to "Require two-factor authentication and disallow tokens". Revoke the bootstrap token on npm and delete the `NPM_TOKEN` secret from GitHub.
-
-Instead of steps 2 and 4, you can publish the first version yourself with `npm publish` from a clean checkout of `main`; the workflow then finds the version on npm and only creates the GitHub Release.
+The first release went out with a short-lived bootstrap token in the repository secret `NPM_TOKEN`, which `release.yml` still passes to `npm publish`. With the trusted publisher in place, finish the lockdown: on the same Settings page set Publishing access to "Require two-factor authentication and disallow tokens", revoke the bootstrap token, delete the `NPM_TOKEN` secret, and drop `NODE_AUTH_TOKEN` from the workflow.

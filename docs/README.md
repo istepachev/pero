@@ -13,12 +13,11 @@ For people working on Pero:
 
 ## Design docs
 
-1. [Architecture](./ARCHITECTURE.md) — domain vocabulary, module boundaries, configuration loading, data model, request and workflow flows, recovery, and scaling path.
-2. [Tech stack](./TECH_STACK.md) — chosen technologies, deployment shape, configuration, and operational rules.
-3. [CLI and service lifecycle](./CLI.md) — installation, first run, commands, background process, and local files.
-4. [Roadmap](./ROADMAP.md) — the next release, open items, and what was decided against.
-5. [Testing](./TESTING.md) — test layers, provider smoke tests under the service's account, a manual check with a real bot, and which tests verify each behavior.
-6. [Operating Pero](./OPERATIONS.md) — install and upgrade, credentials, data layout, message history, backup, and restoring on a fresh machine.
+- [Architecture](./ARCHITECTURE.md) — domain vocabulary, module boundaries, configuration loading, data model, request and workflow flows, recovery, and scaling path.
+- [Tech stack](./TECH_STACK.md) — chosen technologies, deployment shape, configuration, and operational rules.
+- [CLI and service lifecycle](./CLI.md) — the command contract, first run, background process, and local files.
+- [Testing](./TESTING.md) — test layers, provider smoke tests under the service's account, a manual check with a real bot, and which tests verify each behavior.
+- [Roadmap](./ROADMAP.md) — open items, and what was decided against.
 
 ## Decision snapshot
 
