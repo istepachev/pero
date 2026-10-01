@@ -9,6 +9,8 @@ export const AUTH_CHECK_TIMEOUT_MS = 15_000;
 export interface ProviderAuthResult {
   state: ComponentState;
   detail: string;
+  /** False when the provider's CLI is not on this account's `PATH`. */
+  installed: boolean;
 }
 
 /** How a provider CLI run ended. */
@@ -92,6 +94,16 @@ export function signInHint(provider: Provider): string {
   return CLIS[provider].signIn;
 }
 
+/** `provider`'s CLI by name, such as `Claude Code CLI`. */
+export function cliLabel(provider: Provider): string {
+  return CLIS[provider].label;
+}
+
+/** The command that installs `provider`'s CLI. */
+export function installHint(provider: Provider): string {
+  return CLIS[provider].install;
+}
+
 /**
  * Asks `provider`'s CLI whether it is signed in, as the account running
  * this process. Never reports who is signed in, only how.
@@ -111,13 +123,18 @@ export async function checkProviderAuth(
     return {
       state: 'unconfigured',
       detail: `${cli.label} not found — install it with ${cli.install}, then run ${cli.signIn}`,
+      installed: false,
     };
   }
   if (outcome.error && outcome.code === null) {
     const reason = outcome.error.killed
       ? `${cli.command} did not answer within ${timeoutMs / 1000} s`
       : outcome.error.message;
-    return { state: 'degraded', detail: `Could not check sign-in: ${reason}` };
+    return {
+      state: 'degraded',
+      detail: `Could not check sign-in: ${reason}`,
+      installed: true,
+    };
   }
 
   let read;
@@ -127,11 +144,16 @@ export async function checkProviderAuth(
     return {
       state: 'degraded',
       detail: `Could not check sign-in: unexpected output from ${cli.command}`,
+      installed: true,
     };
   }
   return read.signedIn
-    ? { state: 'ok', detail: read.detail ?? 'Signed in' }
-    : { state: 'unconfigured', detail: `Not signed in — run ${cli.signIn}` };
+    ? { state: 'ok', detail: read.detail ?? 'Signed in', installed: true }
+    : {
+        state: 'unconfigured',
+        detail: `Not signed in — run ${cli.signIn}`,
+        installed: true,
+      };
 }
 
 /** Runs a command with `execFile`, never rejecting. */

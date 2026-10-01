@@ -112,6 +112,8 @@ The tests that matter most guard the boundaries that could lose or misroute work
 
 | Behavior | Verified by |
 |---|---|
+| The first interactive `pero run` refuses to start without an installed, signed-in provider CLI, and writes the provider picked to `Pero.md` | `src/cli/setup/first-run.spec.ts`; `src/settings-files/note-writer.spec.ts`: the commented `provider` line becomes the property |
+| `pero service install` writes a systemd user unit or launchd agent that runs `pero run --foreground`, and starts it | `src/cli/system-service.spec.ts`, against recorded `systemctl`, `loginctl`, and `launchctl` calls |
 | Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/interactive.e2e-spec.ts`; onboarding edge cases in `src/channels/note-agents.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
 | Two topics keep separate contexts while working in the same shared folder | `test/interactive.e2e-spec.ts`: separate Agents, Sessions, and provider sessions, both in the default folder |
 | An Agent with its own folder works there | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts` |

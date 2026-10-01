@@ -30,7 +30,7 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
    pero run
    ```
 
-   `~/workspace` is your workspace: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one. Then it asks for what it still needs: your Telegram bot token and a provider sign-in. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
+   `~/workspace` is your workspace: the folder Pero runs in, with your Agents' data folder in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one. On the first start it has you pick the provider your Agents use, Claude or Codex, among the CLIs it finds, and doesn't start until that CLI is signed in. Then it asks for what it still needs, such as your Telegram bot token, offers to install Pero as a service that starts with the machine, and ends with `pero status`. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
 
    To make a workspace without starting Pero, such as from a script with no terminal, run `pero init <dir>`. It only writes what's missing, so it also fills in a cloned workspace.
 
@@ -103,7 +103,7 @@ Suggest better English for: {{history}}
 
 ### Keep it running and back it up
 
-`pero run` keeps Pero running after you close the terminal. To start it again after a reboot, run `pero run --foreground` under systemd or another service manager. [Operating Pero](./docs/OPERATIONS.md) has a ready-to-use unit file.
+`pero run` keeps Pero running after you close the terminal. To start it with the machine and restart it after a crash, run `pero service install` (a systemd user service on Linux, a launchd agent on macOS); the first `pero run` offers to. [Operating Pero](./docs/OPERATIONS.md) covers other service managers.
 
 ```sh
 pero backup ~/backups/pero.tgz     # while Pero runs; --include-data adds the data folder

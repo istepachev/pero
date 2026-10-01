@@ -18,6 +18,7 @@ import {
   freeAgentNote,
   noteFromTemplate,
   renameTopicIn,
+  setNoteProperty,
   topicNoteTitle,
 } from './note-writer.js';
 import { readNote } from './snapshot.js';
@@ -231,5 +232,41 @@ describe('createFileExclusive', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('setNoteProperty', () => {
+  it('turns a commented-out line into the property, keeping its comment column', () => {
+    const text =
+      '---\n# provider: claude            # claude or codex\n# permissions: ask\n---\nBe kind.\n';
+
+    expect(setNoteProperty(text, 'provider', 'codex')).toBe(
+      '---\nprovider: codex               # claude or codex\n# permissions: ask\n---\nBe kind.\n',
+    );
+    expect(
+      setNoteProperty('---\n# provider: claude\n---\n', 'provider', 'codex'),
+    ).toBe('---\nprovider: codex\n---\n');
+  });
+
+  it('adds the property when no line mentions it', () => {
+    expect(
+      setNoteProperty(
+        '---\n# A comment\ntimezone: UTC\n---\nBody\n',
+        'provider',
+        'codex',
+      ),
+    ).toBe('---\n# A comment\ntimezone: UTC\nprovider: codex\n---\nBody\n');
+    expect(setNoteProperty('Body\n', 'provider', 'codex')).toBe(
+      '---\nprovider: codex\n---\nBody\n',
+    );
+  });
+
+  it('leaves a note that sets it, or does not parse, alone', () => {
+    expect(
+      setNoteProperty('---\nprovider: claude\n---\n', 'provider', 'codex'),
+    ).toBeNull();
+    expect(
+      setNoteProperty('---\nprovider: [\n---\n', 'provider', 'codex'),
+    ).toBeNull();
   });
 });

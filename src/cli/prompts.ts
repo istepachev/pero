@@ -13,6 +13,12 @@ export interface Prompts {
   password(options: { message: string }): Promise<string>;
   /** A yes or no question; `initial` is the answer Enter gives. */
   confirm(options: { message: string; initial?: boolean }): Promise<boolean>;
+  /** One of `choices`, picked with the arrow keys; `initial` is selected first. */
+  select<T extends string>(options: {
+    message: string;
+    choices: ReadonlyArray<{ value: T; name: string }>;
+    initial?: T;
+  }): Promise<T>;
 }
 
 /** Whether both ends are a terminal, so a command may ask questions. */
@@ -38,6 +44,12 @@ export async function terminalPrompts(): Promise<Prompts> {
     confirm: ({ message, initial }) =>
       inquirer.confirm({
         message,
+        ...(initial === undefined ? {} : { default: initial }),
+      }),
+    select: ({ message, choices, initial }) =>
+      inquirer.select({
+        message,
+        choices,
         ...(initial === undefined ? {} : { default: initial }),
       }),
   };

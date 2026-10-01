@@ -108,6 +108,22 @@ export async function startDetachedDaemon(
   );
 }
 
+/**
+ * The daemon of `layout` once it answers as ready, as one a service
+ * manager starts; null when none does within `timeoutMs`.
+ */
+export async function waitForDaemon(
+  layout: WorkspaceLayout,
+  timeoutMs = READY_TIMEOUT_MS,
+): Promise<StatusResult | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const running = await findRunning(layout);
+    if (running || Date.now() >= deadline) return running;
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
 async function findRunning(layout: WorkspaceLayout) {
   const running = await findRunningDaemon(layout.metadataFile, {
     timeoutMs: PROBE_TIMEOUT_MS,

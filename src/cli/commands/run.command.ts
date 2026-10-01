@@ -1,9 +1,24 @@
 import { Command, Option } from 'nest-commander';
-import { ensureWorkspaceLayout } from '../../config/workspace-layout.js';
+import { FAKE_RUNTIME_ENV } from '../../config/daemon-env.js';
+import {
+  ensureWorkspaceLayout,
+  type WorkspaceLayout,
+} from '../../config/workspace-layout.js';
 import { ControlError } from '../../control/protocol.js';
+import { execCommand } from '../../providers/provider-auth.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
-import { isInteractive, isPromptExit, terminalPrompts } from '../prompts.js';
+import {
+  isInteractive,
+  isPromptExit,
+  type Prompts,
+  terminalPrompts,
+} from '../prompts.js';
+import {
+  formatRunning,
+  localService,
+  startAsService,
+} from '../run-as-service.js';
 import { configOrNewWorkspace } from '../setup/first-run.js';
 import {
   fetchTelegramChats,
@@ -11,9 +26,13 @@ import {
   pendingSetup,
 } from '../setup/pending-setup.js';
 import { startDetachedDaemon } from '../start-daemon.js';
+import { isServiceInstalled, type SystemService } from '../system-service.js';
 
 /** Provider CLIs may take a while to report their sign-in. */
 const SETUP_TIMEOUT_MS = 60_000;
+
+const INTERRUPTED =
+  'Setup interrupted; Pero keeps running. Run pero run to continue.';
 
 interface RunOptions {
   foreground?: boolean;
@@ -25,11 +44,13 @@ interface RunOptions {
 })
 export class RunCommand extends PeroCommand {
   async run(_params: string[], options: RunOptions): Promise<void> {
-    const config = await configOrNewWorkspace({
+    const interactive = isInteractive();
+    const { config, firstRun } = await configOrNewWorkspace({
       config: () => this.config(),
-      interactive: isInteractive(),
+      interactive,
       prompts: terminalPrompts,
       print: (text) => console.log(text),
+      checkProviders: process.env[FAKE_RUNTIME_ENV] !== 'echo',
     });
     if (options.foreground) {
       // Loaded only here: the daemon brings Nest, TypeORM, and SQLite.
@@ -43,14 +64,28 @@ export class RunCommand extends PeroCommand {
       `Pero is ${started ? 'running' : 'already running'} ` +
         `(pid ${status.pid}, workspace ${status.workspace})`,
     );
-    await this.setUp(status.version);
+    const setUp = await this.setUp(status.version);
+    if (!interactive || !(firstRun || setUp)) return;
+
+    // Where it stands now, so the owner knows setup left it working.
+    const service = await localService(layout, execCommand);
+    const installed =
+      service !== null && isServiceInstalled(service)
+        ? service
+        : firstRun && service !== null
+          ? await this.offerService(service, layout)
+          : null;
+    console.log(
+      `\n${formatRunning(await this.client().status(), installed, service !== null)}`,
+    );
   }
 
   /**
    * Finds what is still missing. On a terminal it guides the owner through
    * it; otherwise it prints what to set and returns without reading input.
+   * True when it asked the owner anything.
    */
-  private async setUp(daemonVersion: string): Promise<void> {
+  private async setUp(daemonVersion: string): Promise<boolean> {
     const client = this.client({ timeoutMs: SETUP_TIMEOUT_MS });
     let state;
     try {
@@ -68,35 +103,52 @@ export class RunCommand extends PeroCommand {
       console.log(
         `The running Pero is version ${daemonVersion}; restart it to set it up (pero stop, then pero run).`,
       );
-      return;
+      return false;
     }
 
     const chats = await fetchTelegramChats(client);
     const pending = pendingSetup(state.status, state.settings, chats);
-    if (pending.length === 0) return;
+    if (pending.length === 0) return false;
     if (!isInteractive()) {
       console.log(formatPendingSetup(pending));
-      return;
+      return false;
     }
 
     const { runInteractiveSetup } =
       await import('../setup/interactive-setup.js');
-    try {
-      await runInteractiveSetup(
+    await interruptible(async () =>
+      runInteractiveSetup(
         {
           client,
           prompts: await terminalPrompts(),
           print: (text) => console.log(text),
         },
         state,
-      );
-    } catch (error) {
-      if (!isPromptExit(error)) throw error;
-      throw new CliError(
-        'Setup interrupted; Pero keeps running. Run pero run to continue.',
-        130,
-      );
-    }
+      ),
+    );
+    return true;
+  }
+
+  /**
+   * Offers to run Pero as `service`, so that it starts with the machine;
+   * the service when it was installed, null when declined.
+   */
+  private async offerService(
+    service: SystemService,
+    layout: WorkspaceLayout,
+  ): Promise<SystemService | null> {
+    const prompts: Prompts = await terminalPrompts();
+    const install = await interruptible(() =>
+      prompts.confirm({
+        message: `Install Pero as a ${service.name}, so it is always running? It then starts with the machine and restarts after a crash.`,
+        initial: true,
+      }),
+    );
+    if (!install) return null;
+    await startAsService(service, layout, execCommand, (text) =>
+      console.log(text),
+    );
+    return service;
   }
 
   @Option({
@@ -105,5 +157,15 @@ export class RunCommand extends PeroCommand {
   })
   parseForeground(): boolean {
     return true;
+  }
+}
+
+/** `ask`, with Ctrl-C or Ctrl-D turned into the exit setup makes then. */
+async function interruptible<T>(ask: () => Promise<T>): Promise<T> {
+  try {
+    return await ask();
+  } catch (error) {
+    if (!isPromptExit(error)) throw error;
+    throw new CliError(INTERRUPTED, 130);
   }
 }

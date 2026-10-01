@@ -20,7 +20,9 @@ Every command works on the workspace found from the current folder (the nearest 
 
 ## First-run setup and settings
 
-Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). On a terminal it asks for each one: the token shows as `*` while you type or paste it, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
+The first `pero run` in a workspace on a terminal, before Pero has a database, settles the provider your Agents use. With both the Claude Code and Codex CLIs installed, it asks which one; with one, it uses it; with neither, it refuses to start and says how to install one. It then waits while that CLI is signed out (`claude auth login` or `codex login` in another terminal, then Enter), and refuses to start if you quit. The choice is written as `provider:` in `Pero.md`, unless `Pero.md` already sets one, which is then the one checked. With `PERO_FAKE_RUNTIME=echo` no provider is needed and none is asked for.
+
+Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). On a terminal it asks for each one: the token shows as `*` while you type or paste it, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once. After a first start, an interactive `pero run` offers to install Pero as a service (see [Operating Pero](./OPERATIONS.md#install-and-upgrade)); after a first start or any setup it ends with what `pero status` shows, so you can see that Pero is running and what each component reports.
 
 ```sh
 pero settings                                   # show everything
