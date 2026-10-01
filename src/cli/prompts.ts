@@ -9,7 +9,7 @@ export interface Prompts {
     initial?: string;
     signal?: AbortSignal;
   }): Promise<string>;
-  /** A line of text that is not shown as it is typed. */
+  /** A line of text shown as `*` as it is typed. */
   password(options: { message: string }): Promise<string>;
   /** A yes or no question; `initial` is the answer Enter gives. */
   confirm(options: { message: string; initial?: boolean }): Promise<boolean>;
@@ -34,7 +34,7 @@ export async function terminalPrompts(): Promise<Prompts> {
         },
         signal === undefined ? {} : { signal },
       ),
-    password: ({ message }) => inquirer.password({ message }),
+    password: ({ message }) => inquirer.password({ message, mask: '*' }),
     confirm: ({ message, initial }) =>
       inquirer.confirm({
         message,

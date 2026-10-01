@@ -7,7 +7,7 @@ import {
   type StatusResult,
   type TelegramChats,
 } from '../../control/protocol.js';
-import { describe } from '../format-telegram-chats.js';
+import { describe, needsAdmin } from '../format-telegram-chats.js';
 
 /** Something the owner still has to set up, and how. */
 export interface PendingSetup {
@@ -18,7 +18,8 @@ export interface PendingSetup {
 
 /**
  * What stands between the daemon and a working installation: the Telegram
- * bot token, a Telegram chat to serve, and sign-in for each provider in use. Providers
+ * bot token, a Telegram chat to serve, the bot as an administrator of each
+ * allowed group, each such group private, and sign-in for each provider in use. Providers
  * no Agent uses are left out. Without `chats`, as from a daemon too old
  * to list them, the chat is too.
  */
@@ -53,6 +54,21 @@ export function pendingSetup(
           ? 'Telegram: no chat is allowed yet — add the bot to a group as an administrator or message it, then pero telegram allow <chat-id>'
           : `Telegram: no chat is allowed yet — pero telegram allow ${request.chatId} allows the ${describe(request)} that asked to pair`,
     });
+  } else if (telegram && chats !== null) {
+    for (const chat of chats.allowed) {
+      if (needsAdmin(chat)) {
+        pending.push({
+          name: 'telegram-admin',
+          message: `Telegram: the bot is not an administrator of ${describe(chat)} — make it one in the group's settings`,
+        });
+      }
+      if (chat.danger !== null) {
+        pending.push({
+          name: 'telegram-public',
+          message: `Telegram: ${describe(chat)} is public, so anyone can join it and talk to its Agents — make it private in the group's settings, or pero telegram deny ${chat.chatId}`,
+        });
+      }
+    }
   }
 
   for (const provider of PROVIDERS) {

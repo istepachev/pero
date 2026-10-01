@@ -25,8 +25,12 @@ export interface ChatAccess {
   status: 'administrator' | 'member' | 'left' | 'unknown';
   /** Whether the group has topics; null when Telegram could not say. */
   topics: boolean | null;
+  /** The group's public username; null when it is private. */
+  username: string | null;
   /** Why the bot cannot see every message there; null when it can. */
   problem: string | null;
+  /** Why the group is unsafe to serve, as a public one is; null when not. */
+  danger: string | null;
   checkedAt: Date;
 }
 
@@ -114,7 +118,7 @@ export class TelegramStatus {
       case 'connected': {
         const connected = `Connected as @${connection.username}`;
         const problems = [...this.chats.values()]
-          .map((chat) => chat.problem)
+          .flatMap((chat) => [chat.danger, chat.problem])
           .filter((problem) => problem !== null);
         if (this.allowedChats === 0) problems.unshift(NO_CHAT_ALLOWED);
         if (problems.length === 0) {

@@ -9,9 +9,19 @@ import { formatDuration, table } from './format-status.js';
 export function pairingSteps(bot: string | null): string[] {
   const name = botName(bot);
   return [
-    `Create a group, turn on Topics in its settings, and add ${name} as an administrator;`,
+    `Create a private group (recommended), turn on Topics in its settings, and add ${name} as an administrator;`,
     `or send ${name} a direct message.`,
   ];
+}
+
+/**
+ * Whether the bot is known to be in group `chat` without administrator
+ * rights, or not to be there at all; false while unchecked.
+ */
+export function needsAdmin(chat: AllowedChatView): boolean {
+  return (
+    chat.kind === 'group' && (chat.bot === 'member' || chat.bot === 'left')
+  );
 }
 
 function botName(bot: string | null): string {
@@ -49,12 +59,8 @@ export function formatTelegramChats(
         ]),
       ]).map((row) => `  ${row}`),
     );
-    const problems = chats.allowed
-      .map((chat) => chat.problem)
-      .filter((problem) => problem !== null);
-    if (problems.length > 0) {
-      lines.push('', ...problems.map((problem) => `Warning: ${problem}`));
-    }
+    const problems = chats.allowed.flatMap((chat) => warnings(chat));
+    if (problems.length > 0) lines.push('', ...problems);
   }
   if (chats.pairing.length > 0) {
     lines.push(
@@ -84,8 +90,8 @@ export function formatAllowed(
     `${alreadyAllowed ? 'Already allowed' : 'Allowed'}: ${describe(chat)}`,
   ];
   if (chat.kind === 'group') {
-    if (chat.problem !== null) lines.push(`Warning: ${chat.problem}`);
-    else if (chat.bot === null) {
+    lines.push(...warnings(chat));
+    if (chat.problem === null && chat.bot === null) {
       lines.push(
         'Make sure the bot is an administrator there, or Telegram shows it only commands, mentions, and replies.',
       );
@@ -97,6 +103,14 @@ export function formatAllowed(
     }
   }
   return lines.join('\n');
+}
+
+/** What is wrong with allowed chat `chat`, gravest first. */
+function warnings(chat: AllowedChatView): string[] {
+  return [
+    ...(chat.danger === null ? [] : [`Danger: ${chat.danger}`]),
+    ...(chat.problem === null ? [] : [`Warning: ${chat.problem}`]),
+  ];
 }
 
 /** A chat as `pero telegram` names it: kind, title, and ID. */

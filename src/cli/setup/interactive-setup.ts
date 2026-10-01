@@ -2,6 +2,7 @@ import { InvalidInputError } from '../../common/errors.js';
 import { PROVIDERS } from '../../config/provider-options.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
+  AllowedChatView,
   PairingRequestView,
   SettingsView,
   StatusResult,
@@ -10,6 +11,7 @@ import type {
 import {
   describe,
   formatAllowed,
+  needsAdmin,
   pairingSteps,
 } from '../format-telegram-chats.js';
 import { isPromptAbort, type Prompts } from '../prompts.js';
@@ -40,8 +42,9 @@ export interface SetupState {
 
 /**
  * Guides the owner through what `pero run` found missing: the Telegram bot
- * token and a first chat to serve, and provider sign-in. Every answer goes to the daemon at once, so an
- * interrupted setup keeps what was done.
+ * token, a first chat to serve, the bot as an administrator of each allowed
+ * group, each such group private, and provider sign-in. Every answer goes
+ * to the daemon at once, so an interrupted setup keeps what was done.
  */
 export async function runInteractiveSetup(
   context: SetupContext,
@@ -53,7 +56,13 @@ export async function runInteractiveSetup(
   if (!token.set && token.source !== 'environment') {
     settings = await askTelegramToken(context, settings);
   }
-  if (settings.telegramBotToken.set) await pairChat(context);
+  if (settings.telegramBotToken.set) {
+    const paired = await pairChat(context);
+    await checkGroups(context, paired);
+    if (paired !== null) {
+      context.print('Send a message there again to start talking to Pero.');
+    }
+  }
   await checkProviders(context, settings, status);
 
   // Fresh: the answers above changed what the daemon reports.
@@ -102,11 +111,12 @@ async function askTelegramToken(
 /**
  * While no chat is allowed, waits for one to message the bot and offers to
  * allow it. Enter skips; a chat the owner declines is not offered again.
+ * Returns the ID of the chat allowed here, if any.
  */
-async function pairChat(context: SetupContext): Promise<void> {
+async function pairChat(context: SetupContext): Promise<string | null> {
   const { client, prompts, print } = context;
   let chats = await fetchTelegramChats(client);
-  if (chats === null || chats.allowed.length > 0) return;
+  if (chats === null || chats.allowed.length > 0) return null;
   print('Now pair a Telegram chat, where you will talk to Pero.');
   if (chats.bot === null) {
     print('Waiting for Telegram…');
@@ -115,21 +125,24 @@ async function pairChat(context: SetupContext): Promise<void> {
       print(
         "Telegram isn't connected yet (see pero status); allow a chat later with pero telegram allow <chat-id>",
       );
-      return;
+      return null;
     }
-    if (chats.allowed.length > 0) return;
+    if (chats.allowed.length > 0) return null;
   }
   for (const step of pairingSteps(chats.bot)) print(`  ${step}`);
+  print(
+    'A private group is safest: anyone who can write in an allowed chat can talk to its Agents.',
+  );
 
   const declined = new Set<string>();
   for (;;) {
     const request = await waitForRequest(context, `@${chats.bot}`, declined);
-    if (request === 'allowed') return;
+    if (request === 'allowed') return null;
     if (request === null) {
       print(
         'Skipped; the bot tells a chat it does not serve its ID — allow it with pero telegram allow <chat-id>',
       );
-      return;
+      return null;
     }
     const allow = await prompts.confirm({
       message: `Allow ${describe(request)}?`,
@@ -143,9 +156,99 @@ async function pairChat(context: SetupContext): Promise<void> {
       chatId: request.chatId,
     });
     print(formatAllowed(chat, false));
-    print('Send a message there again to start talking to Pero.');
-    return;
+    return chat.chatId;
   }
+}
+
+/**
+ * Has the owner make the bot an administrator of each allowed group where
+ * Telegram says it is not, and make each public one private. `described`
+ * is a chat whose problems were just printed.
+ */
+async function checkGroups(
+  context: SetupContext,
+  described: string | null,
+): Promise<void> {
+  const chats = await fetchTelegramChats(context.client);
+  if (chats === null || chats.bot === null) return;
+  for (const chat of chats.allowed) {
+    if (chat.kind !== 'group') continue;
+    const current = await requireAdmin(context, `@${chats.bot}`, chat);
+    if (current !== null) {
+      await requirePrivate(context, current, current.chatId !== described);
+    }
+  }
+}
+
+/**
+ * Waits for the bot to become an administrator of `chat`, as Telegram tells
+ * the daemon at once. Returns the chat as it stands then; null when it is
+ * no longer allowed.
+ */
+async function requireAdmin(
+  context: SetupContext,
+  bot: string,
+  chat: AllowedChatView,
+): Promise<AllowedChatView | null> {
+  if (!needsAdmin(chat)) return chat;
+  const { print } = context;
+  print(
+    chat.bot === 'left'
+      ? `${bot} is not in ${describe(chat)}: add it to the group as an administrator.`
+      : `Make ${bot} an administrator of ${describe(chat)} (group settings → Administrators → Add Admin), so it sees every message there.`,
+  );
+  const found = (chats: TelegramChats) => {
+    const now = chats.allowed.find((other) => other.chatId === chat.chatId);
+    if (now === undefined) return 'denied' as const;
+    return needsAdmin(now) ? null : now;
+  };
+  const result = await waitFor(
+    context,
+    `Waiting for ${bot} to become an administrator (Enter to skip)`,
+    found,
+  );
+  if (result === 'denied') return null;
+  if (result === null) {
+    print(
+      `Skipped; until ${bot} is an administrator, Telegram shows it only commands, mentions, and replies there.`,
+    );
+    return chat;
+  }
+  print(`${bot} is an administrator of ${describe(result)}.`);
+  return result;
+}
+
+/**
+ * Has the owner make public group `chat` private, checking again on Enter.
+ * `explain` prints the danger first.
+ */
+async function requirePrivate(
+  context: SetupContext,
+  chat: AllowedChatView,
+  explain: boolean,
+): Promise<void> {
+  const { client, prompts, print } = context;
+  let current = chat;
+  if (current.danger === null) return;
+  if (explain) print(`Danger: ${current.danger}`);
+  while (current.danger !== null) {
+    const answer = await prompts.input({
+      message:
+        'Make the group private, then press Enter to check again (s to skip)',
+    });
+    if (answer.trim().toLowerCase() === 's') {
+      print(
+        `Skipped; anyone can still join ${describe(current)}. Make it private, or pero telegram deny ${current.chatId}`,
+      );
+      return;
+    }
+    // Allowing an allowed chat changes nothing but checks it again.
+    ({ chat: current } = await client.call('telegram.allow', {
+      chatId: current.chatId,
+    }));
+    if (current.danger !== null) print(`Still public: ${describe(current)}`);
+  }
+  print(`${describe(current)} is private now.`);
 }
 
 /** Telegram's chats once the bot is connected; null if that takes long. */
@@ -166,24 +269,40 @@ async function waitForBot(
  * owner presses Enter first, and `allowed` when a chat was allowed some
  * other way meanwhile, such as with `pero telegram allow`.
  */
-async function waitForRequest(
+function waitForRequest(
   context: SetupContext,
   bot: string,
   declined: ReadonlySet<string>,
 ): Promise<PairingRequestView | 'allowed' | null> {
+  return waitFor(
+    context,
+    `Waiting for a message to ${bot} (Enter to skip)`,
+    (chats) =>
+      chats.allowed.length > 0
+        ? 'allowed'
+        : (chats.pairing.find((request) => !declined.has(request.chatId)) ??
+          null),
+  );
+}
+
+/**
+ * Asks the daemon for Telegram's chats until `found` makes something of
+ * them, showing `message` meanwhile; null when the owner presses Enter
+ * first.
+ */
+async function waitFor<T>(
+  context: SetupContext,
+  message: string,
+  found: (chats: TelegramChats) => T | null,
+): Promise<T | null> {
   const { client, prompts } = context;
   const interval = context.pollIntervalMs ?? PAIRING_POLL_MS;
-  const found = (chats: TelegramChats) =>
-    chats.allowed.length > 0
-      ? 'allowed'
-      : (chats.pairing.find((request) => !declined.has(request.chatId)) ??
-        null);
 
   const now = found(await client.call('telegram.chats'));
   if (now !== null) return now;
 
   const waiting = new AbortController();
-  let result: PairingRequestView | 'allowed' | null = null;
+  let result: T | null = null;
   let failure: unknown = null;
   const polling = (async () => {
     try {
@@ -200,10 +319,7 @@ async function waitForRequest(
   })();
   let skipped = false;
   try {
-    await prompts.input({
-      message: `Waiting for a message to ${bot} (Enter to skip)`,
-      signal: waiting.signal,
-    });
+    await prompts.input({ message, signal: waiting.signal });
     skipped = true;
   } catch (error) {
     if (!isPromptAbort(error)) throw error;

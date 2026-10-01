@@ -72,5 +72,6 @@ function view(chatKey: string, title: string | null): AllowedChatView {
     bot: null,
     topics: null,
     problem: null,
+    danger: null,
   };
 }

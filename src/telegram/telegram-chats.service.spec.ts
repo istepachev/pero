@@ -155,6 +155,7 @@ describe('TelegramChats', () => {
         bot: 'administrator',
         topics: null,
         problem: null,
+        danger: null,
       },
     ]);
   });
@@ -231,6 +232,25 @@ describe('TelegramChats', () => {
       problem: expect.stringContaining("the bot isn't an administrator"),
     });
     expect(telegram()?.state).toBe('degraded');
+  });
+
+  it('warns of an allowed group anyone can join', async () => {
+    api.chats.set(String(FORUM.id), { ...FORUM, username: 'household' });
+    await start();
+
+    const { chat } = await chats().allow('-1001234567890');
+
+    expect(chat).toMatchObject({
+      bot: 'administrator',
+      problem: null,
+      danger: expect.stringContaining(
+        'Household (-1001234567890) is a public group (@household)',
+      ),
+    });
+    expect(telegram()).toMatchObject({
+      state: 'degraded',
+      detail: expect.stringContaining('is a public group (@household)'),
+    });
   });
 
   it('refuses to deny a chat that is not allowed', async () => {

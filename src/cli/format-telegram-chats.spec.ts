@@ -17,6 +17,7 @@ describe('formatTelegramChats', () => {
           bot: 'administrator',
           topics: true,
           problem: null,
+          danger: null,
           allowedAt,
         },
         {
@@ -26,6 +27,7 @@ describe('formatTelegramChats', () => {
           bot: 'member',
           topics: false,
           problem: "the bot isn't an administrator of Family (-4567)",
+          danger: null,
           allowedAt,
         },
         {
@@ -35,6 +37,7 @@ describe('formatTelegramChats', () => {
           bot: null,
           topics: null,
           problem: null,
+          danger: null,
           allowedAt,
         },
       ],
@@ -77,7 +80,7 @@ describe('formatTelegramChats', () => {
         'Bot: not connected (see pero status)',
         '',
         'No chat is allowed yet. To pair one:',
-        '  Create a group, turn on Topics in its settings, and add the bot as an administrator;',
+        '  Create a private group (recommended), turn on Topics in its settings, and add the bot as an administrator;',
         '  or send the bot a direct message.',
         "  The bot answers a chat it does not serve with that chat's ID; allow it with pero telegram allow <chat-id>.",
       ].join('\n'),
@@ -96,6 +99,7 @@ describe('formatAllowed', () => {
           bot: 'member',
           topics: false,
           problem: "the bot isn't an administrator of Family (-4567)",
+          danger: null,
           allowedAt,
         },
         false,
@@ -105,6 +109,29 @@ describe('formatAllowed', () => {
         'Allowed: group "Family" (-4567)',
         "Warning: the bot isn't an administrator of Family (-4567)",
         'Turn on Topics in the group settings to give each Agent its own topic; Pero follows the new chat ID this gives the group.',
+      ].join('\n'),
+    );
+  });
+
+  it('puts the danger of a public group first', () => {
+    expect(
+      formatAllowed(
+        {
+          chatId: '-1001234567890',
+          kind: 'group',
+          title: 'Household',
+          bot: 'administrator',
+          topics: true,
+          problem: null,
+          danger: 'Household (-1001234567890) is a public group (@household)',
+          allowedAt,
+        },
+        false,
+      ),
+    ).toBe(
+      [
+        'Allowed: group "Household" (-1001234567890)',
+        'Danger: Household (-1001234567890) is a public group (@household)',
       ].join('\n'),
     );
   });
@@ -119,6 +146,7 @@ describe('formatAllowed', () => {
           bot: null,
           topics: null,
           problem: null,
+          danger: null,
           allowedAt,
         },
         true,

@@ -20,7 +20,7 @@ Every command works on the workspace found from the current folder (the nearest 
 
 ## First-run setup and settings
 
-Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). On a terminal it asks for each one: the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
+Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). On a terminal it asks for each one: the token shows as `*` while you type or paste it, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
 
 ```sh
 pero settings                                   # show everything
@@ -38,7 +38,7 @@ Pero rereads the notes every 10 seconds, so an edit applies without a restart. A
 Pero talks to you in a private Telegram group with topics, where each topic is a conversation with an Agent of its own:
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and give Pero its token: an interactive `pero run` asks for it, or `pero telegram token` reads it from a prompt or stdin.
-2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it.
+2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it. Keep the group private: anyone who can write in an allowed chat can talk to its Agents, so a public group, which anyone can find and join, is a danger that `pero status`, `pero telegram chats`, and `pero run` point out.
 3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
 4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` waits for that message and offers to allow the chat itself.
 5. Create a topic for each conversation you want. A topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing.
@@ -48,7 +48,7 @@ Before signing in to a provider, you can try the whole setup with the echo runti
 
 ### How it works
 
-With a bot token set, Pero long-polls Telegram for messages and membership changes. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, or when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies). A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its Channel and its entry in `config.yaml` to the new ID.
+With a bot token set, Pero long-polls Telegram for messages and membership changes. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies), or when an allowed group is public. A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its Channel and its entry in `config.yaml` to the new ID.
 
 ### Allowed chats
 
@@ -60,7 +60,7 @@ pero telegram allow -1001234567890    # a group (negative ID) or a direct chat (
 pero telegram deny -1001234567890     # its Channels and Agents stay for when it is allowed again
 ```
 
-`pero telegram chats` shows for each allowed group whether topics are on and whether the bot is an administrator. Once the token works, an interactive `pero run` explains how to set up a group or a direct chat, waits for the first message to the bot, and offers to allow that chat; a non-interactive one lists `pero telegram allow` among what is missing.
+`pero telegram chats` shows for each allowed group whether topics are on and whether the bot is an administrator, and warns of a public one. Once the token works, an interactive `pero run` explains how to set up a group or a direct chat, waits for the first message to the bot, and offers to allow that chat. For each allowed group where Telegram says the bot is not an administrator, it waits until the bot is made one; for each public group, it shows the danger and checks again once you have made it private. Enter or `s` skips either step, and the next `pero run` asks again. A non-interactive `pero run` lists all of these among what is missing.
 
 ### Channels and history
 
