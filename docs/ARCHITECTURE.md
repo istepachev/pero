@@ -2,7 +2,7 @@
 
 ## 1. Purpose and scope
 
-Build Pero as a personal, self-hosted runtime that accepts conversation through Channels and performs background work through configured Agents. Telegram is the first Channel integration; each topic of the owner's Telegram group is one Channel, as are the group's General topic and a direct chat with the bot. A single installation serves one owner. The architecture leaves room for Slack, Discord, and other communication integrations later.
+Pero is a personal, self-hosted runtime that accepts conversation through Channels and performs background work through configured Agents. Telegram is the first Channel integration; each topic of the owner's Telegram group is one Channel, as are the group's General topic and a direct chat with the bot. A single installation serves one owner. The architecture leaves room for Slack, Discord, and other communication integrations later.
 
 **Deployment:** one globally installed `pero` CLI, one background NestJS service, a workspace whose Markdown notes and `config.yaml` configure it, and one SQLite database on persistent local storage for its state. `pero run` starts the service; `pero stop` stops it; management commands such as `pero agents ls` use the same application services. No mandatory PostgreSQL, Redis, external queue, or workflow engine. See the [CLI contract](./CLI.md).
 
@@ -65,7 +65,7 @@ flowchart TD
     SA -.-> C
     DA -.-> C
     C --> AM[Agent manager]
-    API[Optional local HTTP API] --> AM
+    API[HTTP API - future] -.-> AM
     CLI[Pero CLI] --> CT[Private local control endpoint]
     CT --> AM
     CT --> DB
@@ -95,7 +95,7 @@ The CLI is a local control surface for the same domain services. Agents, Workflo
 
 The Channel adapter contract is `start(handlers)`, `stop()`, `send(address, message)`, and `edit(address, messageId, message)`; a message may carry a row of buttons, and a press reaches the `onAction` handler, whose answer the adapter shows the presser (Telegram: callback queries, answered with `answerCallbackQuery`). The other handlers take normalized messages and channel events: a topic created or renamed, a chat migrated to a new ID, and the bot's membership changed. A normalized message includes the integration kind, the update ID used for deduplication, the chat (key, kind `private` or `group`, title, address), the Channel key, title, address and topic ID (none for the chat's primary Channel, whose key is the chat's own), the external message and sender IDs, and content (attachments later). The Channel router checks the chat against the allowlist, deduplicates the update, and resolves the Channel key to `channel_id`. It then records the message in the Channel's history and passes it to `AgentManager`, or goes to onboarding when the Channel is new. Onboarding also follows a migrated chat, moving its allowlist entry and primary Channel key to the new ID in one transaction. Provider-specific objects stay inside their adapter.
 
-## 4. Suggested NestJS modules
+## 4. NestJS modules
 
 | Module | Owns | Depends on |
 |---|---|---|

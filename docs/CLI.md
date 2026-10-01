@@ -25,7 +25,7 @@ The package is `@perokit/pero`, published under the `perokit` npm organization f
 }
 ```
 
-Ship compiled JavaScript and publish `@perokit/pero` with `npm publish --access public`. Users need a supported Node.js/npm installation, but do not need to clone the repository, compile TypeScript, install PostgreSQL or Redis, or start a container.
+The package ships compiled JavaScript, and the [Release workflow](./DEVELOPMENT.md#releasing) publishes it; `publishConfig.access` makes the scoped package public. Users need a supported Node.js/npm installation, but do not need to clone the repository, compile TypeScript, install PostgreSQL or Redis, or start a container.
 
 ## Command contract
 

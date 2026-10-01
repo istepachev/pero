@@ -3,7 +3,7 @@ name: Release
 # Publishes @perokit/pero after CI passes on a push to main, but only when
 # package.json holds a version that is not on npm yet: bump the version in a
 # PR and merging it releases. Then tags vX.Y.Z and writes a GitHub Release.
-# See docs/DEVELOPMENT.md#releasing for the one-time setup.
+# See docs/DEVELOPMENT.md#releasing.
 
 on:
   workflow_run:

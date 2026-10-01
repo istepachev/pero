@@ -14,7 +14,7 @@
 | Configuration | Markdown notes with YAML frontmatter, and `config.yaml`, parsed with [`yaml`](https://eemeli.org/yaml/) as YAML 1.2 and validated with Zod | Files the owner can read, diff, commit, and edit in Obsidian. The `yaml` document API edits a value while keeping comments and ordering. |
 | Persistence | TypeORM + `better-sqlite3` + SQLite WAL | One local database file for state: Channels, Sessions, message history, schedules, run state, and notifications. |
 | Scheduling | `@nestjs/schedule` plus a database-backed due-schedule poller; [croner](https://github.com/hexagon/croner) for cron expressions | The package clocks the tick; SQLite holds the authoritative schedule. croner validates five-field cron expressions and computes occurrences in a time zone, with no dependencies. |
-| Active work | Bounded in-process executor (`p-queue` or a small custom executor) | Controls concurrency without a Redis service; pending runs remain in SQLite. |
+| Active work | Bounded in-process executor (`src/workflows/workflow-executor.ts`) | Controls concurrency without a Redis service; pending runs remain in SQLite. |
 | Validation | Zod | Parse configuration, webhook payloads, and flexible JSON fields at boundaries. |
 | Logging | Pino | Structured logs with correlation IDs and redaction. |
 | Tests | Vitest | Unit tests for time calculations and integration tests for recovery and routing. |
@@ -36,11 +36,15 @@ pero/
 │   ├── settings-files/  # the note parser, schemas, snapshot, and pero check; no Nest or TypeORM
 │   ├── settings/        # the daemon's rescanning snapshot, note writes, and Definitions
 │   ├── host-config/     # config.yaml in the daemon
+│   ├── common/          # errors, shutdown, and the package version
+│   ├── logging/         # Pino logger
+│   ├── health/          # component health for `pero status`
 │   ├── control/
 │   ├── agents/
 │   ├── runtimes/
 │   │   ├── claude/
 │   │   └── codex/
+│   ├── providers/       # provider sign-in checks
 │   ├── channels/
 │   ├── telegram/
 │   ├── sessions/
@@ -54,14 +58,17 @@ pero/
 │   │   └── migrations/
 │   └── app.module.ts    # full daemon module graph
 ├── test/
+├── scripts/             # doc link check, packed-install check
+├── docs/
+├── examples/workspace/
 ├── package.json
 ├── package-lock.json
 └── README.md
 ```
 
-A workspace/monorepo is unnecessary for the first deployable version. If gateway and worker become separate processes, this layout can be extracted into packages then.
+A monorepo is unnecessary while Pero is one process. If gateway and worker become separate processes, this layout can be extracted into packages then.
 
-Commit `package-lock.json`. Use `npm install` when changing dependencies and `npm ci` for clean development and CI installs; [`npm ci` verifies the lockfile matches `package.json` without rewriting either file](https://docs.npmjs.com/cli/v11/commands/npm-ci/). Ship compiled JavaScript and migrations in the published package. The unscoped npm name `pero` is taken, so Pero is published under the `perokit` organization [scope](https://docs.npmjs.com/about-scopes/) as `@perokit/pero`, using [`npm publish --access public`](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/). npm's [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) still exposes the global `pero` command. Test installation from `npm pack` output rather than assuming a source checkout behaves like the published package.
+Commit `package-lock.json`. Use `npm install` when changing dependencies and `npm ci` for clean development and CI installs; [`npm ci` verifies the lockfile matches `package.json` without rewriting either file](https://docs.npmjs.com/cli/v11/commands/npm-ci/). Ship compiled JavaScript and migrations in the published package. The unscoped npm name `pero` is taken, so Pero is published under the `perokit` organization [scope](https://docs.npmjs.com/about-scopes/) as `@perokit/pero`, made [public](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/) by `publishConfig.access` in `package.json`. npm's [`bin` field](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#bin) still exposes the global `pero` command. Test installation from `npm pack` output rather than assuming a source checkout behaves like the published package.
 
 ## 3. Database configuration
 
@@ -95,7 +102,7 @@ WAL allows readers while a writer is active, but SQLite still has one writer at 
 
 `ClaudeRuntime` and `CodexRuntime` each own provider configuration, session/thread creation and resume, stream translation, cancellation, and error classification. Pero stores provider IDs as opaque values. It should never use a provider's native transcript as its only record of application state.
 
-The [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) runs the Claude Code agent loop in a process the operator controls and supports sessions and tools. The [Codex SDK](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) wraps the Codex CLI and supports persisted threads and streamed events. Package versions and exact adapter calls should be pinned and validated against the installed SDKs during implementation.
+The [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) runs the Claude Code agent loop in a process the operator controls and supports sessions and tools. The [Codex SDK](https://github.com/openai/codex/blob/main/sdk/typescript/README.md) wraps the Codex CLI and supports persisted threads and streamed events. Both SDKs are pinned to exact versions; recheck the adapter calls against a new version when upgrading.
 
 The Agent's note, with `Pero.md`'s defaults, supplies `provider` and its provider options (`model`, `effort`), and `AgentManager` resolves its effective `workingDirectory` (see [Architecture §2](./ARCHITECTURE.md#agent-configuration-and-defaults)), for both interactive turns and Workflow Runs. The Claude adapter maps these to the SDK's `model`, `effort`, and `cwd` query options; the [Claude configuration guide](https://code.claude.com/docs/en/agent-sdk/configuration) documents both. The Codex adapter maps them to `model`, `modelReasoningEffort`, and `workingDirectory` thread options, documented in the [Codex SDK options source](https://github.com/openai/codex/blob/main/sdk/typescript/src/threadOptions.ts). The Codex SDK has no instructions option, so the adapter passes the Agent's instructions as the `developer_instructions` config override, which adds them to Codex's own prompt rather than replacing it. A null option means omit it, so the provider uses its default. Always pass the working directory explicitly instead of inheriting Pero's process directory.
 
@@ -128,7 +135,7 @@ After installing a supported Node.js/npm version, the application install is `np
 
 [Official OpenAI documentation](https://learn.chatgpt.com/docs/auth) describes ChatGPT subscription sign-in, headless device-code login, and local credential storage under `CODEX_HOME`. The [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk) controls a local Codex agent. Keep its credential store writable for token refresh and private to the service account.
 
-[Anthropic's June 2026 update](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) says the planned change to Agent SDK subscription usage was paused and that Agent SDK and third-party app usage continue to draw from subscription limits for now. The [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) documents subscription sign-in and `claude auth status`. Anthropic's [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) also contains separate approval wording about third-party products offering claude.ai login. Because these statements address different aspects of the integration, verify the policy for this distributed self-hosted runtime before release; the v1 implementation uses the owner's CLI sign-in and provides no embedded provider login flow.
+[Anthropic's June 2026 update](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) says the planned change to Agent SDK subscription usage was paused and that Agent SDK and third-party app usage continue to draw from subscription limits for now. The [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) documents subscription sign-in and `claude auth status`. Anthropic's [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview) also contains separate approval wording about third-party products offering claude.ai login. These statements address different aspects of the integration, so recheck them when they change. Pero uses the owner's CLI sign-in and provides no embedded provider login flow.
 
 Keep every Agent's working directory and resumable session state on persistent local storage. Protect the OS account's Claude and Codex credential stores as secrets. If either subscription sign-in is absent or expires, mark that Agent Runtime unavailable and show a clear reauthentication action; do not switch billing modes silently.
 
@@ -146,4 +153,4 @@ Log structured fields such as `correlationId`, `channelId`, the Agent's name, `w
 
 ## 9. Version and compatibility checks
 
-The stack is a design decision, not a floating dependency specification. Before starting implementation, pin mutually compatible releases of NestJS 12 (`@nestjs/core`, `@nestjs/schedule`, `@nestjs/typeorm`, and later `@nestjs/platform-fastify` on their 12.x lines), TypeORM, `better-sqlite3`, grammY, both agent SDKs, and Node; commit the lockfile. Exercise a smoke test for each provider that creates a session, resumes it after process restart, and verifies workspace persistence. Recheck SDK authentication, permission, and session storage behavior when upgrading.
+The stack is a design decision, not a floating dependency specification. `package.json` pins exact, mutually compatible releases of NestJS 12 (`@nestjs/core`, `@nestjs/schedule`, `@nestjs/typeorm`, and `@nestjs/platform-fastify` on the same 12.x line once it is added), TypeORM, `better-sqlite3`, grammY, and both agent SDKs, and the lockfile is committed. When upgrading an agent SDK, run its [provider smoke test](./TESTING.md#provider-smoke-tests-under-the-services-account), which creates a session, resumes it from another process, and checks its folder and permissions, and recheck SDK authentication, permission, and session storage behavior.
