@@ -29,9 +29,9 @@ pero settings                                   # show everything
 printf '%s' "$TOKEN" | pero telegram token      # set the bot token
 ```
 
-The installation defaults are properties of `Pero.md` in the settings folder, and its body is the shared instructions; the data folder is `data` in `.pero/config.yaml`. `pero settings` shows them. `pero telegram token` sets the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. Changes apply without a restart.
+The installation defaults are properties of `Pero.md` in the settings folder; instructions every Agent shares are the main Agent's, in its note. The data folder is `data` in `.pero/config.yaml`. `pero settings` shows them. `pero telegram token` sets the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. Changes apply without a restart.
 
-Pero rereads the notes every 10 seconds, so an edit applies without a restart. A note with errors doesn't stop Pero: `pero status` counts it, and `pero check` lists each error. Since you may edit on your phone, Pero also posts once per broken version of a note in Telegram, in the topics it relates to (an Agent's `topics`, a Workflow's `channel`), or else in the main Agent's primary Channel. The message names each error and what Pero uses meanwhile: the note's last good version, if Pero read one since it started, or nothing. It isn't part of the topic's history. A fix is only logged, and a note already broken when Pero starts is left to `status` and `check`.
+Pero rereads the notes every 10 seconds, so an edit applies without a restart. A note with errors doesn't stop Pero: `pero status` counts it, and `pero check` lists each error. Since you may edit on your phone, Pero also posts once per broken version of a note in Telegram, in the topics it relates to (an Agent's `topic`, a Workflow's `channel`), or else in the main Agent's primary Channel. The message names each error and what Pero uses meanwhile: the note's last good version, if Pero read one since it started, or nothing. It isn't part of the topic's history. A fix is only logged, and a note already broken when Pero starts is left to `status` and `check`.
 
 ## Telegram
 
@@ -43,7 +43,7 @@ Pero talks to you in a private Telegram group with topics, where each topic is a
 2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it. Keep the group private: anyone who can write in an allowed chat can talk to its Agents, so a public group, which anyone can find and join, is a danger that `pero status`, `pero telegram chats`, and `pero run` point out.
 3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
 4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` asks first whether you will use a private group (recommended) or a direct chat with the bot, shows the steps for that choice, then waits for that message and offers to allow the chat itself; meanwhile the bot answers that chat that it can be confirmed in the terminal.
-5. Create a topic for each conversation you want. A topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` when you add one ([the template](./CONFIGURATION.md#agent-notes)), or with `topics` alone (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing.
+5. Create a topic for each conversation you want. Each topic has an Agent of its own: the one whose note's `topic` is its title. A new topic gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` when you add one ([the template](./CONFIGURATION.md#agent-notes)), or with `topic` alone, and the bot posts which Agent answers there. That Agent starts with the main Agent's instructions, then its own. Renaming a topic renames it in its note's `topic` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing.
 6. Optionally, allow a direct chat with the bot too: message the bot, then allow your user ID the same way. It also talks to the main Agent, in a conversation separate from the General topic.
 
 Before signing in to a provider, you can try the whole setup with the echo runtime: `PERO_FAKE_RUNTIME=echo pero run` (see [Checking a real bot by hand](./TESTING.md#checking-a-real-bot-by-hand)).
@@ -66,7 +66,7 @@ pero telegram deny -1001234567890     # its Channels and Agents stay for when it
 
 ### Channels and history
 
-Each topic, General topic, and direct chat is a Channel, created when it first reaches Pero. Which Agent answers there follows the notes on every message: the main Agent (`main-agent` in `Pero.md`) answers General topics, groups without topics, and direct chats, and a topic goes to the Agent whose note lists its title in `topics`. To move a topic, change `topics`; the new Agent's first turn starts with the topic's recent messages. To silence it, set `enabled: false` in its Agent's note. Where no Agent answers, such as a topic two notes claim, Pero replies once saying why. `pero channels` lists them by ID:
+Each topic, General topic, and direct chat is a Channel, created when it first reaches Pero. Which Agent answers there follows the notes on every message: the main Agent (`main-agent` in `Pero.md`) answers General topics, groups without topics, and direct chats, and a topic goes to the Agent whose note's `topic` is its title. To move a topic, change `topic`; the new Agent's first turn starts with the topic's recent messages. To silence it, set `enabled: false` in its Agent's note. Where no Agent answers, such as a topic two notes claim, Pero replies once saying why. `pero channels` lists them by ID:
 
 ```sh
 pero channels                  # each Channel with the Agent that answers there now
@@ -78,11 +78,11 @@ Pero keeps each Channel's message history until you set `history-retention-days`
 
 ## Agents
 
-An Agent is a note in the settings folder's `Agents/` folder: its text is the Agent's instructions, and its properties choose its topics, provider, model, effort, permissions, and folder. Anything it leaves out comes from `Pero.md`, whose own text is placed before every Agent's instructions. To add an Agent, add a note; to change one, edit it; to silence one, set `enabled: false`. The [configuration reference](./CONFIGURATION.md#agent-notes) lists every property.
+An Agent is a note in the settings folder's `Agents/` folder: its text is the Agent's instructions, and its properties choose its topic, provider, model, effort, permissions, and folder. Anything it leaves out comes from `Pero.md`. The main Agent's text is placed before every other Agent's instructions, unless the Agent sets `skip-main-instructions: true`. To add an Agent, add a note; to change one, edit it; to silence one, set `enabled: false`. The [configuration reference](./CONFIGURATION.md#agent-notes) lists every property.
 
 ```markdown
 ---
-topics: [Running]
+topic: Running
 provider: codex
 working-directory: projects/training
 ---
@@ -90,7 +90,7 @@ You are my running coach. My plan is in Plan.md.
 ```
 
 ```sh
-pero agents                     # every Agent, with its note, topics, provider, model, folder, and permissions
+pero agents                     # every Agent, with its note, topic, provider, model, folder, and permissions
 pero agents show coach          # its values and where each comes from, its Channels, and its note's errors
 ```
 

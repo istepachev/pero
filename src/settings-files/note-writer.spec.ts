@@ -139,14 +139,14 @@ describe('agentNoteFor', () => {
 });
 
 describe('noteFromTemplate', () => {
-  it("keeps the template's properties, comments, and body, and sets topics", () => {
+  it("keeps the template's properties, comments, and body, and sets the topic", () => {
     const { text, problem } = noteFromTemplate(
-      '---\n# Coaching\nmodel: sonnet # fast\ntopics: Old\n---\nYou coach.\n',
+      '---\n# Coaching\nmodel: sonnet # fast\ntopic: Old\n---\nYou coach.\n',
       'Health',
     );
     expect(problem).toBeNull();
     expect(text).toBe(
-      '---\n# Coaching\nmodel: sonnet # fast\ntopics:\n  - Health\n---\nYou coach.\n',
+      '---\n# Coaching\nmodel: sonnet # fast\ntopic: Health\n---\nYou coach.\n',
     );
   });
 
@@ -165,7 +165,7 @@ describe('noteFromTemplate', () => {
     );
     expect(readNote('Agents/2026.md', text).errors).toEqual([]);
     expect(roundTrip(text)).toEqual({
-      properties: { topics: ['2026'] },
+      properties: { topic: '2026' },
       body: 'You are my assistant for this topic.',
     });
     expect(text).toContain('# model: sonnet');
@@ -173,50 +173,44 @@ describe('noteFromTemplate', () => {
 
   it('uses a template without properties as the body', () => {
     expect(noteFromTemplate('Be kind.', 'Health').text).toBe(
-      '---\ntopics:\n  - Health\n---\nBe kind.\n',
+      '---\ntopic: Health\n---\nBe kind.\n',
     );
   });
 
-  it('writes topics alone without a template, or with a broken one', () => {
+  it('writes the topic alone without a template, or with a broken one', () => {
     expect(noteFromTemplate(null, 'Health')).toEqual({
-      text: '---\ntopics:\n  - Health\n---\n',
+      text: '---\ntopic: Health\n---\n',
       problem: null,
     });
     const broken = noteFromTemplate('---\nmodel: [\n---\nBody', 'Health');
-    expect(broken.text).toBe('---\ntopics:\n  - Health\n---\n');
+    expect(broken.text).toBe('---\ntopic: Health\n---\n');
     expect(broken.problem).toMatch(/^its properties don't parse/);
   });
 });
 
 describe('renameTopicIn', () => {
   const note =
-    '---\n# Mine\ntopics: [Health, Sleep] # both\nmodel: sonnet\n---\n\nYou  track.\n\n';
+    '---\n# Mine\ntopic: Health # mine\nmodel: sonnet\n---\n\nYou  track.\n\n';
 
   it('renames the title in any case, keeping comments and the body', () => {
     expect(renameTopicIn(note, 'health', 'Fitness')).toBe(
-      '---\n# Mine\ntopics: [Fitness, Sleep] # both\nmodel: sonnet\n---\n\nYou  track.\n\n',
+      '---\n# Mine\ntopic: Fitness # mine\nmodel: sonnet\n---\n\nYou  track.\n\n',
     );
   });
 
-  it('renames a single title, quoting what needs it', () => {
+  it('quotes a title that needs it', () => {
     expect(
-      renameTopicIn('---\ntopics: Health # me\n---\nBody', 'Health', '2026'),
-    ).toBe('---\ntopics: "2026" # me\n---\nBody');
+      renameTopicIn('---\ntopic: Health # me\n---\nBody', 'Health', '2026'),
+    ).toBe('---\ntopic: "2026" # me\n---\nBody');
   });
 
-  it('adds the new title after the old one when asked to keep it', () => {
-    expect(
-      renameTopicIn('---\ntopics:\n  - Health\n---\n', 'Health', 'Fit', true),
-    ).toBe('---\ntopics:\n  - Health\n  - Fit\n---\n');
-    expect(
-      renameTopicIn('---\ntopics: Health\n---\n', 'Health', 'Fit', true),
-    ).toBe('---\ntopics:\n  - Health\n  - Fit\n---\n');
-  });
-
-  it("is null when the note doesn't list the title or doesn't parse", () => {
+  it("is null when the note's topic isn't the title or doesn't parse", () => {
     expect(renameTopicIn(note, 'Garden', 'Fitness')).toBeNull();
     expect(renameTopicIn('You track.', 'Health', 'Fitness')).toBeNull();
-    expect(renameTopicIn('---\ntopics: [\n---\n', 'Health', 'Fit')).toBeNull();
+    expect(
+      renameTopicIn('---\ntopics: [Health]\n---\n', 'Health', 'Fit'),
+    ).toBeNull();
+    expect(renameTopicIn('---\ntopic: [\n---\n', 'Health', 'Fit')).toBeNull();
   });
 });
 

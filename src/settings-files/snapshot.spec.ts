@@ -51,12 +51,11 @@ describe('buildSnapshot', () => {
       permissions: 'ask',
       timezone: 'UTC',
       mainAgent: 'main',
-      newTopics: 'create-agent',
       historyCarryover: 50,
       historyRetentionDays: null,
       maxConcurrentRuns: 2,
     });
-    expect(result.sharedInstructions).toBeNull();
+    expect(result.mainInstructions).toBeNull();
     expect(result.peroProperties.size).toBe(0);
     expect(result.agents.size).toBe(0);
     expect(result.workflows.size).toBe(0);
@@ -72,34 +71,33 @@ provider: claude
 claude-model: opus
 permissions: ask
 timezone: Europe/Berlin
----
-You are a calm, concise personal assistant.`,
+---`,
       'Agents/Main.md': 'You help with everyday questions.',
       'Agents/Health.md': `---
-topics: [Health]
+topic: Health
 effort: high
 ---
 You are my health coach.`,
       'Workflows/Weekly health report.md': WEEKLY,
     });
     expect(result.errors).toEqual([]);
-    expect(result.sharedInstructions).toBe(
-      'You are a calm, concise personal assistant.',
-    );
+    expect(result.mainInstructions).toBe('You help with everyday questions.');
     expect(result.agents.get('main')).toMatchObject({
       name: 'main',
       title: 'Main',
       file: 'Agents/Main.md',
-      topics: [],
+      topic: null,
       provider: 'claude',
       model: 'opus',
       effort: null,
       permissions: 'ask',
       workingDirectory: '/home/me/workspace',
+      mainInstructions: false,
       instructions: 'You help with everyday questions.',
     });
     expect(result.agents.get('health')).toMatchObject({
-      topics: ['Health'],
+      topic: 'Health',
+      mainInstructions: true,
       model: 'opus',
       effort: 'high',
       note: expect.objectContaining({ model: null, effort: 'high' }),
@@ -158,7 +156,7 @@ permissions: bypass
 
   it('reads notes in subfolders and skips ignored ones', () => {
     const result = snapshot({
-      'Agents/Coaches/Running.md': '---\ntopics: Running\n---',
+      'Agents/Coaches/Running.md': '---\ntopic: Running\n---',
       'Agents/_Template.md': '---\nmodle: broken\n---',
       'Agents/.draft.md': 'not read',
       '.obsidian/app.md': 'not read',
@@ -213,39 +211,40 @@ permissions: bypass
 
   it('answers a topic claimed twice with neither Agent, and reports both', () => {
     const files = {
-      'Agents/Health.md': '---\ntopics: [Health, Sleep]\n---',
-      'Agents/Running.md': '---\ntopics: [health, Running]\n---',
+      'Agents/Health.md': '---\ntopic: Health\n---',
+      'Agents/Running.md': '---\ntopic: health\n---',
+      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
     };
     const result = snapshot(files);
-    expect([...result.agents.keys()].sort()).toEqual(['health', 'running']);
+    expect([...result.agents.keys()].sort()).toEqual([
+      'health',
+      'running',
+      'sleep',
+    ]);
     expect(result.conflictedTopics).toEqual(new Set(['health']));
-    expect(result.topicClaims).toEqual(
-      new Map([
-        ['sleep', 'health'],
-        ['running', 'running'],
-      ]),
-    );
+    expect(result.topicClaims).toEqual(new Map([['sleep', 'sleep']]));
     expect(errorsOf(files)).toEqual([
-      'Agents/Health.md topics: "Health" is also claimed by Agents/Running.md, so neither answers there',
-      'Agents/Running.md topics: "health" is also claimed by Agents/Health.md, so neither answers there',
+      'Agents/Health.md topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
+      'Agents/Running.md topic: "health" is also claimed by Agents/Health.md, so neither answers there',
     ]);
   });
 
   it('records the topics of Agent notes left out for errors', () => {
     const result = snapshot({
-      'Agents/Health.md': '---\ntopics: [Health, Sleep]\neffort: extreme\n---',
-      'Agents/Coach.md': '---\ntopics: Running\nmodle: x\n---',
-      'Agents/Sleep.md': '---\ntopics: Sleep\n---',
-      'Agents/a/Chat.md': '---\ntopics: Chat\n---',
-      'Agents/b/Chat.md': '---\ntopics: [Chat, Talk]\n---',
-      'Agents/Broken.md': '---\ntopics: [\n---',
+      'Agents/Health.md': '---\ntopic: Health\neffort: extreme\n---',
+      'Agents/Coach.md': '---\ntopic: Running\nmodle: x\n---',
+      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
+      'Agents/Night.md': '---\ntopic: Sleep\nmodle: x\n---',
+      'Agents/a/Chat.md': '---\ntopic: Chat\n---',
+      'Agents/b/Chat.md': '---\ntopic: Chat\n---',
+      'Agents/Many.md': '---\ntopic: [Talk, Walk]\n---',
+      'Agents/Broken.md': '---\ntopic: [\n---',
     });
     expect(result.unloadedTopics).toEqual(
       new Map([
         ['health', ['Agents/Health.md']],
         ['running', ['Agents/Coach.md']],
         ['chat', ['Agents/a/Chat.md', 'Agents/b/Chat.md']],
-        ['talk', ['Agents/b/Chat.md']],
       ]),
     );
     // Sleep is claimed by a note that loaded.
@@ -257,8 +256,8 @@ permissions: bypass
       [
         {
           file: 'Agents/Health.md',
-          text: '---\ntopics: Health\nmodle: x\n---',
-          fallback: '---\ntopics: Health\n---',
+          text: '---\ntopic: Health\nmodle: x\n---',
+          fallback: '---\ntopic: Health\n---',
         },
       ],
       CONTEXT,
@@ -269,9 +268,10 @@ permissions: bypass
 
   it('tells who answers a topic by its title', () => {
     const result = snapshot({
-      'Agents/Health.md': '---\ntopics: [Health, Sleep]\n---',
-      'Agents/Running.md': '---\ntopics: [sleep]\n---',
-      'Agents/Coach.md': '---\ntopics: Coaching\nmodle: x\n---',
+      'Agents/Health.md': '---\ntopic: Health\n---',
+      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
+      'Agents/Running.md': '---\ntopic: sleep\n---',
+      'Agents/Coach.md': '---\ntopic: Coaching\nmodle: x\n---',
     });
     expect(topicClaim(result, ' HEALTH ')).toEqual({
       kind: 'agent',
@@ -279,7 +279,7 @@ permissions: bypass
     });
     expect(topicClaim(result, 'Sleep')).toEqual({
       kind: 'conflict',
-      files: ['Agents/Health.md', 'Agents/Running.md'],
+      files: ['Agents/Running.md', 'Agents/Sleep.md'],
     });
     expect(topicClaim(result, 'coaching')).toEqual({
       kind: 'unloaded',
@@ -288,9 +288,9 @@ permissions: bypass
     expect(topicClaim(result, 'Groceries')).toEqual({ kind: 'unclaimed' });
   });
 
-  it('lets a disabled Agent keep its topics', () => {
+  it('lets a disabled Agent keep its topic', () => {
     const result = snapshot({
-      'Agents/Health.md': '---\ntopics: Health\nenabled: false\n---',
+      'Agents/Health.md': '---\ntopic: Health\nenabled: false\n---',
     });
     expect(result.topicClaims.get('health')).toBe('health');
   });
@@ -325,11 +325,35 @@ permissions: bypass
         'Pero.md main-agent: the Agent note named home has errors',
       ]);
     });
+
+    it('has no topic, and its instructions start every other Agent’s', () => {
+      const files = {
+        'Pero.md': '---\nmain-agent: Home\n---',
+        'Agents/Home.md': '---\ntopic: Home\n---\nBe kind.',
+      };
+      expect(errorsOf(files)).toEqual([
+        'Agents/Home.md topic: must not be set: the main Agent answers General topics and direct chats; give the topic a note of its own',
+        'Pero.md main-agent: the Agent note named home has errors',
+      ]);
+      expect(snapshot(files).mainInstructions).toBeNull();
+
+      const result = snapshot({
+        'Pero.md': '---\nmain-agent: Home\n---',
+        'Agents/Home.md': 'Be kind.',
+        'Agents/Health.md': '---\ntopic: Health\n---\nCoach me.',
+        'Agents/Code.md':
+          '---\ntopic: Code\nskip-main-instructions: true\n---\nReview.',
+      });
+      expect(result.mainInstructions).toBe('Be kind.');
+      expect(result.agents.get('home')!.mainInstructions).toBe(false);
+      expect(result.agents.get('health')!.mainInstructions).toBe(true);
+      expect(result.agents.get('code')!.mainInstructions).toBe(false);
+    });
   });
 
   it('keeps the Agents when Pero.md is broken, with all defaults', () => {
     const files = {
-      'Pero.md': '---\nprovider: gemini\ntimezone: Asia/Tokyo\n---\nShared',
+      'Pero.md': '---\nprovider: gemini\ntimezone: Asia/Tokyo\n---',
       'Agents/Main.md': 'Hi',
     };
     const result = snapshot(files);
@@ -337,7 +361,6 @@ permissions: bypass
       provider: 'claude',
       timezone: 'UTC',
     });
-    expect(result.sharedInstructions).toBeNull();
     expect(result.agents.has('main')).toBe(true);
     expect(errorsOf(files)).toEqual([
       'Pero.md provider: must be claude or codex',
@@ -360,7 +383,7 @@ permissions: bypass
 
   it('leaves out a note that does not parse, with its errors', () => {
     const files = {
-      'Agents/Health.md': '---\ntopics: [Health\n---',
+      'Agents/Health.md': '---\ntopic: [Health\n---',
       'Agents/Main.md': 'Hi',
     };
     const result = snapshot(files);
@@ -397,7 +420,7 @@ permissions: bypass
     it('take the Agent from their first channel', () => {
       const agentOf = (channel: string) =>
         snapshot({
-          'Agents/Health.md': '---\ntopics: [Health]\n---',
+          'Agents/Health.md': '---\ntopic: Health\n---',
           'Workflows/Report.md': `---\nchannel: ${channel}\n---\nGo`,
         }).workflows.get('report')!.agent;
       expect(agentOf('Health')).toBe('health');
@@ -421,8 +444,8 @@ permissions: bypass
 
     it('need an agent when their first channel is claimed twice', () => {
       const files = {
-        'Agents/Health.md': '---\ntopics: Health\n---',
-        'Agents/Running.md': '---\ntopics: Health\n---',
+        'Agents/Health.md': '---\ntopic: Health\n---',
+        'Agents/Running.md': '---\ntopic: Health\n---',
         'Workflows/Report.md': '---\nchannel: Health\n---\nGo',
       };
       expect(snapshot(files).workflows.size).toBe(0);
@@ -489,7 +512,7 @@ permissions: bypass
     const agentOf = (channel: string) =>
       snapshot(
         {
-          'Agents/Health.md': '---\ntopics: [Health]\n---',
+          'Agents/Health.md': '---\ntopic: Health\n---',
           'Workflows/Report.md': `---\nchannel: ${channel}\n---\nGo`,
         },
         { topics },
@@ -505,7 +528,7 @@ permissions: bypass
     it('gives the Channels found by ID, each once, and history sorted', () => {
       const result = snapshot(
         {
-          'Agents/Health.md': '---\ntopics: [Health]\n---',
+          'Agents/Health.md': '---\ntopic: Health\n---',
           'Workflows/Report.md':
             '---\nchannel: [Health, 8, General, 7, health]\nhistory: true\nhistory-channels: [8, Health]\n---\nGo',
           'Workflows/All.md': '---\nhistory: true\n---\nGo',
@@ -553,8 +576,7 @@ Go`,
 
   it('lists the properties Pero.md sets, leaving out empty ones', () => {
     const result = snapshot({
-      'Pero.md':
-        '---\nclaude-model: opus\ntimezone:\nprovider: codex\n---\nBe kind.',
+      'Pero.md': '---\nclaude-model: opus\ntimezone:\nprovider: codex\n---',
     });
     expect([...result.peroProperties].sort()).toEqual([
       'claude-model',

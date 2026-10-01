@@ -81,8 +81,8 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
 
   it('lists every problem by file and exits 1', async () => {
     await pero(['init', workspace]);
-    write('data/Settings/Agents/Health.md', '---\ntopics: [Health]\n---\nHi');
-    write('data/Settings/Agents/Running.md', '---\ntopics: health\n---\nRun');
+    write('data/Settings/Agents/Health.md', '---\ntopic: Health\n---\nHi');
+    write('data/Settings/Agents/Running.md', '---\ntopic: health\n---\nRun');
     write('data/Settings/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
     write(
       'data/Settings/Workflows/Weekly health report.md',
@@ -99,9 +99,9 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
         'data/Settings/Agents/Coach.md',
         '  modle: unknown property (did you mean model?)',
         'data/Settings/Agents/Health.md',
-        '  topics: "Health" is also claimed by Agents/Running.md, so neither answers there',
+        '  topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
         'data/Settings/Agents/Running.md',
-        '  topics: "health" is also claimed by Agents/Health.md, so neither answers there',
+        '  topic: "health" is also claimed by Agents/Health.md, so neither answers there',
         'data/Settings/Notes.md',
         '  not an Agent or Workflow note; move it under Agents/ or Workflows/, or start its name with _',
         'data/Settings/Workflows/Review.md',

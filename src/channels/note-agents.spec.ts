@@ -37,7 +37,7 @@ const OWNER = privateChat('1234');
 /*
  * In a workspace, Agents come from notes, and so does which one answers
  * where: a primary Channel gets the main Agent, and a topic the Agent
- * whose topics claims its title, chosen on every message.
+ * whose topic is its title, chosen on every message.
  */
 describe('Topic routing by notes in a workspace', () => {
   let workspace: string;
@@ -78,12 +78,12 @@ describe('Topic routing by notes in a workspace', () => {
     workspace = mkdtempSync(join(tmpdir(), 'pero-note-agents-'));
     mkdirSync(join(workspace, '.pero'));
     clock = Date.parse('2026-01-01T00:00:00Z');
-    write('Pero.md', '---\nmain-agent: Coach\n---\nBe brief.');
+    write('Pero.md', '---\nmain-agent: Coach\n---');
     write('Agents/Coach.md', 'You coach.');
-    write('Agents/Health.md', '---\ntopics: Health\n---\nYou track health.');
-    write('Agents/Retired.md', '---\ntopics: Garden\nenabled: false\n---');
+    write('Agents/Health.md', '---\ntopic: Health\n---\nYou track health.');
+    write('Agents/Retired.md', '---\ntopic: Garden\nenabled: false\n---');
     // Broken since Pero started, so it never loaded.
-    write('Agents/Sleep.md', '---\ntopics: Sleep\nmodle: x\n---');
+    write('Agents/Sleep.md', '---\ntopic: Sleep\nmodle: x\n---');
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({
@@ -170,14 +170,14 @@ describe('Topic routing by notes in a workspace', () => {
   });
 
   it('moves a topic once another Agent claims its title', async () => {
-    await edit('Agents/Health.md', '---\ntopics: [Health, Running]\n---');
+    await edit('Agents/Trainer.md', '---\ntopic: Running\n---');
     await inTopic('6', 'Running');
-    expect(answeredBy()).toEqual(['health']);
+    expect(answeredBy()).toEqual(['trainer']);
 
-    await edit('Agents/Coach.md', '---\ntopics: Running\n---');
-    await edit('Agents/Health.md', '---\ntopics: Health\n---');
+    await edit('Agents/Trainer.md', 'You train.');
+    await edit('Agents/Health.md', '---\ntopic: Running\n---');
     await inTopic('6', 'Running');
-    expect(answeredBy()).toEqual(['health', 'coach']);
+    expect(answeredBy()).toEqual(['trainer', 'health']);
   });
 
   describe('a topic no Agent claims', () => {
@@ -189,7 +189,7 @@ describe('Topic routing by notes in a workspace', () => {
       await adapter.emit(topicCreated(GROUP, '6', { title: 'Running' }));
 
       expect(read('Agents/Running.md')).toBe(
-        '---\n# For new topics\nmodel: haiku # quick\ntopics:\n  - Running\n---\nYou help with this topic.\n',
+        '---\n# For new topics\nmodel: haiku # quick\ntopic: Running\n---\nYou help with this topic.\n',
       );
       expect(sentTexts()).toEqual([
         expect.stringMatching(
@@ -219,9 +219,7 @@ describe('Topic routing by notes in a workspace', () => {
         'Running.md',
         'Sleep.md',
       ]);
-      expect(read('Agents/Running.md')).toBe(
-        '---\ntopics:\n  - Running\n---\n',
-      );
+      expect(read('Agents/Running.md')).toBe('---\ntopic: Running\n---\n');
       expect(sentTexts()).toEqual([
         expect.stringMatching(/^This topic talks to Agent running/),
       ]);
@@ -247,52 +245,30 @@ describe('Topic routing by notes in a workspace', () => {
       await inTopic('7', 'Garden/');
 
       expect(read('Agents/Health.md')).toBe(
-        '---\ntopics: Health\n---\nYou track health.',
+        '---\ntopic: Health\n---\nYou track health.',
       );
-      expect(read('Agents/Health 2.md')).toBe(
-        '---\ntopics:\n  - Health?\n---\n',
-      );
-      expect(read('Agents/Garden 3.md')).toBe(
-        '---\ntopics:\n  - Garden/\n---\n',
-      );
+      expect(read('Agents/Health 2.md')).toBe('---\ntopic: Health?\n---\n');
+      expect(read('Agents/Garden 3.md')).toBe('---\ntopic: Garden/\n---\n');
       expect(answeredBy()).toEqual(['health-2', 'garden-3']);
-    });
-
-    it('gets the main Agent, and no note, with new-topics: main-agent', async () => {
-      await edit(
-        'Pero.md',
-        '---\nmain-agent: Coach\nnew-topics: main-agent\n---',
-      );
-      await adapter.emit(topicCreated(GROUP, '6', { title: 'Running' }));
-      await inTopic('6', 'Running');
-      await inTopic('7', null);
-
-      expect(answeredBy()).toEqual(['coach', 'coach']);
-      expect(agentNotes()).toEqual([
-        'Coach.md',
-        'Health.md',
-        'Retired.md',
-        'Sleep.md',
-      ]);
     });
   });
 
   it('answers a topic claimed twice with neither, and says why once', async () => {
-    await edit('Agents/Runner.md', '---\ntopics: Health\n---');
+    await edit('Agents/Runner.md', '---\ntopic: Health\n---');
     await inTopic('5', 'Health');
     await inTopic('5', 'Health');
 
     expect(answeredBy()).toEqual([]);
     expect(sentTexts()).toEqual([
       'No one answers in this topic: data/Settings/Agents/Health.md and ' +
-        'data/Settings/Agents/Runner.md claim "Health" in their topics. ' +
+        'data/Settings/Agents/Runner.md set topic: Health. ' +
         'Keep it in only one of them.',
     ]);
 
     // Once it is answered again, a new problem is told again.
     await edit('Agents/Runner.md', 'You run.');
     await inTopic('5', 'Health');
-    await edit('Agents/Runner.md', '---\ntopics: Health\n---');
+    await edit('Agents/Runner.md', '---\ntopic: Health\n---');
     await inTopic('5', 'Health');
     expect(answeredBy()).toEqual(['health']);
     expect(sentTexts()).toHaveLength(2);
@@ -365,13 +341,13 @@ describe('Topic routing by notes in a workspace', () => {
     it('stays with its Agent, whose note keeps its comments and body', async () => {
       await edit(
         'Agents/Health.md',
-        '---\n# Mine\ntopics: [Health, Steps] # both\n---\n\nYou track health.\n',
+        '---\n# Mine\ntopic: Health # mine\n---\n\nYou track health.\n',
       );
       await adapter.emit(topicCreated(GROUP, '5', { title: 'Health' }));
       await adapter.emit(topicRenamed(GROUP, '5', 'Fitness'));
 
       expect(read('Agents/Health.md')).toBe(
-        '---\n# Mine\ntopics: [Fitness, Steps] # both\n---\n\nYou track health.\n',
+        '---\n# Mine\ntopic: Fitness # mine\n---\n\nYou track health.\n',
       );
       // Messages still carry the title the topic was created with.
       await inTopic('5', 'Health');
@@ -379,30 +355,31 @@ describe('Topic routing by notes in a workspace', () => {
       expect(agentNotes()).not.toContain('Fitness.md');
     });
 
-    it('keeps the old title too while another topic has it', async () => {
+    it('leaves its Agent to another topic that still has the old title', async () => {
       await adapter.emit(topicCreated(GROUP, '5', { title: 'Health' }));
       await adapter.emit(topicCreated(GROUP, '6', { title: 'Health' }));
       await adapter.emit(topicRenamed(GROUP, '5', 'Fitness'));
 
       expect(read('Agents/Health.md')).toBe(
-        '---\ntopics:\n  - Health\n  - Fitness\n---\nYou track health.',
+        '---\ntopic: Health\n---\nYou track health.',
       );
       await inTopic('5', 'Health');
       await inTopic('6', 'Health');
-      expect(answeredBy()).toEqual(['health', 'health']);
+      expect(answeredBy()).toEqual(['fitness', 'health']);
+      expect(read('Agents/Fitness.md')).toBe('---\ntopic: Fitness\n---\n');
     });
 
     it('moves to the Agent that claims its new title, leaving the note alone', async () => {
-      await edit('Agents/Coach.md', '---\ntopics: Coaching\n---');
+      await edit('Agents/Trainer.md', '---\ntopic: Coaching\n---');
       await adapter.emit(topicCreated(GROUP, '5', { title: 'Health' }));
       await inTopic('5', 'Health');
       await adapter.emit(topicRenamed(GROUP, '5', 'Coaching'));
       await inTopic('5', 'Health');
 
       expect(read('Agents/Health.md')).toBe(
-        '---\ntopics: Health\n---\nYou track health.',
+        '---\ntopic: Health\n---\nYou track health.',
       );
-      expect(answeredBy()).toEqual(['health', 'coach']);
+      expect(answeredBy()).toEqual(['health', 'trainer']);
     });
   });
 });

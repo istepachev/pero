@@ -198,7 +198,7 @@ export function brokenNoteMessage(
 }
 
 /**
- * The Channels a broken note relates to, by ID: the topics an Agent
+ * The Channels a broken note relates to, by ID: the topic an Agent
  * claims, or the Channels a Workflow posts to, as the broken version and
  * the version in use name them. Only Channels Pero has seen count.
  */
@@ -211,9 +211,11 @@ function relatedChannels(
   const ids = new Set<number>();
   switch (read?.kind) {
     case 'agent': {
-      const titles = listed(read.read.note?.properties.topics);
+      const titles = listed(read.read.note?.properties.topic);
       for (const agent of snapshot.agents.values()) {
-        if (agent.file === note.file) titles.push(...agent.topics);
+        if (agent.file === note.file && agent.topic !== null) {
+          titles.push(agent.topic);
+        }
       }
       const keys = new Set(
         titles.map((title) => String(title).trim().toLowerCase()),

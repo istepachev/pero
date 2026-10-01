@@ -24,7 +24,7 @@ import {
   readAgentNote,
   readPeroNote,
   readWorkflowNote,
-  topicTitles,
+  topicTitleOf,
   type WorkflowNote,
   type WorkflowNoteHistory,
 } from './schemas.js';
@@ -33,10 +33,7 @@ import type { SettingsError } from './settings-error.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /** Installation defaults, with the time zone settled. */
-export interface Defaults extends Omit<
-  PeroNote,
-  'timezone' | 'sharedInstructions'
-> {
+export interface Defaults extends Omit<PeroNote, 'timezone'> {
   timezone: string;
 }
 
@@ -47,7 +44,8 @@ export interface Agent {
   title: string;
   /** Its note's path inside the settings folder. */
   file: string;
-  topics: readonly string[];
+  /** The title of the topic it answers in; null for none. */
+  topic: string | null;
   provider: Provider;
   /** Null lets the provider choose. */
   model: string | null;
@@ -56,8 +54,11 @@ export interface Agent {
   permissions: PermissionMode;
   /** The folder it works in, absolute: its own, or the workspace. */
   workingDirectory: string;
-  /** Whether `Pero.md`'s body precedes its own instructions. */
-  sharedInstructions: boolean;
+  /**
+   * Whether the main Agent's instructions precede its own: unless it is
+   * the main Agent or its note sets `skip-main-instructions`.
+   */
+  mainInstructions: boolean;
   /** Lets a Codex Agent work in a folder that is not a Git repository. */
   skipGitRepoCheck: boolean;
   enabled: boolean;
@@ -122,8 +123,11 @@ export interface ResolvedChannels {
 /** Every setting from the notes, with references between them resolved. */
 export interface SettingsSnapshot {
   defaults: Defaults;
-  /** `Pero.md`'s body. */
-  sharedInstructions: string | null;
+  /**
+   * The main Agent's instructions, which every other Agent's start with;
+   * null while it has none or no note defines it.
+   */
+  mainInstructions: string | null;
   /**
    * The properties the `Pero.md` in use sets, to tell its values from
    * Pero's own defaults.
@@ -295,11 +299,14 @@ export function buildSnapshot(
           .map(([key]) => key)
       : [],
   );
-  const { timezone, sharedInstructions, ...peroDefaults } = peroNote;
+  const { timezone, ...peroDefaults } = peroNote;
   const defaults: Defaults = {
     ...peroDefaults,
     timezone: timezone ?? context.hostTimeZone,
   };
+
+  // The main Agent: the default one is created when a Channel first needs it.
+  const mainAgent = defaults.mainAgent;
 
   // Names of Agent notes that exist but are left out, for notes naming them.
   const brokenAgents = new Set<string>();
@@ -309,9 +316,15 @@ export function buildSnapshot(
       brokenAgents.add(read.identity.name);
       continue;
     }
-    const agent = defineAgent(read, read.result.value, defaults, context);
-    if (typeof agent === 'string') {
-      errors.push({ file: read.file, property: 'effort', message: agent });
+    const agent = defineAgent(
+      read,
+      read.result.value,
+      defaults,
+      mainAgent,
+      context,
+    );
+    if ('error' in agent) {
+      errors.push({ file: read.file, ...agent.error });
       brokenAgents.add(read.identity.name);
       continue;
     }
@@ -321,10 +334,9 @@ export function buildSnapshot(
   // Topic claims.
   const claimants = new Map<string, Agent[]>();
   for (const agent of agents.values()) {
-    for (const title of agent.topics) {
-      const key = title.toLowerCase();
-      claimants.set(key, [...(claimants.get(key) ?? []), agent]);
-    }
+    if (agent.topic === null) continue;
+    const key = agent.topic.toLowerCase();
+    claimants.set(key, [...(claimants.get(key) ?? []), agent]);
   }
   const topicClaims = new Map<string, string>();
   const conflictedTopics = new Set<string>();
@@ -335,14 +347,13 @@ export function buildSnapshot(
     }
     conflictedTopics.add(key);
     for (const agent of claiming) {
-      const title = agent.topics.find((topic) => topic.toLowerCase() === key)!;
       const others = claiming
         .filter((other) => other !== agent)
         .map((other) => other.file);
       errors.push({
         file: agent.file,
-        property: 'topics',
-        message: `"${title}" is also claimed by ${listing(others)}, so neither answers there`,
+        property: 'topic',
+        message: `"${agent.topic}" is also claimed by ${listing(others)}, so neither answers there`,
       });
     }
   }
@@ -351,17 +362,15 @@ export function buildSnapshot(
   const unloadedTopics = new Map<string, string[]>();
   for (const read of agentNotes) {
     if (agents.get(read.identity.name)?.file === read.file) continue;
-    for (const title of topicTitles(read.note?.properties.topics) ?? []) {
-      const key = title.toLowerCase();
-      if (claimants.has(key)) continue;
-      const files = unloadedTopics.get(key) ?? [];
-      if (!files.includes(read.file)) files.push(read.file);
-      unloadedTopics.set(key, files);
-    }
+    const title = topicTitleOf(read.note?.properties.topic);
+    if (title === null) continue;
+    const key = title.toLowerCase();
+    if (claimants.has(key)) continue;
+    const files = unloadedTopics.get(key) ?? [];
+    if (!files.includes(read.file)) files.push(read.file);
+    unloadedTopics.set(key, files);
   }
 
-  // The main Agent: the default one is created when a Channel first needs it.
-  const mainAgent = defaults.mainAgent;
   if (pero?.note?.properties['main-agent'] != null && !agents.has(mainAgent)) {
     errors.push({
       file: PERO_NOTE,
@@ -394,7 +403,7 @@ export function buildSnapshot(
 
   return Object.freeze({
     defaults: Object.freeze(defaults),
-    sharedInstructions,
+    mainInstructions: agents.get(mainAgent)?.instructions ?? null,
     peroProperties,
     agents,
     mainAgent,
@@ -451,24 +460,43 @@ function withUniqueNames<T>(
   return unique;
 }
 
-/** The Agent `read` describes, or why its effort doesn't fit its provider. */
+/**
+ * The Agent `read` describes, or why it can't run: its effort doesn't fit
+ * its provider, or it is the main Agent and names a topic.
+ */
 function defineAgent(
   read: Read<AgentNote>,
   note: AgentNote,
   defaults: Defaults,
+  mainAgent: string,
   context: SnapshotContext,
-): Agent | string {
+): Agent | { error: Omit<SettingsError, 'file'> } {
+  const main = read.identity.name === mainAgent;
+  if (main && note.topic !== null) {
+    return {
+      error: {
+        property: 'topic',
+        message:
+          'must not be set: the main Agent answers General topics and direct chats; give the topic a note of its own',
+      },
+    };
+  }
   const provider = note.provider ?? defaults.provider;
   const efforts = EFFORTS_BY_PROVIDER[provider];
   if (note.effort !== null && !efforts.includes(note.effort)) {
-    return `must be ${listing(efforts)} for ${provider}`;
+    return {
+      error: {
+        property: 'effort',
+        message: `must be ${listing(efforts)} for ${provider}`,
+      },
+    };
   }
   const own = defaults.providerDefaults[provider];
   return {
     name: read.identity.name,
     title: read.identity.title,
     file: read.file,
-    topics: note.topics,
+    topic: note.topic,
     provider,
     model: note.model ?? own.model,
     // Checked above against the provider.
@@ -482,7 +510,7 @@ function defineAgent(
             context.workspace,
             context.homeDir,
           ),
-    sharedInstructions: note.sharedInstructions,
+    mainInstructions: !main && !note.skipMainInstructions,
     skipGitRepoCheck: note.skipGitRepoCheck,
     enabled: note.enabled,
     instructions: note.instructions,
@@ -490,7 +518,7 @@ function defineAgent(
   };
 }
 
-/** Who answers the topic a title names, by the Agents' `topics`. */
+/** Who answers the topic a title names, by the Agents' `topic`. */
 export type TopicClaim =
   | { kind: 'agent'; agent: string }
   /** Several Agents claim it, in `files`: none answers. */
@@ -512,9 +540,7 @@ export function topicClaim(
   if (agent !== undefined) return { kind: 'agent', agent };
   if (snapshot.conflictedTopics.has(key)) {
     const files = [...snapshot.agents.values()]
-      .filter((claiming) =>
-        claiming.topics.some((topic) => topic.toLowerCase() === key),
-      )
+      .filter((claiming) => claiming.topic?.toLowerCase() === key)
       .map((claiming) => claiming.file)
       .sort(compare);
     return { kind: 'conflict', files };

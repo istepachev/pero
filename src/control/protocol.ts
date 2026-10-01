@@ -8,7 +8,6 @@ import { telegramChatIdSchema } from '../config/host-config.js';
 import { telegramBotTokenSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import { VALUE_ORIGINS } from '../settings-files/origins.js';
-import { NEW_TOPICS } from '../settings-files/schemas.js';
 import {
   HISTORY_MESSAGES,
   workflowReferenceSchema,
@@ -92,7 +91,6 @@ export const settingsViewSchema = z.object({
   providerDefaults: providerDefaultsSchema,
   /** The owner's notes and files, which every Agent's instructions name. */
   dataFolder: z.string(),
-  sharedInstructions: z.string().nullable(),
   /** The name of the Agent primary Channels get. */
   mainAgent: z.string(),
   historyCarryover: z.int(),
@@ -107,8 +105,6 @@ export const settingsViewSchema = z.object({
    * workspace when inside it.
    */
   files: z.object({ pero: z.string(), config: z.string() }),
-  /** What a topic no Agent claims gets; null until the notes are read. */
-  newTopics: z.enum(NEW_TOPICS).nullable(),
   /**
    * The properties `Pero.md` sets; the others are Pero's own defaults.
    * Null until the notes are read.
@@ -197,7 +193,8 @@ export const agentViewSchema = z.object({
   effectiveWorkingDirectory: z.string(),
   /** The Agent's own instructions; null means none. */
   instructions: z.string().nullable(),
-  useSharedInstructions: z.boolean(),
+  /** Whether the main Agent's instructions precede its own. */
+  useMainInstructions: z.boolean(),
   permissions: z.enum(PERMISSION_MODES),
   /** Codex only: whether it may work in a folder outside a Git repository. */
   skipGitRepoCheck: z.boolean(),
@@ -206,8 +203,8 @@ export const agentViewSchema = z.object({
   main: z.boolean(),
   /** The note that defines it, relative to the workspace when inside it. */
   file: z.string(),
-  /** Titles of the topics it claims. */
-  topics: z.array(z.string()),
+  /** The title of the topic it answers in; null for none. */
+  topic: z.string().nullable(),
   /** Where its values come from: the note, `Pero.md`, or Pero's defaults. */
   origins: z.object({
     provider: z.enum(VALUE_ORIGINS),

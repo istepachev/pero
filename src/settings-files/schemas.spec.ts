@@ -44,7 +44,7 @@ function messageFor(
 
 describe('readPeroNote', () => {
   const invalid = (properties: Record<string, unknown>) =>
-    messageFor(readPeroNote, PERO, properties);
+    messageFor(readPeroNote, PERO, properties, null);
 
   it("takes Pero's defaults for everything left out", () => {
     expect(value(readPeroNote(PERO, note({})))).toEqual({
@@ -56,15 +56,13 @@ describe('readPeroNote', () => {
       permissions: 'ask',
       timezone: null,
       mainAgent: 'main',
-      newTopics: 'create-agent',
       historyCarryover: 50,
       historyRetentionDays: null,
       maxConcurrentRuns: 2,
-      sharedInstructions: null,
     });
   });
 
-  it('reads every property, and the body as shared instructions', () => {
+  it('reads every property', () => {
     expect(
       value(
         readPeroNote(
@@ -79,12 +77,11 @@ describe('readPeroNote', () => {
               permissions: 'bypass',
               timezone: 'europe/berlin',
               'main-agent': 'Home Assistant',
-              'new-topics': 'main-agent',
               'history-carryover': 0,
               'history-retention-days': 90,
               'max-concurrent-runs': 10,
             },
-            'You are a calm assistant.',
+            null,
           ),
         ),
       ),
@@ -97,12 +94,25 @@ describe('readPeroNote', () => {
       permissions: 'bypass',
       timezone: 'Europe/Berlin',
       mainAgent: 'home-assistant',
-      newTopics: 'main-agent',
       historyCarryover: 0,
       historyRetentionDays: 90,
       maxConcurrentRuns: 10,
-      sharedInstructions: 'You are a calm assistant.',
     });
+  });
+
+  it("refuses a body: instructions belong in the main Agent's note", () => {
+    const result = readPeroNote(
+      PERO,
+      note({ provider: 'gemini' }, 'You are a calm assistant.'),
+    );
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors.map((e) => e.property)).toEqual([
+      'provider',
+      null,
+    ]);
+    expect(!result.ok && result.errors[1]!.message).toMatch(
+      /^holds settings only: move its text to the main Agent's note/,
+    );
   });
 
   it('treats a property left empty as not set', () => {
@@ -131,9 +141,6 @@ describe('readPeroNote', () => {
     );
     expect(invalid({ 'main-agent': '???' })).toBe(
       'must name a note, such as Main',
-    );
-    expect(invalid({ 'new-topics': 'ignore' })).toBe(
-      'must be create-agent or main-agent',
     );
     expect(invalid({ 'history-carryover': -1 })).toBe(
       'must be a whole number, 0 or more',
@@ -177,13 +184,13 @@ describe('readAgentNote', () => {
 
   it('leaves what it omits to Pero.md', () => {
     expect(value(readAgentNote(AGENT, note({})))).toEqual({
-      topics: [],
+      topic: null,
       provider: null,
       model: null,
       effort: null,
       permissions: null,
       workingDirectory: null,
-      sharedInstructions: true,
+      skipMainInstructions: false,
       skipGitRepoCheck: false,
       enabled: true,
       instructions: null,
@@ -197,13 +204,13 @@ describe('readAgentNote', () => {
           AGENT,
           note(
             {
-              topics: ['Health', 'Running'],
+              topic: 'Health',
               provider: 'codex',
               model: 'gpt-5.5',
               effort: 'ultra',
               permissions: 'bypass',
               'working-directory': 'projects/site',
-              'shared-instructions': false,
+              'skip-main-instructions': true,
               'skip-git-repo-check': true,
               enabled: false,
               tags: ['pero'],
@@ -213,29 +220,24 @@ describe('readAgentNote', () => {
         ),
       ),
     ).toEqual({
-      topics: ['Health', 'Running'],
+      topic: 'Health',
       provider: 'codex',
       model: 'gpt-5.5',
       effort: 'ultra',
       permissions: 'bypass',
       workingDirectory: 'projects/site',
-      sharedInstructions: false,
+      skipMainInstructions: true,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'You are my health coach.',
     });
   });
 
-  it('accepts one topic or a list, each once whatever its case', () => {
-    const topics = (value_: unknown) =>
-      value(readAgentNote(AGENT, note({ topics: value_ }))).topics;
-    expect(topics('Health')).toEqual(['Health']);
-    expect(topics([' Health ', 'health', 'Running'])).toEqual([
-      'Health',
-      'Running',
-    ]);
-    expect(topics([2026])).toEqual(['2026']);
-    expect(topics([])).toEqual([]);
+  it('reads one topic, trimmed, and a number as its title', () => {
+    const topic = (value_: unknown) =>
+      value(readAgentNote(AGENT, note({ topic: value_ }))).topic;
+    expect(topic(' Health ')).toBe('Health');
+    expect(topic(2026)).toBe('2026');
   });
 
   it('accepts any provider’s effort, to check once the provider is known', () => {
@@ -248,12 +250,14 @@ describe('readAgentNote', () => {
   });
 
   it('refuses invalid values', () => {
-    expect(invalid({ topics: ['Health', ''] })).toBe(
-      'must not be empty (item 2)',
+    expect(invalid({ topic: ['Health', 'Running'] })).toBe(
+      'must be one topic title, not a list: an Agent answers one topic',
     );
-    expect(invalid({ topics: [{ title: 'Health' }] })).toBe(
-      'must be text (item 1)',
+    expect(invalid({ topic: ['Health'] })).toBe(
+      'must be one topic title, not a list: an Agent answers one topic',
     );
+    expect(invalid({ topic: '' })).toBe('must not be empty');
+    expect(invalid({ topic: true })).toBe('must be text');
     expect(invalid({ provider: 'openai' })).toBe('must be claude or codex');
     expect(invalid({ model: '  ' })).toBe('must not be empty');
     expect(invalid({ effort: 'huge' })).toMatch(/^must be low, medium, high,/);
@@ -261,7 +265,7 @@ describe('readAgentNote', () => {
     expect(invalid({ 'working-directory': 'a\0b' })).toBe(
       'must not contain a NUL byte',
     );
-    expect(invalid({ 'shared-instructions': 'no' })).toBe(
+    expect(invalid({ 'skip-main-instructions': 'no' })).toBe(
       'must be true or false',
     );
     expect(invalid({ 'skip-git-repo-check': 1 })).toBe('must be true or false');
@@ -272,8 +276,8 @@ describe('readAgentNote', () => {
     expect(invalid({ modle: 'sonnet' })).toBe(
       'unknown property (did you mean model?)',
     );
-    expect(invalid({ topic: 'Health' })).toBe(
-      'unknown property (did you mean topics?)',
+    expect(invalid({ topics: ['Health'] })).toBe(
+      'unknown property (did you mean topic?)',
     );
     expect(invalid({ 'claude-model': 'opus' })).toBe('unknown property');
   });

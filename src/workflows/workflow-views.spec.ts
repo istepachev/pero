@@ -22,7 +22,7 @@ describe('WorkflowViews', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-workflow-views-');
     await ws.pero({ timezone: 'Europe/Berlin' });
-    await ws.agent('Health', { topics: 'Health' });
+    await ws.agent('Health', { topic: 'Health' });
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: ws.database }),

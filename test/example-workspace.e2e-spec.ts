@@ -170,7 +170,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
   it('answers each topic by its note, writes notes for new topics, applies edits, and runs the weekly report', async () => {
     await start();
 
-    // Health answers the Health topic, with Pero's shared instructions.
+    // Health answers the Health topic, starting with the main Agent's instructions.
     expect(await createTopic('Health', HEALTH)).toMatch(
       /^This topic talks to Agent health: claude, model opus, working in /,
     );
@@ -189,7 +189,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     );
     const template = readFileSync(settings('Agents/_Template.md'), 'utf8');
     expect(readFileSync(settings('Agents/Finance.md'), 'utf8')).toBe(
-      template.replace(/\n---\n/, '\n\ntopics:\n  - Finance\n---\n'),
+      template.replace(/\n---\n/, '\n\ntopic: Finance\n---\n'),
     );
     expect(await say('Paid rent', FINANCE)).toBe('echo: Paid rent');
     expect(lastRequest().instructions).toContain(

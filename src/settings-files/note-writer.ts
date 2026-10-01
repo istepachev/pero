@@ -8,14 +8,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { dirname, posix } from 'node:path';
-import {
-  Document,
-  isMap,
-  isScalar,
-  isSeq,
-  parseDocument,
-  type Scalar,
-} from 'yaml';
+import { Document, isMap, isScalar, parseDocument } from 'yaml';
 import { slugify, SLUG_MAX_LENGTH } from '../config/slug.js';
 import { NOTE_FOLDERS, noteIdentity } from './note-files.js';
 
@@ -140,15 +133,15 @@ const PRINT_OPTIONS = { lineWidth: 0, flowCollectionPadding: false } as const;
 
 /**
  * The Agent note for the topic titled `title`, from `template`, the text of
- * `_Template.md`: its properties, comments, and body, with `topics` set to
+ * `_Template.md`: its properties, comments, and body, with `topic` set to
  * the title. Without a template, or with one whose properties don't
- * parse, `topics` alone; `problem` then says what was wrong with it.
+ * parse, `topic` alone; `problem` then says what was wrong with it.
  */
 export function noteFromTemplate(
   template: string | null,
   title: string,
 ): { text: string; problem: string | null } {
-  const bare = formatNote([['topics', [title]]], null);
+  const bare = formatNote([['topic', title]], null);
   if (template === null) return { text: bare, problem: null };
   const split = splitNote(template);
   const document: Document = parseDocument(
@@ -167,8 +160,8 @@ export function noteFromTemplate(
       problem: 'its properties must be "name: value" lines',
     };
   }
-  if (isMap(document.contents)) document.contents.delete('topics');
-  document.set('topics', [title]);
+  if (isMap(document.contents)) document.contents.delete('topic');
+  document.set('topic', title);
   // After the closing `---`: a line break, then the body, as written.
   const after =
     split === null ? `\n${template}` : split.rest.replace(/^---[ \t]*/, '');
@@ -177,46 +170,29 @@ export function noteFromTemplate(
 }
 
 /**
- * `text`, a note whose `topics` lists `from` in any case, with that title
- * replaced by `to`, or `to` added after it when `keep` is set. The rest of
- * the frontmatter keeps its comments, and the body stays as written. Null
- * when the note doesn't list `from` or its properties don't parse.
+ * `text`, a note whose `topic` is `from` in any case, with it set to `to`.
+ * The rest of the frontmatter keeps its comments, and the body stays as
+ * written. Null when the note's topic isn't `from` or its properties
+ * don't parse.
  */
 export function renameTopicIn(
   text: string,
   from: string,
   to: string,
-  keep = false,
 ): string | null {
   const split = splitNote(text);
   if (split === null) return null;
   const document: Document = parseDocument(split.frontmatter, YAML_OPTIONS);
   if (document.errors.length > 0 || !isMap(document.contents)) return null;
-  const node = document.contents.get('topics', true);
-  const matches = (item: unknown) =>
-    isScalar(item) &&
-    String(item.value).trim().toLowerCase() === from.trim().toLowerCase();
-  if (isScalar(node) && matches(node)) {
-    if (keep) {
-      const list = document.createNode([node.value, to]);
-      document.contents.set('topics', list);
-    } else {
-      node.value = to;
-      node.type = undefined;
-    }
-  } else if (isSeq(node)) {
-    const index = node.items.findIndex(matches);
-    if (index === -1) return null;
-    if (keep) {
-      node.items.splice(index + 1, 0, document.createNode(to));
-    } else {
-      const item = node.items[index] as Scalar;
-      item.value = to;
-      item.type = undefined;
-    }
-  } else {
+  const node = document.contents.get('topic', true);
+  if (
+    !isScalar(node) ||
+    String(node.value).trim().toLowerCase() !== from.trim().toLowerCase()
+  ) {
     return null;
   }
+  node.value = to;
+  node.type = undefined;
   return `${split.opening}${document.toString(PRINT_OPTIONS)}${split.rest}`;
 }
 

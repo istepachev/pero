@@ -10,7 +10,6 @@ const workspace: SettingsView = {
     codex: { model: null, effort: null },
   },
   dataFolder: '/home/me/workspace/data',
-  sharedInstructions: 'Be calm and brief.\nReply in my language.',
   mainAgent: 'main',
   historyCarryover: 50,
   historyRetentionDays: 90,
@@ -19,7 +18,6 @@ const workspace: SettingsView = {
   maxConcurrentRuns: 2,
   telegramBotToken: { set: true, source: 'env-file' },
   files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
-  newTopics: 'create-agent',
   setInPero: ['claude-model', 'history-retention-days', 'timezone'],
 };
 
@@ -36,11 +34,9 @@ describe('formatSettings', () => {
         '  permissions             ask (default)',
         '  timezone                Europe/Berlin',
         '  main-agent              main (default)',
-        '  new-topics              create-agent (default)',
         '  history-carryover       50 (default)',
         '  history-retention-days  90',
         '  max-concurrent-runs     2 (default)',
-        '  (body)                  Be calm and brief. (2 lines)',
         '.pero/config.yaml',
         '  data                    /home/me/workspace/data',
         'Telegram bot token: set (.env)',
