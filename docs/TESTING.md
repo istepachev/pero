@@ -130,7 +130,7 @@ Where each [Phase 7 exit criterion](./IMPLEMENTATION_PLAN.md#phase-7-exit-criter
 | Criterion | Verified by |
 |---|---|
 | All runtime code reads definitions through `Definitions` | `src/definitions/boundary.spec.ts`: no file outside `src/definitions/legacy-definitions.ts` names a legacy definition table; `src/definitions/file-definitions.spec.ts` |
-| State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: a 0.1.0 database's Sessions, messages, and runs named, its Sessions resumed, and schedule times moved to `schedules`; `src/scheduler/schedule-tick.spec.ts`: no run lost or repeated across that migration |
+| State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name Agents and Workflows that no row holds, and one schedule row per Workflow name |
 | Every existing installation can be converted to a workspace with `pero migrate`, and its snapshot matches its database | `src/migrate/migrate-installation.spec.ts`: notes that `pero check` passes and whose snapshot matches the database, conflicts, split schedules, and an untouched source; `test/migrate.e2e-spec.ts`: an installation in use carries on as a workspace |
 
 ## Phase 8 exit criteria

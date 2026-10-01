@@ -1,6 +1,5 @@
 import { Channel } from './channel.entity.js';
 import { InboundUpdate } from './inbound-update.entity.js';
-import { LegacyChannelAgent } from './legacy-channel-agent.entity.js';
 import { Message } from './message.entity.js';
 import { Notification } from './notification.entity.js';
 import { ScheduleState } from './schedule-state.entity.js';
@@ -16,5 +15,4 @@ export const ENTITIES = [
   InboundUpdate,
   Message,
   ScheduleState,
-  LegacyChannelAgent,
 ];

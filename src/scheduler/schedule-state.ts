@@ -6,9 +6,9 @@ import {
   scheduleFingerprint,
 } from './schedule.js';
 
-// The `schedules` rows: where each defined schedule stands. The schedules
-// themselves come from `Definitions`; a row is keyed by its Workflow's name
-// and the schedule's fingerprint, so a changed schedule is a new row.
+// The `schedules` rows: where each Workflow's schedule stands, one row per
+// Workflow. The schedules themselves come from `Definitions`; a row holds
+// its schedule's fingerprint, so a changed schedule replaces its times.
 
 /** A schedule as the definitions hold it, with the Workflow it starts. */
 export interface DefinedSchedule {
@@ -27,10 +27,11 @@ export interface Reconciled {
 }
 
 /**
- * Makes the rows match the schedules `defined`: a schedule without a row
- * gets one, next due at its first time after `now`, and a row whose
- * schedule is gone is dropped. Overlapping calls are safe: a row inserted twice is
- * inserted once.
+ * Makes the rows match the schedules `defined`: a Workflow whose schedule
+ * has no row gets one, next due at its first time after `now`, a row
+ * whose schedule changed starts afresh the same way, and a row whose
+ * Workflow has no schedule any more is dropped. Overlapping calls are
+ * safe: a row inserted twice is inserted once.
  */
 export async function reconcileSchedulesWithin(
   manager: EntityManager,
@@ -41,23 +42,29 @@ export async function reconcileSchedulesWithin(
   const rows = await repo.find({
     select: { id: true, workflowName: true, fingerprint: true },
   });
-  const existing = new Set(
-    rows.map((row) => stateKey(row.workflowName, row.fingerprint)),
-  );
+  const existing = new Map(rows.map((row) => [row.workflowName, row]));
   const wanted = new Set<string>();
   const result: Reconciled = { added: [], dropped: [], failed: [] };
 
   for (const { workflow: name, schedule } of defined) {
+    if (wanted.has(name)) continue;
     const fingerprint = scheduleFingerprint(schedule);
-    const key = stateKey(name, fingerprint);
-    if (wanted.has(key)) continue;
-    wanted.add(key);
-    if (existing.has(key)) continue;
+    const row = existing.get(name);
+    if (row?.fingerprint === fingerprint) {
+      wanted.add(name);
+      continue;
+    }
     let nextRunAt: Date | null;
     try {
       nextRunAt = nextOccurrence(schedule, now);
     } catch (error) {
       result.failed.push({ workflow: name, schedule, error });
+      continue;
+    }
+    wanted.add(name);
+    if (row !== undefined) {
+      await repo.update(row.id, { fingerprint, nextRunAt, lastRunAt: null });
+      result.added.push({ workflow: name, schedule, nextRunAt });
       continue;
     }
     const inserted = await repo
@@ -72,7 +79,7 @@ export async function reconcileSchedulesWithin(
   }
 
   for (const row of rows) {
-    if (wanted.has(stateKey(row.workflowName, row.fingerprint))) continue;
+    if (wanted.has(row.workflowName)) continue;
     await repo.delete(row.id);
     result.dropped.push({
       workflow: row.workflowName,

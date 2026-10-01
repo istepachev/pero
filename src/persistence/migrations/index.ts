@@ -1,39 +1,7 @@
-import { CreateSettings1790521767275 } from './1790521767275-CreateSettings.js';
-import { CreateDomainTables1790523956072 } from './1790523956072-CreateDomainTables.js';
-import { ResumeSessionsByProviderAndFolder1790578903382 } from './1790578903382-ResumeSessionsByProviderAndFolder.js';
-import { AllowedChatsAndChannelTitles1790581676882 } from './1790581676882-AllowedChatsAndChannelTitles.js';
-import { CreateMessageHistory1790590513558 } from './1790590513558-CreateMessageHistory.js';
-import { DefaultPermissions1790602942841 } from './1790602942841-DefaultPermissions.js';
-import { RunSkippedCount1790620569391 } from './1790620569391-RunSkippedCount.js';
-import { WorkflowMaxAttempts1790621795251 } from './1790621795251-WorkflowMaxAttempts.js';
-import { WorkflowHistory1790623147117 } from './1790623147117-WorkflowHistory.js';
-import { NotificationDelivery1790658397489 } from './1790658397489-NotificationDelivery.js';
-import { HistoryRetention1790680000000 } from './1790680000000-HistoryRetention.js';
-import { StateByName1790700000000 } from './1790700000000-StateByName.js';
-import { ScheduleState1790710000000 } from './1790710000000-ScheduleState.js';
-import { ChannelRoutes1790720000000 } from './1790720000000-ChannelRoutes.js';
-import { LegacyDefinitions1790730000000 } from './1790730000000-LegacyDefinitions.js';
-import { LegacyWorkflows1790740000000 } from './1790740000000-LegacyWorkflows.js';
+import { InitialSchema1790839859674 } from './1790839859674-InitialSchema.js';
 
 /**
  * Every migration in the order it runs, listed explicitly so the compiled
  * package ships them without file globbing. Append new migrations here.
  */
-export const MIGRATIONS = [
-  CreateSettings1790521767275,
-  CreateDomainTables1790523956072,
-  ResumeSessionsByProviderAndFolder1790578903382,
-  AllowedChatsAndChannelTitles1790581676882,
-  CreateMessageHistory1790590513558,
-  DefaultPermissions1790602942841,
-  RunSkippedCount1790620569391,
-  WorkflowMaxAttempts1790621795251,
-  WorkflowHistory1790623147117,
-  NotificationDelivery1790658397489,
-  HistoryRetention1790680000000,
-  StateByName1790700000000,
-  ScheduleState1790710000000,
-  ChannelRoutes1790720000000,
-  LegacyDefinitions1790730000000,
-  LegacyWorkflows1790740000000,
-];
+export const MIGRATIONS = [InitialSchema1790839859674];
