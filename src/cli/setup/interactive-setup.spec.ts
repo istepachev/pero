@@ -493,7 +493,9 @@ describe('runInteractiveSetup', () => {
       );
       // Only once the group is set up.
       expect(
-        printed.indexOf('Send a message there again to start talking to Pero.'),
+        printed.indexOf(
+          'Pero posted your first steps there. Reply to start talking to your main Agent.',
+        ),
       ).toBe(
         printed.indexOf(
           '@pero_test_bot is an administrator of group "Home" (-100777).',

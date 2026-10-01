@@ -6,7 +6,12 @@ import {
   routeQuery,
   type Unanswered,
 } from '../settings/definitions.js';
-import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
+import type { IntegrationKind } from '../persistence/entities/sql.js';
+import type {
+  ChannelEvent,
+  InboundChat,
+  InboundMessage,
+} from './channel-adapter.js';
 
 /*
  * The stages after the router. Each is an abstract class so it can serve as
@@ -130,4 +135,14 @@ export abstract class ChannelOnboarding {
 
   /** Any event from an allowed chat. */
   abstract onEvent(event: ChannelEvent): Promise<void>;
+
+  /**
+   * `chat` was just allowed: records its primary Channel and, when an Agent
+   * answers there, welcomes it with the first steps, before anyone writes.
+   * A chat whose primary Channel is known already gets nothing.
+   */
+  abstract onChatAllowed(
+    kind: IntegrationKind,
+    chat: InboundChat,
+  ): Promise<void>;
 }

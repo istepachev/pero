@@ -42,6 +42,7 @@ import {
     { provide: ChannelOnboarding, useClass: ChannelOnboardingService },
   ],
   exports: [
+    ChannelOnboarding,
     ChannelRouter,
     ChannelSender,
     ChannelViews,

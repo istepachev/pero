@@ -160,6 +160,30 @@ describe('TelegramChats', () => {
     ]);
   });
 
+  it('welcomes a chat that asked to pair with the first steps once it is allowed', async () => {
+    await start();
+    api.push(message(DIRECT, 'Hello?'));
+    await sentCount(1);
+
+    await chats().allow('1234');
+    const [, welcome] = await sentCount(2);
+
+    expect(welcome).toMatchObject({ chat_id: '1234' });
+    expect(welcome?.text).toMatch(
+      /^This chat talks to Agent main: claude, default model, working in .+\.\n\nFirst steps:\n/,
+    );
+    expect(welcome?.text).toContain('pero telegram allow <chat-id>');
+
+    // The first message goes to the Agent, and checking the chat again
+    // posts nothing.
+    api.push(message(DIRECT, 'One'));
+    const sent = await sentCount(3);
+    expect(sent[2]).toMatchObject({ chat_id: '1234', text: 'echo: One' });
+    await chats().allow('1234');
+    expect(api.sent()).toHaveLength(3);
+    expect(await db().getRepository(Channel).count()).toBe(1);
+  });
+
   it('takes the kind and name from Telegram, then from the ID alone', async () => {
     api.chats.set(String(FORUM.id), FORUM);
     api.chats.set(String(DIRECT.id), DIRECT);

@@ -225,11 +225,18 @@ describe('Telegram chats and pairing (e2e)', () => {
     expect((await client.call('telegram.chats')).allowed).toEqual([
       expect.objectContaining({ chatId: '1234', kind: 'private' }),
     ]);
-    // The chat was told, by Pero and not an Agent, to confirm here.
+    // The chat was told, by Pero and not an Agent, to confirm here, then
+    // given the first steps once allowed.
     expect(api.sent()).toEqual([
       expect.objectContaining({
         chat_id: '1234',
         text: expect.stringContaining('confirm in the terminal'),
+      }),
+      expect.objectContaining({
+        chat_id: '1234',
+        text: expect.stringMatching(
+          /^This chat talks to Agent main: .+\n\nFirst steps:\n/,
+        ),
       }),
     ]);
 
@@ -240,5 +247,6 @@ describe('Telegram chats and pairing (e2e)', () => {
         text: 'echo: Again',
       }),
     );
+    expect(api.sent()).toHaveLength(3);
   });
 });
