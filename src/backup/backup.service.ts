@@ -21,7 +21,7 @@ import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import type { BackupResult } from '../control/protocol.js';
-import { Definitions } from '../definitions/definitions.js';
+import { Definitions } from '../settings/definitions.js';
 import {
   BACKUP_FORMAT,
   type BackupManifest,
@@ -95,7 +95,7 @@ export class BackupService implements BeforeApplicationShutdown {
     );
     try {
       const snapshot = join(staging, DATABASE_ENTRY);
-      const workingDirectories = await this.workingDirectories();
+      const workingDirectories = this.workingDirectories();
       await this.connection().backup(snapshot);
       await chmod(snapshot, 0o600);
       await copyFile(this.layout.configFile, join(staging, CONFIG_ENTRY)).catch(
@@ -160,7 +160,7 @@ export class BackupService implements BeforeApplicationShutdown {
         `Backup file ${destination} must be outside the state directory ${this.layout.stateDir}`,
       );
     }
-    const dataFolder = includeData ? await this.dataFolder() : null;
+    const dataFolder = includeData ? this.dataFolder() : null;
     if (dataFolder !== null && isInside(destination, dataFolder)) {
       throw new InvalidInputError(
         `Backup file ${destination} must be outside the data folder ${dataFolder} it includes`,
@@ -182,21 +182,18 @@ export class BackupService implements BeforeApplicationShutdown {
   }
 
   /** The data folder, which a workspace always has. */
-  private async dataFolder(): Promise<string> {
-    const { dataFolder } = await this.definitions.defaults();
-    return dataFolder;
+  private dataFolder(): string {
+    return this.definitions.defaults().dataFolder;
   }
 
   /**
    * The folders the workspace's Agents work in, which a restore checks
    * for: the data folder, and each Agent's own.
    */
-  private async workingDirectories(): Promise<
-    BackupManifest['workingDirectories']
-  > {
-    const agents = await this.definitions.agents();
+  private workingDirectories(): BackupManifest['workingDirectories'] {
+    const agents = this.definitions.agents();
     return [
-      { path: await this.dataFolder(), agent: null },
+      { path: this.dataFolder(), agent: null },
       ...agents.flatMap(({ name, ownWorkingDirectory }) =>
         ownWorkingDirectory === null
           ? []

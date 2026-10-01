@@ -9,20 +9,20 @@ import type {
   AgentDetails,
   AgentView,
 } from '../control/protocol.js';
-import {
-  type AgentDefinition,
-  type Defaults,
-  Definitions,
-  routeQuery,
-} from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { findAgentNote, shownPath } from '../settings-files/note-paths.js';
 import { agentOrigins } from '../settings-files/origins.js';
+import {
+  type AgentDefinition,
+  type Defaults,
+  Definitions,
+  routeQuery,
+} from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 
 /**
  * Agents as the CLI shows them: their settings with defaults resolved, and
@@ -39,18 +39,19 @@ export class AgentViews {
 
   /** Every Agent, by name. */
   async list(): Promise<AgentView[]> {
-    const main = (await this.definitions.mainAgent())?.name ?? null;
-    return (await this.definitions.agents())
+    const main = this.definitions.mainAgent()?.name ?? null;
+    return this.definitions
+      .agents()
       .map((agent) => this.view(agent, main))
       .filter((view) => view !== null);
   }
 
   /** The Agent named `name` with its Channels; `NotFoundError` if none. */
   async details(name: string): Promise<AgentDetails> {
-    const agent = await this.definitions.agent(name);
+    const agent = this.definitions.agent(name);
     if (agent === null) throw this.notFound(name);
-    const main = (await this.definitions.mainAgent())?.name ?? null;
-    const defaults = await this.definitions.defaults();
+    const main = this.definitions.mainAgent()?.name ?? null;
+    const defaults = this.definitions.defaults();
     const shown = this.view(agent, main);
     if (shown === null) throw this.notFound(name);
     const view = {
@@ -121,7 +122,7 @@ export class AgentViews {
       for (const channel of await manager
         .getRepository(Channel)
         .find({ order: { id: 'ASC' } })) {
-        const route = await this.definitions.route(routeQuery(channel));
+        const route = this.definitions.route(routeQuery(channel));
         const name =
           route.kind === 'agent'
             ? route.agent.name

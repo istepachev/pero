@@ -2,7 +2,7 @@ import {
   type BeforeApplicationShutdown,
   Injectable,
   Logger,
-  type OnApplicationBootstrap,
+  type OnModuleInit,
   Optional,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
@@ -48,16 +48,12 @@ export interface SettingsChange {
  * seen in the allowed chats, looked up on each scan: when those change,
  * the snapshot is built again, though no note changed.
  *
- * `FileDefinitions` serves the definitions from the snapshot.
+ * `Definitions` serves the definitions from the snapshot.
  */
 @Injectable()
-export class SettingsNotes
-  implements OnApplicationBootstrap, BeforeApplicationShutdown
-{
+export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
   private readonly logger = new Logger('Settings');
   private reloader: SettingsReloader | null = null;
-  /** The first load, started by whichever needs the notes first. */
-  private loaded: Promise<void> | null = null;
   private readonly listeners = new Set<(change: SettingsChange) => void>();
   /** The rescan under way, if any. */
   private current: Promise<void> | null = null;
@@ -74,25 +70,12 @@ export class SettingsNotes
   ) {}
 
   /**
-   * Loads the notes before the daemon answers its control socket, if
-   * nothing needed them earlier.
+   * Loads the notes. The modules that read them import this one, so Nest
+   * calls this before their own startup hooks, and nothing reads the
+   * snapshot before it is loaded. `config.yaml` has been read by then, its
+   * module being global.
    */
-  async onApplicationBootstrap(): Promise<void> {
-    await this.ready();
-  }
-
-  /**
-   * The snapshot in use, loading the notes the first time: startup work,
-   * such as recovering Workflow runs, may need them before
-   * `onApplicationBootstrap`. `config.yaml` has been read by then, its
-   * module being global. Null when the settings folder can't be read.
-   */
-  async ready(): Promise<SettingsSnapshot | null> {
-    await (this.loaded ??= this.load());
-    return this.snapshot();
-  }
-
-  private async load(): Promise<void> {
+  async onModuleInit(): Promise<void> {
     const folders = this.folders();
     this.reloader = new SettingsReloader(folders.settingsFolder, {
       workspace: folders.workspace,
@@ -122,7 +105,10 @@ export class SettingsNotes
     void this.rescan();
   }
 
-  /** The snapshot in use; null until the notes could be read. */
+  /**
+   * The snapshot in use; null while the notes couldn't be read, as when
+   * the settings folder is unreadable.
+   */
   snapshot(): SettingsSnapshot | null {
     return this.reloader?.current() ?? null;
   }

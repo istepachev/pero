@@ -1,7 +1,7 @@
 import type { EntityManager } from 'typeorm';
 import { NotFoundError } from '../common/errors.js';
-import type { Definitions } from '../definitions/definitions.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import type { Definitions } from '../settings/definitions.js';
 
 /**
  * The name runs of the Workflow named `name`, in any case, are recorded
@@ -16,7 +16,7 @@ export async function runsWorkflowNameWithin(
 ): Promise<string> {
   const workflowName = name.toLowerCase();
   if (
-    (await definitions.workflow(workflowName)) === null &&
+    definitions.workflow(workflowName) === null &&
     !(await manager.getRepository(WorkflowRun).existsBy({ workflowName }))
   ) {
     throw new NotFoundError(`No Workflow named ${name}`);

@@ -27,7 +27,7 @@ import {
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { MIGRATIONS } from '../persistence/migrations/index.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { DATABASE_ENTRY, extractBackupArchive } from './archive.js';
 import { BackupModule } from './backup.module.js';
 import { BackupService } from './backup.service.js';

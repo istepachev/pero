@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { channelTopicLookup } from '../settings-notes/channel-topics.js';
+import { channelTopicLookup } from '../settings/channel-topics.js';
 import { SettingsReloader } from './reload.js';
 
 describe('SettingsReloader', () => {

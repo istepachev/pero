@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import type { Exec } from './provider-auth.js';
 import {
   PROVIDER_AUTH_EXEC,
@@ -70,19 +70,20 @@ describe('ProviderAuthService', () => {
       state: 'unconfigured',
       required: false,
     });
-    expect(await service.inUse()).toEqual(['claude']);
+    expect(service.inUse()).toEqual(['claude']);
   });
 
   it('follows the default provider and enabled Agents', async () => {
+    await moduleRef.init();
     await ws.pero({ provider: 'codex' });
-    expect(await service.inUse()).toEqual(['codex']);
+    expect(service.inUse()).toEqual(['codex']);
 
     await ws.agent('Assistant', { provider: 'claude' });
-    expect(await service.inUse()).toEqual(['claude', 'codex']);
+    expect(service.inUse()).toEqual(['claude', 'codex']);
 
     await ws.editAgent('Assistant', { enabled: false });
-    await service.refreshRequirements();
-    expect(await service.inUse()).toEqual(['codex']);
+    service.refreshRequirements();
+    expect(service.inUse()).toEqual(['codex']);
     expect(component('claude')?.required).toBe(false);
   });
 

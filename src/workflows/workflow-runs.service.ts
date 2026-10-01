@@ -14,19 +14,19 @@ import type {
   RunView,
 } from '../control/protocol.js';
 import {
-  Definitions,
-  requireAgent,
-  requireWorkflow,
-  type WorkflowDefinition,
-} from '../definitions/definitions.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import {
   NOTIFICATION_RELATIONS,
   notificationView,
 } from '../notifications/notification-views.service.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import {
+  Definitions,
+  requireAgent,
+  requireWorkflow,
+  type WorkflowDefinition,
+} from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 import {
   historyReadSchema,
   historyWindowSchema,
@@ -62,9 +62,9 @@ export class WorkflowRuns {
    */
   async start(name: string): Promise<RunView> {
     const run = await inTransaction(this.dataSource, async (manager) => {
-      const workflow = await this.definitions.workflow(name);
+      const workflow = this.definitions.workflow(name);
       if (workflow === null) throw missingWorkflow(this.notes, name);
-      await this.requireRunnable(workflow);
+      this.requireRunnable(workflow);
       const runs = manager.getRepository(WorkflowRun);
       const { id } = await runs.save(
         runs.create({
@@ -95,7 +95,7 @@ export class WorkflowRuns {
       const run = await runs.findOneBy({ id });
       if (run === null) throw new NotFoundError(`No run with ID ${id}`);
       if (run.status === 'pending') {
-        const workflow = await this.definitions.workflow(run.workflowName);
+        const workflow = this.definitions.workflow(run.workflowName);
         await finishRun(manager, id, workflow, {
           status: 'cancelled',
           errorText: CANCELLED,
@@ -153,8 +153,8 @@ export class WorkflowRuns {
           `Run ${id} is already retried by run ${existing.id}; retry that one instead`,
         );
       }
-      const workflow = await requireWorkflow(this.definitions, name);
-      await this.requireRunnable(workflow);
+      const workflow = requireWorkflow(this.definitions, name);
+      this.requireRunnable(workflow);
       const retryId = await queueRetryWithin(manager, run);
       return {
         run: runView(await runs.findOneByOrFail({ id: retryId })),
@@ -169,8 +169,8 @@ export class WorkflowRuns {
   }
 
   /** Refuses to queue a run of `workflow` unless its Agent is enabled. */
-  private async requireRunnable(workflow: WorkflowDefinition): Promise<void> {
-    const agent = await requireAgent(this.definitions, workflow.agent);
+  private requireRunnable(workflow: WorkflowDefinition): void {
+    const agent = requireAgent(this.definitions, workflow.agent);
     if (!agent.enabled) {
       throw new InvalidInputError(
         `Agent ${agent.name} is disabled; enable it first (enabled: true in its note)`,

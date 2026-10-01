@@ -7,11 +7,6 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
-import {
-  Definitions,
-  requireAgent,
-  routeQuery,
-} from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -21,7 +16,12 @@ import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import { SessionService } from '../sessions/session.service.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+import {
+  Definitions,
+  requireAgent,
+  routeQuery,
+} from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 import { type ResolvedAgent, resolveAgent } from './agent-resolution.js';
 
 /** One message for the Agent assigned to a Channel. */
@@ -198,7 +198,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     try {
       // The Agent as the turn starts, then one snapshot of its Session and
       // the history.
-      const resolved = await this.resolve(turn.agent);
+      const resolved = this.resolve(turn.agent);
       const first = await inTransaction(this.dataSource, (manager) =>
         this.prepareWithin(manager, turn, resolved, (agent) =>
           this.sessions.beginWithin(manager, turn.channelId, agent),
@@ -255,9 +255,9 @@ export class AgentManager implements BeforeApplicationShutdown {
   }
 
   /** The Agent named `name`, resolved against the defaults. */
-  private async resolve(name: string): Promise<ResolvedAgent> {
-    const agent = await requireAgent(this.definitions, name);
-    return resolveAgent(agent, await this.definitions.defaults());
+  private resolve(name: string): ResolvedAgent {
+    const agent = requireAgent(this.definitions, name);
+    return resolveAgent(agent, this.definitions.defaults());
   }
 
   /**
@@ -402,7 +402,6 @@ export class AgentManager implements BeforeApplicationShutdown {
     if (runtime === null) {
       throw new TurnError(`the ${agent.provider} runtime isn't available yet`);
     }
-    await this.notes.ready();
     const folders = this.notes.folders();
     let result: string | null = null;
     let streamed = '';
@@ -480,7 +479,7 @@ async function skipReasonWithin(
     .getRepository(Channel)
     .findOneByOrFail({ id: turn.channelId });
   // Otherwise the old Agent would open a Session where it no longer answers.
-  const route = await definitions.route(routeQuery(channel));
+  const route = definitions.route(routeQuery(channel));
   if (route.kind === 'unanswered') return 'no one answers in the Channel now';
   if (route.agent.name !== turn.agent) {
     return `the Channel goes to Agent ${route.agent.name} now`;

@@ -24,6 +24,7 @@ import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { AgentManager } from '../src/agents/agent-manager.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
+import { SettingsNotes } from '../src/settings/settings-notes.service.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 import {
   NOT_ALLOWED,
@@ -35,7 +36,6 @@ import { WorkflowRun } from '../src/persistence/entities/workflow-run.entity.js'
 import { Channel } from '../src/persistence/entities/channel.entity.js';
 import { HostConfigService } from '../src/host-config/host-config.service.js';
 import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
-import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import { BrokenNoteReports } from '../src/notifications/broken-note-reports.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';

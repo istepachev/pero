@@ -1,11 +1,11 @@
 import { Logger } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
-import type { WorkflowDefinition } from '../definitions/definitions.js';
 import { createRunNotifications } from '../notifications/run-notifications.js';
 import {
   type RunStatus,
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
+import type { WorkflowDefinition } from '../settings/definitions.js';
 import type { ExecutionSnapshot } from './execution-snapshot.js';
 
 const logger = new Logger('Notifications');

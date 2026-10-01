@@ -26,7 +26,7 @@ import { ComponentHealth } from '../health/component-health.js';
 import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 

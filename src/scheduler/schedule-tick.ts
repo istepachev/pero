@@ -8,12 +8,12 @@ import {
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Like } from 'typeorm';
+import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import { inTransaction } from '../persistence/transaction.js';
 import {
   Definitions,
   type WorkflowDefinition,
-} from '../definitions/definitions.js';
-import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import { inTransaction } from '../persistence/transaction.js';
+} from '../settings/definitions.js';
 import {
   countOccurrences,
   nextOccurrence,
@@ -215,7 +215,7 @@ export class ScheduleTick
     const { reconciled, cancelled, disabled } = await inTransaction(
       this.dataSource,
       async (manager) => {
-        const workflows = await this.definitions.workflows();
+        const workflows = this.definitions.workflows();
         const defined: DefinedSchedule[] = workflows.flatMap(
           ({ name, schedule, enabled }) =>
             enabled && schedule !== null ? [{ workflow: name, schedule }] : [],
@@ -248,7 +248,7 @@ export class ScheduleTick
     if (row === null) return null;
     const { due } = row;
     const name = row.workflowName;
-    const workflow = await this.definitions.workflow(name);
+    const workflow = this.definitions.workflow(name);
     const defined = workflow?.schedule ?? null;
     // A row of a schedule since changed is not the Workflow's any more.
     const schedule =
@@ -264,7 +264,7 @@ export class ScheduleTick
 
     const skipped = countOccurrences(schedule, due, now, MAX_SKIPPED_COUNT);
     const nextRunAt = nextOccurrence(schedule, now);
-    const agent = await this.definitions.agent(workflow.agent);
+    const agent = this.definitions.agent(workflow.agent);
     if (agent === null || !agent.enabled) {
       await advanceScheduleWithin(manager, id, { nextRunAt });
       return fired({

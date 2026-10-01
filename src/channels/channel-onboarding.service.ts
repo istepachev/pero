@@ -1,19 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
+import { Channel } from '../persistence/entities/channel.entity.js';
+import type { IntegrationKind } from '../persistence/entities/sql.js';
+import { inTransaction } from '../persistence/transaction.js';
+import { topicClaim } from '../settings-files/snapshot.js';
+import { AgentNotes } from '../settings/agent-notes.service.js';
 import {
   type AgentDefinition,
   Definitions,
   type Route,
   routeQuery,
   type Unanswered,
-} from '../definitions/definitions.js';
-import { Channel } from '../persistence/entities/channel.entity.js';
-import type { IntegrationKind } from '../persistence/entities/sql.js';
-import { inTransaction } from '../persistence/transaction.js';
-import { topicClaim } from '../settings-files/snapshot.js';
-import { AgentNotes } from '../settings-notes/agent-notes.service.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+} from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
   ChannelEvent,
@@ -138,7 +138,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
    * Pero should, and welcoming it when it is new or Pero wrote that note.
    */
   private async settle(channel: Channel, created: boolean): Promise<Route> {
-    let route = await routeOf(channel, this.definitions);
+    let route = routeOf(channel, this.definitions);
     let wrote = false;
     if (route.kind === 'unanswered' && this.writesFor(channel, route.reason)) {
       ({ route, wrote } = await this.serially(() => this.writeFor(channel)));
@@ -169,7 +169,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   private async writeFor(
     channel: Channel,
   ): Promise<{ route: Route; wrote: boolean }> {
-    const route = await routeOf(channel, this.definitions);
+    const route = routeOf(channel, this.definitions);
     if (route.kind !== 'unanswered' || !this.writesFor(channel, route.reason)) {
       return { route, wrote: false };
     }
@@ -193,7 +193,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       return { route, wrote: false };
     }
     if (file === null) return { route, wrote: false };
-    const after = await routeOf(channel, this.definitions);
+    const after = routeOf(channel, this.definitions);
     if (after.kind === 'unanswered') {
       this.logger.warn(
         `Wrote ${file}, but no one answers in ${channel.integrationKind} ` +
@@ -264,7 +264,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     }
     const from = channel.title?.trim() ?? '';
     const to = inbound.title?.trim() ?? '';
-    const snapshot = await this.notes.ready();
+    const snapshot = this.notes.snapshot();
     if (
       inbound.topicId !== null &&
       snapshot !== null &&

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { channelTopicLookup } from '../settings-notes/channel-topics.js';
-import type { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import {
   buildSnapshot,
   type SettingsSnapshot,
 } from '../settings-files/snapshot.js';
-import { FileDefinitions } from './file-definitions.js';
+import { channelTopicLookup } from './channel-topics.js';
+import { Definitions } from './definitions.js';
+import type { SettingsNotes } from './settings-notes.service.js';
 
 const FOLDERS = {
   workspace: '/home/me/workspace',
@@ -34,13 +34,12 @@ function snapshotOf(files: Record<string, string>): SettingsSnapshot {
   );
 }
 
-/** `FileDefinitions` over the notes `files`; `change` swaps them. */
+/** `Definitions` over the notes `files`; `change` swaps them. */
 function definitionsOf(files: Record<string, string> | null) {
   let snapshot = files === null ? null : snapshotOf(files);
   const notesListeners = new Set<() => void>();
-  const ready = vi.fn(() => Promise.resolve(snapshot));
   const notes = {
-    ready,
+    snapshot: () => snapshot,
     folders: () => FOLDERS,
     onChange: (listener: () => void) => {
       notesListeners.add(listener);
@@ -48,8 +47,7 @@ function definitionsOf(files: Record<string, string> | null) {
     },
   } as unknown as SettingsNotes;
   return {
-    definitions: new FileDefinitions(notes),
-    ready,
+    definitions: new Definitions(notes),
     change: (next: Record<string, string>) => {
       snapshot = snapshotOf(next);
       for (const listener of notesListeners) listener();
@@ -57,13 +55,13 @@ function definitionsOf(files: Record<string, string> | null) {
   };
 }
 
-describe('FileDefinitions', () => {
-  it('reads the defaults from Pero.md and the data folder from config.yaml', async () => {
+describe('Definitions', () => {
+  it('reads the defaults from Pero.md and the data folder from config.yaml', () => {
     const { definitions } = definitionsOf({
       'Pero.md':
         '---\nprovider: codex\ncodex-model: gpt-5.5\nhistory-carryover: 10\nmax-concurrent-runs: 3\ntimezone: Europe/Berlin\n---\nBe brief.',
     });
-    expect(await definitions.defaults()).toEqual({
+    expect(definitions.defaults()).toEqual({
       provider: 'codex',
       providerDefaults: {
         claude: { model: null, effort: null },
@@ -79,24 +77,24 @@ describe('FileDefinitions', () => {
     });
   });
 
-  it("uses Pero's own defaults while Pero.md is broken", async () => {
+  it("uses Pero's own defaults while Pero.md is broken", () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\nprovider: gemini\n---\nBe brief.',
     });
-    expect(await definitions.defaults()).toMatchObject({
+    expect(definitions.defaults()).toMatchObject({
       provider: 'claude',
       sharedInstructions: null,
     });
   });
 
-  it('gives each Agent its note with the defaults applied', async () => {
+  it('gives each Agent its note with the defaults applied', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\nclaude-model: opus\nclaude-effort: high\n---',
       'Agents/Health.md':
         '---\ntopics: Health\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
       'Agents/Home/Main.md': 'Help.',
     });
-    expect(await definitions.agent('HEALTH')).toEqual({
+    expect(definitions.agent('HEALTH')).toEqual({
       name: 'health',
       title: 'Health',
       provider: 'claude',
@@ -109,44 +107,38 @@ describe('FileDefinitions', () => {
       skipGitRepoCheck: false,
       enabled: true,
     });
-    expect(await definitions.agent('main')).toMatchObject({
+    expect(definitions.agent('main')).toMatchObject({
       workingDirectory: FOLDERS.dataFolder,
       ownWorkingDirectory: null,
     });
-    expect(await definitions.agent('coach')).toBeNull();
-    expect((await definitions.agents()).map((agent) => agent.name)).toEqual([
+    expect(definitions.agent('coach')).toBeNull();
+    expect(definitions.agents().map((agent) => agent.name)).toEqual([
       'health',
       'main',
     ]);
   });
 
-  it('names the main Agent from Pero.md, even before its note exists', async () => {
+  it('names the main Agent from Pero.md, even before its note exists', () => {
     const { definitions, change } = definitionsOf({
       'Pero.md': '---\nmain-agent: Coach\n---',
       'Agents/Main.md': 'Help.',
     });
-    expect(await definitions.mainAgent()).toBeNull();
-    expect(await definitions.mainAgentName()).toBe('coach');
+    expect(definitions.mainAgent()).toBeNull();
+    expect(definitions.mainAgentName()).toBe('coach');
 
     change({ 'Agents/Main.md': 'Help.' });
-    expect((await definitions.mainAgent())!.name).toBe('main');
-    expect(await definitions.mainAgentName()).toBe('main');
+    expect(definitions.mainAgent()!.name).toBe('main');
+    expect(definitions.mainAgentName()).toBe('main');
   });
 
-  it('has no Agents before the notes could be read', async () => {
+  it('has no Agents before the notes could be read', () => {
     const { definitions } = definitionsOf(null);
-    expect(await definitions.agents()).toEqual([]);
-    expect(await definitions.mainAgentName()).toBe('main');
-    expect((await definitions.defaults()).dataFolder).toBe(FOLDERS.dataFolder);
+    expect(definitions.agents()).toEqual([]);
+    expect(definitions.mainAgentName()).toBe('main');
+    expect(definitions.defaults().dataFolder).toBe(FOLDERS.dataFolder);
   });
 
-  it('waits for the notes to load', async () => {
-    const { definitions, ready } = definitionsOf({ 'Agents/Main.md': 'Hi' });
-    await definitions.agent('main');
-    expect(ready).toHaveBeenCalled();
-  });
-
-  it('gives each Workflow its note with the Channels it names by ID', async () => {
+  it('gives each Workflow its note with the Channels it names by ID', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\ntimezone: Europe/Berlin\n---',
       'Agents/Health.md': '---\ntopics: Health\n---\nCoach me.',
@@ -154,7 +146,7 @@ describe('FileDefinitions', () => {
         '---\nday: sunday\nhour: 12\nchannel: [Health, Home/General, 4]\nhistory: true\nhistory-channels: [English, Health]\nhistory-hours: 24\nmax-attempts: 2\n---\nWrite the weekly report.',
       'Workflows/Brief.md': '---\nhour: 9\nenabled: false\n---\nBrief me.',
     });
-    expect(await definitions.workflow('WEEKLY-REPORT')).toEqual({
+    expect(definitions.workflow('WEEKLY-REPORT')).toEqual({
       name: 'weekly-report',
       title: 'Weekly report',
       agent: 'health',
@@ -170,28 +162,29 @@ describe('FileDefinitions', () => {
       schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       enabled: true,
     });
-    expect(await definitions.workflow('brief')).toMatchObject({
+    expect(definitions.workflow('brief')).toMatchObject({
       agent: 'main',
       history: null,
       targets: [],
       schedule: { cron: '0 9 * * *', timezone: 'Europe/Berlin' },
       enabled: false,
     });
-    expect(
-      (await definitions.workflows()).map((workflow) => workflow.name),
-    ).toEqual(['brief', 'weekly-report']);
-    expect(await definitions.workflow('nope')).toBeNull();
+    expect(definitions.workflows().map((workflow) => workflow.name)).toEqual([
+      'brief',
+      'weekly-report',
+    ]);
+    expect(definitions.workflow('nope')).toBeNull();
   });
 
-  it('leaves out a Workflow whose topic Pero has not seen', async () => {
+  it('leaves out a Workflow whose topic Pero has not seen', () => {
     const { definitions } = definitionsOf({
       'Workflows/Report.md': '---\nchannel: Helth\n---\nReport.',
     });
-    expect(await definitions.workflow('report')).toBeNull();
-    expect(await definitions.workflows()).toEqual([]);
+    expect(definitions.workflow('report')).toBeNull();
+    expect(definitions.workflows()).toEqual([]);
   });
 
-  it('tells listeners of changed notes', async () => {
+  it('tells listeners of changed notes', () => {
     const { definitions, change } = definitionsOf({});
     const listener = vi.fn();
     const stop = definitions.onChange(listener);

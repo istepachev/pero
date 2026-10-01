@@ -26,13 +26,13 @@ import type { RunDetails } from '../src/control/protocol.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
-import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import {
   type RuntimeRequest,
   RuntimeError,
 } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
+import { SettingsNotes } from '../src/settings/settings-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,

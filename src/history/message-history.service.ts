@@ -6,8 +6,8 @@ import {
   Message,
   type MessageOrigin,
 } from '../persistence/entities/message.entity.js';
-import { Definitions } from '../definitions/definitions.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { Definitions } from '../settings/definitions.js';
 import {
   type CarriedMessage,
   withEarlierConversation,
@@ -260,7 +260,7 @@ export class MessageHistory {
     input: string,
     { carryOver }: { carryOver: boolean },
   ): Promise<{ input: string; posted: number; carried: number }> {
-    const { historyCarryover, timezone } = await this.definitions.defaults();
+    const { historyCarryover, timezone } = this.definitions.defaults();
     const posted = await this.postedBeforeWithin(manager, channelId, messageId);
     let text = withPostedMessages(input, posted.map(carried), timezone);
     if (!carryOver || historyCarryover === 0) {

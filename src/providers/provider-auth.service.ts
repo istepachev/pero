@@ -1,13 +1,12 @@
 import {
   Inject,
   Injectable,
-  Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { type Provider, PROVIDERS } from '../config/provider-options.js';
-import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
+import { Definitions } from '../settings/definitions.js';
 import { checkProviderAuth, type Exec } from './provider-auth.js';
 
 /** How provider CLIs are run; tests replace it. */
@@ -23,7 +22,6 @@ export const PROVIDER_AUTH_EXEC = Symbol('PROVIDER_AUTH_EXEC');
 export class ProviderAuthService
   implements OnApplicationBootstrap, OnModuleDestroy
 {
-  private readonly logger = new Logger('Providers');
   private readonly abort = new AbortController();
   private running: Promise<void> | undefined;
   private stopListening: (() => void) | undefined;
@@ -34,15 +32,11 @@ export class ProviderAuthService
     @Inject(PROVIDER_AUTH_EXEC) private readonly exec: Exec,
   ) {}
 
-  async onApplicationBootstrap(): Promise<void> {
-    this.stopListening = this.definitions.onChange(() => {
-      this.refreshRequirements().catch((error: unknown) => {
-        this.logger.error(
-          `Could not tell which providers are in use: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
-    });
-    await this.refreshRequirements();
+  onApplicationBootstrap(): void {
+    this.stopListening = this.definitions.onChange(() =>
+      this.refreshRequirements(),
+    );
+    this.refreshRequirements();
     // In the background: readiness must not wait for the provider CLIs.
     void this.check();
   }
@@ -53,9 +47,9 @@ export class ProviderAuthService
   }
 
   /** The providers health depends on, in `PROVIDERS` order. */
-  async inUse(): Promise<Provider[]> {
-    const { provider } = await this.definitions.defaults();
-    const agents = await this.definitions.agents();
+  inUse(): Provider[] {
+    const { provider } = this.definitions.defaults();
+    const agents = this.definitions.agents();
     const used = new Set([
       provider,
       ...agents.filter((agent) => agent.enabled).map((agent) => agent.provider),
@@ -64,8 +58,8 @@ export class ProviderAuthService
   }
 
   /** Marks the providers in use as required and the others as optional. */
-  async refreshRequirements(): Promise<void> {
-    const used = new Set(await this.inUse());
+  refreshRequirements(): void {
+    const used = new Set(this.inUse());
     for (const provider of PROVIDERS) {
       this.health.setRequired(provider, used.has(provider));
     }
@@ -83,7 +77,7 @@ export class ProviderAuthService
   }
 
   private async runCheck(): Promise<void> {
-    await this.refreshRequirements();
+    this.refreshRequirements();
     await Promise.all(
       PROVIDERS.map(async (provider) => {
         const { state, detail } = await checkProviderAuth(provider, {

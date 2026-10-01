@@ -120,7 +120,7 @@ Where each [Phase 6 exit criterion](./IMPLEMENTATION_PLAN.md#phase-6-exit-criter
 | Criterion | Verified by |
 |---|---|
 | `pero check` validates any workspace with or without Pero, including in CI | `test/check.e2e-spec.ts`: without Pero, including `--json`; `test/settings-notes.e2e-spec.ts`: topic titles through the daemon; `src/settings-files/check.spec.ts` and `src/settings-files/snapshot.spec.ts`; the CI step that checks the example workspace |
-| The running daemon keeps an up-to-date snapshot of the notes, and `pero status` reports broken ones | `src/settings-files/reload.spec.ts`: an edit within one scan, a note caught mid-write, last good versions, and 500 notes; `src/settings-notes/settings-notes.service.spec.ts` and `test/settings-notes.e2e-spec.ts`: the `settings` component |
+| The running daemon keeps an up-to-date snapshot of the notes, and `pero status` reports broken ones | `src/settings-files/reload.spec.ts`: an edit within one scan, a note caught mid-write, last good versions, and 500 notes; `src/settings/settings-notes.service.spec.ts` and `test/settings-notes.e2e-spec.ts`: the `settings` component |
 | Behaviour is otherwise unchanged | The full suite, unchanged by phase 6 |
 
 ## Phase 7 exit criteria
@@ -129,7 +129,7 @@ Where each [Phase 7 exit criterion](./IMPLEMENTATION_PLAN.md#phase-7-exit-criter
 
 | Criterion | Verified by |
 |---|---|
-| All runtime code reads definitions through `Definitions` | `src/definitions/boundary.spec.ts`: no file outside `src/definitions/legacy-definitions.ts` names a legacy definition table; `src/definitions/file-definitions.spec.ts` |
+| All runtime code reads definitions through `Definitions`, synchronously | `src/settings/definitions.spec.ts`; `src/settings/settings-notes.service.spec.ts`: the notes load before the startup of modules that read them |
 | State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name Agents and Workflows that no row holds, and one schedule row per Workflow name |
 | Every existing installation can be converted to a workspace with `pero migrate`, and its snapshot matches its database | `src/migrate/migrate-installation.spec.ts`: notes that `pero check` passes and whose snapshot matches the database, conflicts, split schedules, and an untouched source; `test/migrate.e2e-spec.ts`: an installation in use carries on as a workspace |
 

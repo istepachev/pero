@@ -1,8 +1,8 @@
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
-import type { WorkflowDefinition } from '../definitions/definitions.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import type { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import type { WorkflowDefinition } from '../settings/definitions.js';
 
 /** What a Notification delivers: the rendered message. */
 export const notificationPayloadSchema = z.object({ text: z.string().min(1) });

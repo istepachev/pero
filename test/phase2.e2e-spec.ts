@@ -24,7 +24,7 @@ import { Session } from '../src/persistence/entities/session.entity.js';
 import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
-import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
+import { SettingsNotes } from '../src/settings/settings-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,

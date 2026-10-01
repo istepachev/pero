@@ -8,8 +8,8 @@ import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { Message } from '../persistence/entities/message.entity.js';
-import { Definitions } from '../definitions/definitions.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { Definitions } from '../settings/definitions.js';
 
 /** How often older messages are looked for. */
 export const RETENTION_TICK_MS = 60 * 60_000;
@@ -61,7 +61,7 @@ export class HistoryRetention
    * unset.
    */
   async prune(now: Date = new Date()): Promise<number> {
-    const { historyRetentionDays: days } = await this.definitions.defaults();
+    const { historyRetentionDays: days } = this.definitions.defaults();
     if (days === null) return 0;
     const cutoff = new Date(now.getTime() - days * DAY_MS);
     let deleted = 0;
