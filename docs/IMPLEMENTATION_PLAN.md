@@ -951,6 +951,12 @@ Delete the command and everything only it uses:
 - **Restore:** `pero restore` restores into a workspace only. The legacy data directory target, reading backups of older formats, and writing a legacy backup's token to `.env` all go. `--replace-config` stays.
 - **Packed install:** `scripts/check-packed-install.sh` loses its three legacy steps.
 
+- **Found while building:**
+  - **The manifest keeps only what a workspace backup needs.** `sourceWorkspace` is required, and `sourceDataDir` goes, since it is always `<sourceWorkspace>/.pero` and nothing read it. `includesData` is always present, and so is the backup result's, which loses `includesSecrets`.
+  - **Every format but 1 gets the same refusal,** "not a Pero backup this version reads (backup format N)". A 0.1 archive and one from a later Pero can't be told apart by number, so neither is asked to upgrade.
+  - **`pero restore` refuses `--data-dir` and `PERO_HOME`** before touching anything, and asks for `--workspace <folder>`. `pero backup` on a legacy daemon says to make a workspace with `pero init <folder>`. Both checks go with the legacy data directory in 11.3.
+  - **The backup and restore sections of the [CLI reference](./CLI.md) and [Operating Pero](./OPERATIONS.md)** already describe workspaces only, since what they said about legacy backups stopped being true here. The rest of the docs wait for 11.9.
+
 **Done when:**
 - A backup restores into a fresh clone as before.
 - An archive whose manifest is not format 1 is refused, saying it isn't a Pero backup this version reads.

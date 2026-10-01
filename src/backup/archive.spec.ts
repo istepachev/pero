@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BackupFormatError,
   type BackupManifest,
+  CONFIG_ENTRY,
   DATABASE_ENTRY,
   extractBackupArchive,
   MANIFEST_ENTRY,
@@ -43,10 +44,10 @@ describe('backup archive', () => {
       format: 1,
       peroVersion: '1.2.3',
       createdAt: '2026-09-28T00:00:00.000Z',
-      sourceDataDir: '/home/owner/.pero',
+      sourceWorkspace: '/home/owner/workspace',
       lastMigration: 'CreateDomainTables1790523956072',
       workingDirectories: [],
-      secrets: ['telegram-bot-token'],
+      includesData: false,
     };
   });
 
@@ -60,10 +61,7 @@ describe('backup archive', () => {
       JSON.stringify(options.manifest ?? manifest),
     );
     writeFileSync(join(staging, DATABASE_ENTRY), options.database ?? DATABASE);
-    mkdirSync(join(staging, 'secrets'), { recursive: true });
-    writeFileSync(join(staging, 'secrets', 'telegram-bot-token'), 'token\n', {
-      mode: 0o644,
-    });
+    writeFileSync(join(staging, CONFIG_ENTRY), 'data: data\n', { mode: 0o644 });
   }
 
   /** An archive of `entries` in `staging`, written without Pero's checks. */
@@ -88,17 +86,12 @@ describe('backup archive', () => {
       'target',
     ]);
     expect(readFileSync(join(target, DATABASE_ENTRY))).toEqual(DATABASE);
-    expect(
-      readFileSync(join(target, 'secrets', 'telegram-bot-token'), 'utf8'),
-    ).toBe('token\n');
-    for (const path of [
-      DATABASE_ENTRY,
-      MANIFEST_ENTRY,
-      'secrets/telegram-bot-token',
-    ]) {
+    expect(readFileSync(join(target, CONFIG_ENTRY), 'utf8')).toBe(
+      'data: data\n',
+    );
+    for (const path of [DATABASE_ENTRY, MANIFEST_ENTRY, CONFIG_ENTRY]) {
       expect(statSync(join(target, path)).mode & 0o777).toBe(0o600);
     }
-    expect(statSync(join(target, 'secrets')).mode & 0o777).toBe(0o700);
   });
 
   it('replaces an earlier backup in one step', async () => {
@@ -120,9 +113,9 @@ describe('backup archive', () => {
     expect(readdirSync(tmp).sort()).toEqual(['staging', 'target']);
   });
 
-  it('works without secrets', async () => {
+  it('works without config.yaml', async () => {
     stage();
-    rmSync(join(staging, 'secrets'), { recursive: true });
+    rmSync(join(staging, CONFIG_ENTRY));
     const file = join(tmp, 'backup.tgz');
 
     await writeBackupArchive(staging, file);
@@ -159,18 +152,20 @@ describe('backup archive', () => {
     );
   });
 
-  it('asks for a newer Pero for a newer backup format', async () => {
-    stage({ manifest: { ...manifest, format: 4 } });
+  it('refuses any backup format but 1', async () => {
     const file = join(tmp, 'backup.tgz');
-    await writeBackupArchive(staging, file);
+    for (const format of [0, 2, 3, 4]) {
+      stage({ manifest: { ...manifest, format } });
+      await writeBackupArchive(staging, file);
 
-    await expect(extractBackupArchive(file, target)).rejects.toThrow(
-      /newer Pero \(backup format 4\)/,
-    );
+      await expect(extractBackupArchive(file, target)).rejects.toThrow(
+        `${file} is not a Pero backup this version reads (backup format ${format})`,
+      );
+    }
   });
 
   it('round-trips the data folder, with its folders and hidden files', async () => {
-    stage({ manifest: { ...manifest, format: 3, includesData: true } });
+    stage({ manifest: { ...manifest, includesData: true } });
     mkdirSync(join(staging, 'data', 'Settings', 'Agents'), { recursive: true });
     mkdirSync(join(staging, 'data', 'Empty'));
     writeFileSync(join(staging, 'data', 'Settings', 'Agents', 'Main.md'), 'Hi');
@@ -179,7 +174,6 @@ describe('backup archive', () => {
     await writeBackupArchive(staging, file);
 
     await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
-      format: 3,
       includesData: true,
     });
     expect(
@@ -195,30 +189,6 @@ describe('backup archive', () => {
     ]);
   });
 
-  it('restores config.yaml, and a format 1 backup without it', async () => {
-    stage({ manifest: { ...manifest, format: 2 } });
-    writeFileSync(join(staging, 'config.yaml'), 'data: data\n');
-    const file = join(tmp, 'backup.tgz');
-    await writeBackupArchive(staging, file);
-
-    await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
-      format: 2,
-    });
-    expect(readFileSync(join(target, 'config.yaml'), 'utf8')).toBe(
-      'data: data\n',
-    );
-    expect(statSync(join(target, 'config.yaml')).mode & 0o777).toBe(0o600);
-
-    rmSync(join(staging, 'config.yaml'));
-    rmSync(target, { recursive: true });
-    mkdirSync(target);
-    stage({ manifest: { ...manifest, format: 1 } });
-    await writeBackupArchive(staging, file);
-    await expect(extractBackupArchive(file, target)).resolves.toMatchObject({
-      format: 1,
-    });
-  });
-
   it('rejects a database that is not SQLite', async () => {
     stage({ database: Buffer.from('plain text') });
     const file = join(tmp, 'backup.tgz');
@@ -230,31 +200,30 @@ describe('backup archive', () => {
   });
 
   it('rejects entries a backup never has', async () => {
-    stage();
-    writeFileSync(join(staging, 'extra.txt'), 'x');
+    for (const entry of ['extra.txt', 'secrets/telegram-bot-token']) {
+      stage();
+      mkdirSync(join(staging, 'secrets'), { recursive: true });
+      writeFileSync(join(staging, entry), 'x');
 
-    const file = await rawArchive([
-      MANIFEST_ENTRY,
-      DATABASE_ENTRY,
-      'extra.txt',
-    ]);
+      const file = await rawArchive([MANIFEST_ENTRY, DATABASE_ENTRY, entry]);
 
-    await expect(extractBackupArchive(file, target)).rejects.toThrow(
-      /unexpected entry extra\.txt/,
-    );
-    expect(readdirSync(target)).not.toContain('extra.txt');
+      await expect(extractBackupArchive(file, target)).rejects.toThrow(
+        `unexpected entry ${entry}`,
+      );
+      expect(readdirSync(target)).not.toContain(entry.split('/')[0]);
+    }
   });
 
   it('rejects links instead of following them', async () => {
     stage();
-    symlinkSync('/etc/passwd', join(staging, 'secrets', 'link'));
+    symlinkSync('/etc/passwd', join(staging, 'link'));
 
-    const file = await rawArchive([MANIFEST_ENTRY, DATABASE_ENTRY, 'secrets']);
+    const file = await rawArchive([MANIFEST_ENTRY, DATABASE_ENTRY, 'link']);
 
     await expect(extractBackupArchive(file, target)).rejects.toThrow(
-      /unexpected entry secrets\/link/,
+      /unexpected entry link/,
     );
-    expect(readdirSync(join(target, 'secrets'))).not.toContain('link');
+    expect(readdirSync(target)).not.toContain('link');
   });
 
   it('rejects a link in the data folder', async () => {

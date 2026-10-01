@@ -26,11 +26,6 @@ export class BackupCommand extends PeroCommand {
     console.log(
       `Backed up ${this.layout().root}${result.includesData ? ' and the data folder' : ''} to ${result.file} (${formatBytes(result.bytes)})`,
     );
-    if (result.includesSecrets) {
-      console.log(
-        'It contains the Telegram bot token; keep it private, like the data directory.',
-      );
-    }
   }
 
   @Option({
