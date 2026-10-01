@@ -5,6 +5,13 @@ import type { Agent } from '../settings-files/snapshot.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
+/** How full a Session's context is, in tokens, and its model's window. */
+export interface ContextUsage {
+  tokens: number;
+  /** Null when the provider doesn't say. */
+  window: number | null;
+}
+
 /**
  * Whether a turn of `agent` continues `session`: only while the Agent keeps
  * the provider and effective working directory the Session began with.
@@ -94,6 +101,33 @@ export class SessionService {
         { channelId, status: 'active', agentName: Not(agentName) },
         { status: 'closed' },
       );
+  }
+
+  /**
+   * Closes Channel `channelId`'s active Sessions inside the caller's
+   * transaction, as `/new` does: its next turn starts a fresh one.
+   */
+  async closeChannelWithin(
+    manager: EntityManager,
+    channelId: number,
+  ): Promise<number> {
+    const { affected } = await manager
+      .getRepository(Session)
+      .update({ channelId, status: 'active' }, { status: 'closed' });
+    return affected ?? 0;
+  }
+
+  /** Records how full `session`'s context is after a turn. */
+  async recordContext(
+    session: Pick<Session, 'id'>,
+    usage: ContextUsage,
+  ): Promise<void> {
+    await inTransaction(this.dataSource, (manager) =>
+      manager.getRepository(Session).update(session.id, {
+        contextTokens: usage.tokens,
+        contextWindow: usage.window,
+      }),
+    );
   }
 
   /** Records the provider's ID for `session` when it changed. */

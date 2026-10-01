@@ -103,6 +103,7 @@ describe('ClaudeRuntime', () => {
     expect(events).toEqual([
       { type: 'session', providerSessionId: SESSION },
       { type: 'text', delta: 'Hi' },
+      { type: 'usage', contextTokens: 33_500, contextWindow: 200_000 },
       { type: 'result', text: 'Hi' },
     ]);
     expect(calls[0]!.prompt).toBe('Hello');

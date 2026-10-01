@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager, SelectQueryBuilder } from 'typeorm';
 import type { HistoryMessages } from '../config/workflow-input.js';
+import { Channel } from '../persistence/entities/channel.entity.js';
 import {
   Message,
   type MessageOrigin,
@@ -146,7 +147,7 @@ export class MessageHistory {
 
   /**
    * Which of `channelIds` have messages a fresh Session there would start
-   * with, inside the caller's transaction.
+   * with, inside the caller's transaction: none from before `/new`.
    */
   async channelsWithHistoryWithin(
     manager: EntityManager,
@@ -156,8 +157,10 @@ export class MessageHistory {
     const rows = await manager
       .getRepository(Message)
       .createQueryBuilder('message')
+      .innerJoin('message.channel', 'channel')
       .select('DISTINCT message.channelId', 'channelId')
       .where('message.channelId IN (:...channelIds)', { channelIds })
+      .andWhere('message.id > COALESCE(channel.contextFromMessageId, 0)')
       .andWhere('message.origin IN (:...origins)', {
         origins: CARRIED_ORIGINS,
       })
@@ -261,7 +264,13 @@ export class MessageHistory {
     { carryOver }: { carryOver: boolean },
   ): Promise<{ input: string; posted: number; carried: number }> {
     const { historyCarryover, timezone } = this.definitions.defaults();
-    const posted = await this.postedBeforeWithin(manager, channelId, messageId);
+    const floor = await contextFloorWithin(manager, channelId);
+    const posted = await this.postedBeforeWithin(
+      manager,
+      channelId,
+      messageId,
+      floor,
+    );
     let text = withPostedMessages(input, posted.map(carried), timezone);
     if (!carryOver || historyCarryover === 0) {
       return { input: text, posted: posted.length, carried: 0 };
@@ -274,6 +283,7 @@ export class MessageHistory {
       .andWhere('message.id < :beforeId', {
         beforeId: posted[0]?.id ?? messageId,
       })
+      .andWhere('message.id > :floor', { floor })
       .andWhere('message.origin IN (:...origins)', {
         origins: CARRIED_ORIGINS,
       })
@@ -291,12 +301,14 @@ export class MessageHistory {
 
   /**
    * The Workflow messages posted in the Channel before message `beforeId`
-   * and after the person's message before it, oldest first.
+   * and after the person's message before it, and after `floor`, oldest
+   * first.
    */
   private async postedBeforeWithin(
     manager: EntityManager,
     channelId: number,
     beforeId: number,
+    floor: number,
   ): Promise<Message[]> {
     const messages = manager.getRepository(Message);
     const previous = await messages
@@ -309,11 +321,28 @@ export class MessageHistory {
     return withWorkflow(messages.createQueryBuilder('message'))
       .where('message.channelId = :channelId', { channelId })
       .andWhere('message.id < :beforeId', { beforeId })
-      .andWhere('message.id > :afterId', { afterId: Number(previous?.id ?? 0) })
+      .andWhere('message.id > :afterId', {
+        afterId: Math.max(Number(previous?.id ?? 0), floor),
+      })
       .andWhere("message.origin = 'workflow'")
       .orderBy('message.id', 'ASC')
       .getMany();
   }
+}
+
+/**
+ * The ID a Channel's context starts after, set by `/new`; 0 when it starts
+ * with the whole history.
+ */
+async function contextFloorWithin(
+  manager: EntityManager,
+  channelId: number,
+): Promise<number> {
+  const channel = await manager.getRepository(Channel).findOne({
+    select: { id: true, contextFromMessageId: true },
+    where: { id: channelId },
+  });
+  return channel?.contextFromMessageId ?? 0;
 }
 
 /** `query` over messages, with the run each Workflow message came from. */

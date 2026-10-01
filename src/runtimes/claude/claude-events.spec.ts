@@ -13,6 +13,7 @@ import {
   init,
   SESSION,
   success,
+  USAGE,
 } from './testing/claude-messages.js';
 
 /** The events for `messages` in order, or the error they end with. */
@@ -50,8 +51,56 @@ describe('normalizeClaudeMessage', () => {
       { type: 'text', delta: 'Let me look.' },
       { type: 'tool', name: 'Read' },
       { type: 'text', delta: 'Done.' },
+      { type: 'usage', contextTokens: 33_500, contextWindow: 200_000 },
       { type: 'result', text: 'Let me look.\n\nDone.' },
     ]);
+  });
+
+  it("reports the context of the main conversation's latest call", () => {
+    const later = { ...USAGE, cache_read_input_tokens: 60_000 };
+    const subagent = { ...USAGE, input_tokens: 900_000 };
+    const synthetic = {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        model: '<synthetic>',
+        content: [{ type: 'text', text: 'No response requested.' }],
+        usage: { ...USAGE, input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      session_id: SESSION,
+    } as unknown as SDKMessage;
+
+    const events = run([
+      init(),
+      assistant([{ type: 'text', text: 'Looking.' }]),
+      assistant([{ type: 'text', text: 'Found it.' }], 'tool-1', subagent),
+      assistant([{ type: 'text', text: 'Done.' }], null, later),
+      synthetic,
+      success('Done.'),
+    ]).events;
+
+    expect(events.filter((event) => event.type === 'usage')).toEqual([
+      { type: 'usage', contextTokens: 63_500, contextWindow: 200_000 },
+    ]);
+  });
+
+  it('reports no context without a call to measure, and no window the result leaves out', () => {
+    expect(run([init(), success('Hi')]).events).not.toContainEqual(
+      expect.objectContaining({ type: 'usage' }),
+    );
+    const unknownModel = {
+      ...(success('Hi') as object),
+      modelUsage: {},
+    } as unknown as SDKMessage;
+    expect(
+      run([init(), assistant([{ type: 'text', text: 'Hi' }]), unknownModel])
+        .events,
+    ).toContainEqual({
+      type: 'usage',
+      contextTokens: 33_500,
+      contextWindow: null,
+    });
   });
 
   it('reports the session at the result when no assistant message came first', () => {

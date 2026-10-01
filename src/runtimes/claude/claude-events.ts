@@ -1,5 +1,6 @@
 import {
   AbortError,
+  type SDKAssistantMessage,
   type SDKAssistantMessageError,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -20,6 +21,11 @@ export interface TurnState {
   assistantError: SDKAssistantMessageError | null;
   /** Set once the turn's result has arrived. */
   finished: boolean;
+  /**
+   * The context the latest call of the main conversation sent and got
+   * back, in tokens, with its model; null before the first.
+   */
+  context: { tokens: number; model: string } | null;
 }
 
 export function newTurnState(): TurnState {
@@ -28,6 +34,7 @@ export function newTurnState(): TurnState {
     sessionReported: false,
     assistantError: null,
     finished: false,
+    context: null,
   };
 }
 
@@ -43,6 +50,9 @@ const SIGNED_OUT =
  * as in `No conversation found with session ID: <id>` (Claude Code 2.1).
  */
 const SESSION_LOST = /no conversation found with session id/i;
+
+/** The model Claude Code names on a message it made up itself. */
+const SYNTHETIC_MODEL = '<synthetic>';
 
 /** API errors that a new sign-in fixes. */
 const AUTH_ERRORS: ReadonlySet<SDKAssistantMessageError> = new Set([
@@ -85,6 +95,7 @@ export function normalizeClaudeMessage(
       }
       // A subagent's steps are not the reply.
       if (message.parent_tool_use_id !== null) break;
+      state.context = contextOf(message.message) ?? state.context;
       for (const block of message.message.content) {
         if (block.type === 'text' && block.text !== '') {
           events.push({ type: 'text', delta: block.text });
@@ -96,6 +107,14 @@ export function normalizeClaudeMessage(
     case 'result':
       state.finished = true;
       if (message.subtype === 'success' && !message.is_error) {
+        if (state.context !== null) {
+          events.push({
+            type: 'usage',
+            contextTokens: state.context.tokens,
+            contextWindow:
+              message.modelUsage[state.context.model]?.contextWindow ?? null,
+          });
+        }
         events.push({ type: 'result', text: message.result });
         break;
       }
@@ -107,6 +126,26 @@ export function normalizeClaudeMessage(
       );
   }
   return events;
+}
+
+/**
+ * The context one call held: all it was sent, cached or not, and what it
+ * answered, which the next call is sent too. Null for a message Claude
+ * Code made up itself, which no call answered.
+ */
+function contextOf(
+  message: SDKAssistantMessage['message'],
+): TurnState['context'] {
+  const { usage, model } = message;
+  if (!('usage' in message) || model === SYNTHETIC_MODEL) return null;
+  return {
+    tokens:
+      usage.input_tokens +
+      (usage.cache_creation_input_tokens ?? 0) +
+      (usage.cache_read_input_tokens ?? 0) +
+      usage.output_tokens,
+    model,
+  };
 }
 
 /** A failed result: its text, and the API error reported before it. */

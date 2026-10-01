@@ -88,6 +88,8 @@ export class AgentChannelTurns extends ChannelTurns {
         sessionId: result.sessionId,
       };
     } catch (error) {
+      // `/stop` has answered for it already.
+      if (error instanceof TurnError && error.stopped) return;
       text = failureText(channel.agent.name, error);
       author = { origin: 'pero' };
     }

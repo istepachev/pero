@@ -6,6 +6,8 @@ What comes next for Pero.
 
 - **Protect `.env` and `.pero/` in the edit policy.** A Claude `ask` Agent edits files in its folder without asking, except the settings folder and tool files such as `.claude/` and `.git/`. An Agent whose folder is the workspace root, such as with `data: .`, can therefore edit the bot token in `.env` and the allowed chats in `.pero/config.yaml` without asking. The edit policy should ask for those too; until it does, [Configuring Pero](./CONFIGURATION.md) advises a data folder of its own.
 
+- **More Telegram commands.** `/model` and `/effort` with picker buttons that edit the topic's Agent note, and `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry` with menus that pick a Workflow or run when none, or an unknown one, is named.
+
 ## Decided against
 
 | Question | Answer |
@@ -16,3 +18,6 @@ What comes next for Pero.
 | One Agent answering several topics? | No: one topic, one Agent. The main Agent answers General topics and direct chats, and its instructions start every other Agent's, so a shared personality lives in `Main.md`, not `Pero.md`. |
 | A migration from `topics`, `shared-instructions`, `new-topics`, and a `Pero.md` body? | No: Pero had no installations to carry over, so the old properties are plain errors. |
 | Several schedules per Workflow note? | No: one note per schedule. |
+| A `/permissions` command? | No: anyone in an allowed chat may use commands, and switching an Agent to `bypass` from the chat would get around the Allow and Deny buttons. Change `permissions` in the note. |
+| Answer an unknown `/command` with Pero's list? | No: it goes to the Agent as text, as before commands existed; `/help` lists Pero's own. |
+| Context usage for Codex in `/status`? | No: Codex reports the tokens a whole turn used, summed over its calls, which overstates the context; the line is left out. |

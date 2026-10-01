@@ -11,6 +11,7 @@ import type {
   InboundAction,
   InboundChannel,
   InboundChat,
+  InboundCommand,
   InboundMessage,
 } from '../channels/channel-adapter.js';
 import type { ChatKind } from '../persistence/entities/sql.js';
@@ -49,6 +50,8 @@ export function parseAddress(
 /** Of the bot's own details, what normalization needs. */
 export interface BotIdentity {
   id: number;
+  /** Commands addressed to another bot, as `/status@other_bot`, are not Pero's. */
+  username?: string;
 }
 
 /**
@@ -74,7 +77,7 @@ export function toInbound(
       status: membershipStatus(new_chat_member),
     };
   }
-  if (update.message) return fromMessage(update.message, updateId);
+  if (update.message) return fromMessage(update.message, updateId, me);
   if (update.callback_query) {
     return fromCallback(update.callback_query, updateId);
   }
@@ -114,6 +117,7 @@ function displayName(user: User): string | null {
 function fromMessage(
   message: Message,
   updateId: string,
+  me: BotIdentity,
 ): InboundMessage | ChannelEvent | null {
   const chat = toChat(message.chat);
   if (chat === null) return null;
@@ -162,13 +166,36 @@ function fromMessage(
   const text = message.text ?? message.caption;
   // Attachments come later; a message without text has nothing to answer.
   if (text === undefined) return null;
+  const command = commandOf(message, me);
+  // Another bot's command: neither Pero nor its Agents should answer it.
+  if (command === 'elsewhere') return null;
   return {
     ...base,
     channel: channelOf(chat, message),
     messageId: String(message.message_id),
     senderId: String(message.sender_chat?.id ?? message.from?.id ?? ''),
-    content: { text },
+    content: command === null ? { text } : { text, command },
   };
+}
+
+/**
+ * The command a text message starts with, as Telegram marks it; null when
+ * it starts with none, and `elsewhere` when it names another bot, as in
+ * `/status@other_bot`. A caption's command counts for nothing.
+ */
+function commandOf(
+  message: Message,
+  me: BotIdentity,
+): InboundCommand | 'elsewhere' | null {
+  const { text, entities } = message;
+  const entity = entities?.[0];
+  if (text === undefined || entity?.type !== 'bot_command') return null;
+  if (entity.offset !== 0) return null;
+  const [name = '', bot] = text.slice(1, entity.length).split('@');
+  if (bot !== undefined && bot.toLowerCase() !== me.username?.toLowerCase()) {
+    return 'elsewhere';
+  }
+  return { name: name.toLowerCase(), args: text.slice(entity.length).trim() };
 }
 
 /**

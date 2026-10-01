@@ -9,16 +9,17 @@ import type { InlineKeyboardMarkup, Update, UserFromGetMe } from 'grammy/types';
 import type { ChatKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import {
+  type ButtonRows,
   type ChannelAdapter,
   type ChannelAddress,
   type ChannelEvent,
   type ChannelHandlers,
   MAX_BUTTON_ID_BYTES,
-  type OutboundButton,
   type OutboundMessage,
   type SentMessage,
 } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
+import { COMMANDS } from '../channels/commands/command-list.js';
 import { splitText } from './split-text.js';
 import {
   TELEGRAM_OPTIONS,
@@ -371,7 +372,27 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
   private onStart(bot: Bot, me: UserFromGetMe): void {
     this.logger.log(`Connected to Telegram as @${me.username}`);
     this.status.setConnection({ state: 'connected', username: me.username });
+    void this.listCommands(bot);
     void this.checkChats(bot);
+  }
+
+  /**
+   * Shows Pero's commands in Telegram's command menu, in every chat; a
+   * failure is only logged, since typed commands work without it.
+   */
+  private async listCommands(bot: Bot): Promise<void> {
+    try {
+      await bot.api.setMyCommands(
+        COMMANDS.map(({ name, description }) => ({
+          command: name,
+          description,
+        })),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to list Pero's commands in Telegram's menu: ${this.describe(error)}`,
+      );
+    }
   }
 
   /** Checks every allowed group; failures are only logged. */
@@ -580,9 +601,9 @@ function access(
   };
 }
 
-/** `buttons` in one row; none removes a message's keyboard. */
-function keyboard(buttons: readonly OutboundButton[]): InlineKeyboardMarkup {
-  for (const button of buttons) {
+/** `rows` as a keyboard; none removes a message's keyboard. */
+function keyboard(rows: ButtonRows): InlineKeyboardMarkup {
+  for (const button of rows.flat()) {
     if (Buffer.byteLength(button.id) > MAX_BUTTON_ID_BYTES) {
       throw new Error(
         `Button ID ${button.id} is longer than ${MAX_BUTTON_ID_BYTES} bytes`,
@@ -590,15 +611,11 @@ function keyboard(buttons: readonly OutboundButton[]): InlineKeyboardMarkup {
     }
   }
   return {
-    inline_keyboard:
-      buttons.length === 0
-        ? []
-        : [
-            buttons.map(({ id, label }) => ({
-              text: label,
-              callback_data: id,
-            })),
-          ],
+    inline_keyboard: rows
+      .filter((row) => row.length > 0)
+      .map((row) =>
+        row.map(({ id, label }) => ({ text: label, callback_data: id })),
+      ),
   };
 }
 

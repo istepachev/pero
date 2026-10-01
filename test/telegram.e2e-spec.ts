@@ -98,6 +98,16 @@ describe('Telegram chats and pairing (e2e)', () => {
     };
   }
 
+  /** A command, marked as Telegram marks one. */
+  function command(chat: Chat, text: string): UpdateBody {
+    const update = message(chat, text);
+    const length = text.split(' ')[0]!.length;
+    Object.assign(update.message as object, {
+      entities: [{ type: 'bot_command', offset: 0, length }],
+    });
+    return update;
+  }
+
   /** The texts Telegram has been asked to send, once there are `count`. */
   async function sentTexts(count: number): Promise<string[]> {
     await vi.waitFor(() => expect(api.sent()).toHaveLength(count));
@@ -248,5 +258,53 @@ describe('Telegram chats and pairing (e2e)', () => {
       }),
     );
     expect(api.sent()).toHaveLength(3);
+  });
+
+  it("answers Pero's commands itself, and /new starts the conversation over", async () => {
+    await start();
+    await vi.waitFor(() =>
+      expect(api.callsOf('setMyCommands')[0]?.payload).toMatchObject({
+        commands: expect.arrayContaining([
+          expect.objectContaining({ command: 'new' }),
+        ]),
+      }),
+    );
+    await client.call('telegram.allow', { chatId: String(DIRECT.id) });
+
+    // The first message gets the first steps, then the answer.
+    api.push(message(DIRECT, 'One'));
+    expect((await sentTexts(2)).at(-1)).toBe('echo: One');
+    api.push(command(DIRECT, '/status'));
+    expect((await sentTexts(3)).at(-1)).toMatch(
+      /^Agent main · Ada\nState: idle · last answer .*\nConfig: data\/Settings\/Agents\/Main\.md\n/,
+    );
+
+    api.push(command(DIRECT, '/new'));
+    expect((await sentTexts(4)).at(-1)).toBe(
+      "Started over: Agent main's next answer here begins a new conversation.",
+    );
+    // A fresh Session would carry the conversation over, but not past /new.
+    api.push(message(DIRECT, 'Two'));
+    expect((await sentTexts(5)).at(-1)).toBe('echo: Two');
+
+    const sessions = await db()
+      .getRepository(Session)
+      .find({ order: { id: 'ASC' } });
+    expect(sessions.map((session) => session.status)).toEqual([
+      'closed',
+      'active',
+    ]);
+    const history = await client.call('channels.history', {
+      id: sessions[0]!.channelId,
+      limit: 50,
+    });
+    // Commands and their answers stay out of the history.
+    expect(history.messages.map((m) => m.text)).toEqual([
+      expect.stringContaining('First steps'),
+      'One',
+      'echo: One',
+      'Two',
+      'echo: Two',
+    ]);
   });
 });

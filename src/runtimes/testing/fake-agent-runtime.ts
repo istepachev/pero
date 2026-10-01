@@ -27,6 +27,8 @@ type Script =
  */
 export class FakeAgentRuntime implements AgentRuntime {
   readonly requests: RuntimeRequest[] = [];
+  /** Reported before each answer when set, as a provider's context use. */
+  usage: { contextTokens: number; contextWindow: number | null } | null = null;
   private readonly scripts: Script[] = [];
   private nextSession = 1;
 
@@ -81,6 +83,7 @@ export class FakeAgentRuntime implements AgentRuntime {
         ? ` (${script.tool} allowed)`
         : ` (${script.tool} denied: ${answer.reason})`;
     }
+    if (this.usage !== null) yield { type: 'usage', ...this.usage };
     yield { type: 'result', text: `echo: ${request.input}${asked}` };
   }
 }

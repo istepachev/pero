@@ -19,14 +19,25 @@ export function init(sessionId = SESSION): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+export const MODEL = 'claude-opus-4-8';
+
+/** What one API call took: 1,000 tokens sent fresh, 30,000 from cache. */
+export const USAGE = {
+  input_tokens: 1_000,
+  cache_creation_input_tokens: 2_000,
+  cache_read_input_tokens: 30_000,
+  output_tokens: 500,
+};
+
 /** An assistant message; `parent` marks a subagent's. */
 export function assistant(
   content: unknown[],
   parent: string | null = null,
+  usage: typeof USAGE = USAGE,
 ): SDKMessage {
   return {
     type: 'assistant',
-    message: { role: 'assistant', content },
+    message: { role: 'assistant', model: MODEL, content, usage },
     parent_tool_use_id: parent,
     session_id: SESSION,
   } as unknown as SDKMessage;
@@ -53,6 +64,7 @@ export function success(result: string, isError = false): SDKMessage {
     subtype: 'success',
     is_error: isError,
     result,
+    modelUsage: { [MODEL]: { contextWindow: 200_000 } },
     session_id: SESSION,
   } as unknown as SDKMessage;
 }
