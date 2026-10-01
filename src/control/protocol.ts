@@ -122,10 +122,8 @@ export const backupResultSchema = z.object({
   file: z.string(),
   createdAt: z.iso.datetime(),
   bytes: z.int().nonnegative(),
-  /** Whether the archive holds stored secrets such as the bot token. */
-  includesSecrets: z.boolean(),
-  /** Whether it holds the data folder; absent from an older daemon. */
-  includesData: z.boolean().optional(),
+  /** Whether it holds the data folder. */
+  includesData: z.boolean(),
 });
 
 export type BackupResult = z.infer<typeof backupResultSchema>;
@@ -670,7 +668,7 @@ export const CONTROL_OPERATIONS = {
     result: notificationDetailsSchema,
   },
   /**
-   * Writes a backup of the data directory to an absolute path, with the
+   * Writes a backup of the workspace to an absolute path, with the
    * data folder when `includeData` is set.
    */
   'backup.create': {

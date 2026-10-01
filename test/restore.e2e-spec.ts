@@ -40,8 +40,8 @@ import {
 
 /*
  * The restore drill of docs/OPERATIONS.md as one story, through the fake
- * Bot API and the echo runtime: an installation with Agents, Channels,
- * Workflows, Triggers, and Sessions is backed up while it runs, restored on
+ * Bot API and the echo runtime: a workspace with Agents, Channels,
+ * Workflows, and Sessions is backed up while it runs, restored on
  * a "fresh machine" whose working folders come from the owner's own
  * backup, and carries on where it stopped.
  */
@@ -104,15 +104,11 @@ describe('Restore drill (e2e)', () => {
   });
 
   /**
-   * A daemon on data directory `root`, or on workspace `workspace`, and
-   * the fake Bot API whose Agents answer with an echo.
+   * A daemon on `workspace`, and the fake Bot API whose Agents answer with
+   * an echo.
    */
-  async function start(root: string, workspace?: string) {
-    const config = resolveBootstrapConfig(
-      workspace === undefined
-        ? { dataDir: root, env: {} }
-        : { workspace, env: {} },
-    );
+  async function start(workspace: string) {
+    const config = resolveBootstrapConfig({ workspace, env: {} });
     daemon = await startDaemon({
       config,
       foreground: false,
@@ -285,7 +281,7 @@ describe('Restore drill (e2e)', () => {
     writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
       mode: 0o600,
     });
-    await start(join(ws, '.pero'), ws);
+    await start(ws);
     await connected();
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: String(DIRECT.id) });
@@ -347,7 +343,7 @@ describe('Restore drill (e2e)', () => {
     });
 
     // The same definitions, and every Channel resumes its provider session.
-    await start(join(ws, '.pero'), ws);
+    await start(ws);
     await connected();
     expect(await definitions()).toEqual(before);
     for (const [index, [chat, topic]] of CHANNELS.entries()) {
@@ -419,7 +415,7 @@ describe('Restore drill (e2e)', () => {
   it('restores a workspace into a fresh clone of it, with its data folder', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, tmp);
-    await start(join(ws, '.pero'), ws);
+    await start(ws);
     await client.call('settings.update', { telegramBotToken: TOKEN });
     await connected();
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
@@ -435,7 +431,7 @@ describe('Restore drill (e2e)', () => {
     const file = join(tmp, 'ws.tgz');
     await expect(
       client.call('backup.create', { file, includeData: true }),
-    ).resolves.toMatchObject({ includesData: true, includesSecrets: false });
+    ).resolves.toMatchObject({ includesData: true });
     await stop();
 
     // The machine is gone. On a fresh one, the workspace's repository is
@@ -469,7 +465,7 @@ describe('Restore drill (e2e)', () => {
     });
 
     // The same definitions, and both Channels resume their sessions.
-    await start(join(ws, '.pero'), ws);
+    await start(ws);
     await connected();
     expect(await definitions()).toEqual(before);
     for (const [chat, topic] of [

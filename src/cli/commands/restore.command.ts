@@ -12,7 +12,7 @@ import { restoreBackup, type RestoreResult } from '../restore.js';
   name: 'restore',
   arguments: '<file>',
   description:
-    'Restore a backup into a workspace without a database, such as a fresh clone, or into a new data directory, while Pero is stopped',
+    'Restore a backup into a workspace without a database, such as a fresh clone, while Pero is stopped',
   argsDescription: { file: 'archive written by pero backup' },
 })
 export class RestoreCommand extends PeroCommand {
@@ -21,28 +21,28 @@ export class RestoreCommand extends PeroCommand {
     options: { replaceConfig?: boolean } = {},
   ): Promise<void> {
     const layout = this.layout();
+    const { workspace } = layout;
+    if (workspace === null) {
+      throw new CliError(
+        'pero restore restores into a workspace: pass --workspace <folder>, such as a fresh clone',
+      );
+    }
     await this.refuseRunningDaemon(describeLocation(layout));
 
     const result = await restoreBackup(
       resolve(process.cwd(), file!),
       layout.root,
-      layout.workspace,
+      workspace,
       { replaceConfig: options.replaceConfig ?? false },
     );
     const { dataDir, manifest } = result;
     console.log(
       `Restored the backup from ${manifest.createdAt} (Pero ${manifest.peroVersion}) into ${dataDir}.`,
     );
-    for (const line of describeRestore(result, layout.workspace)) {
-      console.log(line);
-    }
-    const start =
-      layout.workspace === null
-        ? `pero run --data-dir ${dataDir}`
-        : `pero run --workspace ${layout.workspace}`;
-    console.log(`Start it with ${start}`);
+    for (const line of describeRestore(result)) console.log(line);
+    console.log(`Start it with pero run --workspace ${workspace}`);
     for (const folder of result.missing) {
-      console.error(`Warning: ${describeMissing(folder, layout.workspace)}`);
+      console.error(`Warning: ${describeMissing(folder)}`);
     }
   }
 
@@ -74,26 +74,15 @@ export class RestoreCommand extends PeroCommand {
   }
 }
 
-function describeMissing(
-  folder: WorkingDirectoryRef,
-  workspace: string | null,
-): string {
-  if (folder.agent === null && workspace !== null) {
+function describeMissing(folder: WorkingDirectoryRef): string {
+  if (folder.agent === null) {
     return `${folder.path}, the data folder, is missing; restore it from your Git repository or your own backup`;
   }
-  const owner =
-    folder.agent === null
-      ? 'the default working directory'
-      : `the working directory of Agent ${folder.agent}`;
-  return `${folder.path}, ${owner}, is missing; restore it from your own backup of the working folders`;
+  return `${folder.path}, the working directory of Agent ${folder.agent}, is missing; restore it from your own backup of the working folders`;
 }
 
 /** What a restore into a workspace did beyond the database, line by line. */
-function describeRestore(
-  result: RestoreResult,
-  workspace: string | null,
-): string[] {
-  if (workspace === null) return [];
+function describeRestore(result: RestoreResult): string[] {
   const lines: string[] = [];
   const config = `${result.dataDir}/config.yaml`;
   if (result.config === 'kept') {
@@ -111,13 +100,6 @@ function describeRestore(
     lines.push(
       `Restored ${copied} ${copied === 1 ? 'file' : 'files'} of the data folder into ${folder}` +
         (kept > 0 ? `, keeping ${kept} already there.` : '.'),
-    );
-  }
-  if (result.token === 'written') {
-    lines.push(`Wrote the Telegram bot token to ${workspace}/.env.`);
-  } else if (result.token === 'kept') {
-    lines.push(
-      `Kept the Telegram bot token in ${workspace}/.env; the backup's was not used.`,
     );
   }
   return lines;

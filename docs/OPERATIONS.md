@@ -191,9 +191,9 @@ History is kept until you set `history-retention-days`; then messages older than
 pero backup ~/backups/pero-$(date +%F).tgz
 ```
 
-`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml` and a manifest as an owner-only gzip tar. The file must be outside the state directory; one already at that path is replaced. Logs, `run/`, and a workspace's `.env` are never in it, so a workspace's backup has no bot token; a legacy data directory's backup has its `secrets/`, and with them the token. The backup holds your message history, so keep it as private as the state directory.
+`pero backup` asks the running daemon for a consistent snapshot of the database, taken with SQLite's online backup API while Pero keeps working, and writes it with `config.yaml` and a manifest as an owner-only gzip tar. The file must be outside the state directory; one already at that path is replaced. Logs, `run/`, and `.env` are never in it, so a backup has no bot token. The backup holds your message history, so keep it as private as the state directory.
 
-`--include-data` adds the data folder, as it is at that moment, for when it isn't in Git or synced elsewhere. Only its files and folders are included, not links, and neither `.pero/` nor `.env` should they be inside it. The file must then be outside the data folder too. Such a backup needs this version of Pero or newer to restore.
+`--include-data` adds the data folder, as it is at that moment, for when it isn't in Git or synced elsewhere. Only its files and folders are included, not links, and neither `.pero/` nor `.env` should they be inside it. The file must then be outside the data folder too.
 
 It needs Pero running. To back up every night, add a line to the crontab of the account that runs Pero (`crontab -e`), with the full path to `pero` when cron's `PATH` does not have it:
 
@@ -211,15 +211,12 @@ Back up the rest yourself, with the tool you already use for your files:
 
 `pero restore <file>` runs without the daemon and never overwrites Pero's database.
 
-**Into a workspace** (the one found from the current folder, or `-w <folder>`, created when missing), whose `.pero/` must have no database, such as a fresh clone of the workspace's repository:
+It restores into a workspace (the one found from the current folder, or `-w <folder>`, created when missing), whose `.pero/` must have no database, such as a fresh clone of the workspace's repository:
 - The database goes into `.pero/`. If Pero starts there meanwhile, the restore stops with nothing changed.
 - The workspace's own `config.yaml` is kept, and the restore lists the chats the backup's file allowed that it doesn't; `--replace-config` takes the backup's instead. Without one, the backup's is used.
 - A backup made with `--include-data` restores its data folder into the one the workspace's `config.yaml` names, keeping every file already there.
-- A backup of a legacy data directory brings its bot token to `.env`, unless `.env` has one already, and adds `.env` to `.gitignore`.
 
-**Into a legacy data directory** (`--data-dir` or `PERO_HOME`), which must be missing or empty. A backup with the data folder only restores into a workspace.
-
-Either way, it warns about each folder the installation uses that does not exist here: the data folder, and each Agent's own.
+It warns about each folder the workspace uses that does not exist here: the data folder, and each Agent's own. A file that is not a backup this version of Pero reads is refused before anything changes.
 
 To go back to a backup on the same machine, stop Pero and move its database aside first:
 
@@ -247,7 +244,7 @@ The drill below brings back the workspace from Git and Pero's state from its bac
    ```
 
    A warning names each folder that is still missing; restore it before going on.
-7. **Write the bot token** again: `printf '%s' "$TOKEN" | pero settings set telegram-bot-token` once Pero runs, a `PERO_TELEGRAM_BOT_TOKEN=…` line in the workspace's `.env`, or the same `PERO_TELEGRAM_BOT_TOKEN` in Pero's environment. A restored legacy backup brought it along already.
+7. **Write the bot token** again: `printf '%s' "$TOKEN" | pero settings set telegram-bot-token` once Pero runs, a `PERO_TELEGRAM_BOT_TOKEN=…` line in the workspace's `.env`, or the same `PERO_TELEGRAM_BOT_TOKEN` in Pero's environment.
 8. **Start Pero:**
 
    ```sh

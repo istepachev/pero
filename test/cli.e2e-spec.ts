@@ -5,6 +5,7 @@ import {
   spawn,
 } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -66,8 +67,6 @@ interface Result {
 describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   let tmp: string;
   let layout: DataDirLayout;
-  /** Where backups of `layout` are restored. */
-  let restored: DataDirLayout;
   /** Where the fake provider CLIs look for their sign-in. */
   let authDir: string;
   /** Other state directories a test started a daemon in. */
@@ -81,7 +80,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     // Short: macOS limits socket paths to 104 bytes.
     tmp = mkdtempSync(join(tmpdir(), 'pero-'));
     layout = dataDirLayout(join(tmp, 'pero'));
-    restored = dataDirLayout(join(tmp, 'restored'));
     authDir = join(tmp, 'auth');
     mkdirSync(authDir);
   });
@@ -92,7 +90,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         child.kill('SIGKILL');
       }
     }
-    for (const { metadataFile } of [layout, restored, ...others.splice(0)]) {
+    for (const { metadataFile } of [layout, ...others.splice(0)]) {
       const metadata = readDaemonMetadata(metadataFile);
       if (metadata) {
         kill(metadata.pid, 'SIGKILL');
@@ -1565,138 +1563,111 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     }
   });
 
-  it('restores a backup into a fresh data directory that starts with the same records', async () => {
+  it('restores a backup into a fresh workspace that starts with the same records', async () => {
     const cwd = realpathSync(tmp);
-    const vault = join(cwd, 'vault');
-    mkdirSync(vault);
-    mkdirSync(layout.root, { recursive: true });
-    writeFileSync(layout.configFile, `data: ${vault}\n`);
+    const ws = useWorkspace();
+    const source = join(cwd, 'ws');
+    const fresh = join(cwd, 'fresh');
+    const freshLayout = dataDirLayout(join(fresh, '.pero'), fresh);
+    others.push(freshLayout);
     const file = join(cwd, 'backup.tgz');
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const set = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token'),
-      {
-        input: `${TOKEN}\n`,
-      },
-    );
+    expect((await pero(ws('run'))).code).toBe(0);
+    const set = await pero(ws('settings', 'set', 'telegram-bot-token'), {
+      input: `${TOKEN}\n`,
+    });
     expect(set.code).toBe(0);
-    const before = await pero(withDataDir('settings'));
+    const before = await pero(ws('settings'));
 
     // Taken while the daemon runs, so recent writes are still in the WAL.
-    const backup = await pero(withDataDir('backup', 'backup.tgz'), {
-      cwd,
-      nodeArgs,
-    });
+    const backup = await pero(ws('backup', 'backup.tgz'), { cwd, nodeArgs });
     expect(backup).toMatchObject({
       code: 0,
       stdout: expect.stringMatching(
         new RegExp(
-          `^Backed up ${escape(layout.root)} to ${escape(file)} \\(\\d+\\.\\d KB\\)\\n` +
-            'It contains the Telegram bot token; keep it private, like the data directory\\.\\n$',
+          `^Backed up ${escape(layout.root)} to ${escape(file)} \\(\\d+\\.\\d KB\\)\\n$`,
         ),
       ),
       stderr: '',
     });
     expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(ws('stop'))).code).toBe(0);
 
-    rmSync(vault, { recursive: true });
-    const restore = await pero(['--data-dir', restored.root, 'restore', file], {
-      nodeArgs,
-    });
+    const restore = await pero(['restore', file, '-w', fresh], { nodeArgs });
     expect(restore).toMatchObject({
       code: 0,
       stdout: expect.stringMatching(
         new RegExp(
-          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(restored.root)}\\.\\n` +
-            `Start it with pero run --data-dir ${escape(restored.root)}\\n$`,
+          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(freshLayout.root)}\\.\\n` +
+            `Start it with pero run --workspace ${escape(fresh)}\\n$`,
         ),
       ),
-      stderr: `Warning: ${vault}, the default working directory, is missing; restore it from your own backup of the working folders\n`,
+      stderr: `Warning: ${fresh}/data, the data folder, is missing; restore it from your Git repository or your own backup\n`,
     });
-    mkdirSync(vault);
+    // The data folder comes from Git, and the token is written again.
+    cpSync(join(source, 'data'), join(fresh, 'data'), { recursive: true });
+    writeFileSync(join(fresh, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
+      mode: 0o600,
+    });
 
-    const run = await pero(['--data-dir', restored.root, 'run']);
-    expect(run.code).toBe(0);
-    const after = await pero(['--data-dir', restored.root, 'settings']);
+    const target = (...args: string[]) => ['-w', fresh, ...args];
+    expect((await pero(target('run'))).code).toBe(0);
+    const after = await pero(target('settings'));
     expect(after).toEqual({
       ...before,
-      stdout: before.stdout.replace(layout.root, restored.root),
+      stdout: before.stdout.replaceAll(source, fresh),
     });
-    // The restored token connects the bot.
-    await connectedStatus((...args) => ['--data-dir', restored.root, ...args]);
-    expect((await pero(['--data-dir', restored.root, 'stop'])).code).toBe(0);
+    await connectedStatus(target);
+    expect((await pero(target('stop'))).code).toBe(0);
 
-    expect(dumpTables(restored.database)).toEqual(dumpTables(layout.database));
+    expect(dumpTables(freshLayout.database)).toEqual(
+      dumpTables(layout.database),
+    );
   });
 
-  it('restores a legacy backup into a workspace, and a workspace with its data folder into a clone', async () => {
+  it('restores a workspace with its data folder into a clone', async () => {
     const cwd = realpathSync(tmp);
-    const ws = join(cwd, 'ws');
+    const ws = useWorkspace();
+    const source = join(cwd, 'ws');
     const clone = join(cwd, 'clone');
-    others.push(
-      dataDirLayout(join(ws, '.pero'), ws),
-      dataDirLayout(join(clone, '.pero'), clone),
-    );
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const token = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token'),
-      {
-        input: `${TOKEN}\n`,
-      },
-    );
+    others.push(dataDirLayout(join(clone, '.pero'), clone));
+    expect((await pero(ws('run'))).code).toBe(0);
+    const token = await pero(ws('settings', 'set', 'telegram-bot-token'), {
+      input: `${TOKEN}\n`,
+    });
     expect(token.code).toBe(0);
-    expect(
-      (await pero(withDataDir('telegram', 'allow', '-1001234567890'))).code,
-    ).toBe(0);
-    expect(
-      (await pero(withDataDir('backup', 'legacy.tgz'), { cwd })).code,
-    ).toBe(0);
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
-
-    // The token moves to .env; the workspace's data/ is made when it starts.
-    const legacy = await pero(['restore', 'legacy.tgz', '-w', ws], { cwd });
-    expect(legacy).toMatchObject({ code: 0, stderr: '' });
-    expect(legacy.stdout).toContain(
-      `\nWrote the Telegram bot token to ${ws}/.env.\nStart it with pero run --workspace ${ws}\n`,
+    expect((await pero(ws('telegram', 'allow', '-1001234567890'))).code).toBe(
+      0,
     );
-    expect(readFileSync(join(ws, '.env'), 'utf8')).toBe(
-      `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`,
-    );
-    expect(statSync(join(ws, '.env')).mode & 0o777).toBe(0o600);
-    expect(readFileSync(join(ws, '.gitignore'), 'utf8')).toBe('.env\n');
-    expect(readFileSync(join(ws, '.pero', 'config.yaml'), 'utf8')).toContain(
-      '- id: -1001234567890',
-    );
-
-    expect((await pero(['run', '-w', ws])).code).toBe(0);
-    writeFileSync(join(ws, 'data', 'note.md'), 'Kept safe\n');
-    const backup = await pero(
-      ['backup', '-w', ws, '--include-data', 'ws.tgz'],
-      {
-        cwd,
-      },
-    );
+    writeFileSync(join(source, 'data', 'note.md'), 'Kept safe\n');
+    const backup = await pero(ws('backup', '--include-data', 'ws.tgz'), {
+      cwd,
+    });
     expect(backup).toMatchObject({ code: 0, stderr: '' });
     expect(backup.stdout).toMatch(
       new RegExp(
-        `^Backed up ${escape(join(ws, '.pero'))} and the data folder to ${escape(join(cwd, 'ws.tgz'))} `,
+        `^Backed up ${escape(layout.root)} and the data folder to ${escape(join(cwd, 'ws.tgz'))} `,
       ),
     );
-    expect(backup.stdout).not.toContain('bot token');
-    expect((await pero(['stop', '-w', ws])).code).toBe(0);
+    expect((await pero(ws('stop'))).code).toBe(0);
 
-    // A clone whose config.yaml no longer allows the group.
+    // A clone with what Git has: the notes, and a config.yaml that no
+    // longer allows the group.
     mkdirSync(join(clone, '.pero'), { recursive: true });
     writeFileSync(join(clone, '.pero', 'config.yaml'), 'data: data\n');
+    cpSync(join(source, 'data'), join(clone, 'data'), { recursive: true });
+    rmSync(join(clone, 'data', 'note.md'));
+    const inGit = readdirSync(join(clone, 'data'), {
+      recursive: true,
+      withFileTypes: true,
+    }).filter((entry) => entry.isFile()).length;
     const restore = await pero(['restore', 'ws.tgz', '-w', clone], { cwd });
     expect(restore).toMatchObject({ code: 0, stderr: '' });
     expect(restore.stdout.split('\n').slice(1)).toEqual([
       `Kept ${clone}/.pero/config.yaml; the backup's was not used.`,
       "The backup's config.yaml also allowed -1001234567890; allow them again with pero telegram allow <chat-id>.",
-      `Restored 1 file of the data folder into ${clone}/data.`,
+      `Restored 1 file of the data folder into ${clone}/data, keeping ${inGit} already there.`,
       `Start it with pero run --workspace ${clone}`,
       '',
     ]);
@@ -1706,28 +1677,50 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(existsSync(join(clone, '.env'))).toBe(false);
   });
 
-  it('refuses to restore over a running Pero or a data directory in use', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+  it('refuses to restore over a running Pero or a workspace with a database', async () => {
+    const ws = useWorkspace();
+    const source = join(realpathSync(tmp), 'ws');
+    expect((await pero(ws('run'))).code).toBe(0);
     const file = join(tmp, 'backup.tgz');
-    expect((await pero(withDataDir('backup', file))).code).toBe(0);
+    expect((await pero(ws('backup', file))).code).toBe(0);
 
-    expect(await pero(withDataDir('restore', file))).toMatchObject({
+    expect(await pero(ws('restore', file))).toMatchObject({
       code: 1,
       stdout: '',
-      stderr: `Pero is running for data directory ${layout.root} — stop it with pero stop before restoring\n`,
+      stderr: `Pero is running for workspace ${source} — stop it with pero stop before restoring\n`,
     });
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
-    expect(await pero(withDataDir('restore', file))).toMatchObject({
+    expect((await pero(ws('stop'))).code).toBe(0);
+    expect(await pero(ws('restore', file))).toMatchObject({
       code: 1,
-      stderr: `${layout.root} is not empty. Restore into a new data directory, or stop Pero and move ${layout.root} aside first.\n`,
+      stderr: `${layout.root} already has a database. Restore into a workspace without one, such as a fresh clone, or stop Pero and move ${layout.database} aside first.\n`,
     });
+    const fresh = join(tmp, 'fresh');
     expect(
-      await pero(['--data-dir', restored.root, 'restore', join(tmp, 'nope')]),
+      await pero(['restore', join(tmp, 'nope'), '-w', fresh]),
     ).toMatchObject({
       code: 1,
       stderr: `${join(tmp, 'nope')} does not exist\n`,
     });
-    expect(existsSync(restored.root)).toBe(false);
+    expect(existsSync(fresh)).toBe(false);
+
+    const legacy = join(tmp, 'legacy');
+    expect(await pero(['restore', file, '--data-dir', legacy])).toMatchObject({
+      code: 1,
+      stderr:
+        'pero restore restores into a workspace: pass --workspace <folder>, such as a fresh clone\n',
+    });
+    expect(existsSync(legacy)).toBe(false);
+  });
+
+  it('backs up only a workspace', async () => {
+    expect((await pero(withDataDir('run'))).code).toBe(0);
+    const file = join(tmp, 'backup.tgz');
+
+    expect(await pero(withDataDir('backup', file))).toMatchObject({
+      code: 1,
+      stderr: 'Backups are of a workspace; make one with pero init <folder>\n',
+    });
+    expect(existsSync(file)).toBe(false);
   });
 
   it('needs the daemon for a backup', async () => {

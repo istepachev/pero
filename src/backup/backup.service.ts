@@ -1,10 +1,7 @@
-import { constants } from 'node:fs';
 import {
   chmod,
   copyFile,
-  mkdir,
   mkdtemp,
-  readdir,
   realpath,
   rm,
   stat,
@@ -29,18 +26,16 @@ import {
   BACKUP_FORMAT,
   type BackupManifest,
   CONFIG_ENTRY,
-  DATA_BACKUP_FORMAT,
   DATA_ENTRY,
   DATABASE_ENTRY,
   MANIFEST_ENTRY,
-  SECRETS_ENTRY,
   writeBackupArchive,
 } from './archive.js';
 import { copyTree } from './copy-tree.js';
 
 export const BACKUP_LAYOUT = Symbol('BACKUP_LAYOUT');
 
-/** Writes backups of the data directory while the daemon runs. */
+/** Writes backups of the workspace while the daemon runs. */
 @Injectable()
 export class BackupService implements BeforeApplicationShutdown {
   private readonly logger = new Logger('Backup');
@@ -64,13 +59,20 @@ export class BackupService implements BeforeApplicationShutdown {
     file: string,
     options: { includeData?: boolean } = {},
   ): Promise<BackupResult> {
+    const workspace = this.layout.workspace;
+    if (workspace === null) {
+      throw new InvalidInputError(
+        'Backups are of a workspace; make one with pero init <folder>',
+      );
+    }
     if (this.running) {
       throw new ConflictError('A backup is already being written');
     }
     // Claimed before the first await, so shutdown and a second request
     // both see it.
     const work = this.checkDestination(file, options.includeData ?? false).then(
-      ({ destination, dataFolder }) => this.write(destination, dataFolder),
+      ({ destination, dataFolder }) =>
+        this.write(destination, workspace, dataFolder),
     );
     this.running = work;
     try {
@@ -88,6 +90,7 @@ export class BackupService implements BeforeApplicationShutdown {
   /** Writes the backup, with `dataFolder` when it is not null. */
   private async write(
     file: string,
+    workspace: string,
     dataFolder: string | null,
   ): Promise<BackupResult> {
     // Next to the backup, on a disk with room for it, rather than in a
@@ -100,11 +103,6 @@ export class BackupService implements BeforeApplicationShutdown {
       const workingDirectories = await this.workingDirectories();
       await this.connection().backup(snapshot);
       await chmod(snapshot, 0o600);
-      // A workspace keeps its token in .env, which is never backed up.
-      const secrets =
-        this.layout.workspace === null
-          ? await copySecrets(this.layout.secrets, join(staging, SECRETS_ENTRY))
-          : [];
       await copyFile(this.layout.configFile, join(staging, CONFIG_ENTRY)).catch(
         (error: unknown) => {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -117,15 +115,13 @@ export class BackupService implements BeforeApplicationShutdown {
         await copyTree(dataFolder, join(staging, DATA_ENTRY), skip);
       }
       const manifest: BackupManifest = {
-        format: dataFolder === null ? BACKUP_FORMAT : DATA_BACKUP_FORMAT,
+        format: BACKUP_FORMAT,
         peroVersion: PACKAGE_VERSION,
         createdAt: new Date().toISOString(),
-        sourceDataDir: this.layout.root,
-        sourceWorkspace: this.layout.workspace,
+        sourceWorkspace: workspace,
         lastMigration: describeSnapshot(snapshot),
         workingDirectories,
-        secrets,
-        ...(dataFolder === null ? {} : { includesData: true }),
+        includesData: dataFolder !== null,
       };
       await writeFile(
         join(staging, MANIFEST_ENTRY),
@@ -140,7 +136,6 @@ export class BackupService implements BeforeApplicationShutdown {
         file,
         createdAt: manifest.createdAt,
         bytes: size,
-        includesSecrets: secrets.length > 0,
         includesData: dataFolder !== null,
       };
     } finally {
@@ -164,7 +159,7 @@ export class BackupService implements BeforeApplicationShutdown {
     const destination = resolve(file);
     if (isInside(destination, this.layout.root)) {
       throw new InvalidInputError(
-        `Backup file ${destination} must be outside the data directory ${this.layout.root}`,
+        `Backup file ${destination} must be outside the state directory ${this.layout.root}`,
       );
     }
     const dataFolder = includeData ? await this.dataFolder() : null;
@@ -190,26 +185,20 @@ export class BackupService implements BeforeApplicationShutdown {
 
   /** The data folder, which a workspace always has. */
   private async dataFolder(): Promise<string> {
-    const { dataFolder: folder } = await this.definitions.defaults();
-    if (folder === null) {
-      throw new InvalidInputError(
-        'There is no data folder to include: a workspace has one, and a legacy data directory has none',
-      );
-    }
-    return folder;
+    const { dataFolder } = await this.definitions.defaults();
+    return dataFolder!;
   }
 
   /**
-   * The folders the installation's Agents work in, which a restore checks
+   * The folders the workspace's Agents work in, which a restore checks
    * for: the data folder, and each Agent's own.
    */
   private async workingDirectories(): Promise<
     BackupManifest['workingDirectories']
   > {
-    const { dataFolder } = await this.definitions.defaults();
     const agents = await this.definitions.agents();
     return [
-      ...(dataFolder === null ? [] : [{ path: dataFolder, agent: null }]),
+      { path: await this.dataFolder(), agent: null },
       ...agents.flatMap(({ name, ownWorkingDirectory }) =>
         ownWorkingDirectory === null
           ? []
@@ -251,26 +240,4 @@ function describeSnapshot(snapshot: string): string | null {
   } finally {
     db.close();
   }
-}
-
-/** Copies the regular files in `from` owner-only and returns their names. */
-async function copySecrets(from: string, to: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(from, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-  // Leftovers of an interrupted atomic write are not secrets.
-  const names = entries
-    .filter((entry) => entry.isFile() && !entry.name.endsWith('.tmp'))
-    .map((entry) => entry.name)
-    .sort();
-  if (names.length === 0) return [];
-  await mkdir(to, { mode: 0o700 });
-  for (const name of names) {
-    await copyFile(join(from, name), join(to, name), constants.COPYFILE_EXCL);
-  }
-  return names;
 }

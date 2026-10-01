@@ -14,11 +14,8 @@ unset PERO_HOME PERO_WORKSPACE PERO_TELEGRAM_BOT_TOKEN
 mkdir -p "$HOME" "$prefix"
 
 cleanup() {
-  for ws in workspace clone from-legacy; do
+  for ws in workspace clone; do
     [ -d "$HOME/$ws" ] && pero stop -w "$HOME/$ws" >/dev/null 2>&1 || true
-  done
-  for dir in legacy restored; do
-    [ -d "$HOME/$dir" ] && pero stop --data-dir "$HOME/$dir" >/dev/null 2>&1 || true
   done
   rm -rf "$work"
 }
@@ -108,23 +105,5 @@ pero restore "$work/backup.tgz" -w "$HOME/clone"
 pero run -w "$HOME/clone" </dev/null
 pero status -w "$HOME/clone"
 pero stop -w "$HOME/clone"
-
-step 'A legacy data directory: run, backup, stop'
-pero run --data-dir "$HOME/legacy" </dev/null
-pero status --data-dir "$HOME/legacy"
-pero backup --data-dir "$HOME/legacy" "$work/legacy.tgz"
-pero stop --data-dir "$HOME/legacy"
-
-step 'pero restore a legacy backup into a fresh data directory'
-pero restore "$work/legacy.tgz" --data-dir "$HOME/restored"
-pero run --data-dir "$HOME/restored" </dev/null
-pero status --data-dir "$HOME/restored"
-pero stop --data-dir "$HOME/restored"
-
-step 'pero restore a legacy backup into a workspace'
-pero restore "$work/legacy.tgz" -w "$HOME/from-legacy"
-pero run -w "$HOME/from-legacy" </dev/null
-pero status -w "$HOME/from-legacy"
-pero stop -w "$HOME/from-legacy"
 
 step 'Packed install works'
