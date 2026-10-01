@@ -52,6 +52,21 @@ Before signing in to a provider, you can try the whole setup with the echo runti
 
 With a bot token set, Pero long-polls Telegram for messages and membership changes. `pero status` shows `telegram ok Connected as @<bot>` once connected and serving a chat, and `degraded` while connecting, while no chat is allowed, when Telegram can't be reached, when another process polls the same bot, when the bot is not an administrator of an allowed group (Telegram then shows it only commands, mentions, and replies), or when an allowed group is public. A token Telegram rejects shows as `unconfigured`, like a missing one. Replies go to the topic they answer; the General topic, a group without topics, and a direct chat are answered without a topic. Long replies are split into several messages. Other bots' messages are ignored. When enabling topics gives a group a new chat ID, Pero moves its Channel and its entry in `config.yaml` to the new ID.
 
+### Commands
+
+Pero answers a few commands itself, in the topic or chat they are sent in; the bot lists them in Telegram's `/` menu. Neither a command nor Pero's answer joins the Channel's history, so no Agent or Workflow sees them. Any other `/word`, such as `/plan the week`, goes to the Agent as text. A command for another bot in the group, such as `/status@other_bot`, is ignored.
+
+| Command | What it does |
+|---|---|
+| `/status` | The Agent that answers here: whether it is answering (and for how long, and how many messages wait), its note (`Config:`), provider, model, effort, permissions, and folder with where each comes from, its Session (when it started and how many turns it had), how full its context is, and its note's errors. Then each part of Pero and its state, as `pero status` shows them. Where no Agent answers, it says why and what to edit. |
+| `/new` | Starts the conversation here over: the Agent's next answer begins a new provider conversation that carries over nothing from before `/new`, unlike a fresh Session after a provider change. An answer in progress is stopped. The history is kept, for Workflows and `pero channels history`. |
+| `/stop` | Stops the Agent's answer in progress here, and the messages waiting behind it, which it never answers. Its open tool requests are denied. The conversation stays as it was. |
+| `/help` | Lists the commands. |
+
+Some answers have buttons: `/status` offers Stop (while the Agent answers), New session, and Refresh, and `/help` the common commands. Pressing one edits the same message rather than sending a new one, and a button that starts over asks first. Anyone in the chat may use the commands and their buttons, as with the Allow and Deny buttons.
+
+`/status` shows context only for Claude Agents: the tokens the conversation held after the latest answer, out of the model's context window. Codex reports only the tokens a whole turn used, which overstates the context, so the line is left out.
+
 ### Allowed chats
 
 Pero serves only the chats allowed on its host. A chat it does not serve gets, at most once an hour, a reply naming its chat ID and the command that allows it:
@@ -73,6 +88,8 @@ pero channels                  # each Channel with the Agent that answers there 
 pero channels show 3           # who answers, or why no one does
 pero channels history 3 -n 50  # its latest messages
 ```
+
+`/new` starts a Channel's conversation over without carrying anything over (see [Commands](#commands)).
 
 Pero keeps each Channel's message history until you set `history-retention-days` in `Pero.md`: then messages older than that many days are deleted within the hour, and every hour after, including when Pero starts. Removing it keeps everything again. Workflow Runs and Notifications keep their own text, such as an Agent's answer, whatever the setting. [Operating Pero](./OPERATIONS.md#message-history) describes exactly what the history keeps.
 

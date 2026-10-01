@@ -108,8 +108,10 @@ export class ToolApprovals {
       {
         text,
         buttons: [
-          { id: `${id}:${ALLOW}`, label: 'Allow' },
-          { id: `${id}:${DENY}`, label: 'Deny' },
+          [
+            { id: `${id}:${ALLOW}`, label: 'Allow' },
+            { id: `${id}:${DENY}`, label: 'Deny' },
+          ],
         ],
       },
     );

@@ -36,6 +36,17 @@ export interface InboundChannel {
   topicId: string | null;
 }
 
+/**
+ * A command a message starts with, such as `/status` or `/model opus`, for
+ * Pero rather than the Agent.
+ */
+export interface InboundCommand {
+  /** Lowercased, without the `/` or the bot's name. */
+  name: string;
+  /** The rest of the message, trimmed; empty when there is none. */
+  args: string;
+}
+
 /** A message normalized by its adapter. */
 export interface InboundMessage {
   integrationKind: IntegrationKind;
@@ -45,7 +56,11 @@ export interface InboundMessage {
   channel: InboundChannel;
   messageId: string;
   senderId: string;
-  content: { text: string };
+  /**
+   * The text, and the command it starts with, if any. A command Pero does
+   * not know goes to the Agent as text.
+   */
+  content: { text: string; command?: InboundCommand };
 }
 
 interface ChannelEventBase {
@@ -110,10 +125,13 @@ export interface OutboundButton {
 /** The longest button ID every integration can carry (Telegram: 64). */
 export const MAX_BUTTON_ID_BYTES = 64;
 
+/** Buttons under a message, row by row. */
+export type ButtonRows = readonly (readonly OutboundButton[])[];
+
 export interface OutboundMessage {
   text: string;
-  /** Shown in one row under the message; none by default. */
-  buttons?: readonly OutboundButton[];
+  /** Shown under the message, row by row; none by default. */
+  buttons?: ButtonRows;
 }
 
 /**

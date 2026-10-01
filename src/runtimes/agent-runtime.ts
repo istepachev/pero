@@ -74,6 +74,11 @@ export type RuntimeEvent =
   | { type: 'text'; delta: string }
   /** The Agent used a tool. */
   | { type: 'tool'; name: string }
+  /**
+   * How full the conversation's context is once the turn has answered, in
+   * tokens, and the model's window when the provider says.
+   */
+  | { type: 'usage'; contextTokens: number; contextWindow: number | null }
   /** The whole reply once the turn has finished. */
   | { type: 'result'; text: string };
 

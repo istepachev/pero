@@ -16,7 +16,10 @@ import { inTransaction } from '../persistence/transaction.js';
 import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
-import { SessionService } from '../sessions/session.service.js';
+import {
+  type ContextUsage,
+  SessionService,
+} from '../sessions/session.service.js';
 import type { Agent } from '../settings-files/snapshot.js';
 import {
   Definitions,
@@ -77,12 +80,41 @@ export class TurnError extends Error {
     message: string,
     /** True when Pero stopped before or during the turn. */
     readonly interrupted = false,
+    /** True when someone stopped the Channel's turns, as with `/stop`. */
+    readonly stopped = false,
   ) {
     super(message);
   }
 }
 
+/** What a Channel's Agent is doing, for `/status`. */
+export interface ChannelActivity {
+  /** When the running turn started; null when none is running. */
+  runningSince: Date | null;
+  /** How many accepted turns wait behind it. */
+  queued: number;
+}
+
+/** What `stop` ended. */
+export interface StopResult {
+  /** Whether a turn was running. */
+  stopped: boolean;
+  /** How many waiting turns will never start. */
+  dropped: number;
+}
+
 const STOPPING = 'Pero is stopping';
+
+/** The abort reason of a turn someone stopped. */
+const STOPPED = Symbol('stopped');
+
+/** A Channel's turns that have not settled yet. */
+interface ChannelTurnsState {
+  running: Set<{ controller: AbortController; startedAt: Date }>;
+  queued: number;
+  /** Counts stops; a turn accepted before the latest one never starts. */
+  stops: number;
+}
 
 /**
  * Runs Agents' turns: builds each request from the Agent record, runs it
@@ -103,6 +135,8 @@ export class AgentManager implements BeforeApplicationShutdown {
   private readonly accepted = new Set<Promise<unknown>>();
   /** Aborts each turn that has started. */
   private readonly running = new Set<AbortController>();
+  /** Each Channel's turns until they settle, so they can be stopped. */
+  private readonly channels = new Map<number, ChannelTurnsState>();
   private draining: Promise<void> | null = null;
 
   constructor(
@@ -126,16 +160,62 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
     // One active Session per Channel and Agent, so this pair names it.
     const key = `${turn.channelId}:${turn.agent}`;
+    const channel = this.channelTurns(turn.channelId);
+    const stops = channel.stops;
+    channel.queued++;
     const previous = this.queues.get(key) ?? Promise.resolve();
-    const result = previous.then(() => this.execute(turn));
+    const result = previous.then(() => {
+      channel.queued--;
+      if (channel.stops !== stops) {
+        throw new TurnError('the turn was stopped', false, true);
+      }
+      return this.execute(turn, channel);
+    });
     const settled = result.catch(() => undefined);
     this.queues.set(key, settled);
     this.accepted.add(settled);
     void settled.then(() => {
       this.accepted.delete(settled);
       if (this.queues.get(key) === settled) this.queues.delete(key);
+      if (channel.queued === 0 && channel.running.size === 0) {
+        this.channels.delete(turn.channelId);
+      }
     });
     return result;
+  }
+
+  /**
+   * Stops Channel `channelId`'s running turn, which ends with a stopped
+   * `TurnError`, and drops the turns waiting behind it.
+   */
+  stop(channelId: number): StopResult {
+    const channel = this.channels.get(channelId);
+    if (channel === undefined) return { stopped: false, dropped: 0 };
+    channel.stops++;
+    for (const { controller } of channel.running) controller.abort(STOPPED);
+    return { stopped: channel.running.size > 0, dropped: channel.queued };
+  }
+
+  /** What Channel `channelId`'s Agent is doing now. */
+  activity(channelId: number): ChannelActivity {
+    const channel = this.channels.get(channelId);
+    const starts = [...(channel?.running ?? [])].map((run) => run.startedAt);
+    return {
+      runningSince:
+        starts.length === 0
+          ? null
+          : new Date(Math.min(...starts.map((start) => start.getTime()))),
+      queued: channel?.queued ?? 0,
+    };
+  }
+
+  private channelTurns(channelId: number): ChannelTurnsState {
+    let channel = this.channels.get(channelId);
+    if (channel === undefined) {
+      channel = { running: new Set(), queued: 0, stops: 0 };
+      this.channels.set(channelId, channel);
+    }
+    return channel;
   }
 
   /**
@@ -189,11 +269,16 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
   }
 
-  private async execute(turn: TurnInput): Promise<TurnResult | null> {
+  private async execute(
+    turn: TurnInput,
+    channel: ChannelTurnsState,
+  ): Promise<TurnResult | null> {
     if (this.draining !== null) throw new TurnError(STOPPING, true);
     const controller = new AbortController();
     this.running.add(controller);
-    const startedAt = Date.now();
+    const run = { controller, startedAt: new Date() };
+    channel.running.add(run);
+    const startedAt = run.startedAt.getTime();
     const base = `Channel ${turn.channelId}, Agent ${turn.agent}`;
     let where = base;
     let provider: Provider | null = null;
@@ -254,6 +339,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       throw this.failure(error, provider, where, startedAt, controller);
     } finally {
       this.running.delete(controller);
+      channel.running.delete(run);
     }
   }
 
@@ -322,9 +408,12 @@ export class AgentManager implements BeforeApplicationShutdown {
         ...(turn.approve ? { approve: turn.approve } : {}),
       },
       controller,
-      // Committed before this turn settles, so before the next starts.
-      (providerSessionId) =>
-        this.sessions.recordProviderSessionId(session, providerSessionId),
+      {
+        // Committed before this turn settles, so before the next starts.
+        session: (providerSessionId) =>
+          this.sessions.recordProviderSessionId(session, providerSessionId),
+        usage: (usage) => this.sessions.recordContext(session, usage),
+      },
     );
   }
 
@@ -344,8 +433,10 @@ export class AgentManager implements BeforeApplicationShutdown {
         { ...turn.request, input: turn.input },
         {},
         controller,
-        (id) => {
-          providerSessionId = id;
+        {
+          session: (id) => {
+            providerSessionId = id;
+          },
         },
       );
       this.logger.log(
@@ -384,7 +475,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       `Turn failed in ${where} after ${Date.now() - startedAt} ms: ` +
         `${error instanceof Error ? error.message : String(error)}`,
     );
-    return asTurnError(error, controller.signal.aborted);
+    return asTurnError(error, controller.signal);
   }
 
   /** A turn succeeded, so a provider reported signed out no longer is. */
@@ -396,14 +487,17 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   /**
    * Runs the turn on `provider`'s runtime, passing each provider session ID
-   * it reports to `onSession`; resolves to the reply text.
+   * and context usage it reports to `on`; resolves to the reply text.
    */
   private async run(
     provider: Provider,
     request: AgentRequest & { input: string },
     options: { providerSessionId?: string; approve?: ToolApprover },
     controller: AbortController,
-    onSession: (providerSessionId: string) => unknown,
+    on: {
+      session: (providerSessionId: string) => unknown;
+      usage?: (usage: ContextUsage) => unknown;
+    },
   ): Promise<string> {
     const runtime = this.runtimes.get(provider);
     if (runtime === null) {
@@ -422,7 +516,13 @@ export class AgentManager implements BeforeApplicationShutdown {
     })) {
       switch (event.type) {
         case 'session':
-          await onSession(event.providerSessionId);
+          await on.session(event.providerSessionId);
+          break;
+        case 'usage':
+          await on.usage?.({
+            tokens: event.contextTokens,
+            window: event.contextWindow,
+          });
           break;
         case 'text':
           streamed += event.delta;
@@ -490,10 +590,13 @@ async function skipReasonWithin(
   return null;
 }
 
-/** `error` as the owner should read it. */
-function asTurnError(error: unknown, aborted: boolean): TurnError {
+/** `error` as the owner should read it; `signal` is the turn's own. */
+function asTurnError(error: unknown, signal: AbortSignal): TurnError {
   if (error instanceof TurnError) return error;
-  if (aborted) return new TurnError(STOPPING, true);
+  if (signal.aborted && signal.reason === STOPPED) {
+    return new TurnError('the turn was stopped', false, true);
+  }
+  if (signal.aborted) return new TurnError(STOPPING, true);
   if (error instanceof RuntimeError) {
     switch (error.kind) {
       case 'auth':

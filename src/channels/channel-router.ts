@@ -19,6 +19,8 @@ import type {
   InboundMessage,
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
+import { ChannelCommands } from './commands/channel-commands.service.js';
+import { buttonCommand, isCommand } from './commands/command-list.js';
 import {
   ChannelOnboarding,
   ChannelTurns,
@@ -68,6 +70,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly history: MessageHistory,
     private readonly approvals: ToolApprovals,
     private readonly unanswered: UnansweredReplies,
+    private readonly commands: ChannelCommands,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -109,6 +112,20 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         return;
       }
       if (!(await this.claim(kind, updateId))) return;
+      const command = message.content.command;
+      if (command !== undefined && isCommand(command.name)) {
+        // Pero's own business: neither the command nor its answer joins
+        // the history, and no Agent sees them.
+        const channel = await this.channelOf(message);
+        await this.inboundUpdates.markProcessed(kind, updateId);
+        if (channel === null) return;
+        await this.commands.run(
+          channel,
+          await this.onboarding.answer(channel),
+          command,
+        );
+        return;
+      }
       const channel = await this.route(message);
       if (channel === null) {
         await this.inboundUpdates.markProcessed(kind, updateId);
@@ -156,14 +173,27 @@ export class ChannelRouter implements BeforeApplicationShutdown {
   }
 
   /**
-   * Answers a pressed button. Only an allowed chat's presses count; they
-   * need no deduplication, since a second press finds nothing to answer.
+   * Answers a pressed button: a command's, whose ID is the command, or a
+   * tool request's. Only an allowed chat's presses count; they need no
+   * deduplication, since pressing again only does the same thing again.
    */
   async handleAction(action: InboundAction): Promise<ActionResult> {
     const { integrationKind: kind, updateId } = action;
     try {
       if (!(await this.admit(kind, action.chat, null))) {
         return { notice: "This chat isn't allowed to use Pero" };
+      }
+      if (buttonCommand(action.actionId) !== null) {
+        const channel = await this.dataSource.getRepository(Channel).findOneBy({
+          integrationKind: kind,
+          externalKey: action.channel.key,
+        });
+        if (channel === null) return { notice: 'This menu has expired' };
+        return await this.commands.press(
+          channel,
+          await this.onboarding.answer(channel),
+          action,
+        );
       }
       return await this.approvals.onAction(action);
     } catch (error) {
@@ -199,19 +229,8 @@ export class ChannelRouter implements BeforeApplicationShutdown {
    * The route follows the notes on every message, so it isn't stored.
    */
   private async route(message: InboundMessage): Promise<RoutedChannel | null> {
-    const { integrationKind: kind } = message;
-    const repository = this.dataSource.getRepository(Channel);
-    let channel = await repository.findOneBy({
-      integrationKind: kind,
-      externalKey: message.channel.key,
-    });
-    if (channel === null) {
-      channel = await this.onboarding.onUnknownChannel(message);
-      if (channel === null) return null;
-    } else if (learnsTitle(channel, message.channel)) {
-      await repository.update(channel.id, { title: message.channel.title });
-      channel.title = message.channel.title;
-    }
+    const channel = await this.channelOf(message);
+    if (channel === null) return null;
     const route = await this.onboarding.answer(channel);
     if (route.kind === 'unanswered') {
       await this.unanswered.explain(channel, route.reason);
@@ -219,6 +238,24 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     }
     this.unanswered.answered(channel.id);
     return Object.assign(channel, { agent: route.agent });
+  }
+
+  /**
+   * The Channel `message` belongs to, onboarding it when new and learning
+   * its title; null when none could be set up yet.
+   */
+  private async channelOf(message: InboundMessage): Promise<Channel | null> {
+    const repository = this.dataSource.getRepository(Channel);
+    const channel = await repository.findOneBy({
+      integrationKind: message.integrationKind,
+      externalKey: message.channel.key,
+    });
+    if (channel === null) return this.onboarding.onUnknownChannel(message);
+    if (learnsTitle(channel, message.channel)) {
+      await repository.update(channel.id, { title: message.channel.title });
+      channel.title = message.channel.title;
+    }
+    return channel;
   }
 
   /** Runs `work` for an update seen for the first time. */

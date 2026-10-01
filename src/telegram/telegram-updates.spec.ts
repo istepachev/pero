@@ -6,7 +6,7 @@ import {
   toInbound,
 } from './telegram-updates.js';
 
-const ME = { id: 7000001 };
+const ME = { id: 7000001, username: 'pero_bot' };
 // Beyond Number.MAX_SAFE_INTEGER is impossible for Telegram IDs, but they
 // are long enough that Pero keeps them as strings throughout.
 const FORUM: Chat.SupergroupChat = {
@@ -268,6 +268,55 @@ describe('toInbound', () => {
       );
 
       expect(inbound).toMatchObject({ senderId: '-1001234567890' });
+    });
+
+    describe('commands', () => {
+      /** A text message whose start Telegram marks as a command. */
+      function command(text: string, length = text.split(' ')[0]!.length) {
+        return update({
+          chat: FORUM,
+          text,
+          entities: [{ type: 'bot_command', offset: 0, length }],
+        });
+      }
+
+      it('reads the command and its arguments, keeping the text', () => {
+        expect(toInbound(command('/Model  opus '), ME)).toMatchObject({
+          content: {
+            text: '/Model  opus ',
+            command: { name: 'model', args: 'opus' },
+          },
+        });
+        expect(toInbound(command('/status'), ME)).toMatchObject({
+          content: { command: { name: 'status', args: '' } },
+        });
+      });
+
+      it("takes a command addressed to the bot, and drops another bot's", () => {
+        expect(toInbound(command('/stop@Pero_Bot now'), ME)).toMatchObject({
+          content: { command: { name: 'stop', args: 'now' } },
+        });
+        expect(toInbound(command('/stop@other_bot'), ME)).toBeNull();
+      });
+
+      it('sees no command later in the text, or in a caption', () => {
+        const later = update({
+          chat: FORUM,
+          text: 'try /status',
+          entities: [{ type: 'bot_command', offset: 4, length: 7 }],
+        });
+        const caption = update({
+          chat: FORUM,
+          caption: '/status',
+          caption_entities: [{ type: 'bot_command', offset: 0, length: 7 }],
+        });
+
+        expect(toInbound(later, ME)).toMatchObject({
+          content: { text: 'try /status' },
+        });
+        expect(toInbound(later, ME)).not.toHaveProperty('content.command');
+        expect(toInbound(caption, ME)).not.toHaveProperty('content.command');
+      });
     });
 
     it("ignores a channel's post copied into its discussion group", () => {

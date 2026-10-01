@@ -67,6 +67,17 @@ export class Session {
   @Column({ type: 'text', default: 'active' })
   status: SessionStatus;
 
+  /**
+   * How many tokens of context the conversation held after its latest
+   * turn, as the provider reported it; null when it reported none.
+   */
+  @Column({ name: 'context_tokens', type: 'integer', nullable: true })
+  contextTokens: number | null;
+
+  /** The model's context window, in tokens; null when unknown. */
+  @Column({ name: 'context_window', type: 'integer', nullable: true })
+  contextWindow: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -58,10 +58,11 @@ To see the Telegram path work end to end before any provider is set up, run Pero
 2. Create a topic. Pero writes its note, `data/Settings/Agents/<Topic title>.md`, and posts a welcome naming the new Agent and its note; a message there gets its echo.
 3. Create a second topic and write in both; `pero agents` lists an Agent and a note for each, and `pero channels` a Channel for each.
 4. Write in the General topic and in a direct chat with the bot. Both answer as the main Agent, and `pero channels` shows them as separate Channels.
-5. `pero stop`, then `PERO_FAKE_RUNTIME=echo pero run` again, and write in each Channel: every one answers, and `pero channels show <channel>` says its next turn resumes its Session.
-6. Add `provider: codex` to the properties of one topic's note, wait 10 seconds, then write in that topic: the echo starts with `[Earlier conversation in this chat`, the Channel's recent messages.
-7. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and its Agent keeps answering with the last good version. `pero check` lists the error.
-8. Stop Pero and start it without `PERO_FAKE_RUNTIME` to use the real providers.
+5. Type `/` in a topic: Telegram's menu lists Pero's commands. `/status` names the topic's Agent and its note; press New session, then Yes, start over, and the menu changes in place. The next message's echo has no `[Earlier conversation` part.
+6. `pero stop`, then `PERO_FAKE_RUNTIME=echo pero run` again, and write in each Channel: every one answers, and `pero channels show <channel>` says its next turn resumes its Session.
+7. Add `provider: codex` to the properties of one topic's note, wait 10 seconds, then write in that topic: the echo starts with `[Earlier conversation in this chat`, the Channel's recent messages.
+8. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and its Agent keeps answering with the last good version. `pero check` lists the error.
+9. Stop Pero and start it without `PERO_FAKE_RUNTIME` to use the real providers.
 
 ## Checking a release on a fresh machine
 
@@ -120,6 +121,9 @@ The tests that matter most guard the boundaries that could lose or misroute work
 | The General topic and a direct chat reach the main Agent in separate Sessions | `test/interactive.e2e-spec.ts` |
 | A follow-up resumes the right provider session after a restart | `test/interactive.e2e-spec.ts`: each of four Channels resumes its own provider session in a new daemon; real resume from another process in both smoke tests |
 | A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a Channel moved to another Agent |
+| `/status`, `/new`, `/stop`, and `/help` are answered by Pero, not the Agent, and stay out of the history; their buttons edit the menu in place; an unknown command goes to the Agent | `test/telegram.e2e-spec.ts`; `src/channels/commands/channel-commands.spec.ts`; `src/channels/commands/screens.spec.ts`; `src/telegram/telegram-adapter.spec.ts`; parsing in `src/telegram/telegram-updates.spec.ts` |
+| `/new` starts a fresh Session that carries nothing over from before it; `/stop` ends the running turn silently and drops the waiting ones | `test/telegram.e2e-spec.ts`; `src/agents/agent-manager.spec.ts`; `src/channels/commands/channel-commands.spec.ts` |
+| `/status` shows how full a Claude conversation's context is | `src/runtimes/claude/claude-events.spec.ts`; `src/agents/agent-manager.spec.ts`; `src/channels/commands/screens.spec.ts` |
 | Each Channel's history holds the text sent and received there, and nothing else | `test/interactive.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
 | A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/interactive.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
 | While `pero run` waits for a chat to pair, that chat is told to confirm in the terminal | `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts`; `src/channels/pairing-requests.spec.ts` |

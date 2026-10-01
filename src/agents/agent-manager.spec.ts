@@ -693,6 +693,31 @@ describe('AgentManager', () => {
 
       expect(codex.requests[0]!.input).toBe('two');
     });
+
+    it('carries only what came after the start /new marked', async () => {
+      await say(OWNER, 'one');
+      await say(OWNER, 'two');
+      const channel = await channelFor(OWNER.key);
+      const [latest] = await ds
+        .getRepository(Message)
+        .find({ order: { id: 'DESC' }, take: 1 });
+      await ds
+        .getRepository(Channel)
+        .update(channel.id, { contextFromMessageId: latest!.id });
+      await say(OWNER, 'three');
+      await ws.editAgent('Main', { provider: 'codex' });
+
+      await say(OWNER, 'four');
+
+      expect(transcript(codex.requests[0]!.input)).toEqual([
+        '[Earlier conversation in this chat, from a previous session]',
+        'User: three',
+        'main: echo: three',
+        '[End of earlier conversation]',
+        '',
+        'four',
+      ]);
+    });
   });
 
   describe('isolated turns', () => {
@@ -734,6 +759,72 @@ describe('AgentManager', () => {
       await expect(isolated(controller.signal)).rejects.toThrow(TurnError);
       expect((await held.started).signal.aborted).toBe(true);
     });
+  });
+
+  describe('stopping a Channel', () => {
+    it('stops the running turn and drops the queued ones, silently', async () => {
+      await say(OWNER, 'Hello');
+      const before = sentTexts();
+      const channel = await channelFor(OWNER.key);
+      const manager = moduleRef.get(AgentManager);
+      const held = claude.hold();
+      await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
+      const request = await held.started;
+      await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
+      await adapter.deliver(inboundMessage(OWNER, { text: 'three' }));
+
+      expect(manager.activity(channel.id)).toEqual({
+        runningSince: expect.any(Date),
+        queued: 2,
+      });
+      expect(manager.stop(channel.id)).toEqual({ stopped: true, dropped: 2 });
+      await idle();
+
+      expect(request.signal.aborted).toBe(true);
+      expect(claude.requests.map((r) => r.input)).toEqual(['Hello', 'one']);
+      // `/stop` answers for them, so the turns post nothing themselves.
+      expect(sentTexts()).toEqual(before);
+      expect(manager.activity(channel.id)).toEqual({
+        runningSince: null,
+        queued: 0,
+      });
+
+      // The provider session survives for the next turn.
+      await say(OWNER, 'four');
+      expect(sentTexts().at(-1)).toBe('echo: four');
+      expect(claude.requests.at(-1)!.providerSessionId).toBe('fake-claude-1');
+    });
+
+    it('stops nothing in an idle Channel, or in another one', async () => {
+      await say(OWNER, 'Hello');
+      const manager = moduleRef.get(AgentManager);
+      const held = claude.hold();
+      await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
+      await held.started;
+
+      expect(manager.stop(999)).toEqual({ stopped: false, dropped: 0 });
+      held.release();
+      await idle();
+      expect(sentTexts().at(-1)).toBe('echo: one');
+      expect(manager.stop((await channelFor(OWNER.key)).id)).toEqual({
+        stopped: false,
+        dropped: 0,
+      });
+    });
+  });
+
+  it("records how full the Session's context is after each turn", async () => {
+    await say(OWNER, 'Hello');
+    expect(await allSessions()).toMatchObject([
+      { contextTokens: null, contextWindow: null },
+    ]);
+
+    claude.usage = { contextTokens: 42_000, contextWindow: 200_000 };
+    await say(OWNER, 'again');
+
+    expect(await allSessions()).toMatchObject([
+      { contextTokens: 42_000, contextWindow: 200_000 },
+    ]);
   });
 
   describe('on shutdown', () => {

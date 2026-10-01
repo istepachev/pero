@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
+import { COMMANDS } from '../channels/commands/command-list.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message as HistoryMessage } from '../persistence/entities/message.entity.js';
@@ -163,6 +164,20 @@ describe('TelegramAdapter', () => {
       await vi.waitFor(() =>
         expect(api.callsOf('getUpdates')[0]?.payload).toMatchObject({
           allowed_updates: ['message', 'my_chat_member', 'callback_query'],
+        }),
+      );
+    });
+
+    it("lists Pero's commands in Telegram's command menu", async () => {
+      await start();
+      await connected();
+
+      await vi.waitFor(() =>
+        expect(api.callsOf('setMyCommands')[0]?.payload).toEqual({
+          commands: COMMANDS.map(({ name, description }) => ({
+            command: name,
+            description,
+          })),
         }),
       );
     });
@@ -362,6 +377,85 @@ describe('TelegramAdapter', () => {
     });
   });
 
+  describe('commands', () => {
+    it('answers a command itself, and one for another bot not at all, without the Agent', async () => {
+      await start({ allow: [FORUM] });
+      await connected();
+
+      api.push(
+        message(FORUM, {
+          text: '/status@other_bot',
+          entities: [{ type: 'bot_command', offset: 0, length: 17 }],
+        }),
+      );
+      api.push(
+        message(FORUM, {
+          text: '/status@pero_test_bot',
+          entities: [{ type: 'bot_command', offset: 0, length: 21 }],
+        }),
+      );
+
+      const sent = await sentCount(2);
+      expect(sent[1]?.text).toMatch(/^Agent main · Household\nState: idle/);
+      expect(sent[1]?.reply_markup).toMatchObject({
+        inline_keyboard: [
+          [{ callback_data: '/new ask' }, { callback_data: '/status' }],
+        ],
+      });
+      expect(runtime.requests).toEqual([]);
+    });
+
+    it('passes a command Pero does not know to the Agent', async () => {
+      await start({ allow: [FORUM] });
+      await connected();
+
+      api.push(
+        message(FORUM, {
+          text: '/plan the week',
+          entities: [{ type: 'bot_command', offset: 0, length: 5 }],
+        }),
+      );
+
+      const sent = await sentCount(2);
+      expect(sent[1]?.text).toBe('echo: /plan the week');
+    });
+
+    it("edits a command's menu in place when its button is pressed", async () => {
+      await start({ allow: [FORUM] });
+      await connected();
+      api.push(
+        message(FORUM, {
+          text: '/help',
+          entities: [{ type: 'bot_command', offset: 0, length: 5 }],
+        }),
+      );
+      const [, help] = await sentCount(2);
+
+      api.push({
+        callback_query: {
+          id: 'query-9',
+          from: OWNER,
+          chat_instance: 'instance',
+          data: '/new ask',
+          message: {
+            message_id: 5555,
+            date: 1,
+            chat: FORUM,
+            text: help!.text,
+          },
+        } as never,
+      });
+
+      await vi.waitFor(() =>
+        expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
+          message_id: 5555,
+          text: expect.stringMatching(/^Start over with Agent main here\?/),
+        }),
+      );
+      expect(api.sent()).toHaveLength(2);
+    });
+  });
+
   describe('chat migration', () => {
     it('moves the allowlist entry and Channel to the new chat ID', async () => {
       const supergroup: Chat.SupergroupChat = {
@@ -534,7 +628,7 @@ describe('TelegramAdapter', () => {
   });
 
   describe('buttons', () => {
-    it('sends buttons as an inline keyboard and edits them away', async () => {
+    it('sends button rows as an inline keyboard and edits them away', async () => {
       await start();
       await connected();
       const adapter = get(TelegramAdapter);
@@ -544,8 +638,11 @@ describe('TelegramAdapter', () => {
         {
           text: 'Allow?',
           buttons: [
-            { id: 'abc:allow', label: 'Allow' },
-            { id: 'abc:deny', label: 'Deny' },
+            [
+              { id: 'abc:allow', label: 'Allow' },
+              { id: 'abc:deny', label: 'Deny' },
+            ],
+            [{ id: '/help', label: 'Help' }],
           ],
         },
       );
@@ -561,6 +658,7 @@ describe('TelegramAdapter', () => {
               { text: 'Allow', callback_data: 'abc:allow' },
               { text: 'Deny', callback_data: 'abc:deny' },
             ],
+            [{ text: 'Help', callback_data: '/help' }],
           ],
         },
       });
@@ -579,7 +677,7 @@ describe('TelegramAdapter', () => {
       await expect(
         get(TelegramAdapter).send(
           { chatId: '1234' },
-          { text: 'Hi', buttons: [{ id: 'x'.repeat(65), label: 'Go' }] },
+          { text: 'Hi', buttons: [[{ id: 'x'.repeat(65), label: 'Go' }]] },
         ),
       ).rejects.toThrow(/longer than 64 bytes/);
     });

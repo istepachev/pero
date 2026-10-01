@@ -111,24 +111,34 @@ export class FakeChannelAdapter implements ChannelAdapter {
   }
 
   /**
-   * Presses the button labelled `label` under `record`, one of `sent`, as
-   * someone in `chat` (in topic `topic` when given).
+   * Presses the button labelled `label` under `record`, one of `sent` or
+   * `edited`, as someone in `chat` (in topic `topic` when given).
    */
   press(
-    record: SentRecord,
+    record: SentRecord | EditRecord,
     label: string,
     chat: InboundChat,
     options: { topic?: string; senderName?: string | null } = {},
   ): Promise<ActionResult> {
-    const button = record.message.buttons?.find((b) => b.label === label);
+    const button = record.message.buttons
+      ?.flat()
+      .find((b) => b.label === label);
     if (!button) throw new Error(`No button labelled ${label}`);
-    return this.started().onAction(
+    return this.act(
       buttonPress(chat, {
         ...options,
         actionId: button.id,
-        messageId: String(this.sent.indexOf(record) + 1),
+        messageId:
+          'messageId' in record
+            ? record.messageId
+            : String(this.sent.indexOf(record) + 1),
       }),
     );
+  }
+
+  /** Plays a button press into the router, whatever its button. */
+  act(action: InboundAction): Promise<ActionResult> {
+    return this.started().onAction(action);
   }
 
   private started(): ChannelHandlers {

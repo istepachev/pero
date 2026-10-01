@@ -52,6 +52,14 @@ export class Channel {
   @Column({ type: 'text', nullable: true })
   title: string | null;
 
+  /**
+   * Set by `/new`: the latest message of any Channel then. A fresh Session
+   * starts from the messages after it, not from the earlier conversation.
+   * Not a foreign key, since history retention may delete that message.
+   */
+  @Column({ name: 'context_from_message_id', type: 'integer', nullable: true })
+  contextFromMessageId: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

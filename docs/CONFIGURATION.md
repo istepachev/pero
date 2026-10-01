@@ -143,7 +143,7 @@ max-concurrent-runs: 2
 | `permissions` | `ask`, `bypass` | `ask` | How Agents' tools are approved ([user guide](./USER_GUIDE.md#claude-agents)) |
 | `timezone` | IANA zone | the host's | Time zone for schedules and transcripts |
 | `main-agent` | Agent note name | `Main` | Answers the General topic, groups without topics, and direct chats |
-| `history-carryover` | 0 or more | 50 | Messages a fresh Session starts with; 0 turns it off |
+| `history-carryover` | 0 or more | 50 | Messages a fresh Session starts with, none from before a `/new`; 0 turns it off |
 | `history-retention-days` | whole days, or empty | empty: keep everything | Delete message history older than this |
 | `max-concurrent-runs` | 1–10 | 2 | Workflow runs at once |
 

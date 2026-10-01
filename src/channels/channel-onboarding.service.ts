@@ -101,7 +101,8 @@ export function firstStepsText(
     '',
     'When an Agent wants to run a command or change a setting, it asks ' +
       'here with Allow and Deny buttons. Pero reads edited notes within ' +
-      'seconds.',
+      'seconds. /help lists what Pero answers itself, such as /status and ' +
+      '/new to start over.',
   ].join('\n');
 }
 

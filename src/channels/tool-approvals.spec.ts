@@ -100,10 +100,9 @@ describe('ToolApprovals', () => {
     expect(prompt.message.text).toBe(
       'Agent main wants to use a tool:\nBash: curl -sI https://example.com',
     );
-    expect(prompt.message.buttons?.map((button) => button.label)).toEqual([
-      'Allow',
-      'Deny',
-    ]);
+    expect(
+      prompt.message.buttons?.flat().map((button) => button.label),
+    ).toEqual(['Allow', 'Deny']);
   });
 
   it('runs the tool once someone allows it, and says who did', async () => {
