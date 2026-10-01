@@ -3,6 +3,7 @@ import {
   type AllowedChatEntry,
   AllowedChatsService,
 } from '../channels/allowed-chats.service.js';
+import { ChannelOnboarding } from '../channels/channel-stages.js';
 import { PairingRequests } from '../channels/pairing-requests.js';
 import { NotFoundError } from '../common/errors.js';
 import type {
@@ -35,6 +36,7 @@ export class TelegramChats implements OnModuleInit {
     private readonly adapter: TelegramAdapter,
     private readonly status: TelegramStatus,
     private readonly hostConfig: HostConfigService,
+    private readonly onboarding: ChannelOnboarding,
   ) {}
 
   onModuleInit(): void {
@@ -74,7 +76,8 @@ export class TelegramChats implements OnModuleInit {
    * Allows chat `chatKey`, adding it to `config.yaml`. Its kind and name
    * come from its pairing request, otherwise from Telegram, otherwise from
    * the ID alone: groups have negative IDs. Waits briefly for the bot's
-   * standing in a group.
+   * standing in a group. A new chat that asked to pair, so the bot is in
+   * it, is welcomed at once with the first steps.
    */
   async allow(
     chatKey: string,
@@ -95,6 +98,7 @@ export class TelegramChats implements OnModuleInit {
       this.logger.log(`Allowed Telegram ${chat.kind} chat ${chatKey}`);
     }
     await this.countAllowed();
+    if (existing === null && request !== undefined) await this.greet(chat);
     await Promise.race([
       this.adapter.checkChat(chatKey).catch((error: unknown) => {
         this.logger.warn(
@@ -104,6 +108,26 @@ export class TelegramChats implements OnModuleInit {
       new Promise((resolve) => setTimeout(resolve, CHECK_WAIT_MS).unref()),
     ]);
     return { chat: this.view(chat), alreadyAllowed: existing !== null };
+  }
+
+  /**
+   * Has onboarding welcome newly allowed `chat` while the bot is connected;
+   * otherwise its first message does. A failure is only logged.
+   */
+  private async greet(chat: AllowedChatEntry): Promise<void> {
+    if (this.status.current()?.state !== 'connected') return;
+    try {
+      await this.onboarding.onChatAllowed('telegram', {
+        key: chat.chatKey,
+        kind: chat.kind,
+        title: chat.title,
+        address: { chatId: chat.chatKey },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to welcome Telegram chat ${chat.chatKey}: ${String(error)}`,
+      );
+    }
   }
 
   /**

@@ -71,7 +71,9 @@ export async function runInteractiveSetup(
     await checkGroups(context, paired);
     if (paired !== null) {
       block();
-      context.print('Send a message there again to start talking to Pero.');
+      context.print(
+        'Pero posted your first steps there. Reply to start talking to your main Agent.',
+      );
     }
   }
 

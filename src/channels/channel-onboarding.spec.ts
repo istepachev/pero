@@ -9,9 +9,9 @@ import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
-import { welcomeText } from './channel-onboarding.service.js';
+import { firstStepsText, welcomeText } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';
-import { ChannelTurns } from './channel-stages.js';
+import { ChannelOnboarding, ChannelTurns } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
 import {
   chatMigrated,
@@ -167,6 +167,56 @@ describe('Channel onboarding', () => {
       );
 
       expect(sentBeforeTurn).toBe(1);
+    });
+
+    it('welcomes a chat that was just allowed with the first steps, once', async () => {
+      await moduleRef.get(ChannelOnboarding).onChatAllowed('telegram', GROUP);
+
+      const steps = firstStepsText(
+        { name: 'main', provider: 'codex', model: 'gpt-5.5-codex' },
+        ws.root,
+        {
+          note: 'data/Settings/Agents/Main.md',
+          pero: 'data/Settings/Pero.md',
+          agents: 'data/Settings/Agents/',
+          workflows: 'data/Settings/Workflows/',
+        },
+        'group',
+      );
+      expect(steps).toMatch(
+        /^This chat talks to Agent main: codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: this Agent's personality and instructions are in data\/Settings\/Agents\/Main\.md\./,
+      );
+      expect(steps).toContain('2. Create a topic for each subject');
+      expect(steps).toContain('in data/Settings/Pero.md.');
+      expect(steps).toContain(
+        'Workflows are notes in data/Settings/Workflows/.',
+      );
+      expect(adapter.sent).toEqual([
+        { address: GROUP.address, message: { text: steps } },
+      ]);
+      expect(await allChannels()).toEqual([
+        expect.objectContaining({ externalKey: GROUP.key, title: 'Household' }),
+      ]);
+
+      // Its first message goes straight to the Agent, and allowing it again
+      // after a restart's worth of forgetting changes nothing.
+      await adapter.deliver(inboundMessage(GROUP));
+      await moduleRef.get(ChannelOnboarding).onChatAllowed('telegram', GROUP);
+
+      expect(adapter.sent).toHaveLength(1);
+      expect(turns.handle).toHaveBeenCalledOnce();
+    });
+
+    it('tells a direct chat how to get an Agent per topic', async () => {
+      await adapter.deliver(inboundMessage(OWNER));
+
+      expect(adapter.sent).toHaveLength(1);
+      const text = String(adapter.sent[0]!.message.text);
+      expect(text).toMatch(/^This chat talks to Agent main: /);
+      expect(text).toContain(
+        '2. Get an Agent per subject: create a private Telegram group',
+      );
+      expect(text).not.toContain('Create a topic for each subject');
     });
 
     it('keeps a new Channel whose welcome cannot be sent', async () => {

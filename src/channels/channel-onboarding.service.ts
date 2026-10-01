@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import type { IntegrationKind } from '../persistence/entities/sql.js';
+import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { shownPath } from '../settings-files/note-paths.js';
 import { type Agent, topicClaim } from '../settings-files/snapshot.js';
@@ -19,6 +19,7 @@ import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
   ChannelEvent,
   InboundChannel,
+  InboundChat,
   InboundMessage,
 } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
@@ -38,13 +39,80 @@ export function welcomeText(
   note: string,
   where: 'topic' | 'chat',
 ): string {
+  return (
+    `${whoAnswers(agent, folder, where)} ` +
+    `Its settings and instructions are in ${note}: edit that note, ` +
+    `or ask here to change them.`
+  );
+}
+
+/** The notes and folders a new owner learns of, as they read them. */
+export interface FirstStepsPaths {
+  /** The main Agent's note. */
+  note: string;
+  /** `Pero.md`, the defaults for every Agent and Workflow. */
+  pero: string;
+  /** The folder of Agent notes. */
+  agents: string;
+  /** The folder of Workflow notes. */
+  workflows: string;
+}
+
+/**
+ * Posted in a chat's new primary Channel, where the main Agent answers,
+ * so usually right after setup: who answers there, then what a new owner
+ * does first. A direct chat (`private`) hears how to get topics; any other
+ * chat, how to use them.
+ */
+export function firstStepsText(
+  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
+  folder: string,
+  paths: FirstStepsPaths,
+  kind: ChatKind | null,
+): string {
+  const topics =
+    kind === 'private'
+      ? `2. Get an Agent per subject: create a private Telegram group, ` +
+        `turn on Topics, add this bot as an administrator, and allow the ` +
+        `group with pero telegram allow <chat-id>. Each topic there gets an ` +
+        `Agent of its own; its General topic talks to this one.`
+      : `2. Create a topic for each subject, such as Health or a side ` +
+        `project. Each new topic gets an Agent of its own, with a note in ` +
+        `${paths.agents} named after the topic. Every topic's Agent starts ` +
+        `with this Agent's instructions, then adds its own.`;
+  return [
+    whoAnswers(agent, folder, 'chat'),
+    '',
+    'First steps:',
+    `1. Make it yours: this Agent's personality and instructions are in ` +
+      `${paths.note}. ` +
+      `Say who you are, how it should talk to you, and what it helps you ` +
+      `with. Or just ask here, such as "be less formal" or "always answer ` +
+      `in German".`,
+    topics,
+    `3. Set your time zone, and defaults for every Agent such as the ` +
+      `provider and model, in ${paths.pero}.`,
+    `4. Put an Agent to work on a schedule: ask it, say, "every evening at ` +
+      `9, sum up what we talked about today". Workflows are notes in ` +
+      `${paths.workflows}.`,
+    '',
+    'When an Agent wants to run a command or change a setting, it asks ' +
+      'here with Allow and Deny buttons. Pero reads edited notes within ' +
+      'seconds.',
+  ].join('\n');
+}
+
+/** Who answers in a Channel, with what, and where it works. */
+function whoAnswers(
+  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
+  folder: string,
+  where: 'topic' | 'chat',
+): string {
   const { model } = agent;
   return (
     `This ${where} talks to Agent ${agent.name}: ${agent.provider}, ` +
     `${model === null ? 'default model' : `model ${model}`}, ` +
-    `working in ${folder}. ` +
-    `Its settings and instructions are in ${note}: edit that note, ` +
-    `or ask here to change them.`
+    `working in ${folder}.`
   );
 }
 
@@ -78,17 +146,38 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   answer(channel: Channel): Promise<Route> {
-    return this.settle(channel, false);
+    return this.settle(channel, false, null);
   }
 
   onUnknownChannel(message: InboundMessage): Promise<Channel | null> {
-    return this.onboard(message.integrationKind, message.channel);
+    return this.onboard(
+      message.integrationKind,
+      message.channel,
+      message.chat.kind,
+    );
+  }
+
+  async onChatAllowed(kind: IntegrationKind, chat: InboundChat): Promise<void> {
+    await this.onboard(
+      kind,
+      {
+        key: chat.key,
+        title: chat.title,
+        address: chat.address,
+        topicId: null,
+      },
+      chat.kind,
+    );
   }
 
   async onEvent(event: ChannelEvent): Promise<void> {
     switch (event.type) {
       case 'topic-created':
-        await this.onboard(event.integrationKind, event.channel);
+        await this.onboard(
+          event.integrationKind,
+          event.channel,
+          event.chat.kind,
+        );
         return;
       case 'topic-renamed':
         await this.rename(event.integrationKind, event.channel);
@@ -106,12 +195,13 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * The Channel for `inbound`, creating it when new, and welcoming it when
-   * an Agent answers there.
+   * The Channel for `inbound`, in a chat of `chatKind`, creating it when
+   * new, and welcoming it when an Agent answers there.
    */
   private async onboard(
     kind: IntegrationKind,
     inbound: InboundChannel,
+    chatKind: ChatKind,
   ): Promise<Channel | null> {
     const { channel, created } = await inTransaction(
       this.dataSource,
@@ -135,22 +225,27 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     );
     if (!created) return channel;
     this.logger.log(`Onboarded ${kind} Channel ${inbound.key}`);
-    await this.settle(channel, true);
+    await this.settle(channel, true, chatKind);
     return channel;
   }
 
   /**
    * Who answers in `channel` now, writing the note that answers it when
    * Pero should, and welcoming it when it is new or Pero wrote that note.
+   * `chatKind` is its chat's, when known.
    */
-  private async settle(channel: Channel, created: boolean): Promise<Route> {
+  private async settle(
+    channel: Channel,
+    created: boolean,
+    chatKind: ChatKind | null,
+  ): Promise<Route> {
     let route = routeOf(channel, this.definitions);
     let wrote = false;
     if (route.kind === 'unanswered' && this.writesFor(channel, route.reason)) {
       ({ route, wrote } = await this.serially(() => this.writeFor(channel)));
     }
     if (route.kind === 'agent' && (created || wrote)) {
-      await this.welcome(channel, route.agent);
+      await this.welcome(channel, route.agent, chatKind);
     }
     return route;
   }
@@ -213,17 +308,34 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     return { route: after, wrote: true };
   }
 
-  /** Posts the welcome in `channel`, once while Pero runs. */
-  private async welcome(channel: Channel, agent: Agent): Promise<void> {
+  /**
+   * Posts the welcome in `channel`, once while Pero runs: in a primary
+   * Channel, the first steps for its chat of `chatKind`.
+   */
+  private async welcome(
+    channel: Channel,
+    agent: Agent,
+    chatKind: ChatKind | null,
+  ): Promise<void> {
     if (this.welcomed.has(channel.id)) return;
     this.welcomed.add(channel.id);
     const { workspace, settingsFolder } = this.notes.folders();
-    const text = welcomeText(
-      agent,
-      agent.workingDirectory,
-      shownPath(workspace, join(settingsFolder, agent.file)),
-      routeQuery(channel).primary ? 'chat' : 'topic',
-    );
+    const shown = (path: string) =>
+      shownPath(workspace, join(settingsFolder, path));
+    const note = shown(agent.file);
+    const text = routeQuery(channel).primary
+      ? firstStepsText(
+          agent,
+          agent.workingDirectory,
+          {
+            note,
+            pero: shown('Pero.md'),
+            agents: `${shown('Agents')}/`,
+            workflows: `${shown('Workflows')}/`,
+          },
+          chatKind,
+        )
+      : welcomeText(agent, agent.workingDirectory, note, 'topic');
     await this.notify(channel.integrationKind, channel.externalKey, () =>
       this.sender.post(channel, text, { origin: 'pero' }),
     );
