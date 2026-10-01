@@ -68,8 +68,8 @@ export interface FirstRun {
  * The configuration `pero run` starts with. When no workspace is found, a
  * terminal is offered one where it suits (the current folder, or
  * `~/workspace` from home), made as `pero init` makes it, with the data
- * folder the owner picks among the folders already there; declining, or
- * having no terminal, stops with the `pero init` to run.
+ * folder the owner picks among the folders already there or names anew;
+ * declining, or having no terminal, stops with the `pero init` to run.
  *
  * On a terminal, a workspace's first start (no database yet) first settles
  * the provider its Agents use: the one `Pero.md` sets, or else the owner's
@@ -140,10 +140,14 @@ export async function configOrNewWorkspace(
   return { config, firstRun: true };
 }
 
+/** The `pickDataFolder` choice that asks the name of a new folder. */
+const NEW_FOLDER = '/new';
+
 /**
  * The data folder of a new workspace in `workspace`, relative to it: the
  * owner's pick among the folders already there, with `data/` selected, or
- * else offered to be created. Asks nothing when there is no folder yet.
+ * else offered to be created, or a new folder the owner names. Asks
+ * nothing when there is no folder yet.
  */
 async function pickDataFolder(
   context: FirstRunContext,
@@ -158,11 +162,41 @@ async function pickDataFolder(
       name: `Create ${DEFAULT_DATA_FOLDER}/`,
     });
   }
-  return (await context.prompts()).select({
+  choices.push({ value: NEW_FOLDER, name: 'Create a new folder…' });
+  const prompts = await context.prompts();
+  const picked = await prompts.select({
     message: 'Which folder is the vault your Agents keep notes in?',
     choices,
     initial: DEFAULT_DATA_FOLDER,
   });
+  if (picked !== NEW_FOLDER) return picked;
+  for (;;) {
+    const name = (
+      await prompts.input({ message: 'Name of the new folder' })
+    ).trim();
+    const problem = folderNameProblem(workspace, name);
+    if (problem === null) return name;
+    context.print(problem);
+  }
+}
+
+/**
+ * Why `name` can't be a new data folder in `workspace`, or null when it
+ * can: it is one folder's name, not hidden, and not a file there.
+ */
+function folderNameProblem(workspace: string, name: string): string | null {
+  if (name === '') return 'Type a folder name.';
+  if (/[/\\]/.test(name)) {
+    return `${name} is not a folder name; type one without / or \\.`;
+  }
+  if (name.startsWith('.')) {
+    return `${name} would be a hidden folder; type a name not starting with a dot.`;
+  }
+  const path = join(workspace, name);
+  if (existsSync(path) && !statSync(path).isDirectory()) {
+    return `${name} is a file in ${workspace}; type another name.`;
+  }
+  return null;
 }
 
 /**

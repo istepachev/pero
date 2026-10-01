@@ -160,6 +160,7 @@ describe('configOrNewWorkspace', () => {
         { value: 'archive', name: 'archive/' },
         { value: 'data', name: 'data/' },
         { value: 'Journal', name: 'Journal/' },
+        { value: '/new', name: 'Create a new folder…' },
       ],
       initial: 'data',
     });
@@ -183,6 +184,7 @@ describe('configOrNewWorkspace', () => {
       choices: [
         { value: 'data', name: 'Create data/' },
         { value: 'Vault', name: 'Vault/' },
+        { value: '/new', name: 'Create a new folder…' },
       ],
       initial: 'data',
     });
@@ -191,6 +193,37 @@ describe('configOrNewWorkspace', () => {
     expect(config).toMatch(/^# settings: Vault\/Settings$/m);
     expect(existsSync(join(here, 'data'))).toBe(false);
     expect(peroNote(here, 'Vault')).toMatch(
+      /^provider: claude +# claude or codex$/m,
+    );
+  });
+
+  it('creates a new data folder the owner names', async () => {
+    const here = join(tmp, 'notes');
+    mkdirSync(join(here, 'Journal'), { recursive: true });
+    writeFileSync(join(here, 'README.md'), '');
+
+    const { result, input } = run({
+      cwd: here,
+      interactive: true,
+      folder: '/new',
+      inputs: ['', 'a/b', '.hidden', 'README.md', ' Notes '],
+    });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(input).toHaveBeenCalledWith({ message: 'Name of the new folder' });
+    expect(input).toHaveBeenCalledTimes(5);
+    expect(printed).toEqual(
+      expect.arrayContaining([
+        'Type a folder name.',
+        'a/b is not a folder name; type one without / or \\.',
+        '.hidden would be a hidden folder; type a name not starting with a dot.',
+        `README.md is a file in ${here}; type another name.`,
+      ]),
+    );
+    expect(readFileSync(join(here, '.pero', 'config.yaml'), 'utf8')).toMatch(
+      /^data: Notes$/m,
+    );
+    expect(existsSync(join(here, 'data'))).toBe(false);
+    expect(peroNote(here, 'Notes')).toMatch(
       /^provider: claude +# claude or codex$/m,
     );
   });
