@@ -307,4 +307,46 @@ describe('Telegram chats and pairing (e2e)', () => {
       'echo: Two',
     ]);
   });
+
+  it("changes the Agent's effort from a /effort button", async () => {
+    await start();
+    await client.call('telegram.allow', { chatId: String(DIRECT.id) });
+    api.push(message(DIRECT, 'One'));
+    await sentTexts(2);
+
+    api.push(command(DIRECT, '/effort'));
+    await sentTexts(3);
+    expect(api.sent().at(-1)?.reply_markup).toMatchObject({
+      inline_keyboard: expect.arrayContaining([
+        [
+          { text: 'low', callback_data: '/effort low' },
+          { text: 'medium', callback_data: '/effort medium' },
+          { text: 'high', callback_data: '/effort high' },
+        ],
+      ]),
+    });
+    api.push({
+      callback_query: {
+        id: 'query-1',
+        from: OWNER,
+        chat_instance: 'instance',
+        data: '/effort low',
+        message: { message_id: 77, date: 1, chat: DIRECT, text: 'Pick' },
+      } as never,
+    });
+
+    await vi.waitFor(() =>
+      expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
+        message_id: 77,
+        text: expect.stringMatching(/^Agent main now uses effort low/),
+      }),
+    );
+    expect(api.callsOf('answerCallbackQuery')[0]?.payload).toMatchObject({
+      text: 'Effort set',
+    });
+    expect(await client.call('agents.get', { name: 'main' })).toMatchObject({
+      effort: 'low',
+      origins: { effort: 'note' },
+    });
+  });
 });

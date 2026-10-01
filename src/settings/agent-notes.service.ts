@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { InvalidInputError } from '../common/errors.js';
 import { writeFileAtomic } from '../config/atomic-file.js';
 import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
 import { noteIdentity } from '../settings-files/note-files.js';
@@ -11,6 +12,7 @@ import {
   freeAgentNote,
   noteFromTemplate,
   renameTopicIn,
+  replaceNoteProperty,
   topicNoteTitle,
 } from '../settings-files/note-writer.js';
 import { scanSettingsFolder } from '../settings-files/scan.js';
@@ -22,8 +24,8 @@ const MAIN_NOTE = SKELETON_NOTES['Agents/Main.md']!;
 
 /**
  * Writes the Agent notes Pero keeps up by itself: one for a topic no Agent
- * claims, the main Agent's when it has none, and a renamed topic's title
- * in the note claiming it. Each write is atomic and logged, never replaces
+ * claims, the main Agent's when it has none, a renamed topic's title in
+ * the note claiming it, and a property the owner sets with a command. Each write is atomic and logged, never replaces
  * a note it didn't mean to, and is in the snapshot when it resolves.
  */
 @Injectable()
@@ -139,6 +141,48 @@ export class AgentNotes {
     this.logger.log(`Renamed topic "${from}" to "${to}" in ${file}`);
     await this.notes.refresh();
     return true;
+  }
+
+  /**
+   * Sets `key` in the note of the Agent named `name` to `value`, or removes
+   * it when null, keeping the note's comments and body. Resolves to the
+   * note's path in the settings folder, once the snapshot has the change,
+   * and whether anything changed. `InvalidInputError` when the note can't
+   * take it: it is gone, its properties don't parse, or the value is wrong.
+   */
+  async setProperty(
+    name: string,
+    key: string,
+    value: string | null,
+  ): Promise<{ file: string; changed: boolean }> {
+    const file = this.notes.snapshot()?.agents.get(name)?.file;
+    if (file === undefined) {
+      throw new InvalidInputError(`Agent ${name} has no note to change`);
+    }
+    const path = join(this.settingsFolder(), file);
+    const text = readFileSync(path, 'utf8');
+    const mode = statSync(path).mode & 0o777;
+    const changed = replaceNoteProperty(text, key, value);
+    if (changed === null) {
+      throw new InvalidInputError(
+        `${file}'s properties don't parse; pero check lists the errors`,
+      );
+    }
+    const error = readNote(file, changed).errors.find(
+      (found) => found.property === key,
+    );
+    if (error !== undefined) {
+      throw new InvalidInputError(`${key}: ${error.message}`);
+    }
+    if (changed === text) return { file, changed: false };
+    writeFileAtomic(path, changed, mode);
+    this.logger.log(
+      value === null
+        ? `Removed ${key} from ${file}`
+        : `Set ${key} to ${value} in ${file}`,
+    );
+    await this.notes.refresh();
+    return { file, changed: true };
   }
 
   private settingsFolder(): string {

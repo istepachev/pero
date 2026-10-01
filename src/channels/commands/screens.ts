@@ -2,7 +2,11 @@ import { formatDuration } from '../../cli/format-status.js';
 import type { AgentView, ComponentStatus } from '../../control/protocol.js';
 import { localTime } from '../../history/transcript.js';
 import type { ValueOrigin } from '../../settings-files/origins.js';
-import type { ButtonRows, OutboundButton } from '../channel-adapter.js';
+import {
+  type ButtonRows,
+  MAX_BUTTON_ID_BYTES,
+  type OutboundButton,
+} from '../channel-adapter.js';
 import { COMMANDS } from './command-list.js';
 
 /*
@@ -20,6 +24,8 @@ const STATUS: OutboundButton = { id: '/status', label: 'Status' };
 const BACK: OutboundButton = { id: '/status', label: '« Back' };
 const NEW: OutboundButton = { id: '/new ask', label: 'New session' };
 const STOP: OutboundButton = { id: '/stop', label: 'Stop' };
+const MODEL: OutboundButton = { id: '/model', label: 'Model' };
+const EFFORT: OutboundButton = { id: '/effort', label: 'Effort' };
 
 /** `/help`: each command with its line, and buttons for the common ones. */
 export function helpScreen(): Screen {
@@ -29,7 +35,10 @@ export function helpScreen(): Screen {
       '',
       ...COMMANDS.map(({ name, description }) => `/${name} — ${description}`),
     ].join('\n'),
-    buttons: [[STATUS, NEW, STOP]],
+    buttons: [
+      [STATUS, NEW, STOP],
+      [MODEL, EFFORT],
+    ],
   };
 }
 
@@ -96,6 +105,7 @@ export function statusScreen(input: StatusInput): Screen {
       status.runningSince === null && status.queued === 0
         ? [NEW, { id: '/status', label: 'Refresh' }]
         : [STOP, NEW, { id: '/status', label: 'Refresh' }],
+      [MODEL, EFFORT],
     ],
   };
 }
@@ -251,6 +261,103 @@ export function stopScreen(
     text: [text, ...byLine(by)].join('\n'),
     ...(by === null ? {} : { buttons: [[BACK]] }),
   };
+}
+
+/** A setting `/model` and `/effort` show and change. */
+export type AgentOption = 'model' | 'effort';
+
+/** One of an Agent's settings, and what it may be set to. */
+export interface OptionStatus {
+  agent: string;
+  /** Its note, as `/status` shows it. */
+  file: string;
+  option: AgentOption;
+  /** What the Agent uses now; null lets the provider choose. */
+  value: string | null;
+  origin: ValueOrigin;
+  /** `Pero.md`'s value for the Agent's provider; null when it sets none. */
+  peroDefault: string | null;
+  /** The values offered as buttons. */
+  choices: readonly string[];
+}
+
+/** How many choices fit on one row of buttons. */
+const PER_ROW = 3;
+
+/**
+ * `/model` or `/effort` without a value, or with one that can't be used,
+ * which `problem` explains: the value, and a button for each choice.
+ */
+export function optionScreen(
+  status: OptionStatus,
+  problem: string | null = null,
+): Screen {
+  const { agent, option: setting, value, origin } = status;
+  const choices = status.choices.filter((choice) =>
+    buttonFits(`/${setting} ${choice}`),
+  );
+  const rows: OutboundButton[][] = [];
+  for (let at = 0; at < choices.length; at += PER_ROW) {
+    rows.push(
+      choices.slice(at, at + PER_ROW).map((choice) => ({
+        id: `/${setting} ${choice}`,
+        label: origin === 'note' && choice === value ? `✓ ${choice}` : choice,
+      })),
+    );
+  }
+  const fallback =
+    status.peroDefault === null
+      ? "provider's"
+      : `Pero.md: ${status.peroDefault}`;
+  rows.push([
+    {
+      id: `/${setting} default`,
+      label: `${origin === 'note' ? '' : '✓ '}Default (${fallback})`,
+    },
+  ]);
+  rows.push([BACK]);
+  return {
+    text: [
+      ...(problem === null ? [] : [problem]),
+      `Agent ${agent} uses ${option(setting, value, origin)}.`,
+      setting === 'model'
+        ? 'Pick one, or send /model <name> for any other. It applies from the next answer.'
+        : 'Pick one. It applies from the next answer.',
+    ].join('\n'),
+    buttons: rows,
+  };
+}
+
+/** What `/model` or `/effort` changed; `by` names who pressed its button. */
+export function optionSetScreen(
+  status: Pick<OptionStatus, 'agent' | 'file' | 'option' | 'value' | 'origin'>,
+  changed: boolean,
+  by: string | null,
+): Screen {
+  const now = option(status.option, status.value, status.origin);
+  return {
+    text: [
+      changed
+        ? `Agent ${status.agent} now uses ${now}, from its next answer.`
+        : `Agent ${status.agent} already uses ${now}.`,
+      `Config: ${status.file}`,
+      ...byLine(changed ? by : null),
+    ].join('\n'),
+    buttons: [
+      [
+        { id: `/${status.option}`, label: `« ${capitalized(status.option)}` },
+        BACK,
+      ],
+    ],
+  };
+}
+
+function capitalized(word: string): string {
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+}
+
+function buttonFits(id: string): boolean {
+  return Buffer.byteLength(id) <= MAX_BUTTON_ID_BYTES;
 }
 
 /** A command that needs an Agent where none answers: why, and the fix. */
