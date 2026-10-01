@@ -63,6 +63,37 @@ To see the Telegram path work end to end before any provider is set up, run Pero
 7. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and its Agent keeps answering with the last good version. `pero check` lists the error.
 8. Stop Pero and start it without `PERO_FAKE_RUNTIME` to use the real providers.
 
+## Checking a release on a fresh machine
+
+Before merging a PR that bumps the version, walk through the README's [Get started](../README.md#get-started) as a new owner would: on a fresh VPS, with a real bot and a real provider, and with the package that PR publishes. Copy the steps into the PR as a checklist.
+
+1. **Install the package from the PR's branch**, under an ordinary account with a supported Node.js:
+
+   ```sh
+   git clone --branch <branch> https://github.com/perokit/pero.git ~/pero-src && cd ~/pero-src
+   npm ci && npm pack
+   npm install -g ./perokit-pero-<version>.tgz && cd
+   pero --version   # the new version
+   ```
+
+2. **`pero init ~/workspace`, then `cd ~/workspace && pero run`.** It asks for the bot token and a provider sign-in, and `pero status` then shows Telegram and the provider ready.
+3. **Allow a group.** Create a private group with Topics turned on, add the bot as an administrator, and write in it: `pero run` offers to allow that chat.
+4. **Onboard a topic.** Create one: Pero writes `data/Settings/Agents/<Topic title>.md` and posts a welcome naming the new Agent. A message there gets the provider's answer, and a second one continues the conversation.
+5. **Edit a note.** Change that note's instructions, wait 10 seconds, and write in the topic: the answer follows the edit. Break the note, such as with `provider: codx`: the topic gets one message naming the error, and `pero check` lists it. Fix it again.
+6. **Run a Workflow.** Copy [Evening review](../examples/workspace/data/Settings/Workflows/Evening%20review.md) into `data/Settings/Workflows/`, with `channel` set to the topic's title. `pero workflows` shows its next run, and `pero workflows run evening-review` prints the answer and posts it in the topic.
+7. **Back up.** Commit the workspace to Git (`git init && git add -A && git commit -m Workspace`): `git show --stat HEAD` lists `.pero/config.yaml` and the notes, but not `.env`, the database, `logs/`, or `run/`. Then `mkdir -p ~/backups && pero backup ~/backups/pero.tgz`.
+8. **Restore into a clone** at the same path, as [Moving to a fresh machine](./OPERATIONS.md#moving-to-a-fresh-machine) does:
+
+   ```sh
+   pero stop
+   mv ~/workspace ~/workspace-old && git clone ~/workspace-old ~/workspace && cd ~/workspace
+   pero restore ~/backups/pero.tgz
+   pero telegram token   # paste the bot token again
+   pero run
+   ```
+
+   `pero channels show <channel>` says the topic's next turn resumes its Session, and a message there continues the conversation.
+
 ## Where each behavior is verified
 
 The tests that matter most guard the boundaries that could lose or misroute work. `test/interactive.e2e-spec.ts` walks through the interactive path in one story with the fake Bot API and the echo runtime.
