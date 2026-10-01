@@ -29,7 +29,7 @@ const STATE_TABLES = [
   'workflow_runs',
 ];
 
-/** What legacy data directories defined, kept for `pero migrate`. */
+/** What legacy data directories defined, kept until plan step 11.6. */
 const LEGACY_TABLES = [
   'legacy_agents',
   'legacy_allowed_chats',
@@ -1007,7 +1007,7 @@ describe('domain entities', () => {
     expect(await db.query(`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
-  it('holds only state, beside the legacy tables pero migrate reads', async () => {
+  it('holds only state, beside the legacy tables', async () => {
     const db = await open();
     expect(
       (await tables(db)).filter(

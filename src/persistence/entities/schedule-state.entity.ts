@@ -6,7 +6,7 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
  * fingerprint names it, so a changed schedule is a new row.
  */
 @Entity('schedules')
-// A Workflow may have several schedules until `pero migrate` splits them.
+// One row per schedule, until plan step 11.6 makes it one per Workflow.
 @Index('UQ_schedules_workflow_fingerprint', ['workflowName', 'fingerprint'], {
   unique: true,
 })

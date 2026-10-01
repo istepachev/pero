@@ -103,7 +103,7 @@ export const settingsViewSchema = z.object({
   /**
    * In a workspace, where the settings are: `Pero.md` and `config.yaml`,
    * relative to the workspace when inside it; null in a legacy data
-   * directory, whose settings can't be changed until it is migrated.
+   * directory, which has no settings to change.
    */
   files: z.object({ pero: z.string(), config: z.string() }).nullable(),
   /** What a topic no Agent claims gets; null in a legacy data directory. */

@@ -140,7 +140,7 @@ describe('SettingsNotes', () => {
     expect(health.get('settings')!.state).toBe('ok');
   });
 
-  it('says to migrate a legacy data directory, and reads no notes', async () => {
+  it('says a legacy data directory needs a workspace, and reads no notes', async () => {
     write('Agents/Health.md', 'Coach');
     await boot(false);
     expect(notes.snapshot()).toBeNull();

@@ -172,9 +172,9 @@ describe('note hints', () => {
     expect(SETTING_HOMES['telegram-bot-token']).toBeUndefined();
   });
 
-  it('says to migrate a legacy data directory', () => {
+  it('says a legacy data directory needs a workspace', () => {
     expect(legacyHint('/home/me/.pero')).toBe(
-      '/home/me/.pero is a legacy data directory, which has no Agents any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.',
+      '/home/me/.pero is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.',
     );
   });
 });

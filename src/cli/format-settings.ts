@@ -7,8 +7,8 @@ import { preview } from './preview.js';
 /**
  * `pero settings show`. In a workspace: the `Pero.md` properties, each
  * marked when it is Pero's own default, then `config.yaml`'s data folder
- * and the bot token. In the legacy data directory `dataDir`: that it has
- * to be migrated, and the bot token.
+ * and the bot token. In the legacy data directory `dataDir`: that it needs
+ * a workspace, and the bot token.
  */
 export function formatSettings(view: SettingsView, dataDir: string): string {
   if (view.files === null) {

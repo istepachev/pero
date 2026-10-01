@@ -8,7 +8,7 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * The tables a legacy data directory defined its Agents, defaults, and
  * Workflows in. Runtime code reads definitions through `Definitions`; only
- * `pero migrate` and a legacy data directory's defaults read these.
+ * a legacy data directory's defaults and allowed chats read these.
  */
 const LEGACY_DEFINITION_TABLES = [
   'legacy_agents',

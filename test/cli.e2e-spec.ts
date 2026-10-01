@@ -207,7 +207,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(first.stdout).toContain(
       [
         'Setup needed:',
-        '  This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
+        '  This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
@@ -527,8 +527,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: expect.stringMatching(/^Unknown setting "nope"\. Settings: /),
     });
 
-    // A legacy data directory, running or not, can only be migrated.
-    const legacy = `${layout.root} is a legacy data directory, which has no Agents any more. Run pero migrate <workspace> to move it to a workspace with notes, then edit them.\n`;
+    // A legacy data directory, running or not, has nothing to change.
+    const legacy = `${layout.root} is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.\n`;
     expect(await pero(withDataDir('agents', 'create', 'notes'))).toEqual({
       code: 1,
       stdout: '',
@@ -542,7 +542,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       `${legacy}Telegram bot token: not set\n`,
     );
     expect((await pero(withDataDir('status'))).stdout).toContain(
-      'settings  degraded      legacy data directory: no Agents answer until you run pero migrate <workspace>',
+      'settings  degraded      legacy data directory: no Agents answer; make a workspace with pero init <folder>',
     );
   });
 
@@ -1444,6 +1444,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
+  it('has no migrate command', async () => {
+    expect(await pero(['migrate', join(tmp, 'workspace')])).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: "error: unknown command 'migrate'\n",
+    });
+    expect(existsSync(join(tmp, 'workspace'))).toBe(false);
+  });
+
   it('marks a data directory as legacy', async () => {
     expect((await pero(withDataDir('run'))).code).toBe(0);
     const status = await pero(withDataDir('status'));
@@ -1747,13 +1756,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       const result = await pero(withDataDir(command), { nodeArgs });
       expect(result, command).toMatchObject({ code: 0, stderr: '' });
     }
-    // pero migrate loads it only to migrate, not to refuse.
-    expect(await pero(['-w', tmp, 'migrate', tmp], { nodeArgs })).toMatchObject(
-      {
-        code: 1,
-        stderr: expect.stringContaining('takes the workspace as its argument'),
-      },
-    );
     const follower = spawn(
       process.execPath,
       [...nodeArgs, PERO, ...withDataDir('logs', '--follow')],

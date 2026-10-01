@@ -21,7 +21,6 @@ import {
   readHostConfig,
   resolveDataFolder,
   resolveSettingsFolder,
-  setDataFolder,
 } from './host-config.js';
 
 /** Beyond 2^53, where a JavaScript number would lose the last digits. */
@@ -160,7 +159,6 @@ describe('config.yaml on disk', () => {
       readFileSync(file, 'utf8').replace('Family', 'Family chat'),
     );
     editHostConfig(file, (document) => denyChat(document, BIG));
-    editHostConfig(file, (document) => setDataFolder(document, 'notes'));
 
     expect(readFileSync(file, 'utf8')).toBe(
       [
@@ -170,7 +168,7 @@ describe('config.yaml on disk', () => {
         '    - id: -100111 # the family group',
         '      title: Family chat',
         '',
-        'data: notes # synced',
+        'data: vault # synced',
         '',
       ].join('\n'),
     );

@@ -193,7 +193,7 @@ export class BackupService implements BeforeApplicationShutdown {
     const { dataFolder: folder } = await this.definitions.defaults();
     if (folder === null) {
       throw new InvalidInputError(
-        'There is no data folder to include; a workspace has one, and pero migrate <workspace> makes one from this data directory',
+        'There is no data folder to include: a workspace has one, and a legacy data directory has none',
       );
     }
     return folder;

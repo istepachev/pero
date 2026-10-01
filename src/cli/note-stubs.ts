@@ -37,7 +37,7 @@ import { CliError } from './errors.js';
 
 /**
  * The configuration files of the workspace `config` found; a `CliError`
- * with the migrate hint for a legacy data directory.
+ * saying a legacy data directory needs a workspace.
  */
 export function configurationFiles(
   config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,

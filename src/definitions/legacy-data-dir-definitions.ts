@@ -12,8 +12,8 @@ import {
 import { readLegacyDefaults } from './legacy-definitions.js';
 
 /**
- * A legacy data directory's definitions, which have no Agents or Workflows
- * until `pero migrate` moves it to a workspace: every Channel is told so.
+ * A legacy data directory's definitions, which have no Agents or Workflows,
+ * since only a workspace's notes define them: every Channel is told so.
  * The defaults it kept in `legacy_settings` still apply, with the data
  * folder `config.yaml` names. Nothing changes them, so `onChange` never
  * calls.

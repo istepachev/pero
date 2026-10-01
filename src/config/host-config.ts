@@ -221,11 +221,6 @@ export function moveChatId(
   return true;
 }
 
-/** Sets `data`, keeping the comments around it. */
-export function setDataFolder(document: Document, value: string): void {
-  document.set('data', value);
-}
-
 /**
  * The commented `config.yaml` a new installation starts with. `data` is
  * the data folder to write; null leaves it commented out, as for a legacy

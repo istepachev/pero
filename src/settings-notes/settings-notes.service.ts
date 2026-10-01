@@ -25,7 +25,7 @@ export const SETTINGS_COMPONENT = 'settings';
 
 /** What the `settings` component says in a legacy data directory. */
 export const LEGACY_SETTINGS_DETAIL =
-  'legacy data directory: no Agents answer until you run pero migrate <workspace>';
+  'legacy data directory: no Agents answer; make a workspace with pero init <folder>';
 
 /** Where the notes are, and the folders they are read against. */
 export interface SettingsFolders {
@@ -53,8 +53,8 @@ export interface SettingsChange {
  * the snapshot is built again, though no note changed.
  *
  * `FileDefinitions` serves the definitions from the snapshot. In a legacy
- * data directory there are no notes: the `settings` component says to run
- * `pero migrate`, and this does nothing else.
+ * data directory there are no notes: the `settings` component says to make
+ * a workspace, and this does nothing else.
  */
 @Injectable()
 export class SettingsNotes

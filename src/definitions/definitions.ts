@@ -116,7 +116,7 @@ export type Unanswered =
   | { kind: 'untitled' }
   /** No note defines the main Agent; `note` is the one to add. */
   | { kind: 'no-main-agent'; agent: string; note: string }
-  /** A legacy data directory has no Agents until `pero migrate` moves it. */
+  /** A legacy data directory has no Agents: only a workspace's notes define them. */
   | { kind: 'legacy' };
 
 /** Who answers in a Channel now: an enabled Agent, or no one and why. */

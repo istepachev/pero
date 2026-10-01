@@ -306,7 +306,7 @@ describe('Channel onboarding', () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it('records Channels with no Agent, and says once to migrate', async () => {
+    it('records Channels with no Agent, and says once that Pero needs a workspace', async () => {
       await adapter.emit(topicCreated(GROUP, '7', { title: 'Groceries' }));
       await adapter.deliver(
         inboundMessage(GROUP, { topic: '7', title: 'Groceries' }),
@@ -321,7 +321,7 @@ describe('Channel onboarding', () => {
       ).toEqual([`${GROUP.key}:7`, OWNER.key]);
       expect(await ds.getRepository(LegacyChannelAgent).count()).toBe(0);
       const hint = unansweredText({ kind: 'legacy' });
-      expect(hint).toMatch(/pero migrate <workspace>/);
+      expect(hint).toMatch(/make a workspace/);
       expect(sentTexts()).toEqual([hint, hint]);
       expect(turns.handle).not.toHaveBeenCalled();
     });

@@ -936,6 +936,11 @@ Delete the command and everything only it uses:
 
 `LegacyChannelAgent` and the `legacy_*` tables stay until 11.3 and 11.6, since the legacy data directory still reads its defaults from them. The docs still describe `pero migrate` until 11.9.
 
+- **Found while building:**
+  - **The hints no longer name `pero migrate`:** a legacy data directory's Channels, `pero status`, setup, and stubs say to make a workspace with `pero init <folder>` instead, until 11.3 removes the legacy data directory and them with it.
+  - **Code only the migration used goes too:** `fromCron` and `dayValue` (writing a schedule as a note), `setDataFolder` in `config.yaml`, and `initWorkspace`'s option to leave out `Agents/Main.md`, with their tests.
+  - **Nothing reads `legacy_channel_agents` or `legacy_agents` any more,** and of `legacy_settings` only the defaults; the entity and tables stay for 11.6's single migration.
+
 **Done when:**
 - `pero migrate` is an unknown command.
 - No code outside `legacy-definitions.ts`, `LegacyDataDirDefinitions`, and the migrations names a `legacy_` table.

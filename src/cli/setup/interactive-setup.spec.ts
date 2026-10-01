@@ -211,7 +211,7 @@ describe('runInteractiveSetup', () => {
     expect(printed.join('\n')).not.toContain(TOKEN);
   });
 
-  it('asks nothing about folders in a legacy data directory, and says to migrate', async () => {
+  it('asks nothing about folders in a legacy data directory, and says to make a workspace', async () => {
     daemon.settings = { ...daemon.settings, files: null };
     daemon.signedIn.add('claude');
     const { done, asked } = run([TOKEN]);
@@ -219,7 +219,7 @@ describe('runInteractiveSetup', () => {
 
     expect(asked).toEqual(['Bot token (Enter to skip) (hidden)']);
     expect(printed.at(-1)).toMatch(
-      /^Setup needed:\n {2}This legacy data directory has no Agents — pero migrate <workspace>/,
+      /^Setup needed:\n {2}This legacy data directory has no Agents — pero init <folder>/,
     );
   });
 

@@ -33,7 +33,7 @@ export function pendingSetup(
     pending.push({
       name: 'workspace',
       message:
-        'This legacy data directory has no Agents — pero migrate <workspace> moves it to a workspace, whose notes define them',
+        'This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
     });
   }
 

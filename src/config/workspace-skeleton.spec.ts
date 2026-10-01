@@ -56,17 +56,6 @@ describe('initWorkspace', () => {
     expect(readdirSync(join(dir, 'data/Settings/Workflows'))).toEqual([]);
   });
 
-  it('leaves the main Agent note out when asked to', () => {
-    const { entries } = initWorkspace(dir, home, { mainNote: false });
-
-    expect(entries.map((entry) => entry.path)).not.toContain(
-      'data/Settings/Agents/Main.md',
-    );
-    expect(readdirSync(join(dir, 'data/Settings/Agents'))).toEqual([
-      '_Template.md',
-    ]);
-  });
-
   it('changes nothing the second time', () => {
     initWorkspace(dir, home);
     const before = read('data/Settings/Pero.md');
