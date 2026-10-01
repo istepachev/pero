@@ -12,7 +12,6 @@ import {
   describe,
   formatAllowed,
   needsAdmin,
-  pairingSteps,
 } from '../format-telegram-chats.js';
 import { isPromptAbort, type Prompts } from '../prompts.js';
 import {
@@ -31,6 +30,8 @@ export interface SetupContext {
   client: ControlClient;
   prompts: Prompts;
   print: (text: string) => void;
+  /** Starts a new block of output, for the next step. */
+  block?: () => void;
   /** How often to ask the daemon about Telegram chats; for tests. */
   pollIntervalMs?: number;
 }
@@ -40,30 +41,38 @@ export interface SetupState {
   settings: SettingsView;
 }
 
+/** Where the owner talks to Pero on Telegram. */
+type ChatChoice = 'group' | 'direct';
+
 /**
- * Guides the owner through what `pero run` found missing: the Telegram bot
- * token, a first chat to serve, the bot as an administrator of each allowed
- * group, each such group private, and provider sign-in. Every answer goes
- * to the daemon at once, so an interrupted setup keeps what was done.
+ * Guides the owner through what `pero run` found missing: provider
+ * sign-in, the Telegram bot token, a first chat to serve, the bot as an
+ * administrator of each allowed group, and each such group private. Every
+ * answer goes to the daemon at once, so an interrupted setup keeps what
+ * was done.
  */
 export async function runInteractiveSetup(
   context: SetupContext,
   initial: SetupState,
 ): Promise<void> {
+  const block = blockOf(context);
   const { status } = initial;
   let { settings } = initial;
+  await checkProviders(context, settings, status);
+
   const token = settings.telegramBotToken;
   if (!token.set && token.source !== 'environment') {
+    block();
     settings = await askTelegramToken(context, settings);
   }
   if (settings.telegramBotToken.set) {
     const paired = await pairChat(context);
     await checkGroups(context, paired);
     if (paired !== null) {
+      block();
       context.print('Send a message there again to start talking to Pero.');
     }
   }
-  await checkProviders(context, settings, status);
 
   // Fresh: the answers above changed what the daemon reports.
   const pending = pendingSetup(
@@ -71,6 +80,7 @@ export async function runInteractiveSetup(
     settings,
     await fetchTelegramChats(context.client),
   );
+  block();
   context.print(
     pending.length === 0
       ? 'Setup complete'
@@ -108,8 +118,13 @@ async function askTelegramToken(
   }
 }
 
+function blockOf(context: SetupContext): () => void {
+  return context.block ?? (() => undefined);
+}
+
 /**
- * While no chat is allowed, waits for one to message the bot and offers to
+ * While no chat is allowed, asks where the owner will talk to Pero, shows
+ * how to set that chat up, waits for it to message the bot, and offers to
  * allow it. Enter skips; a chat the owner declines is not offered again.
  * Returns the ID of the chat allowed here, if any.
  */
@@ -117,7 +132,21 @@ async function pairChat(context: SetupContext): Promise<string | null> {
   const { client, prompts, print } = context;
   let chats = await fetchTelegramChats(client);
   if (chats === null || chats.allowed.length > 0) return null;
-  print('Now pair a Telegram chat, where you will talk to Pero.');
+  blockOf(context)();
+  const choice = await prompts.select<ChatChoice>({
+    message: 'Where will you talk to Pero?',
+    choices: [
+      {
+        value: 'group',
+        name: 'Private Telegram group — an Agent per topic, just for you (recommended)',
+      },
+      {
+        value: 'direct',
+        name: 'Direct chat with the bot — one Agent only',
+      },
+    ],
+    initial: 'group',
+  });
   if (chats.bot === null) {
     print('Waiting for Telegram…');
     chats = await waitForBot(context);
@@ -129,10 +158,7 @@ async function pairChat(context: SetupContext): Promise<string | null> {
     }
     if (chats.allowed.length > 0) return null;
   }
-  for (const step of pairingSteps(chats.bot)) print(`  ${step}`);
-  print(
-    'A private group is safest: anyone who can write in an allowed chat can talk to its Agents.',
-  );
+  for (const line of chatSteps(choice, `@${chats.bot}`)) print(line);
 
   const declined = new Set<string>();
   for (;;) {
@@ -158,6 +184,24 @@ async function pairChat(context: SetupContext): Promise<string | null> {
     print(formatAllowed(chat, false));
     return chat.chatId;
   }
+}
+
+/** How to set up the chat `choice` names with `bot`, and have it pair. */
+function chatSteps(choice: ChatChoice, bot: string): string[] {
+  if (choice === 'direct') {
+    return [
+      `Open ${bot} in Telegram (https://t.me/${bot.slice(1)}) and send it a message.`,
+      'There you talk to the main Agent only; a group with topics can be added later with pero telegram allow.',
+    ];
+  }
+  return [
+    'Set up the group in Telegram:',
+    `  1. Create a new group with ${bot} as its member.`,
+    '  2. In the group settings, turn on Topics.',
+    `  3. Make ${bot} an administrator (Administrators → Add Admin), so it sees every message.`,
+    '  4. Keep the group private: anyone who can write in it can talk to its Agents.',
+    '  5. Send a message in the group.',
+  ];
 }
 
 /**
@@ -192,6 +236,7 @@ async function requireAdmin(
 ): Promise<AllowedChatView | null> {
   if (!needsAdmin(chat)) return chat;
   const { print } = context;
+  blockOf(context)();
   print(
     chat.bot === 'left'
       ? `${bot} is not in ${describe(chat)}: add it to the group as an administrator.`
@@ -230,6 +275,7 @@ async function requirePrivate(
   const { client, prompts, print } = context;
   let current = chat;
   if (current.danger === null) return;
+  blockOf(context)();
   if (explain) print(`Danger: ${current.danger}`);
   while (current.danger !== null) {
     const answer = await prompts.input({
@@ -345,6 +391,12 @@ async function checkProviders(
   const component = (name: string) =>
     status.components.find((candidate) => candidate.name === name);
 
+  const needed = PROVIDERS.filter((provider) => {
+    const state = component(provider);
+    return state?.required === true && state.state !== 'ok';
+  });
+  if (needed.length === 0) return;
+  blockOf(context)();
   const other = PROVIDERS.find((p) => p !== settings.defaultProvider);
   print(
     `Default provider: ${settings.defaultProvider}` +
@@ -352,7 +404,7 @@ async function checkProviders(
         ? ` (change with provider: ${other} in ${settings.files.pero})`
         : ''),
   );
-  for (const provider of PROVIDERS) {
+  for (const provider of needed) {
     let checked = false;
     for (;;) {
       const state = component(provider);

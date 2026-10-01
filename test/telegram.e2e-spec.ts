@@ -197,7 +197,10 @@ describe('Telegram chats and pairing (e2e)', () => {
         asked.push(text);
         return Promise.resolve(true);
       },
-      select: () => Promise.reject(new Error('not asked')),
+      select: <T extends string>({ message: text }: { message: string }) => {
+        asked.push(text);
+        return Promise.resolve('direct' as T);
+      },
     };
 
     await runInteractiveSetup(
@@ -213,7 +216,9 @@ describe('Telegram chats and pairing (e2e)', () => {
       },
     );
 
-    expect(asked.slice(0, 2)).toEqual([
+    // Provider sign-in comes first, if at all.
+    expect(asked.filter((text) => !text.startsWith('Sign in'))).toEqual([
+      'Where will you talk to Pero?',
       'Waiting for a message to @pero_test_bot (Enter to skip)',
       'Allow direct chat "Ada" (1234)?',
     ]);

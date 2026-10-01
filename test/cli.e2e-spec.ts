@@ -479,6 +479,20 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
   });
 
+  it('prints its version with -v or --version', async () => {
+    for (const flag of ['-v', '--version']) {
+      expect(await pero([flag])).toEqual({
+        code: 0,
+        stdout: `${PACKAGE_VERSION}\n`,
+        stderr: '',
+      });
+    }
+    expect(await pero(['-V'])).toMatchObject({
+      code: 1,
+      stderr: "error: unknown option '-V'\n",
+    });
+  });
+
   it('reports a removed command as unknown, whether or not Pero runs', async () => {
     const ws = useWorkspace();
     const unknown = async () => {
