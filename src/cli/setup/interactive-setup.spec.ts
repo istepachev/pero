@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parseInput } from '../../common/errors.js';
-import { CONTROL_OPERATIONS } from '../../control/protocol.js';
+import { CONTROL_OPERATIONS, ControlError } from '../../control/protocol.js';
 import type { ControlClient } from '../../control/client.js';
 import type {
   AllowedChatView,
@@ -48,6 +48,10 @@ class FakeDaemon {
   allowAs: Partial<AllowedChatView> = {};
   /** Called when an allowed chat is allowed again, which checks it again. */
   onRecheck: (chat: AllowedChatView) => AllowedChatView = (chat) => chat;
+  /** How often setup said it waits to allow a chat. */
+  watches = 0;
+  /** Whether the daemon predates `telegram.watchPairing`. */
+  old = false;
   /** Called before each answer to `telegram.chats`, with its count. */
   onChatsPoll: (poll: number) => void = () => undefined;
   private chatsPolls = 0;
@@ -100,6 +104,16 @@ class FakeDaemon {
       if (op === 'telegram.chats') {
         this.onChatsPoll(++this.chatsPolls);
         return this.telegram;
+      }
+      if (op === 'telegram.watchPairing') {
+        if (this.old) {
+          throw new ControlError(
+            'unknown_operation',
+            `Unknown operation: ${op}`,
+          );
+        }
+        this.watches += 1;
+        return {};
       }
       if (op === 'telegram.allow') {
         const { chatId } = params as { chatId: string };
@@ -393,6 +407,22 @@ describe('runInteractiveSetup', () => {
         '1234',
       ]);
       expect(printed.at(-1)).toBe('Setup complete');
+      // Each look while waiting tells the daemon, so the chat that asks is
+      // told in Telegram to confirm here.
+      expect(daemon.watches).toBeGreaterThan(0);
+    });
+
+    it('still pairs through a daemon too old to hear that setup waits', async () => {
+      daemon.old = true;
+      askToPair(5, '1234', 'Ada');
+
+      const { done, asked } = run(['direct', WAIT, true]);
+      await done;
+
+      expect(asked.at(-1)).toBe('Allow direct chat "Ada" (1234)? (y/n)');
+      expect(daemon.telegram.allowed.map((chat) => chat.chatId)).toEqual([
+        '1234',
+      ]);
     });
 
     it('keeps waiting after a declined chat, and skips on Enter', async () => {

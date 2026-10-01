@@ -38,7 +38,7 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
 3. **Create a private Telegram group,** turn on **Topics** in its settings, and add your bot as an **administrator**. Keep the group private: anyone who can write there can talk to your Agents, and your Agents can run code on your machine.
 
-4. **Allow the group.** Write anything in it. `pero run` offers to allow that chat. You can also allow it later with the command the bot replies with: `pero telegram allow <chat-id>`. A group's chat ID is negative, such as `-1001234567890`; keep the minus sign.
+4. **Allow the group.** Write anything in it. While `pero run` waits for that message, the bot replies that you can confirm the chat in the terminal, and `pero run` offers to allow it. Otherwise the bot replies with the command that allows it: `pero telegram allow <chat-id>`. A group's chat ID is negative, such as `-1001234567890`; keep the minus sign.
 
 5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic: a note Pero writes in `data/Settings/Agents/`, whose text is the Agent's instructions. The General topic talks to your main Agent, `Agents/Main.md`.
 

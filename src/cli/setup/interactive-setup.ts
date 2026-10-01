@@ -1,12 +1,13 @@
 import { InvalidInputError } from '../../common/errors.js';
 import { PROVIDERS } from '../../config/provider-options.js';
 import type { ControlClient } from '../../control/client.js';
-import type {
-  AllowedChatView,
-  PairingRequestView,
-  SettingsView,
-  StatusResult,
-  TelegramChats,
+import {
+  type AllowedChatView,
+  ControlError,
+  type PairingRequestView,
+  type SettingsView,
+  type StatusResult,
+  type TelegramChats,
 } from '../../control/protocol.js';
 import {
   describe,
@@ -313,13 +314,16 @@ async function waitForBot(
 /**
  * The first chat that asks to pair and is not in `declined`; null when the
  * owner presses Enter first, and `allowed` when a chat was allowed some
- * other way meanwhile, such as with `pero telegram allow`.
+ * other way meanwhile, such as with `pero telegram allow`. Meanwhile the
+ * daemon tells a chat that asks to confirm it here.
  */
 function waitForRequest(
   context: SetupContext,
   bot: string,
   declined: ReadonlySet<string>,
 ): Promise<PairingRequestView | 'allowed' | null> {
+  const { client } = context;
+  let watching = true;
   return waitFor(
     context,
     `Waiting for a message to ${bot} (Enter to skip)`,
@@ -328,23 +332,42 @@ function waitForRequest(
         ? 'allowed'
         : (chats.pairing.find((request) => !declined.has(request.chatId)) ??
           null),
+    async () => {
+      if (watching) watching = await watchPairing(client);
+      return client.call('telegram.chats');
+    },
   );
 }
 
+/** Tells the daemon setup waits for a chat; false when it is too old to. */
+async function watchPairing(client: ControlClient): Promise<boolean> {
+  try {
+    await client.call('telegram.watchPairing');
+    return true;
+  } catch (error) {
+    if (error instanceof ControlError && error.code === 'unknown_operation') {
+      return false;
+    }
+    throw error;
+  }
+}
+
 /**
- * Asks the daemon for Telegram's chats until `found` makes something of
- * them, showing `message` meanwhile; null when the owner presses Enter
- * first.
+ * Asks the daemon for Telegram's chats, with `poll`, until `found` makes
+ * something of them, showing `message` meanwhile; null when the owner
+ * presses Enter first.
  */
 async function waitFor<T>(
   context: SetupContext,
   message: string,
   found: (chats: TelegramChats) => T | null,
+  poll: () => Promise<TelegramChats> = () =>
+    context.client.call('telegram.chats'),
 ): Promise<T | null> {
-  const { client, prompts } = context;
+  const { prompts } = context;
   const interval = context.pollIntervalMs ?? PAIRING_POLL_MS;
 
-  const now = found(await client.call('telegram.chats'));
+  const now = found(await poll());
   if (now !== null) return now;
 
   const waiting = new AbortController();
@@ -355,7 +378,7 @@ async function waitFor<T>(
       while (!waiting.signal.aborted) {
         await delay(interval);
         if (waiting.signal.aborted) return;
-        result = found(await client.call('telegram.chats'));
+        result = found(await poll());
         if (result !== null) waiting.abort();
       }
     } catch (error) {

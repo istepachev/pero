@@ -537,6 +537,11 @@ export const CONTROL_OPERATIONS = {
   'providers.check': { params: noParams, result: statusResultSchema },
   /** Allowed Telegram chats and the chats that recently asked to pair. */
   'telegram.chats': { params: noParams, result: telegramChatsSchema },
+  /**
+   * Says the owner waits in a terminal to allow the next chat that asks to
+   * pair; for a few seconds after, such a chat is told to confirm there.
+   */
+  'telegram.watchPairing': { params: noParams, result: z.object({}) },
   'telegram.allow': {
     params: z.strictObject({ chatId: telegramChatIdSchema }),
     result: z.object({

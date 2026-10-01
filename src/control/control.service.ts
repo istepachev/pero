@@ -109,6 +109,10 @@ export class ControlService implements OnModuleDestroy {
         'backup.create': ({ file, includeData }) =>
           this.backup.create(file, { includeData }),
         'telegram.chats': () => this.telegramChats.list(),
+        'telegram.watchPairing': () => {
+          this.telegramChats.watchPairing();
+          return {};
+        },
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
         'telegram.deny': ({ chatId }) => this.telegramChats.deny(chatId),
         'telegram.token': ({ token }) => {

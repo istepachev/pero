@@ -225,6 +225,13 @@ describe('Telegram chats and pairing (e2e)', () => {
     expect((await client.call('telegram.chats')).allowed).toEqual([
       expect.objectContaining({ chatId: '1234', kind: 'private' }),
     ]);
+    // The chat was told, by Pero and not an Agent, to confirm here.
+    expect(api.sent()).toEqual([
+      expect.objectContaining({
+        chat_id: '1234',
+        text: expect.stringContaining('confirm in the terminal'),
+      }),
+    ]);
 
     api.push(message(DIRECT, 'Again'));
     await vi.waitFor(() =>

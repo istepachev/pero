@@ -122,6 +122,7 @@ The tests that matter most guard the boundaries that could lose or misroute work
 | A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a Channel moved to another Agent |
 | Each Channel's history holds the text sent and received there, and nothing else | `test/interactive.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
 | A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/interactive.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
+| While `pero run` waits for a chat to pair, that chat is told to confirm in the terminal | `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts`; `src/channels/pairing-requests.spec.ts` |
 | Codex and Claude subscription sign-ins each have a documented SDK smoke test under the service's account | `test/smoke/claude-runtime.smoke-spec.ts` and `test/smoke/codex-runtime.smoke-spec.ts`, run as in [the section above](#provider-smoke-tests-under-the-services-account) |
 
 ### Notes and configuration
