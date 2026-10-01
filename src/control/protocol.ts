@@ -179,7 +179,7 @@ export type TelegramChats = z.infer<typeof telegramChatsSchema>;
 /** An Agent as the CLI sees it. */
 export const agentViewSchema = z.object({
   name: z.string(),
-  title: z.string().nullable(),
+  title: z.string(),
   provider: z.enum(PROVIDERS),
   /** Null: the provider's default. */
   model: z.string().nullable(),
@@ -193,7 +193,8 @@ export const agentViewSchema = z.object({
   instructions: z.string().nullable(),
   useSharedInstructions: z.boolean(),
   permissions: z.enum(PERMISSION_MODES),
-  codexSkipGitRepoCheck: z.boolean(),
+  /** Codex only: whether it may work in a folder outside a Git repository. */
+  skipGitRepoCheck: z.boolean(),
   enabled: z.boolean(),
   /** Whether it is the Agent primary Channels get when onboarded. */
   main: z.boolean(),
@@ -355,7 +356,7 @@ export type WorkflowScheduleView = z.infer<typeof workflowScheduleSchema>;
 /** A Workflow as `pero workflows ls` and `show` show it. */
 export const workflowViewSchema = z.object({
   name: z.string(),
-  title: z.string().nullable(),
+  title: z.string(),
   /** Its note, relative to the workspace when inside it. */
   file: z.string(),
   /** The name of the Agent its runs use. */

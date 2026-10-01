@@ -27,7 +27,7 @@ import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings/testing/test-workspace.js';
-import { AgentManager, type RuntimeAgent, TurnError } from './agent-manager.js';
+import { AgentManager, type IsolatedTurn, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
@@ -437,14 +437,14 @@ describe('AgentManager', () => {
     await say(OWNER, 'Hello');
     await say(OWNER, 'Again');
     await moduleRef.get(AgentManager).runIsolated({
-      agent: {
-        name: 'main',
-        provider: 'claude',
+      agent: 'main',
+      provider: 'claude',
+      request: {
         providerOptions: { model: null, effort: null },
         workingDirectory: vault,
         instructions: '',
         toolPolicy: { permissions: 'ask' },
-        codexSkipGitRepoCheck: false,
+        skipGitRepoCheck: false,
       },
       input: 'Work',
       label: 'test',
@@ -690,18 +690,21 @@ describe('AgentManager', () => {
 
   describe('isolated turns', () => {
     function isolated(signal: AbortSignal) {
-      const agent: RuntimeAgent = {
-        name: 'main',
+      const turn: IsolatedTurn = {
+        agent: 'main',
         provider: 'claude',
-        providerOptions: { model: null, effort: null },
-        workingDirectory: vault,
-        instructions: '',
-        toolPolicy: { permissions: 'ask' },
-        codexSkipGitRepoCheck: false,
+        request: {
+          providerOptions: { model: null, effort: null },
+          workingDirectory: vault,
+          instructions: '',
+          toolPolicy: { permissions: 'ask' },
+          skipGitRepoCheck: false,
+        },
+        input: 'Work',
+        label: 'test',
+        signal,
       };
-      return moduleRef
-        .get(AgentManager)
-        .runIsolated({ agent, input: 'Work', label: 'test', signal });
+      return moduleRef.get(AgentManager).runIsolated(turn);
     }
 
     it('aborts the turn when its signal does', async () => {

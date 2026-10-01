@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './snapshot.js';
+import type { Agent } from './snapshot.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -25,7 +25,7 @@ export interface AgentOrigins {
  * properties the `Pero.md` in use sets.
  */
 export function agentOrigins(
-  agent: Pick<AgentDefinition, 'provider' | 'note'>,
+  agent: Pick<Agent, 'provider' | 'note'>,
   peroProperties: ReadonlySet<string>,
 ): AgentOrigins {
   const { note } = agent;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidInputError, parseInput } from '../common/errors.js';
-import { cronSchema, workflowHistorySchema } from './workflow-input.js';
+import { parseInput } from '../common/errors.js';
+import { cronSchema } from './workflow-input.js';
 
 describe('cronSchema', () => {
   it.each([
@@ -26,54 +26,5 @@ describe('cronSchema', () => {
     expect(() => parseInput(cronSchema, '61 9 * * *')).toThrow(
       /such as "0 9 \* \* \*".*\(Invalid value for minute: 61\)$/,
     );
-  });
-});
-
-describe('workflowHistorySchema', () => {
-  it('takes all Channels or a list, sorted without repeats', () => {
-    const defaults = {
-      channels: 'all',
-      messages: 'people',
-      hours: null,
-      runWhenEmpty: false,
-    };
-    expect(workflowHistorySchema.parse(defaults)).toEqual(defaults);
-    expect(
-      workflowHistorySchema.parse({
-        channels: [5, 3, 5],
-        messages: 'all',
-        hours: 720,
-        runWhenEmpty: true,
-      }),
-    ).toEqual({
-      channels: [3, 5],
-      messages: 'all',
-      hours: 720,
-      runWhenEmpty: true,
-    });
-  });
-
-  it('refuses no Channels, windows out of range, and unknown fields', () => {
-    const valid = {
-      channels: 'all',
-      messages: 'people',
-      hours: null,
-      runWhenEmpty: false,
-    };
-    expect(() =>
-      parseInput(workflowHistorySchema, { ...valid, channels: [] }),
-    ).toThrow('channels: must be all, or the IDs of one or more Channels');
-    expect(() =>
-      parseInput(workflowHistorySchema, { ...valid, hours: 0 }),
-    ).toThrow('hours: must be at least 1');
-    expect(() =>
-      parseInput(workflowHistorySchema, { ...valid, hours: 721 }),
-    ).toThrow('hours: must be at most 720');
-    expect(() =>
-      parseInput(workflowHistorySchema, { ...valid, messages: 'agents' }),
-    ).toThrow(InvalidInputError);
-    expect(() =>
-      parseInput(workflowHistorySchema, { ...valid, direction: 'in' }),
-    ).toThrow(InvalidInputError);
   });
 });

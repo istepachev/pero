@@ -1,8 +1,8 @@
 import type { EntityManager } from 'typeorm';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import type { WorkflowDefinition } from '../settings/definitions.js';
 import { finishRun } from './finish-run.js';
 import { isScheduled } from './run-keys.js';
+import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
 
 /** A run waiting to start that was cancelled, and why. */
 export interface CancelledRun {
@@ -22,7 +22,7 @@ export interface CancelledRun {
  */
 export async function cancelWaitingRunsWithin(
   manager: EntityManager,
-  workflows: readonly WorkflowDefinition[],
+  workflows: readonly ResolvedWorkflow[],
 ): Promise<CancelledRun[]> {
   const defined = new Map(
     workflows.map((workflow) => [workflow.name.toLowerCase(), workflow]),

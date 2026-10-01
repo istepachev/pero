@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { composeInstructions, resolveAgent } from './agent-resolution.js';
+import type { Agent } from '../settings-files/snapshot.js';
+import { agentRequest, composeInstructions } from './agent-request.js';
 
 describe('composeInstructions', () => {
   const shared = { sharedInstructions: 'Answer in English.' };
@@ -53,34 +54,44 @@ describe('composeInstructions', () => {
   });
 });
 
-describe('resolveAgent', () => {
-  it('composes the instructions', () => {
-    expect(
-      resolveAgent(
-        {
-          name: 'coach',
-          title: null,
-          provider: 'codex',
-          providerOptions: { model: 'gpt-5', effort: 'high' },
-          permissions: 'bypass',
-          workingDirectory: '/vault',
-          ownWorkingDirectory: null,
-          instructions: 'Track spending.',
-          sharedInstructions: true,
-          skipGitRepoCheck: true,
-          enabled: false,
-        },
-        { sharedInstructions: 'Answer in English.' },
-      ),
-    ).toEqual({
-      name: 'coach',
+describe('agentRequest', () => {
+  it("maps the Agent's settings and composes the instructions", () => {
+    const note: Agent['note'] = {
+      topics: [],
       provider: 'codex',
+      model: 'gpt-5',
+      effort: 'high',
+      permissions: 'bypass',
+      workingDirectory: null,
+      sharedInstructions: true,
+      skipGitRepoCheck: true,
+      enabled: false,
+      instructions: 'Track spending.',
+    };
+    const agent: Agent = {
+      name: 'coach',
+      title: 'Coach',
+      file: 'Agents/Coach.md',
+      topics: [],
+      provider: 'codex',
+      model: 'gpt-5',
+      effort: 'high',
+      permissions: 'bypass',
+      workingDirectory: '/vault',
+      sharedInstructions: true,
+      skipGitRepoCheck: true,
+      enabled: false,
+      instructions: 'Track spending.',
+      note,
+    };
+    expect(
+      agentRequest(agent, { sharedInstructions: 'Answer in English.' }),
+    ).toEqual({
+      instructions: 'Answer in English.\n\nTrack spending.',
       providerOptions: { model: 'gpt-5', effort: 'high' },
       workingDirectory: '/vault',
-      instructions: 'Answer in English.\n\nTrack spending.',
+      skipGitRepoCheck: true,
       toolPolicy: { permissions: 'bypass' },
-      codexSkipGitRepoCheck: true,
-      enabled: false,
     });
   });
 });

@@ -17,12 +17,12 @@ import { nextTurn } from '../sessions/next-turn.js';
 import { findAgentNote, shownPath } from '../settings-files/note-paths.js';
 import { agentOrigins } from '../settings-files/origins.js';
 import {
-  type AgentDefinition,
   type Defaults,
   Definitions,
   routeQuery,
 } from '../settings/definitions.js';
 import { SettingsNotes } from '../settings/settings-notes.service.js';
+import type { Agent } from '../settings-files/snapshot.js';
 
 /**
  * Agents as the CLI shows them: their settings with defaults resolved, and
@@ -65,7 +65,7 @@ export class AgentViews {
    * `agent` as the CLI shows it, with its note; null when a rescan since
    * removed the note.
    */
-  private view(agent: AgentDefinition, main: string | null): AgentView | null {
+  private view(agent: Agent, main: string | null): AgentView | null {
     const snapshot = this.notes.snapshot();
     const folders = this.notes.folders();
     const note = snapshot?.agents.get(agent.name);
@@ -114,7 +114,7 @@ export class AgentViews {
    * what its next turn there does.
    */
   private channels(
-    agent: AgentDefinition,
+    agent: Agent,
     defaults: Defaults,
   ): Promise<AgentChannelView[]> {
     return inTransaction(this.dataSource, async (manager) => {
@@ -157,21 +157,22 @@ export class AgentViews {
 }
 
 function agentView(
-  agent: AgentDefinition,
+  agent: Agent,
   main: string | null,
 ): Omit<AgentView, 'file' | 'topics' | 'origins' | 'errors'> {
   return {
     name: agent.name,
     title: agent.title,
     provider: agent.provider,
-    model: agent.providerOptions.model,
-    effort: agent.providerOptions.effort,
-    workingDirectory: agent.ownWorkingDirectory,
+    model: agent.model,
+    effort: agent.effort,
+    workingDirectory:
+      agent.note.workingDirectory === null ? null : agent.workingDirectory,
     effectiveWorkingDirectory: agent.workingDirectory,
     instructions: agent.instructions,
     useSharedInstructions: agent.sharedInstructions,
     permissions: agent.permissions,
-    codexSkipGitRepoCheck: agent.skipGitRepoCheck,
+    skipGitRepoCheck: agent.skipGitRepoCheck,
     enabled: agent.enabled,
     main: agent.name === main,
   };

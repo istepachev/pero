@@ -37,7 +37,7 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
 /** `pero workflows show`: the definition, then the Channels it posts to. */
 export function formatWorkflowDetails(workflow: WorkflowView): string {
   const lines = [
-    `Workflow ${workflow.name}${workflow.title === null ? '' : ` "${workflow.title}"`}`,
+    `Workflow ${workflow.name} "${workflow.title}"`,
     ...table([
       ['note', workflow.file],
       ['agent', agent(workflow)],

@@ -1,4 +1,4 @@
-import type { ResolvedAgent } from '../agents/agent-resolution.js';
+import type { Agent } from '../settings-files/snapshot.js';
 import type { NextTurn } from '../control/protocol.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { resumes } from './session.service.js';
@@ -21,7 +21,7 @@ export function nextTurn(
     Session,
     'id' | 'provider' | 'workingDirectory' | 'providerSessionId'
   > | null,
-  agent: Pick<ResolvedAgent, 'provider' | 'workingDirectory'>,
+  agent: Pick<Agent, 'provider' | 'workingDirectory'>,
   { hasHistory, carryover }: NextTurnContext,
 ): NextTurn {
   const carriesOver = hasHistory && carryover > 0;

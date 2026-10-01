@@ -503,7 +503,7 @@ permissions: bypass
       expect(agentOf('8')).toBe('main');
     });
 
-    it('gives the Channels found by ID, each once', () => {
+    it('gives the Channels found by ID, each once, and history sorted', () => {
       const result = snapshot(
         {
           'Agents/Health.md': '---\ntopics: [Health]\n---',
@@ -515,7 +515,7 @@ permissions: bypass
       );
       expect(result.workflows.get('report')!.resolved).toEqual({
         targets: [3, 8, 1, 7],
-        history: [8, 3],
+        history: [3, 8],
       });
       expect(result.workflows.get('all')!.resolved).toEqual({
         targets: [],

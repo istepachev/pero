@@ -12,18 +12,15 @@ const run = (fields: Partial<FinishedRun>): FinishedRun => ({
   ...fields,
 });
 
-const english = { name: 'english', title: null };
+const english = { name: 'english', title: 'Evening English' };
 
 describe('notificationText', () => {
-  it("posts a completed run's answer under the Workflow's title, or name", () => {
+  it("posts a completed run's answer under the Workflow's title", () => {
     const done = run({ result: { text: 'Say "went", not "goed".' } });
 
     expect(notificationText(done, english, false)).toBe(
-      'Workflow english\n\nSay "went", not "goed".',
+      'Evening English\n\nSay "went", not "goed".',
     );
-    expect(
-      notificationText(done, { ...english, title: 'Evening English' }, false),
-    ).toBe('Evening English\n\nSay "went", not "goed".');
   });
 
   it('says when a completed run has no answer', () => {

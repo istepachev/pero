@@ -1,6 +1,6 @@
 import type { Channel } from '../persistence/entities/channel.entity.js';
+import type { Agent } from '../settings-files/snapshot.js';
 import {
-  type AgentDefinition,
   type Definitions,
   type Route,
   routeQuery,
@@ -15,7 +15,7 @@ import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
  */
 
 /** A known Channel with the enabled Agent that answers there now. */
-export type RoutedChannel = Channel & { agent: AgentDefinition };
+export type RoutedChannel = Channel & { agent: Agent };
 
 /** Who answers in `channel` now. */
 export function routeOf(

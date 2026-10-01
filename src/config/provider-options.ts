@@ -60,3 +60,6 @@ export type ClaudeOptions = z.infer<typeof claudeOptionsSchema>;
 export type CodexOptions = z.infer<typeof codexOptionsSchema>;
 export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
 export type ProviderDefaults = z.infer<typeof providerDefaultsSchema>;
+
+/** A reasoning effort level of either provider. */
+export type Effort = NonNullable<ProviderOptions['effort']>;

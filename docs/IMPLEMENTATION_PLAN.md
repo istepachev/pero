@@ -1084,6 +1084,16 @@ Keep the snapshot's type as the one `Agent`, and the snapshot's `WorkflowDefinit
 
 One name per concept, everywhere: `skipGitRepoCheck`, the property's name.
 
+- **Found while building:**
+  - **`Definitions` returns a `ResolvedWorkflow`:** the one `Workflow` with its `agent` and `resolved` Channels known, as they always are where Pero runs with a database. Only `pero check` without a lookup sees either null. `isResolved` narrows a snapshot's Workflow to it. Runtime code reads a Workflow's targets and history Channels by ID from `resolved`, and its history settings from `history`; the snapshot sorts the history IDs, as `Definitions` did.
+  - **`agentRequest(agent, defaults)`** (`src/agents/agent-request.ts`) builds what a runtime request takes from an Agent: `providerOptions`, `toolPolicy`, the folder, `skipGitRepoCheck`, and the instructions `composeInstructions` composes. `AgentManager` calls it when a turn starts, and `executionSnapshot` when a run is claimed. `RuntimeAgent` goes too: an isolated turn carries its Agent's name, provider, and the request its run captured, which `snapshotRequest` reads back.
+  - **The execution snapshot keeps its shape** (`providerOptions`, `toolPolicy`, composed `instructions`), but `codexSkipGitRepoCheck` is `skipGitRepoCheck` there too, as in the Agent view the control protocol returns. No stored run predates it, since 11.6 started the schema over.
+  - **An Agent's `effort` is typed** as one of the providers' levels (`Effort`), since the snapshot checks it against the provider, so a request needs no cast.
+  - **Titles are never null:** an Agent's and a Workflow's title is its note's, so the views' `title` is a string, `pero agents show` and `pero workflows show` always quote it, and a run's Notification is always headed by it.
+  - **`workflowHistorySchema` and `WorkflowHistory` go:** a fourth shape of a Workflow's history, which only their own tests used. The notes validate history in `schemas.ts`.
+  - **The Agent view reads the note** for its own `workingDirectory`, and backups for the folders a restore checks, where both read `ownWorkingDirectory`.
+  - **[Architecture](./ARCHITECTURE.md)** describes an Agent's `model` and `effort`, and the one `Agent` and `Workflow` that `Definitions` returns.
+
 **Done when:**
 - `AgentDefinition` and `ResolvedAgent` no longer exist, and only `src/settings-files/` declares an Agent or Workflow type.
 - The full suite passes.

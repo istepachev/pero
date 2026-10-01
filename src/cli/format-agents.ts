@@ -56,7 +56,7 @@ export function formatAgentDetails(agent: AgentDetails): string {
     value === null ? '(provider default)' : `${value}${from(origin)}`;
   const { origins } = agent;
   const lines = [
-    `Agent ${agent.name}${agent.title === null ? '' : ` "${agent.title}"`}`,
+    `Agent ${agent.name} "${agent.title}"`,
     ...table([
       ['note', agent.file],
       ['topics', agent.topics.join(', ') || '(none)'],
@@ -67,7 +67,7 @@ export function formatAgentDetails(agent: AgentDetails): string {
       ['instructions', preview(agent.instructions)],
       ['shared instructions', agent.useSharedInstructions ? 'on' : 'off'],
       ['permissions', `${agent.permissions}${from(origins.permissions)}`],
-      ['codex git check', agent.codexSkipGitRepoCheck ? 'skipped' : 'required'],
+      ['codex git check', agent.skipGitRepoCheck ? 'skipped' : 'required'],
       ['state', agent.enabled ? 'enabled' : 'disabled'],
       [
         'main agent',

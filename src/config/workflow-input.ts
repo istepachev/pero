@@ -66,42 +66,6 @@ export const HISTORY_MESSAGES = ['people', 'all'] as const;
 
 export type HistoryMessages = (typeof HISTORY_MESSAGES)[number];
 
-/** The Channels a history input reads: all of them, or these IDs. */
-const historyChannelsSchema = z.union(
-  [
-    z.literal('all'),
-    z
-      .array(z.int().positive())
-      .min(1)
-      .transform((ids) => [...new Set(ids)].sort((a, b) => a - b)),
-  ],
-  { error: 'must be all, or the IDs of one or more Channels' },
-);
-
-/**
- * The Channel history a Workflow's runs read as input, as a note's
- * `history-*` properties give it.
- */
-export const workflowHistorySchema = z.strictObject({
-  channels: historyChannelsSchema,
-  /** `people`: only what people wrote; `all`: the Agents' replies too. */
-  messages: z.enum(HISTORY_MESSAGES),
-  /**
-   * A fixed window of this many hours before the run starts; null reads
-   * everything since the previous successful run (the last 24 hours for
-   * the first).
-   */
-  hours: z
-    .int('must be a whole number of hours')
-    .min(1, 'must be at least 1')
-    .max(MAX_HISTORY_HOURS, `must be at most ${MAX_HISTORY_HOURS}`)
-    .nullable(),
-  /** Run the Agent even when the window has no messages. */
-  runWhenEmpty: z.boolean(),
-});
-
-export type WorkflowHistory = z.output<typeof workflowHistorySchema>;
-
 /** Names an existing Workflow, in any case. */
 export const workflowReferenceSchema = z
   .string()

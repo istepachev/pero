@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Not } from 'typeorm';
-import type { ResolvedAgent } from '../agents/agent-resolution.js';
+import type { Agent } from '../settings-files/snapshot.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
@@ -11,7 +11,7 @@ import { inTransaction } from '../persistence/transaction.js';
  */
 export function resumes(
   session: Pick<Session, 'provider' | 'workingDirectory'>,
-  agent: Pick<ResolvedAgent, 'provider' | 'workingDirectory'>,
+  agent: Pick<Agent, 'provider' | 'workingDirectory'>,
 ): boolean {
   return (
     session.provider === agent.provider &&
@@ -38,7 +38,7 @@ export class SessionService {
   async beginWithin(
     manager: EntityManager,
     channelId: number,
-    agent: Pick<ResolvedAgent, 'name' | 'provider' | 'workingDirectory'>,
+    agent: Pick<Agent, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     const sessions = manager.getRepository(Session);
     const active = await sessions.findOneBy({
@@ -70,7 +70,7 @@ export class SessionService {
   async replaceWithin(
     manager: EntityManager,
     session: Pick<Session, 'id' | 'channelId'>,
-    agent: Pick<ResolvedAgent, 'name' | 'provider' | 'workingDirectory'>,
+    agent: Pick<Agent, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     await manager
       .getRepository(Session)

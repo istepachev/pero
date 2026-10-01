@@ -126,7 +126,6 @@ describe('Workflow formatting', () => {
     expect(
       formatWorkflowDetails({
         ...review,
-        title: null,
         agentEnabled: false,
         enabled: false,
         maxAttempts: 3,
@@ -145,7 +144,7 @@ describe('Workflow formatting', () => {
       }),
     ).toBe(
       [
-        'Workflow evening-review',
+        'Workflow evening-review "Evening review"',
         '  note      data/Settings/Workflows/Evening review.md',
         '  agent     coach (disabled)',
         "  input     Review today's chats. (2 lines)",
