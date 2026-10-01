@@ -2,7 +2,7 @@
 
 ## 1. Stack decision
 
-| Layer | Initial choice | Why it fits |
+| Layer | Choice | Why it fits |
 |---|---|---|
 | Language and runtime | TypeScript on [Node.js](https://nodejs.org/en/about/previous-releases) `^22.17.0 \|\| >=24.11.0` (22.17 is the first 22.x that loads the CommonJS nest-commander alongside ESM NestJS without a `require()` cycle error); develop on 24 LTS | Shared types and a stable long-running server runtime. Support the Node lines in active or maintenance LTS and test each one in CI; drop a line when it reaches end of life (Node 22: April 2027). |
 | Application framework | [NestJS 12](https://docs.nestjs.com/) modular monolith | Dependency injection, modules, lifecycle hooks, and one composition root for bot, scheduler, API, and workers. |
@@ -21,7 +21,7 @@
 | Package management and distribution | Public `@perokit/pero` npm package with a `pero` executable | One package and `package-lock.json` for development; users install `@perokit/pero` globally and invoke `pero`. |
 | Deployment | `pero run` launches a native background service on the owner's machine or VPS | The CLI handles lifecycle and management; Claude Code and Codex use sign-in under the same OS account. |
 
-The earlier proposal of PostgreSQL, Drizzle, Redis/BullMQ, and separate gateway/worker processes was superseded by the self-hosted v1 decision. PostgreSQL and Redis remain possible future options, not mandatory dependencies.
+PostgreSQL, Redis, a job queue, and separate gateway and worker processes are not needed for one self-hosted owner. They remain possible future options, not dependencies.
 
 ## 2. Repository layout
 
@@ -49,7 +49,6 @@ pero/
 │   ├── scheduler/
 │   ├── notifications/
 │   ├── backup/
-│   ├── migrate/         # pero migrate, from a legacy data directory to a workspace
 │   ├── persistence/
 │   │   ├── entities/
 │   │   └── migrations/
@@ -137,7 +136,7 @@ Keep every Agent's working directory and resumable session state on persistent l
 
 ## 8. Configuration and observability
 
-Keep provider subscription credentials in the CLIs' protected credential stores. Every command works on one workspace, found from `--workspace`, `PERO_WORKSPACE`, the current folder, or `~/workspace`, before anything opens SQLite; a legacy data directory (`~/.pero`, `--data-dir`, or `PERO_HOME`) is used only when no workspace is found. First-run setup creates the database. The installation defaults and the Agents and Workflows are notes in the workspace's settings folder (`Pero.md`, `Agents/`, `Workflows/`), and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Channels are state, in SQLite. The defaults include the default provider, default options (model and effort) for each provider, shared instructions, timezone, and concurrency limits. A null option means the provider's own default; a string pins a provider-specific model name or effort level. The files are the only live configuration: Pero never keeps a second copy that could drift from them.
+Keep provider subscription credentials in the CLIs' protected credential stores. Every command works on one workspace, found from `--workspace`, `PERO_WORKSPACE`, the current folder, or `~/workspace`, before anything opens SQLite. First-run setup creates the database. The installation defaults and the Agents and Workflows are notes in the workspace's settings folder (`Pero.md`, `Agents/`, `Workflows/`), and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Channels are state, in SQLite. The defaults include the default provider, default options (model and effort) for each provider, shared instructions, timezone, and concurrency limits. A null option means the provider's own default; a string pins a provider-specific model name or effort level. The files are the only live configuration: Pero never keeps a second copy that could drift from them.
 
 The Telegram token is in the workspace's `.env`, owner-only and Git-ignored, or in the service environment. Provider credentials and Telegram tokens do not belong in notes or SQLite. Validate notes, `config.yaml`, CLI input, and any environment-supplied bootstrap values with Zod; fail early with a clear error that names the file and property.
 

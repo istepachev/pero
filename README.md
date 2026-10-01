@@ -108,20 +108,6 @@ pero backup ~/backups/pero.tgz     # while Pero runs; --include-data adds the da
 pero restore ~/backups/pero.tgz    # into a workspace without a database, such as a fresh clone, while Pero is stopped
 ```
 
-### Upgrading from 0.1
-
-Pero 0.1 kept its Agents and Workflows in its database in `~/.pero`. Pero 0.2 reads them from notes, and `pero migrate` writes those notes for you, leaving `~/.pero` as it was:
-
-```sh
-pero backup ~/backups/pero-0.1.tgz   # with 0.1 still running
-pero stop
-npm install -g @perokit/pero
-pero migrate ~/workspace
-cd ~/workspace && pero run
-```
-
-[Operating Pero](./docs/OPERATIONS.md#upgrading-from-01) explains each step and what to check afterwards.
-
 ## Learn more
 
 - [User guide](./docs/USER_GUIDE.md): Telegram, Agents and permissions, and Workflows in detail
