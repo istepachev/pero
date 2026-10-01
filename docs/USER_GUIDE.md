@@ -16,7 +16,7 @@ pero run --foreground   # attached; logs to stdout
 
 `pero logs` prints the last 50 entries of `logs/pero.log` as readable lines in local time (`-n <count>` for more or fewer); `--follow` keeps streaming new entries, waiting for the file if Pero has not written it yet, and `--json` prints the raw lines for `jq`. It reads files only, so it works whether or not Pero is running. It does not stream `logs/daemon.out`, but it names that file on stderr when it has content.
 
-Every command works on the workspace found from the current folder (the nearest folder holding `.pero/`), or takes `--workspace <dir>` (`-w`) to name one. `pero init [dir]` makes a workspace; it only fills in what's missing, so it also completes a cloned one. Without one, commands say which `pero init` to run. See [Configuration](./OPERATIONS.md#configuration).
+Every command works on the workspace found from the current folder (the nearest folder holding `.pero/`), or takes `--workspace <dir>` (`-w`) to name one. With none found, `pero run` on a terminal offers to make one in the current folder, or in `~/workspace` from the home folder. `pero init [dir]` makes one without starting Pero; it only fills in what's missing, so it also completes a cloned one. Other commands say which `pero init` to run. See [Configuration](./OPERATIONS.md#configuration).
 
 ## First-run setup and settings
 

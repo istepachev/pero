@@ -35,8 +35,7 @@ The `pero` CLI starts, stops, inspects, checks, and backs up; it doesn't create 
 
 ```sh
 npm install -g @perokit/pero
-pero init ~/workspace
-cd ~/workspace && pero run
+pero run
 pero check
 pero agents
 pero stop

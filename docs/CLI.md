@@ -6,8 +6,7 @@ Installation and daily control go through one globally installed npm executable:
 
 ```sh
 npm install -g @perokit/pero
-pero init ~/workspace
-cd ~/workspace && pero run
+pero run
 pero status
 pero agents ls
 pero stop
