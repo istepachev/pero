@@ -56,8 +56,6 @@ type Fired =
       problem: string;
     }
   | { kind: 'duplicate'; triggerKey: string }
-  /** Due at the same time as another schedule of its Workflow. */
-  | { kind: 'shared'; runId: number }
   /** No longer defined, or its Workflow disabled: its state was dropped. */
   | { kind: 'dropped' };
 
@@ -207,7 +205,7 @@ export class ScheduleTick
   }
 
   /**
-   * Gives each schedule of an enabled Workflow a row, first due after
+   * Gives the schedule of each enabled Workflow a row, first due after
    * `now`, and drops the rest; cancels the runs waiting to start of
    * Workflows that are gone, and those their schedule queued of Workflows
    * that are disabled. The definitions are read in the transaction, so a
@@ -218,14 +216,10 @@ export class ScheduleTick
       this.dataSource,
       async (manager) => {
         const workflows = await this.definitions.workflows();
-        const defined: DefinedSchedule[] = workflows
-          .filter((workflow) => workflow.enabled)
-          .flatMap((workflow) =>
-            workflow.schedules.map((schedule) => ({
-              workflow: workflow.name,
-              schedule,
-            })),
-          );
+        const defined: DefinedSchedule[] = workflows.flatMap(
+          ({ name, schedule, enabled }) =>
+            enabled && schedule !== null ? [{ workflow: name, schedule }] : [],
+        );
         return {
           reconciled: await reconcileSchedulesWithin(manager, defined, now),
           cancelled: await cancelWaitingRunsWithin(manager, workflows),
@@ -255,10 +249,12 @@ export class ScheduleTick
     const { due } = row;
     const name = row.workflowName;
     const workflow = await this.definitions.workflow(name);
+    const defined = workflow?.schedule ?? null;
+    // A row of a schedule since changed is not the Workflow's any more.
     const schedule =
-      workflow?.schedules.find(
-        (candidate) => scheduleFingerprint(candidate) === row.fingerprint,
-      ) ?? null;
+      defined !== null && scheduleFingerprint(defined) === row.fingerprint
+        ? defined
+        : null;
     // Reconciling drops these first; a change can land in between.
     if (workflow === null || schedule === null || !workflow.enabled) {
       await dropScheduleWithin(manager, id);
@@ -292,11 +288,6 @@ export class ScheduleTick
       },
       order: { id: 'DESC' },
     });
-    // Another schedule of the Workflow may have come due at the same time.
-    if (waiting?.triggerKey === triggerKey) {
-      await advanceScheduleWithin(manager, id, { nextRunAt, lastRunAt: now });
-      return fired({ kind: 'shared', runId: waiting.id });
-    }
     if (waiting !== null) {
       const total = Math.min(
         waiting.skippedCount + skipped + 1,
@@ -338,7 +329,7 @@ export class ScheduleTick
   ): void {
     const which =
       schedule === null
-        ? `A schedule of Workflow ${workflow}`
+        ? `The schedule of Workflow ${workflow}`
         : `The schedule ${describeSchedule(schedule)} of Workflow ${workflow}`;
     const skipped = (count: number) =>
       count === 0
@@ -361,11 +352,6 @@ export class ScheduleTick
       case 'duplicate':
         this.logger.warn(
           `${which} came due, but Workflow ${workflow} already has run ${fired.triggerKey}`,
-        );
-        break;
-      case 'shared':
-        this.logger.debug(
-          `${which} came due with another of its schedules; run ${fired.runId} stands for both`,
         );
         break;
       case 'dropped':
@@ -393,7 +379,7 @@ export class ScheduleTick
       this.logger.log(
         disabled.has(workflow.toLowerCase())
           ? `Workflow ${workflow} is disabled; the saved times of its schedule are dropped`
-          : `A schedule of Workflow ${workflow} is no longer defined; its saved times are dropped`,
+          : `The schedule Workflow ${workflow} had is no longer defined; its saved times are dropped`,
       );
     }
     const failing = new Set<string>();

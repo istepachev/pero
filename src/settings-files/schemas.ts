@@ -40,10 +40,6 @@ export const NEW_TOPICS = ['create-agent', 'main-agent'] as const;
 
 export type NewTopics = (typeof NEW_TOPICS)[number];
 
-export const TRIGGERS = ['schedule', 'manual'] as const;
-
-export type WorkflowTrigger = (typeof TRIGGERS)[number];
-
 /** The name of the main Agent when `Pero.md` names none: `Main.md`. */
 export const DEFAULT_MAIN_AGENT = 'main';
 
@@ -110,8 +106,7 @@ export interface WorkflowNoteHistory {
 
 /** A Workflow note's settings. */
 export interface WorkflowNote {
-  trigger: WorkflowTrigger;
-  /** Null for a manual Workflow, even one that keeps its times. */
+  /** Null: it runs only by hand. */
   schedule: { cron: string; timezone: string | null } | null;
   /** Where each run's answer is posted. */
   channels: ChannelRef[];
@@ -257,7 +252,6 @@ const agentProperties = z
 
 const workflowProperties = z
   .object({
-    trigger: oneOf(TRIGGERS),
     day: oneOrMore(day).transform((days) => days.flat()),
     hour: oneOrMore(wholeNumber(0, 23)),
     minute: wholeNumber(0, 59),
@@ -341,7 +335,7 @@ export function readAgentNote(
 
 /**
  * A Workflow note's settings. `day`, `hour`, and `minute` become a cron
- * expression, and `trigger` is `schedule` when a time is given.
+ * expression.
  */
 export function readWorkflowNote(
   file: string,
@@ -365,18 +359,11 @@ export function readWorkflowNote(
     p.day !== undefined || p.hour !== undefined || p.minute !== undefined;
   if (p.cron !== undefined && timed) {
     error('cron', 'replaces day, hour, and minute; use one or the other');
-  } else if (p.hour === undefined && p.cron === undefined) {
-    if (timed) {
-      error('hour', 'must be set when day or minute is');
-    } else if (p.trigger === 'schedule') {
-      error('hour', 'must be set for a schedule, unless cron is');
-    }
+  } else if (timed && p.hour === undefined) {
+    error('hour', 'must be set when day or minute is');
   }
   if (errors.length > 0 || note.body === null) return { ok: false, errors };
 
-  const trigger =
-    p.trigger ??
-    (p.hour !== undefined || p.cron !== undefined ? 'schedule' : 'manual');
   const cron =
     p.cron ??
     (p.hour === undefined
@@ -389,11 +376,7 @@ export function readWorkflowNote(
   return {
     ok: true,
     value: {
-      trigger,
-      schedule:
-        trigger === 'schedule' && cron !== null
-          ? { cron, timezone: p.timezone ?? null }
-          : null,
+      schedule: cron === null ? null : { cron, timezone: p.timezone ?? null },
       channels: p.channel ?? [],
       agent: p.agent ?? null,
       history: p.history

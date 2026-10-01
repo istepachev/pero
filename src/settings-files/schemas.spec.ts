@@ -285,9 +285,8 @@ describe('readWorkflowNote', () => {
   const invalid = (properties: Record<string, unknown>) =>
     messageFor(readWorkflowNote, WORKFLOW, properties);
 
-  it('is a manual Workflow without a time', () => {
+  it('runs only by hand without a time', () => {
     expect(read({})).toEqual({
-      trigger: 'manual',
       schedule: null,
       channels: [],
       agent: null,
@@ -302,7 +301,6 @@ describe('readWorkflowNote', () => {
     expect(
       read(
         {
-          trigger: 'schedule',
           day: 'sunday',
           hour: 12,
           minute: 0,
@@ -311,7 +309,6 @@ describe('readWorkflowNote', () => {
         '# Workflow Instruction\nCreate a weekly report…',
       ),
     ).toEqual({
-      trigger: 'schedule',
       schedule: { cron: '0 12 * * 0', timezone: null },
       channels: ['Health'],
       agent: null,
@@ -339,7 +336,6 @@ describe('readWorkflowNote', () => {
       timezone: null,
     });
     expect(read({ cron: '@Daily' }).schedule?.cron).toBe('@daily');
-    expect(read({ cron: '@daily' }).trigger).toBe('schedule');
   });
 
   it('keeps its own time zone', () => {
@@ -349,10 +345,10 @@ describe('readWorkflowNote', () => {
     });
   });
 
-  it('lets a manual Workflow keep its times, which then do not run', () => {
-    expect(read({ trigger: 'manual', day: 'sunday', hour: 12 })).toMatchObject({
-      trigger: 'manual',
-      schedule: null,
+  it('keeps the schedule of a disabled Workflow, which then does not run', () => {
+    expect(read({ enabled: false, day: 'sunday', hour: 12 })).toMatchObject({
+      schedule: { cron: '0 12 * * 0', timezone: null },
+      enabled: false,
     });
   });
 
@@ -430,13 +426,9 @@ describe('readWorkflowNote', () => {
     expect(invalid({ hour: undefined, minute: 30 })).toBe(
       'must be set when day or minute is',
     );
-    expect(invalid({ hour: undefined, trigger: 'schedule' })).toBe(
-      'must be set for a schedule, unless cron is',
-    );
   });
 
   it('refuses invalid values', () => {
-    expect(invalid({ trigger: 'daily' })).toBe('must be schedule or manual');
     expect(invalid({ day: 'funday', hour: 9 })).toBe(
       'must be a weekday such as sunday, or daily, weekdays, or weekends',
     );
@@ -492,5 +484,7 @@ describe('readWorkflowNote', () => {
       'unknown property (did you mean channel?)',
     );
     expect(invalid({ topics: ['Health'] })).toBe('unknown property');
+    // `enabled: false` is what runs it only by hand.
+    expect(invalid({ trigger: 'manual', hour: 9 })).toBe('unknown property');
   });
 });

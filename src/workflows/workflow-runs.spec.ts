@@ -1487,9 +1487,9 @@ describe('Workflow Runs and the executor', () => {
       await expect(runs.start('nope')).rejects.toThrow(NotFoundError);
     });
 
-    it('runs any Workflow, whatever its trigger', async () => {
+    it('runs any Workflow, with a schedule or without', async () => {
       await ws.workflow('brief', { agent: 'coach', hour: 9 }, 'Go.');
-      await ws.workflow('quiet', { trigger: 'manual', hour: 9 }, 'Hush.');
+      await ws.workflow('quiet', {}, 'Hush.');
 
       const scheduled = await runs.start('BRIEF');
       const manual = await runs.start('quiet');

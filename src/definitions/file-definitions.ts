@@ -226,7 +226,7 @@ export function workflowDefinition(
           },
     targets: [...resolved.targets],
     maxAttempts: workflow.maxAttempts,
-    schedules: workflow.schedule === null ? [] : [workflow.schedule],
+    schedule: workflow.schedule,
     enabled: workflow.enabled,
   };
 }

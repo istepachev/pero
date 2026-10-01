@@ -221,7 +221,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
       name: 'weekly-health-report',
     });
     expect(report).toMatchObject({ agent: 'health', errors: [] });
-    const nextRunAt = new Date(report.schedules[0]!.nextRunAt!);
+    const nextRunAt = new Date(report.schedule!.nextRunAt!);
     expect(
       nextRunAt.toLocaleString('en-GB', {
         timeZone: 'Europe/Berlin',

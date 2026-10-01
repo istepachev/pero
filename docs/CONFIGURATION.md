@@ -204,9 +204,8 @@ Create a weekly report in the Reports folder from Health/Log.md…
 
 | Property | Values | Default | Meaning |
 |---|---|---|---|
-| `trigger` | `schedule`, `manual` | `schedule` when a time is given, else `manual` | `manual` runs only by hand, even with a time |
 | `day` | `monday`…`sunday`, `daily`, `weekdays`, `weekends`, or a list of weekdays | `daily` | Days it runs |
-| `hour` | 0–23, or a list | required for a schedule unless `cron` is given | Hours it runs |
+| `hour` | 0–23, or a list | none: without it or `cron`, it runs only by hand | Hours it runs |
 | `minute` | 0–59 | 0 | Minute of those hours |
 | `cron` | five-field cron, or `@daily` etc. | none | For anything `day`/`hour`/`minute` can't say; not together with them |
 | `timezone` | IANA zone | `Pero.md` `timezone` | Time zone of the schedule |
@@ -218,9 +217,9 @@ Create a weekly report in the Reports folder from Health/Log.md…
 | `history-hours` | 1–720 | since the last successful run | A fixed window instead |
 | `run-when-empty` | `true`, `false` | `false` | Run even when the window has no messages |
 | `max-attempts` | 1–10 | 1 | Times a run may start, counting restarts after Pero stopped mid-run |
-| `enabled` | `true`, `false` | `true` | `false` stops its schedule; it can still be run by hand |
+| `enabled` | `true`, `false` | `true` | `false` stops its schedule, which it keeps; it can still be run by hand |
 
-Any Workflow can be run by hand with `pero workflows run <name>`, whatever its `trigger`.
+A Workflow has at most one schedule. Any Workflow can be run by hand with `pero workflows run <name>`, with a schedule or without.
 
 **Schedules:** `day: sunday`, `hour: 12`, `minute: 0` is `0 12 * * 0`. `day: weekdays` and `hour: [9, 18]` is `0 9,18 * * 1-5`. Times the clocks skip or repeat follow the daylight-saving rules in [Architecture §8](./ARCHITECTURE.md#8-scheduling-and-recovery).
 
@@ -259,7 +258,7 @@ Pero holds the whole configuration in memory as one snapshot: `Pero.md`, every A
 | Agent instructions, `model`, `effort`, `permissions`, `Pero.md` body and defaults | Its next turn, in the same Session |
 | Agent `topics` | The next message in the topics gained or lost |
 | Agent removed or `enabled: false` | Its topics stop getting answers; its Workflows' schedules pass without a run |
-| Workflow schedule (`day`, `hour`, `minute`, `cron`, `timezone`, `trigger`) | Its next run is computed from the time of the change; times already passed are not caught up |
+| Workflow schedule (`day`, `hour`, `minute`, `cron`, `timezone`) | Its next run is computed from the time of the change; times already passed are not caught up |
 | Workflow body or other properties | Its next run |
 | Workflow removed or `enabled: false` | No more scheduled runs; runs its schedule queued are cancelled (all its waiting runs, when removed), and a running one finishes |
 | `config.yaml` allowed chats | The next message from that chat |

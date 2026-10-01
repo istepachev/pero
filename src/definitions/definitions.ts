@@ -65,11 +65,8 @@ export interface WorkflowDefinition {
   targets: number[];
   /** How many times a run of it may start in all. */
   maxAttempts: number;
-  /**
-   * When it runs by itself: each a cron expression in a time zone; empty
-   * for none. A note gives at most one.
-   */
-  schedules: Schedule[];
+  /** When it runs by itself: a cron expression in a time zone; null for never. */
+  schedule: Schedule | null;
   enabled: boolean;
 }
 

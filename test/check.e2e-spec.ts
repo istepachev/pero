@@ -86,7 +86,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     write('data/Settings/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
     write(
       'data/Settings/Workflows/Weekly health report.md',
-      '---\nday: sunday\nhour: 25\n---\nReport',
+      '---\ntrigger: schedule\nday: sunday\nhour: 25\n---\nReport',
     );
     write('data/Settings/Workflows/Review.md', '---\nagent: Nobody\n---\nGo');
     write('data/Settings/Notes.md', 'Stray');
@@ -107,9 +107,10 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
         'data/Settings/Workflows/Review.md',
         '  agent: no Agent note is named nobody',
         'data/Settings/Workflows/Weekly health report.md',
+        '  trigger: unknown property',
         '  hour: must be a whole number from 0 to 23',
         '',
-        '6 problems in 6 files.',
+        '7 problems in 6 files.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
         '',
       ].join('\n'),

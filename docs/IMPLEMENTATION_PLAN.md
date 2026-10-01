@@ -1018,6 +1018,13 @@ This is the one step that changes the CLI a user sees. Interactive setup already
 - **One schedule:** `WorkflowDefinition.schedules: Schedule[]` becomes `schedule: Schedule | null`, as the snapshot already holds it. `ScheduleTick`, reconciliation, and the Workflow views read the one schedule.
 - **The `schedules` table** stays keyed by `(workflow_name, fingerprint)` until 11.6 gives it one row per Workflow.
 
+- **Found while building:**
+  - **The Workflow view has one `schedule` too,** null when it runs only by hand, so `workflows.get`, `workflows.list`, `pero workflows`, and `pero workflows show` read one. A disabled Workflow keeps its schedule in the view, with no next run.
+  - **`hour` is required only with `day` or `minute`:** "must be set for a schedule, unless cron is" went with `trigger: schedule`. A note with neither `hour` nor `cron` runs only by hand.
+  - **The scheduler loses its `shared` outcome,** a schedule due at the same time as another of its Workflow, and the two tests of a Workflow with several schedules. A row whose fingerprint isn't its Workflow's schedule is still dropped, logged as "The schedule Workflow X had is no longer defined".
+  - **`trigger` leaves the docs now, not in 11.9:** the [configuration reference](./CONFIGURATION.md), the [user guide](./USER_GUIDE.md), the [CLI reference](./CLI.md), and [Architecture](./ARCHITECTURE.md)'s scheduling section, as does `trigger: schedule` in the example workspace's weekly report. A run's trigger key and the vocabulary's Trigger, what starts a run, stay.
+  - **`pero check`'s e2e test** gives a Workflow note `trigger`, which it reports as an unknown property.
+
 **Done when:**
 - A note with `trigger` fails `pero check`.
 - `schedule-tick.spec.ts` and `test/workflows.e2e-spec.ts` pass with one schedule per Workflow and no `trigger`.

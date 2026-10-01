@@ -128,7 +128,7 @@ max-attempts: 2
 Review today's chats.
 ```
 
-`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, or with `trigger: manual`, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./CONFIGURATION.md#workflow-notes) lists every property.
+`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./CONFIGURATION.md#workflow-notes) lists every property.
 
 ```sh
 pero workflows                      # each Workflow's schedule, next run, and Channels

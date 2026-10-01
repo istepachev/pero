@@ -96,14 +96,12 @@ describe('WorkflowViews', () => {
       inputTemplate: 'Write the weekly report.',
       enabled: true,
       maxAttempts: 1,
-      schedules: [
-        {
-          cron: '0 12 * * 0',
-          timezone: 'Europe/Berlin',
-          nextRunAt: '2026-10-04T10:00:00.000Z',
-          lastRunAt: null,
-        },
-      ],
+      schedule: {
+        cron: '0 12 * * 0',
+        timezone: 'Europe/Berlin',
+        nextRunAt: '2026-10-04T10:00:00.000Z',
+        lastRunAt: null,
+      },
       channels: [
         {
           id: health.id,
@@ -126,15 +124,29 @@ describe('WorkflowViews', () => {
     expect(await views.list()).toEqual([view]);
   });
 
-  it('shows a manual Workflow of the main Agent with no schedule', async () => {
-    await ws.workflow('Brief', { trigger: 'manual', hour: 9 });
+  it('shows a Workflow of the main Agent with no schedule', async () => {
+    await ws.workflow('Brief', {});
 
     expect(await views.details('brief')).toMatchObject({
       agent: 'main',
       agentEnabled: false,
-      schedules: [],
+      schedule: null,
       channels: [],
       history: null,
+    });
+  });
+
+  it('shows the schedule of a disabled Workflow, never due', async () => {
+    await ws.workflow('Brief', { hour: 9, timezone: 'UTC', enabled: false });
+
+    expect(await views.details('brief')).toMatchObject({
+      enabled: false,
+      schedule: {
+        cron: '0 9 * * *',
+        timezone: 'UTC',
+        nextRunAt: null,
+        lastRunAt: null,
+      },
     });
   });
 
