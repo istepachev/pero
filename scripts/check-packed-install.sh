@@ -49,8 +49,8 @@ node --input-type=module -e "
 "
 
 cd "$HOME"
-step 'pero --version'
-pero --version
+step 'pero -v'
+pero -v
 
 step 'pero run without a workspace (not interactive)'
 code=0
