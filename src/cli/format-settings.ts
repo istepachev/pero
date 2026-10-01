@@ -48,7 +48,7 @@ export function formatSettings(view: SettingsView): string {
       value('max-concurrent-runs', String(view.maxConcurrentRuns)),
     ],
     ['(body)', preview(view.sharedInstructions)],
-    ['data', view.defaultWorkingDirectory],
+    ['data', view.dataFolder],
   ]);
   return [
     view.files.pero,

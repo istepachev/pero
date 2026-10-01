@@ -29,13 +29,14 @@ import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { AgentManager, type IsolatedTurn, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
+import { dataFolderNote } from './agent-request.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
 
 describe('AgentManager', () => {
   let ws: TestWorkspace;
-  let vault: string;
+  let workspace: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let adapter: FakeChannelAdapter;
@@ -79,7 +80,7 @@ describe('AgentManager', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-agent-manager-');
-    vault = ws.dataFolder;
+    workspace = ws.root;
     await ws.pero();
     await ws.agent('Main');
     claude = new FakeAgentRuntime('claude');
@@ -174,8 +175,8 @@ describe('AgentManager', () => {
     const started = await Promise.all([groceries.started, health.started]);
 
     expect(started.map((request) => request.workingDirectory)).toEqual([
-      vault,
-      vault,
+      workspace,
+      workspace,
     ]);
     expect(
       new Set((await allSessions()).map((session) => session.agentName)).size,
@@ -201,9 +202,9 @@ describe('AgentManager', () => {
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
     expect(claude.requests[1]).toMatchObject({
       input: 'Again',
-      instructions: 'Be kind.\n\nBe brief.',
+      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.\n\nBe brief.`,
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
-      workingDirectory: vault,
+      workingDirectory: workspace,
       skipGitRepoCheck: false,
       toolPolicy: { permissions: 'ask' },
     });
@@ -240,7 +241,7 @@ describe('AgentManager', () => {
       expect(sentTexts().at(-1)).toBe(`echo: ${request.input}`);
     });
 
-    it('starts a fresh Session when the default folder it follows changes', async () => {
+    it('keeps the Session when the data folder moves, naming the new one', async () => {
       // A new data folder applies on restart; the notes stay where they are.
       const other = join(ws.root, 'other');
       mkdirSync(other);
@@ -252,9 +253,10 @@ describe('AgentManager', () => {
 
       await say(OWNER, 'Again');
 
-      const { request, session } = await expectFreshSession(claude);
-      expect(request.workingDirectory).toBe(other);
-      expect(session.workingDirectory).toBe(other);
+      const request = claude.requests.at(-1)!;
+      expect(request.providerSessionId).toBe('fake-claude-1');
+      expect(request.workingDirectory).toBe(workspace);
+      expect(request.instructions).toBe(dataFolderNote(other));
     });
 
     it('starts a fresh Session when the Agent gets its own folder', async () => {
@@ -441,7 +443,7 @@ describe('AgentManager', () => {
       provider: 'claude',
       request: {
         providerOptions: { model: null, effort: null },
-        workingDirectory: vault,
+        workingDirectory: workspace,
         instructions: '',
         toolPolicy: { permissions: 'ask' },
         skipGitRepoCheck: false,
@@ -695,7 +697,7 @@ describe('AgentManager', () => {
         provider: 'claude',
         request: {
           providerOptions: { model: null, effort: null },
-          workingDirectory: vault,
+          workingDirectory: workspace,
           instructions: '',
           toolPolicy: { permissions: 'ask' },
           skipGitRepoCheck: false,

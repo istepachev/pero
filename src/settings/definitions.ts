@@ -31,7 +31,7 @@ export interface Defaults {
   historyRetentionDays: number | null;
   /** Upper bound on Workflow Runs executing at once. */
   maxConcurrentRuns: number;
-  /** Where Agents without a folder of their own work. */
+  /** The owner's notes and files, which every Agent's instructions name. */
   dataFolder: string;
   /** Placed before each opted-in Agent's own instructions; null for none. */
   sharedInstructions: string | null;
@@ -239,7 +239,6 @@ export class Definitions {
         snapshot ??
         buildSnapshot([], {
           workspace: folders.workspace,
-          dataFolder: folders.dataFolder,
           homeDir: homedir(),
           hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),

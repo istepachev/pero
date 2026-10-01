@@ -90,7 +90,8 @@ export type TokenView = z.infer<typeof tokenViewSchema>;
 export const settingsViewSchema = z.object({
   defaultProvider: z.enum(PROVIDERS),
   providerDefaults: providerDefaultsSchema,
-  defaultWorkingDirectory: z.string(),
+  /** The owner's notes and files, which every Agent's instructions name. */
+  dataFolder: z.string(),
   sharedInstructions: z.string().nullable(),
   /** The name of the Agent primary Channels get. */
   mainAgent: z.string(),
@@ -213,7 +214,7 @@ export const agentViewSchema = z.object({
     model: z.enum(VALUE_ORIGINS),
     effort: z.enum(VALUE_ORIGINS),
     permissions: z.enum(VALUE_ORIGINS),
-    workingDirectory: z.enum(['note', 'data']),
+    workingDirectory: z.enum(['note', 'workspace']),
   }),
   /** Its note's errors, while its last good version stays in use. */
   errors: z.array(

@@ -1,7 +1,7 @@
 # Host settings: where the data folder is, and which chats Pero serves.
 # Agents can't change this file. See docs/CONFIGURATION.md.
 
-# Data folder: the vault Agents work in, relative to the workspace.
+# Data folder: the vault Agents keep notes in, relative to the workspace.
 data: data
 
 telegram:

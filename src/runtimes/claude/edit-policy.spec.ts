@@ -117,13 +117,15 @@ describe('editDecision', () => {
     expect(await decide('Write', { file_path: '~/notes.md' })).toBe('ask');
   });
 
-  it("asks about Claude Code's, Git's, and the shell's own files in the folder", async () => {
+  it("asks about Claude Code's, Git's, Pero's, and the shell's own files in the folder", async () => {
     for (const file_path of [
       '.claude/settings.local.json',
       '.git/hooks/pre-commit',
       'project/.vscode/tasks.json',
       '.mcp.json',
       'sub/.bashrc',
+      '.pero/config.yaml',
+      '.env',
     ]) {
       expect(await decide('Write', { file_path }), file_path).toBe('ask');
     }

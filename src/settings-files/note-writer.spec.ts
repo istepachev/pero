@@ -8,7 +8,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
 import { parseNote } from './note.js';
 import { noteIdentity } from './note-files.js';
 import {
@@ -151,9 +150,17 @@ describe('noteFromTemplate', () => {
     );
   });
 
-  it('reads back as an Agent note for the topic, from the skeleton template', () => {
+  it('reads back as an Agent note for the topic, from a commented template', () => {
     const { text } = noteFromTemplate(
-      SKELETON_NOTES['Agents/_Template.md']!,
+      [
+        '---',
+        '# The starting point for the Agent of a new topic.',
+        '# model: sonnet',
+        '# effort: high',
+        '---',
+        'You are my assistant for this topic.',
+        '',
+      ].join('\n'),
       '2026',
     );
     expect(readNote('Agents/2026.md', text).errors).toEqual([]);

@@ -143,7 +143,7 @@ export class ControlService implements OnModuleDestroy {
     return {
       defaultProvider: defaults.provider,
       providerDefaults: defaults.providerDefaults,
-      defaultWorkingDirectory: defaults.dataFolder,
+      dataFolder: defaults.dataFolder,
       sharedInstructions: defaults.sharedInstructions,
       mainAgent: this.definitions.mainAgentName(),
       historyCarryover: defaults.historyCarryover,

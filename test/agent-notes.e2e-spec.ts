@@ -12,6 +12,7 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { Chat, Message, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dataFolderNote } from '../src/agents/agent-request.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
@@ -157,7 +158,7 @@ describe('Agents from notes (e2e)', () => {
     await groceries();
     expect(await say('Milk')).toBe('echo: Milk');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: 'Be brief.\n\nYou shop.',
+      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou shop.`,
       providerOptions: { model: null, effort: null },
     });
     const [first] = await sessions();
@@ -168,7 +169,7 @@ describe('Agents from notes (e2e)', () => {
     );
     expect(await say('Eggs')).toBe('echo: Eggs');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: 'Be brief.\n\nYou shop cheaply.',
+      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
@@ -180,7 +181,7 @@ describe('Agents from notes (e2e)', () => {
     );
     expect(await say('Bread')).toBe('echo: Bread');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: 'Be kind.\n\nYou shop cheaply.',
+      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe kind.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
@@ -207,7 +208,7 @@ describe('Agents from notes (e2e)', () => {
     const [first] = await sessions();
     expect(first).toMatchObject({
       provider: 'claude',
-      workingDirectory: join(workspace, 'data'),
+      workingDirectory: workspace,
     });
 
     await edit(
@@ -284,7 +285,7 @@ describe('Agents from notes (e2e)', () => {
     expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
     expect(carried).toMatch(/\n\nBread$/);
     expect(lastRequest('claude')).toMatchObject({
-      instructions: 'Be brief.\n\nYou stock up.',
+      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou stock up.`,
       providerOptions: { model: 'haiku' },
     });
     expect(await sessions()).toEqual([

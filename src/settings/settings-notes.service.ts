@@ -79,7 +79,6 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
     const folders = this.folders();
     this.reloader = new SettingsReloader(folders.settingsFolder, {
       workspace: folders.workspace,
-      dataFolder: folders.dataFolder,
       homeDir: homedir(),
       hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });

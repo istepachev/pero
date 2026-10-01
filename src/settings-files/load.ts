@@ -45,7 +45,6 @@ export async function loadSettings(
   );
   const snapshot = buildSnapshot(notes, {
     workspace,
-    dataFolder,
     homeDir,
     hostTimeZone: input.hostTimeZone,
     ...(input.topics === undefined ? {} : { topics: input.topics }),

@@ -19,7 +19,7 @@ import { AgentsModule } from './agents.module.js';
 
 describe('AgentViews', () => {
   let ws: TestWorkspace;
-  let vault: string;
+  let workspace: string;
   let own: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
@@ -42,7 +42,7 @@ describe('AgentViews', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-agent-views-');
-    vault = ws.dataFolder;
+    workspace = ws.root;
     own = join(ws.root, 'own');
     mkdirSync(own);
     await boot();
@@ -108,7 +108,7 @@ describe('AgentViews', () => {
         name: 'notes',
         model: 'm1',
         workingDirectory: null,
-        effectiveWorkingDirectory: vault,
+        effectiveWorkingDirectory: workspace,
         main: false,
         permissions: 'ask',
       }),
@@ -159,7 +159,7 @@ describe('AgentViews', () => {
     });
   });
 
-  it('sees a new data folder as a folder change for Agents that follow it', async () => {
+  it('keeps the Session when the data folder moves', async () => {
     await ws.agent('Notes', { topics: 'One' });
     const topic = await channel('One', '-100:1');
     await turn('notes', topic);
@@ -173,10 +173,8 @@ describe('AgentViews', () => {
     await boot();
 
     expect((await views.details('notes')).channels[0]!.nextTurn).toMatchObject({
-      kind: 'fresh',
-      reason: 'folder',
-      from: vault,
-      carriesOver: true,
+      kind: 'resume',
+      reason: null,
     });
   });
 

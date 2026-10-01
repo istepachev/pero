@@ -43,7 +43,7 @@ Pero talks to you in a private Telegram group with topics, where each topic is a
 2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it. Keep the group private: anyone who can write in an allowed chat can talk to its Agents, so a public group, which anyone can find and join, is a danger that `pero status`, `pero telegram chats`, and `pero run` point out.
 3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
 4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` asks first whether you will use a private group (recommended) or a direct chat with the bot, shows the steps for that choice, then waits for that message and offers to allow the chat itself.
-5. Create a topic for each conversation you want. A topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing.
+5. Create a topic for each conversation you want. A topic goes to the Agent whose note lists its title in `topics`; a new topic no note claims gets a note of its own, `Agents/<Topic title>.md`, written from `Agents/_Template.md` when you add one ([the template](./CONFIGURATION.md#agent-notes)), or with `topics` alone (set `new-topics: main-agent` in `Pero.md` to send such topics to the main Agent instead), and the bot posts which Agent answers there. Renaming a topic renames it in its note's `topics` too, so it keeps its Agent. The General topic talks to the main Agent, whose note Pero writes from the skeleton if it is missing.
 6. Optionally, allow a direct chat with the bot too: message the bot, then allow your user ID the same way. It also talks to the main Agent, in a conversation separate from the General topic.
 
 Before signing in to a provider, you can try the whole setup with the echo runtime: `PERO_FAKE_RUNTIME=echo pero run` (see [Checking a real bot by hand](./TESTING.md#checking-a-real-bot-by-hand)).
@@ -94,7 +94,7 @@ pero agents                     # every Agent, with its note, topics, provider, 
 pero agents show coach          # its values and where each comes from, its Channels, and its note's errors
 ```
 
-An Agent without `working-directory` works in the data folder. Changing an Agent's provider or folder makes its next turn in each Channel start a fresh Session that carries over the Channel's recent messages; model, effort, and instructions apply from the next turn of the same Session.
+An Agent without `working-directory` works in the workspace, where your scripts, Git repository, and other tools are. Pero tells every Agent where the data folder is, and that's where it keeps notes and other files it writes for you. Changing an Agent's provider or folder makes its next turn in each Channel start a fresh Session that carries over the Channel's recent messages; model, effort, and instructions apply from the next turn of the same Session.
 
 ### Claude Agents
 

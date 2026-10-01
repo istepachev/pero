@@ -144,7 +144,7 @@ describe('Topic routing by notes in a workspace', () => {
       name: 'coach',
       title: 'Coach',
       instructions: 'You coach.',
-      workingDirectory: join(workspace, 'data'),
+      workingDirectory: workspace,
     });
   });
 

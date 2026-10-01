@@ -1,17 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import type { Agent } from '../settings-files/snapshot.js';
-import { agentRequest, composeInstructions } from './agent-request.js';
+import {
+  agentRequest,
+  composeInstructions,
+  dataFolderNote,
+} from './agent-request.js';
+
+const DATA = dataFolderNote('/ws/data');
 
 describe('composeInstructions', () => {
-  const shared = { sharedInstructions: 'Answer in English.' };
+  const shared = {
+    dataFolder: '/ws/data',
+    sharedInstructions: 'Answer in English.',
+  };
 
-  it('puts the shared instructions before the Agent’s own', () => {
+  it('names the data folder, then the shared instructions, then the Agent’s own', () => {
     expect(
       composeInstructions(
         { instructions: 'Track spending.', sharedInstructions: true },
         shared,
       ),
-    ).toBe('Answer in English.\n\nTrack spending.');
+    ).toBe(`${DATA}\n\nAnswer in English.\n\nTrack spending.`);
+    expect(DATA).toContain('/ws/data');
   });
 
   it('leaves the shared instructions out when the Agent opts out', () => {
@@ -20,37 +30,40 @@ describe('composeInstructions', () => {
         { instructions: 'Track spending.', sharedInstructions: false },
         shared,
       ),
-    ).toBe('Track spending.');
+    ).toBe(`${DATA}\n\nTrack spending.`);
   });
 
-  it('uses whichever part exists, and nothing when neither does', () => {
+  it('leaves out empty parts, keeping the data folder', () => {
     expect(
       composeInstructions(
         { instructions: null, sharedInstructions: true },
         shared,
       ),
-    ).toBe('Answer in English.');
+    ).toBe(`${DATA}\n\nAnswer in English.`);
     expect(
       composeInstructions(
         { instructions: 'Track spending.', sharedInstructions: true },
-        { sharedInstructions: null },
+        { dataFolder: '/ws/data', sharedInstructions: null },
       ),
-    ).toBe('Track spending.');
+    ).toBe(`${DATA}\n\nTrack spending.`);
     expect(
       composeInstructions(
         { instructions: '  ', sharedInstructions: true },
-        { sharedInstructions: '' },
+        { dataFolder: '/ws/data', sharedInstructions: '' },
       ),
-    ).toBe('');
+    ).toBe(DATA);
   });
 
   it('trims each part so they meet at one blank line', () => {
     expect(
       composeInstructions(
         { instructions: '\nTrack spending.\n', sharedInstructions: true },
-        { sharedInstructions: 'Answer in English.\n\n' },
+        {
+          dataFolder: '/ws/data',
+          sharedInstructions: 'Answer in English.\n\n',
+        },
       ),
-    ).toBe('Answer in English.\n\nTrack spending.');
+    ).toBe(`${DATA}\n\nAnswer in English.\n\nTrack spending.`);
   });
 });
 
@@ -85,9 +98,12 @@ describe('agentRequest', () => {
       note,
     };
     expect(
-      agentRequest(agent, { sharedInstructions: 'Answer in English.' }),
+      agentRequest(agent, {
+        dataFolder: '/vault',
+        sharedInstructions: 'Answer in English.',
+      }),
     ).toEqual({
-      instructions: 'Answer in English.\n\nTrack spending.',
+      instructions: `${dataFolderNote('/vault')}\n\nAnswer in English.\n\nTrack spending.`,
       providerOptions: { model: 'gpt-5', effort: 'high' },
       workingDirectory: '/vault',
       skipGitRepoCheck: true,

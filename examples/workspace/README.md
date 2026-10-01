@@ -17,7 +17,7 @@ Replace the chat ID in `.pero/config.yaml` with your group's first, or run `pero
 | `data/Settings/Pero.md` | Defaults for every Agent and Workflow, and the instructions they share |
 | `data/Settings/Agents/Main.md` | The main Agent: General and direct chats |
 | `data/Settings/Agents/Health.md` | The Agent of the Health topic |
-| `data/Settings/Agents/_Template.md` | The starting point for the Agent of each new topic |
+| `data/Settings/Agents/_Template.md` | Optional, not written by `pero init`: the starting point for the Agent of each new topic |
 | `data/Settings/Workflows/Weekly health report.md` | Sundays at 12:00, a report from the training log, posted to Health |
 | `data/Settings/Workflows/Evening review.md` | Every evening at 21:00, what the day's chats left open, posted to General |
 

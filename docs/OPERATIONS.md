@@ -92,10 +92,10 @@ Everything Pero owns is in the workspace's `.pero/`:
 └── config.yaml          # the data folder and the chats Pero serves; commit it
 ```
 
-`config.yaml` holds what describes the installation, and that an Agent working in the data folder must not change:
+`config.yaml` holds what describes the installation, and that an Agent must not change:
 
 ```yaml
-data: data               # the data folder Agents work in; relative to the workspace
+data: data               # the data folder Agents keep notes in; relative to the workspace
 telegram:
   allowed-chats:
     - id: -1001234567890 # a group; negative
@@ -207,6 +207,6 @@ What to expect afterwards:
 - **Schedules** that came due while Pero was down run once, as one catch-up run that records how many times it stands for.
 - **Notifications** still waiting to be delivered are delivered, and a Workflow that reads history goes on from where its last successful run stopped.
 - **A workspace at a new path** keeps working: its data folder is relative to it. Each Channel then starts a fresh Session that begins with its recent messages, since a provider conversation belongs to its folder.
-- **Folders at new paths:** point Pero at them with `data` in `.pero/config.yaml`, then restart it, or `working-directory` in the note of an Agent with its own. A provider conversation belongs to its folder, so each affected Channel then starts a fresh Session that begins with its recent messages.
+- **Folders at new paths:** point Pero at them with `data` in `.pero/config.yaml`, then restart it, or `working-directory` in the note of an Agent with its own. A provider conversation belongs to its folder, so each Channel of an Agent with a moved `working-directory` then starts a fresh Session that begins with its recent messages; a moved data folder only changes where the Agents' instructions say their notes go.
 - **Provider conversations not restored:** when a provider no longer has a Session's conversation, Pero closes that Session and answers the same message in a fresh one that begins with the Channel's recent messages, so the Channel keeps working. The same happens when a provider has deleted an old transcript.
 - **A newer Pero** applies its migrations to the restored database as it starts.

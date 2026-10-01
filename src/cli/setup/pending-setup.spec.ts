@@ -37,7 +37,7 @@ const settings: SettingsView = {
     claude: { model: null, effort: null },
     codex: { model: null, effort: null },
   },
-  defaultWorkingDirectory: '/home/owner/workspace/data',
+  dataFolder: '/home/owner/workspace/data',
   sharedInstructions: null,
   mainAgent: 'main',
   historyCarryover: 50,
@@ -86,7 +86,7 @@ describe('pendingSetup', () => {
         ]),
         {
           ...settings,
-          defaultWorkingDirectory: '/home/owner/notes',
+          dataFolder: '/home/owner/notes',
           telegramBotToken: { set: true, source: 'env-file' },
         },
       ),
@@ -102,7 +102,7 @@ describe('pendingSetup', () => {
         ]),
         {
           ...settings,
-          defaultWorkingDirectory: '/home/owner/notes',
+          dataFolder: '/home/owner/notes',
           telegramBotToken: { set: true, source: 'env-file' },
         },
       ),
@@ -121,7 +121,7 @@ describe('pendingSetup', () => {
       ]),
       {
         ...settings,
-        defaultWorkingDirectory: '/home/owner/notes',
+        dataFolder: '/home/owner/notes',
         telegramBotToken: { set: true, source: 'env-file' },
       },
     );
@@ -142,7 +142,7 @@ describe('pendingSetup', () => {
       ]),
       {
         ...settings,
-        defaultWorkingDirectory: '/home/owner/notes',
+        dataFolder: '/home/owner/notes',
         telegramBotToken: { set: false, source: 'environment' },
       },
     );
@@ -159,7 +159,7 @@ describe('pendingSetup', () => {
     ]);
     const configured: SettingsView = {
       ...settings,
-      defaultWorkingDirectory: '/home/owner/notes',
+      dataFolder: '/home/owner/notes',
       telegramBotToken: { set: true, source: 'env-file' },
     };
     const none: TelegramChats = { bot: 'pero_bot', allowed: [], pairing: [] };

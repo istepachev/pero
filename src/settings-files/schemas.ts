@@ -84,7 +84,7 @@ export interface AgentNote {
   /** Any provider's level; not yet checked against the Agent's provider. */
   effort: string | null;
   permissions: PermissionMode | null;
-  /** As written; null works in the data folder. */
+  /** As written; null works in the workspace. */
   workingDirectory: string | null;
   sharedInstructions: boolean;
   skipGitRepoCheck: boolean;

@@ -42,13 +42,14 @@ import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
+import { dataFolderNote } from '../agents/agent-request.js';
 
 const OWNER = privateChat('1234');
 const HOME = groupChat('-100777', 'Home');
 
 describe('Workflow Runs and the executor', () => {
   let ws: TestWorkspace;
-  let vault: string;
+  let workspace: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
   let runs: WorkflowRuns;
@@ -77,7 +78,7 @@ describe('Workflow Runs and the executor', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-workflow-runs-');
-    vault = ws.dataFolder;
+    workspace = ws.root;
     await ws.pero();
     await ws.agent('Main');
     await ws.agent('Coach');
@@ -141,7 +142,7 @@ describe('Workflow Runs and the executor', () => {
     expect(claude.requests).toHaveLength(1);
     expect(claude.requests[0]).toMatchObject({
       input: 'Summarize the day.',
-      workingDirectory: vault,
+      workingDirectory: workspace,
       toolPolicy: { permissions: 'ask' },
     });
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
@@ -152,7 +153,7 @@ describe('Workflow Runs and the executor', () => {
     expect(row.executionConfig).toMatchObject({
       agentName: 'coach',
       provider: 'claude',
-      workingDirectory: vault,
+      workingDirectory: workspace,
       input: 'Summarize the day.',
     });
     expect(row.result).toEqual({
@@ -286,9 +287,9 @@ describe('Workflow Runs and the executor', () => {
 
     const captured = {
       input: 'First input.',
-      instructions: 'Be kind.',
+      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.`,
       providerOptions: { model: null, effort: null },
-      workingDirectory: vault,
+      workingDirectory: workspace,
     };
     expect(request).toMatchObject(captured);
     expect((await run(id)).result).toBe('echo: First input.');
@@ -304,7 +305,7 @@ describe('Workflow Runs and the executor', () => {
     expect(codex.requests).toHaveLength(1);
     expect(codex.requests[0]).toMatchObject({
       input: 'Second input.',
-      instructions: 'Be kind.\n\nBe brief.',
+      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.\n\nBe brief.`,
       providerOptions: { model: 'gpt-6', effort: 'high' },
       workingDirectory: own,
     });
@@ -399,7 +400,7 @@ describe('Workflow Runs and the executor', () => {
           provider: 'claude',
           request: {
             providerOptions: { model: null, effort: null },
-            workingDirectory: vault,
+            workingDirectory: workspace,
             instructions: '',
             toolPolicy: { permissions: 'ask' },
             skipGitRepoCheck: false,
