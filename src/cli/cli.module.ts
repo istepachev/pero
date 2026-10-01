@@ -1,19 +1,12 @@
 import { Module } from '@nestjs/common';
 import {
   AgentsCommand,
-  AgentsCreateCommand,
-  AgentsDisableCommand,
-  AgentsEditCommand,
-  AgentsEnableCommand,
   AgentsListCommand,
   AgentsShowCommand,
 } from './commands/agents.command.js';
 import { BackupCommand } from './commands/backup.command.js';
 import {
-  ChannelsAssignCommand,
   ChannelsCommand,
-  ChannelsDisableCommand,
-  ChannelsEnableCommand,
   ChannelsHistoryCommand,
   ChannelsListCommand,
   ChannelsShowCommand,
@@ -21,7 +14,6 @@ import {
 import { CheckCommand } from './commands/check.command.js';
 import { InitCommand } from './commands/init.command.js';
 import { LogsCommand } from './commands/logs.command.js';
-import { PingCommand } from './commands/ping.command.js';
 import { RestoreCommand } from './commands/restore.command.js';
 import { RunCommand } from './commands/run.command.js';
 import {
@@ -37,12 +29,7 @@ import {
   RunsRetryCommand,
   RunsShowCommand,
 } from './commands/runs.command.js';
-import {
-  SettingsCommand,
-  SettingsSetCommand,
-  SettingsShowCommand,
-  SettingsUnsetCommand,
-} from './commands/settings.command.js';
+import { SettingsCommand } from './commands/settings.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
 import {
@@ -50,27 +37,16 @@ import {
   TelegramChatsCommand,
   TelegramCommand,
   TelegramDenyCommand,
+  TelegramTokenCommand,
 } from './commands/telegram.command.js';
 import {
-  TriggersAddCommand,
-  TriggersCommand,
-  TriggersDisableCommand,
-  TriggersEnableCommand,
-  TriggersListCommand,
-  TriggersRemoveCommand,
-} from './commands/triggers.command.js';
-import {
   WorkflowsCommand,
-  WorkflowsCreateCommand,
-  WorkflowsDisableCommand,
-  WorkflowsEditCommand,
-  WorkflowsEnableCommand,
   WorkflowsListCommand,
-  WorkflowsNotifyCommand,
   WorkflowsRunCommand,
   WorkflowsShowCommand,
 } from './commands/workflows.command.js';
 import { GlobalOptionsSetup } from './global-options.js';
+import { StrictArguments } from './strict-arguments.js';
 
 /**
  * Root module for the `pero` executable. Import only what commands need;
@@ -79,6 +55,7 @@ import { GlobalOptionsSetup } from './global-options.js';
 @Module({
   providers: [
     GlobalOptionsSetup,
+    StrictArguments,
     InitCommand,
     CheckCommand,
     RunCommand,
@@ -86,32 +63,17 @@ import { GlobalOptionsSetup } from './global-options.js';
     StatusCommand,
     LogsCommand,
     SettingsCommand,
-    SettingsShowCommand,
-    SettingsSetCommand,
-    SettingsUnsetCommand,
     AgentsCommand,
     AgentsListCommand,
     AgentsShowCommand,
-    AgentsCreateCommand,
-    AgentsEditCommand,
-    AgentsDisableCommand,
-    AgentsEnableCommand,
     ChannelsCommand,
     ChannelsListCommand,
     ChannelsShowCommand,
-    ChannelsAssignCommand,
-    ChannelsDisableCommand,
-    ChannelsEnableCommand,
     ChannelsHistoryCommand,
     WorkflowsCommand,
     WorkflowsListCommand,
     WorkflowsShowCommand,
-    WorkflowsCreateCommand,
-    WorkflowsEditCommand,
-    WorkflowsDisableCommand,
-    WorkflowsEnableCommand,
     WorkflowsRunCommand,
-    WorkflowsNotifyCommand,
     RunsCommand,
     RunsListCommand,
     RunsShowCommand,
@@ -121,19 +83,13 @@ import { GlobalOptionsSetup } from './global-options.js';
     NotificationsListCommand,
     NotificationsShowCommand,
     NotificationsRetryCommand,
-    TriggersCommand,
-    TriggersListCommand,
-    TriggersAddCommand,
-    TriggersRemoveCommand,
-    TriggersDisableCommand,
-    TriggersEnableCommand,
     TelegramCommand,
     TelegramChatsCommand,
     TelegramAllowCommand,
     TelegramDenyCommand,
+    TelegramTokenCommand,
     BackupCommand,
     RestoreCommand,
-    PingCommand,
   ],
 })
 export class CliModule {}

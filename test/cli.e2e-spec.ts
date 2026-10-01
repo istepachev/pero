@@ -203,7 +203,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(first.stdout).toContain(
       [
         'Setup needed:',
-        '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
+        '  Telegram: Bot token is not set — pero telegram token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
       ].join('\n'),
@@ -237,7 +237,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
-  it('configures Telegram through settings without a restart, never showing the token', async () => {
+  it('sets the bot token without a restart, never showing it', async () => {
     expect((await pero(inWorkspace('run'))).code).toBe(0);
     const pid = readDaemonMetadata(layout.metadataFile)?.pid;
     const before = await pero(inWorkspace('status'));
@@ -246,15 +246,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
     expect(before.stdout).toMatch(/Health +degraded/);
 
-    const set = await pero(
-      inWorkspace('settings', 'set', 'telegram-bot-token'),
-      {
-        input: `${TOKEN}\n`,
-      },
-    );
+    const set = await pero(inWorkspace('telegram', 'token'), {
+      input: `${TOKEN}\n`,
+    });
     expect(set).toMatchObject({
       code: 0,
-      stdout: 'telegram-bot-token is now set (.env)\n',
+      stdout: 'Telegram bot token: set (.env)\n',
       stderr: '',
     });
 
@@ -262,7 +259,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const status = await connectedStatus();
     expect(status.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
-    const show = await pero(inWorkspace('settings', 'show'));
+    const show = await pero(inWorkspace('settings'));
     expect(show.code).toBe(0);
     expect(show.stdout).toMatch(/^Telegram bot token: set \(\.env\)$/m);
     expect(statSync(layout.envFile).mode & 0o777).toBe(0o600);
@@ -292,12 +289,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     writeFileSync(join(workspace, '.gitignore'), 'node_modules/\n');
 
     expect((await pero(ws('run'))).code).toBe(0);
-    const set = await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    const set = await pero(ws('telegram', 'token'), {
       input: `${TOKEN}\n`,
     });
     expect(set).toMatchObject({
       code: 0,
-      stdout: 'telegram-bot-token is now set (.env)\n',
+      stdout: 'Telegram bot token: set (.env)\n',
     });
     const envFile = join(workspace, '.env');
     expect(readFileSync(envFile, 'utf8')).toBe(
@@ -307,7 +304,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(existsSync(join(layout.stateDir, 'secrets'))).toBe(false);
 
     // Stored again, the .gitignore line is not added twice.
-    await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    await pero(ws('telegram', 'token'), {
       input: `${OTHER_TOKEN}\n`,
     });
     expect(readFileSync(join(workspace, '.gitignore'), 'utf8')).toBe(
@@ -322,7 +319,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       { timeout: 10_000, interval: 200 },
     );
     expect(status!.stdout).not.toContain('Error:');
-    const show = await pero(ws('settings', 'show'));
+    const show = await pero(ws('settings'));
     expect(show.stdout).toMatch(/^Telegram bot token: set \(\.env\)$/m);
 
     // A tracked .env is an error, whether or not Pero runs.
@@ -357,7 +354,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       is_forum: true,
     });
     expect((await pero(inWorkspace('run'))).code).toBe(0);
-    await pero(inWorkspace('settings', 'set', 'telegram-bot-token'), {
+    await pero(inWorkspace('telegram', 'token'), {
       input: `${TOKEN}\n`,
     });
     const before = await connectedStatus();
@@ -433,25 +430,26 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   it('refuses a token as an argument, and one that is not valid, without echoing either', async () => {
     expect((await pero(inWorkspace('run'))).code).toBe(0);
 
-    const argument = await pero(
-      inWorkspace('settings', 'set', 'telegram-bot-token', TOKEN),
-    );
+    const argument = await pero(inWorkspace('telegram', 'token', TOKEN));
     expect(argument).toMatchObject({
       code: 1,
       stdout: '',
       stderr:
-        'Pass telegram-bot-token on stdin or at the prompt, not as an argument, so it stays out of shell history\n',
+        'Give the bot token at the prompt or on stdin, not as an argument, so it stays out of shell history\n',
     });
 
-    const invalid = await pero(
-      inWorkspace('settings', 'set', 'telegram-bot-token'),
-      { input: 'secret-but-wrong\n' },
-    );
+    const invalid = await pero(inWorkspace('telegram', 'token'), {
+      input: 'secret-but-wrong\n',
+    });
     expect(invalid).toMatchObject({
       code: 1,
       stdout: '',
       stderr:
-        'telegram-bot-token: must be a bot token from @BotFather, such as 123456789:AAE…\n',
+        'token: must be a bot token from @BotFather, such as 123456789:AAE…\n',
+    });
+    expect(await pero(inWorkspace('telegram', 'token'))).toMatchObject({
+      code: 1,
+      stderr: 'No bot token given\n',
     });
     expect(existsSync(layout.envFile)).toBe(false);
     expect((await pero(inWorkspace('stop'))).code).toBe(0);
@@ -460,74 +458,56 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
   });
 
-  it('names the file to edit instead of changing Agents and settings', async () => {
-    const workspace = join(realpathSync(tmp), 'ws');
-    expect((await pero(['init', workspace])).code).toBe(0);
-    mkdirSync(join(workspace, 'data', 'Settings', 'Agents', 'Home'));
-    writeFileSync(
-      join(workspace, 'data', 'Settings', 'Agents', 'Home', 'Health Coach.md'),
-      'You coach.\n',
-    );
-    // Whether or not Pero runs, and with any of the old options.
-    const ws = (...args: string[]) => pero(['-w', workspace, ...args]);
-    const agents = 'Agents are configured in notes now';
-    expect(await ws('agents', 'create', 'Garden', '--model', 'opus')).toEqual({
-      code: 1,
-      stdout: '',
-      stderr: `${agents}: add data/Settings/Agents/Garden.md (Agents/_Template.md shows the properties).\n`,
-    });
-    expect(await ws('agents', 'create', 'health-coach')).toMatchObject({
-      code: 1,
-      stderr: `${agents}, and data/Settings/Agents/Home/Health Coach.md already defines health-coach; edit it there.\n`,
-    });
-    expect(
-      await ws('agents', 'edit', 'Health Coach', '--instructions', '-'),
-    ).toMatchObject({
-      code: 1,
-      stderr: `${agents}: edit data/Settings/Agents/Home/Health Coach.md.\n`,
-    });
-    expect(await ws('agents', 'disable', 'health-coach')).toMatchObject({
-      code: 1,
-      stderr: `${agents}: set enabled: false in data/Settings/Agents/Home/Health Coach.md.\n`,
-    });
-    expect(await ws('agents', 'enable', 'nobody')).toMatchObject({
-      code: 1,
-      stderr: `${agents}, and no note is named nobody: add data/Settings/Agents/nobody.md (Agents/_Template.md shows the properties).\n`,
-    });
-    expect(await ws('settings', 'set', 'claude.model', 'opus')).toMatchObject({
-      code: 1,
-      stderr:
-        'Settings are in notes now: set claude-model in data/Settings/Pero.md.\n',
-    });
-    expect(await ws('settings', 'unset', 'default-permissions')).toMatchObject({
-      code: 1,
-      stderr:
-        'Settings are in notes now: set permissions in data/Settings/Pero.md.\n',
-    });
-    expect(await ws('settings', 'set', 'shared-instructions')).toMatchObject({
-      code: 1,
-      stderr:
-        "Settings are in notes now: edit the body of data/Settings/Pero.md, which goes before each Agent's own instructions.\n",
-    });
-    expect(
-      await ws('settings', 'set', 'default-working-directory', 'vault'),
-    ).toMatchObject({
-      code: 1,
-      stderr:
-        'The data folder is set in config.yaml now: set data in .pero/config.yaml, then restart Pero.\n',
-    });
-    expect(await ws('settings', 'set', 'nope', 'x')).toMatchObject({
-      code: 1,
-      stderr: expect.stringMatching(/^Unknown setting "nope"\. Settings: /),
-    });
+  it('stores the token in .env while Pero is stopped, which uses it from its start', async () => {
+    const ws = useWorkspace();
 
-    // The same while Pero runs.
-    expect((await pero(inWorkspace('run'))).code).toBe(0);
-    expect(await ws('settings', 'set', 'timezone', 'UTC')).toMatchObject({
-      code: 1,
-      stderr:
-        'Settings are in notes now: set timezone in data/Settings/Pero.md.\n',
+    const set = await pero(ws('telegram', 'token'), { input: `${TOKEN}\n` });
+    expect(set).toEqual({
+      code: 0,
+      stdout:
+        "Telegram bot token: set (.env)\nPero isn't running; it uses the token when it starts.\n",
+      stderr: '',
     });
+    expect(readFileSync(layout.envFile, 'utf8')).toBe(
+      `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`,
+    );
+    expect(statSync(layout.envFile).mode & 0o777).toBe(0o600);
+    expect(readFileSync(layout.workspaceGitignore, 'utf8')).toMatch(/^\.env$/m);
+
+    expect((await pero(ws('run'))).code).toBe(0);
+    await connectedStatus(ws);
+    expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
+  });
+
+  it('reports a removed command as unknown, whether or not Pero runs', async () => {
+    const ws = useWorkspace();
+    const unknown = async () => {
+      for (const [args, word] of [
+        [['agents', 'create', 'garden'], 'create'],
+        [['agents', 'enable', 'main'], 'enable'],
+        [['channels', 'assign', '1', 'main'], 'assign'],
+        [['workflows', 'notify', 'brief', '1'], 'notify'],
+        [['triggers', 'ls'], 'triggers'],
+        [['ping'], 'ping'],
+      ] as const) {
+        expect(await pero(ws(...args)), args.join(' ')).toEqual({
+          code: 1,
+          stdout: '',
+          stderr: `error: unknown command '${word}'\n`,
+        });
+      }
+      expect(
+        await pero(ws('settings', 'set', 'timezone', 'UTC')),
+      ).toMatchObject({
+        code: 1,
+        stdout: '',
+        stderr: expect.stringContaining("too many arguments for 'settings'"),
+      });
+    };
+
+    await unknown();
+    expect((await pero(ws('run'))).code).toBe(0);
+    await unknown();
   });
 
   it('shows the Agents and settings the notes hold, as they change', async () => {
@@ -589,14 +569,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '',
       ].join('\n'),
     );
-    expect(await ws('channels', 'assign', '3', 'coach')).toEqual({
-      code: 1,
-      stdout: '',
-      stderr:
-        "Topics are routed by the Agent notes' topics now: add the topic's " +
-        'title to topics in data/Settings/Agents/Home/Coach.md; pero ' +
-        "channels ls shows each topic's title and who answers there.\n",
-    });
     expect(await ws('agents', 'show', 'broken')).toMatchObject({
       code: 1,
       stderr:
@@ -638,7 +610,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await ws('stop')).code).toBe(0);
   }, 30_000);
 
-  it('lists, shows, assigns, disables, and enables Channels, and prints their history', async () => {
+  it('lists and shows Channels, and prints their history', async () => {
     const ws = useWorkspace({ 'Agents/Chef.md': 'You cook.\n' });
     const channels = (...args: string[]) => pero(ws('channels', ...args));
     expect(await channels()).toMatchObject({
@@ -654,7 +626,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     };
     api.chats.set(String(forum.id), forum);
     expect((await pero(ws('run'))).code).toBe(0);
-    await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    await pero(ws('telegram', 'token'), {
       input: `${TOKEN}\n`,
     });
     await connectedStatus(ws);
@@ -688,21 +660,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toMatch(/^Channel 1 "Groceries"\n/);
     expect(show.stdout).toMatch(/^ {2}next turn +starts its first Session$/m);
     expect(show.stdout).toMatch(/^ {2}history +1 message, the latest at /m);
-
-    // Notes route topics now.
-    for (const args of [
-      ['assign', '1', 'chef'],
-      ['disable', '1'],
-      ['enable', '1'],
-    ]) {
-      expect(await channels(...args)).toMatchObject({
-        code: 1,
-        stdout: '',
-        stderr: expect.stringContaining(
-          "Topics are routed by the Agent notes' topics now",
-        ),
-      });
-    }
 
     const history = await channels('history', '1', '-n', '5');
     expect(history.code).toBe(0);
@@ -738,41 +695,14 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '  1   telegram -1001234567890:42  Groceries',
       ].join('\n'),
     );
-    expect(await workflows('notify', 'brief', '1')).toEqual({
-      code: 1,
-      stdout: '',
-      stderr:
-        "Workflows are configured in notes now: add the topic's title to channel in data/Settings/Workflows/Brief.md; pero channels ls shows each topic's title.\n",
-    });
-    expect(
-      (await workflows('notify', 'brief', '1', '--remove')).stderr,
-    ).toContain("take the topic's title out of channel in");
   });
 
-  it('lists and shows the Workflows notes define, and names the note instead of each removed command', async () => {
+  it('lists and shows the Workflows notes define', async () => {
     const ws = useWorkspace({
       'Pero.md': '---\ntimezone: Europe/Berlin\n---\n',
       'Agents/Coach.md': 'You coach.\n',
     });
     const workflows = (...args: string[]) => pero(ws('workflows', ...args));
-    const triggers = (...args: string[]) => pero(ws('triggers', ...args));
-    const prefix = 'Workflows are configured in notes now';
-
-    // The stubs answer with Pero stopped too, whatever options they get.
-    expect(
-      await workflows(
-        'create',
-        'evening-review',
-        '--agent',
-        'coach',
-        '--input',
-        'Go',
-      ),
-    ).toEqual({
-      code: 1,
-      stdout: '',
-      stderr: `${prefix}: add data/Settings/Workflows/evening-review.md: its text is what each run asks the Agent, and hour and channel say when it runs and where it posts.\n`,
-    });
     expect((await pero(ws('run'))).code).toBe(0);
     expect(await workflows()).toMatchObject({
       code: 0,
@@ -818,47 +748,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 1,
       stderr: 'No Workflow named nothing\n',
     });
-
-    const note = 'data/Settings/Workflows/Evening review.md';
-    for (const [args, message] of [
-      [['edit', 'evening-review', '--title', 'x'], `edit ${note}.`],
-      [['enable', 'evening-review'], `set enabled: true in ${note}.`],
-      [
-        ['disable', 'evening-review'],
-        `set enabled: false in ${note}, which stops its schedule; pero workflows run still runs it.`,
-      ],
-    ] as const) {
-      expect(await workflows(...args)).toEqual({
-        code: 1,
-        stdout: '',
-        stderr: `${prefix}: ${message}\n`,
-      });
-    }
-    expect(
-      await workflows('create', 'evening-review', '--input', 'Go'),
-    ).toMatchObject({
-      code: 1,
-      stderr: `${prefix}, and ${note} already defines evening-review; edit it there.\n`,
-    });
-
-    const schedules = 'Workflows run on the schedules their notes set now';
-    expect(await triggers()).toEqual({
-      code: 1,
-      stdout: '',
-      stderr: `${schedules}: pero workflows ls shows each schedule and its next run.\n`,
-    });
-    expect(
-      await triggers('add', 'evening-review', '--cron', '0 9 * * *'),
-    ).toMatchObject({
-      code: 1,
-      stderr: `${schedules}: set hour, day, and minute, or cron, in ${note}; any Workflow runs by hand with pero workflows run <name>.\n`,
-    });
-    for (const action of ['remove', 'disable', 'enable']) {
-      expect(await triggers(action, '1')).toMatchObject({
-        code: 1,
-        stderr: expect.stringContaining(`${schedules}: set trigger: `),
-      });
-    }
 
     writeFileSync(
       join(tmp, 'ws', 'data', 'Settings', 'Agents', 'Coach.md'),
@@ -1085,15 +974,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     await connectedStatus();
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
-    const set = await pero(
-      inWorkspace('settings', 'set', 'telegram-bot-token'),
-      {
-        input: OTHER_TOKEN,
-      },
-    );
+    const set = await pero(inWorkspace('telegram', 'token'), {
+      input: OTHER_TOKEN,
+    });
     expect(set).toMatchObject({
       code: 0,
-      stdout: 'telegram-bot-token is now set (PERO_TELEGRAM_BOT_TOKEN)\n',
+      stdout: 'Telegram bot token: set (PERO_TELEGRAM_BOT_TOKEN)\n',
       stderr:
         'PERO_TELEGRAM_BOT_TOKEN overrides the stored token while it is set\n',
     });
@@ -1110,7 +996,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const pid = readDaemonMetadata(layout.metadataFile)?.pid;
 
     writeFileSync(join(authDir, 'claude'), '');
-    await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    await pero(ws('telegram', 'token'), {
       input: TOKEN,
     });
     await pero(ws('telegram', 'allow', '1234'));
@@ -1146,16 +1032,10 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('needs the daemon for settings', async () => {
-    for (const args of [
-      ['settings'],
-      ['settings', 'show'],
-      ['settings', 'unset', 'telegram-bot-token'],
-    ]) {
-      expect(await pero(inWorkspace(...args))).toMatchObject({
-        code: 1,
-        stderr: `${NOT_RUNNING}\n`,
-      });
-    }
+    expect(await pero(inWorkspace('settings'))).toMatchObject({
+      code: 1,
+      stderr: `${NOT_RUNNING}\n`,
+    });
   });
 
   it('keeps the daemon running after the CLI and its process group end', async () => {
@@ -1179,7 +1059,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('fails a command that needs the daemon without starting one', async () => {
-    const result = await pero(inWorkspace('ping'));
+    const result = await pero(inWorkspace('agents'));
 
     expect(result).toMatchObject({
       code: 1,
@@ -1544,7 +1424,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
     expect((await pero(ws('run'))).code).toBe(0);
-    const set = await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    const set = await pero(ws('telegram', 'token'), {
       input: `${TOKEN}\n`,
     });
     expect(set.code).toBe(0);
@@ -1603,7 +1483,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const clone = join(cwd, 'clone');
     others.push(workspaceLayout(clone));
     expect((await pero(ws('run'))).code).toBe(0);
-    const token = await pero(ws('settings', 'set', 'telegram-bot-token'), {
+    const token = await pero(ws('telegram', 'token'), {
       input: `${TOKEN}\n`,
     });
     expect(token.code).toBe(0);
@@ -1684,13 +1564,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(existsSync(layout.stateDir)).toBe(false);
   });
 
-  it('never loads the database stack for status, ping, logs, settings, and stop', async () => {
+  it('never loads the database stack for status, logs, settings, and stop', async () => {
     expect((await pero(inWorkspace('run'))).code).toBe(0);
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
     for (const command of [
       'status',
-      'ping',
       'logs',
       'settings',
       'agents',

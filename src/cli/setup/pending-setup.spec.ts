@@ -69,7 +69,7 @@ describe('pendingSetup', () => {
     expect(formatPendingSetup(pending)).toBe(
       [
         'Setup needed:',
-        '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
+        '  Telegram: Bot token is not set — pero telegram token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
       ].join('\n'),
@@ -127,7 +127,7 @@ describe('pendingSetup', () => {
     );
 
     expect(item?.message).toBe(
-      'Telegram: Telegram rejected the bot token — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
+      'Telegram: Telegram rejected the bot token — pero telegram token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
     );
   });
 

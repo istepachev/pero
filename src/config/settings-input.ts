@@ -39,14 +39,3 @@ export const telegramBotTokenSchema = z
     /^\d+:[\w-]{30,}$/,
     'must be a bot token from @BotFather, such as 123456789:AAE…',
   );
-
-/**
- * Changes through the control endpoint: only the Telegram bot token, which
- * Pero stores itself; notes and `config.yaml` hold the other settings. A
- * null token removes the stored one.
- */
-export const settingsChangeSchema = z.strictObject({
-  telegramBotToken: telegramBotTokenSchema.nullable().optional(),
-});
-
-export type SettingsChange = z.input<typeof settingsChangeSchema>;

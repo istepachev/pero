@@ -81,7 +81,7 @@ PERO_TELEGRAM_BOT_TOKEN=123456:ABC-DEF…
 - **Format:** one `KEY=value` per line; `#` starts a comment, and `export` and quotes are allowed. The same file works as a systemd `EnvironmentFile=`.
 - **Never committed.** `pero init` and storing the token add `.env` to the workspace's `.gitignore` when it isn't there yet. `pero check` and `pero status` report an error when the workspace is in a Git repository that tracks `.env` or wouldn't ignore it.
 - **Must be owner-only.** Pero refuses to read it when it is readable by group or others, and says which `chmod` fixes that, as `ssh` does for keys.
-- **Written for you:** an interactive `pero run` asks for a missing token and writes this file itself (mode `0600`), keeping any other lines in it. So does `pero settings set telegram-bot-token`.
+- **Written for you:** an interactive `pero run` asks for a missing token and writes this file itself (mode `0600`), keeping any other lines in it. So does `pero telegram token`.
 - **Environment wins:** a variable already in Pero's environment overrides the file.
 - **Only Pero's own secrets.** Claude and Codex sign-ins stay where their CLIs keep them (`~/.claude`, `~/.codex`).
 
@@ -294,7 +294,7 @@ Configuration is yours. Pero writes to it only in these cases, and logs each wri
 | When | Writes |
 |---|---|
 | `pero init` | The skeleton files that don't exist yet |
-| A token is stored (`pero run` asks for it, or `pero settings set telegram-bot-token`) | `.env`, and the `.env` line in `.gitignore` if it's missing |
+| A token is stored (`pero run` asks for it, or `pero telegram token`) | `.env`, and the `.env` line in `.gitignore` if it's missing |
 | `pero telegram allow`/`deny` | The `allowed-chats` list in `config.yaml` |
 | A group gets a new chat ID (topics turned on) | That entry's `id` in `config.yaml` |
 | A topic no Agent claims, with `new-topics: create-agent` | A new `Agents/<Topic title>.md`. Characters file names can't hold are replaced, and an existing file is never overwritten (`Health 2.md`) |

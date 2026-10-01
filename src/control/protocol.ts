@@ -5,7 +5,7 @@ import {
   providerDefaultsSchema,
 } from '../config/provider-options.js';
 import { telegramChatIdSchema } from '../config/host-config.js';
-import { settingsChangeSchema } from '../config/settings-input.js';
+import { telegramBotTokenSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import { VALUE_ORIGINS } from '../settings-files/origins.js';
 import { NEW_TOPICS } from '../settings-files/schemas.js';
@@ -74,6 +74,18 @@ export const TOKEN_SOURCES = ['environment', 'env-file'] as const;
 
 export type TokenSource = (typeof TOKEN_SOURCES)[number];
 
+/** Whether the bot token is set, and where it comes from; never the token. */
+export const tokenViewSchema = z.object({
+  set: z.boolean(),
+  /**
+   * The environment variable whenever it is set, otherwise `.env`; null
+   * when neither has one.
+   */
+  source: z.enum(TOKEN_SOURCES).nullable(),
+});
+
+export type TokenView = z.infer<typeof tokenViewSchema>;
+
 /** Installation settings as the CLI sees them; secrets only as set or not. */
 export const settingsViewSchema = z.object({
   defaultProvider: z.enum(PROVIDERS),
@@ -88,14 +100,7 @@ export const settingsViewSchema = z.object({
   defaultPermissions: z.enum(PERMISSION_MODES),
   timezone: z.string(),
   maxConcurrentRuns: z.int(),
-  telegramBotToken: z.object({
-    set: z.boolean(),
-    /**
-     * Where the token comes from: the environment variable whenever it is
-     * set, otherwise the stored secret; null when neither has one.
-     */
-    source: z.enum(TOKEN_SOURCES).nullable(),
-  }),
+  telegramBotToken: tokenViewSchema,
   /**
    * Where the settings are: `Pero.md` and `config.yaml`, relative to the
    * workspace when inside it.
@@ -521,10 +526,6 @@ export const CONTROL_OPERATIONS = {
   /** `pero check`, with topic titles checked against the topics seen. */
   check: { params: noParams, result: workspaceCheckSchema },
   'settings.get': { params: noParams, result: settingsViewSchema },
-  'settings.update': {
-    params: settingsChangeSchema,
-    result: settingsViewSchema,
-  },
   /** Checks each provider's sign-in again, then reports status. */
   'providers.check': { params: noParams, result: statusResultSchema },
   /** Allowed Telegram chats and the chats that recently asked to pair. */
@@ -540,6 +541,11 @@ export const CONTROL_OPERATIONS = {
   'telegram.deny': {
     params: z.strictObject({ chatId: telegramChatIdSchema }),
     result: z.object({ chat: allowedChatSchema }),
+  },
+  /** Stores the bot token in `.env` and takes it into use at once. */
+  'telegram.token': {
+    params: z.strictObject({ token: telegramBotTokenSchema }),
+    result: tokenViewSchema,
   },
   /** Every Agent, by name. */
   'agents.list': {

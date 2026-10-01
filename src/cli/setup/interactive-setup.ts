@@ -83,11 +83,12 @@ async function askTelegramToken(
       await prompts.password({ message: 'Bot token (Enter to skip)' })
     ).trim();
     if (!token) {
-      print('Skipped; set it later with pero settings set telegram-bot-token');
+      print('Skipped; set it later with pero telegram token');
       return settings;
     }
     try {
-      return await client.call('settings.update', { telegramBotToken: token });
+      const telegramBotToken = await client.call('telegram.token', { token });
+      return { ...settings, telegramBotToken };
     } catch (error) {
       if (!(error instanceof InvalidInputError)) throw error;
       // The daemon's message names the field; the token itself is never echoed.

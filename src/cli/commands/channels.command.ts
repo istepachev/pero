@@ -5,13 +5,11 @@ import {
 } from '../../control/protocol.js';
 import { channelId } from '../channel-id.js';
 import { CliError } from '../errors.js';
-import type { ChannelAction } from '../../settings-files/note-hints.js';
 import {
   formatChannelDetails,
   formatChannelList,
   formatHistory,
 } from '../format-channels.js';
-import { channelStub } from '../note-stubs.js';
 import { PeroCommand } from '../pero-command.js';
 import { positiveInt } from '../positive-int.js';
 
@@ -45,51 +43,6 @@ export class ChannelsShowCommand extends PeroCommand {
       formatChannelDetails(await client.call('channels.get', { id })),
     );
   }
-}
-
-/** A removed command that says which note to edit instead. */
-abstract class ChannelStubCommand extends PeroCommand {
-  protected abstract readonly action: ChannelAction;
-
-  async run([, agent]: string[]): Promise<void> {
-    await channelStub(this.config(), this.action, agent ?? null);
-  }
-}
-
-@SubCommand({
-  name: 'assign',
-  arguments: '<channel> <agent>',
-  description:
-    "Removed: add the topic's title to the Agent note's topics instead; this says where",
-  argsDescription: {
-    ...CHANNEL,
-    agent: "the Agent's name, as pero agents ls lists it",
-  },
-})
-export class ChannelsAssignCommand extends ChannelStubCommand {
-  protected readonly action = 'assign';
-}
-
-@SubCommand({
-  name: 'disable',
-  arguments: '<channel>',
-  description:
-    "Removed: set enabled: false in the note of the topic's Agent instead",
-  argsDescription: CHANNEL,
-})
-export class ChannelsDisableCommand extends ChannelStubCommand {
-  protected readonly action = 'disable';
-}
-
-@SubCommand({
-  name: 'enable',
-  arguments: '<channel>',
-  description:
-    "Removed: set enabled: true in the note of the topic's Agent instead",
-  argsDescription: CHANNEL,
-})
-export class ChannelsEnableCommand extends ChannelStubCommand {
-  protected readonly action = 'enable';
 }
 
 interface HistoryOptions {
@@ -136,9 +89,6 @@ export class ChannelsHistoryCommand extends PeroCommand {
   subCommands: [
     ChannelsListCommand,
     ChannelsShowCommand,
-    ChannelsAssignCommand,
-    ChannelsDisableCommand,
-    ChannelsEnableCommand,
     ChannelsHistoryCommand,
   ],
 })

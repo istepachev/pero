@@ -8,13 +8,8 @@ import {
 import { AgentViews } from '../agents/agent-views.service.js';
 import { BackupService } from '../backup/backup.service.js';
 import { ChannelViews } from '../channels/channel-views.service.js';
-import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { WorkspaceLayout } from '../config/workspace-layout.js';
-import {
-  type SettingsChange,
-  settingsChangeSchema,
-} from '../config/settings-input.js';
 import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { NotificationDelivery } from '../notifications/notification-delivery.js';
@@ -23,13 +18,13 @@ import { ProviderAuthService } from '../providers/provider-auth.service.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { WorkspaceChecks } from '../settings-notes/workspace-checks.service.js';
 import { PERO_NOTE } from '../settings-files/note-files.js';
-import { shownPath } from '../settings-files/note-hints.js';
+import { shownPath } from '../settings-files/note-paths.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
 import { WorkflowViews } from '../workflows/workflow-views.service.js';
 import { ControlServer } from './control-server.js';
-import type { SettingsView, StatusResult } from './protocol.js';
+import type { SettingsView, StatusResult, TokenView } from './protocol.js';
 
 export const CONTROL_LAYOUT = Symbol('CONTROL_LAYOUT');
 
@@ -80,7 +75,6 @@ export class ControlService implements OnModuleDestroy {
         },
         check: () => this.workspaceChecks.check(),
         'settings.get': () => this.settingsView(),
-        'settings.update': (change) => this.updateSettings(change),
         'providers.check': async () => {
           await this.providers.check();
           return this.status();
@@ -117,6 +111,10 @@ export class ControlService implements OnModuleDestroy {
         'telegram.chats': () => this.telegramChats.list(),
         'telegram.allow': ({ chatId }) => this.telegramChats.allow(chatId),
         'telegram.deny': ({ chatId }) => this.telegramChats.deny(chatId),
+        'telegram.token': ({ token }) => {
+          this.telegram.set(token);
+          return this.tokenView();
+        },
       },
     });
     await server.listen();
@@ -153,10 +151,7 @@ export class ControlService implements OnModuleDestroy {
       defaultPermissions: defaults.permissions,
       timezone: defaults.timezone,
       maxConcurrentRuns: defaults.maxConcurrentRuns,
-      telegramBotToken: {
-        set: this.telegram.token() !== null,
-        source: this.telegram.source(),
-      },
+      telegramBotToken: this.tokenView(),
       files: {
         pero: shownPath(
           folders.workspace,
@@ -169,17 +164,11 @@ export class ControlService implements OnModuleDestroy {
     };
   }
 
-  /**
-   * Sets or removes the stored bot token, the one setting Pero changes
-   * itself; notes and `config.yaml` hold the others.
-   */
-  async updateSettings(change: SettingsChange): Promise<SettingsView> {
-    const { telegramBotToken } = parseInput(settingsChangeSchema, change);
-    if (telegramBotToken !== undefined) {
-      this.telegram.set(telegramBotToken);
-      this.logger.log('Settings changed: telegramBotToken');
-    }
-    return this.settingsView();
+  private tokenView(): TokenView {
+    return {
+      set: this.telegram.token() !== null,
+      source: this.telegram.source(),
+    };
   }
 
   async onModuleDestroy(): Promise<void> {

@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { InvalidInputError, parseInput } from '../common/errors.js';
-import {
-  settingsChangeSchema,
-  telegramBotTokenSchema,
-} from './settings-input.js';
+import { telegramBotTokenSchema } from './settings-input.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 
@@ -21,33 +19,14 @@ describe('telegramBotTokenSchema', () => {
   ])('refuses %j without repeating it', (value) => {
     let error: unknown;
     try {
-      parseInput(settingsChangeSchema, { telegramBotToken: value });
+      parseInput(z.object({ token: telegramBotTokenSchema }), { token: value });
     } catch (caught) {
       error = caught;
     }
 
     expect(error).toBeInstanceOf(InvalidInputError);
     expect((error as Error).message).toBe(
-      'telegramBotToken: must be a bot token from @BotFather, such as 123456789:AAE…',
+      'token: must be a bot token from @BotFather, such as 123456789:AAE…',
     );
-  });
-});
-
-describe('settingsChangeSchema', () => {
-  it('takes the token, or clears it', () => {
-    expect(settingsChangeSchema.parse({ telegramBotToken: TOKEN })).toEqual({
-      telegramBotToken: TOKEN,
-    });
-    expect(settingsChangeSchema.parse({ telegramBotToken: null })).toEqual({
-      telegramBotToken: null,
-    });
-  });
-
-  it('refuses any other setting, which notes and config.yaml hold', () => {
-    for (const change of [{ token: TOKEN }, { timezone: 'UTC' }]) {
-      expect(() => parseInput(settingsChangeSchema, change)).toThrow(
-        InvalidInputError,
-      );
-    }
   });
 });

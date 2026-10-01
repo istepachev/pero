@@ -1,10 +1,10 @@
 import { TELEGRAM_TOKEN_ENV } from '../config/settings-input.js';
-import type { SettingsView } from '../control/protocol.js';
+import type { SettingsView, TokenView } from '../control/protocol.js';
 import { table } from './format-status.js';
 import { preview } from './preview.js';
 
 /**
- * `pero settings show`: the `Pero.md` properties, each marked when it is
+ * `pero settings`: the `Pero.md` properties, each marked when it is
  * Pero's own default, then `config.yaml`'s data folder and the bot token.
  */
 export function formatSettings(view: SettingsView): string {
@@ -55,13 +55,12 @@ export function formatSettings(view: SettingsView): string {
     ...rows.slice(0, 13).map((row) => `  ${row}`),
     view.files.config,
     `  ${rows[13]}`,
-    `Telegram bot token: ${formatToken(view)}`,
+    `Telegram bot token: ${formatToken(view.telegramBotToken)}`,
   ].join('\n');
 }
 
 /** Whether the bot token is set, and where it comes from; never the token. */
-export function formatToken({ telegramBotToken }: SettingsView): string {
-  const { set, source } = telegramBotToken;
+export function formatToken({ set, source }: TokenView): string {
   const from =
     source === 'environment'
       ? TELEGRAM_TOKEN_ENV

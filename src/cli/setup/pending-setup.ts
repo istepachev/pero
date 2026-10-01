@@ -42,7 +42,7 @@ export function pendingSetup(
       message:
         settings.telegramBotToken.source === 'environment'
           ? `Telegram: ${telegram.detail} — start Pero with a valid ${TELEGRAM_TOKEN_ENV}`
-          : `Telegram: ${telegram.detail ?? 'not set up'} — pero settings set telegram-bot-token (reads it from stdin), or start Pero with ${TELEGRAM_TOKEN_ENV}`,
+          : `Telegram: ${telegram.detail ?? 'not set up'} — pero telegram token (reads it from stdin), or start Pero with ${TELEGRAM_TOKEN_ENV}`,
     });
   } else if (telegram && chats !== null && chats.allowed.length === 0) {
     const request = chats.pairing[0];

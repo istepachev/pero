@@ -139,7 +139,7 @@ Where each [Phase 8 exit criterion](./IMPLEMENTATION_PLAN.md#phase-8-exit-criter
 
 | Criterion | Verified by |
 |---|---|
-| Agents, their prompts, defaults, and which topic each answers are configured only by notes, and changes apply within 10 seconds | `test/agent-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, and `topics`; `src/channels/note-agents.spec.ts`: routing by `topics`; `test/cli.e2e-spec.ts`: the stubs name the note to edit; `src/persistence/entities/domain-entities.spec.ts`: no Agent or settings table |
+| Agents, their prompts, defaults, and which topic each answers are configured only by notes, and changes apply within 10 seconds | `test/agent-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, and `topics`; `src/channels/note-agents.spec.ts`: routing by `topics`; `test/cli.e2e-spec.ts`: no command changes them; `src/persistence/entities/domain-entities.spec.ts`: no Agent or settings table |
 | New topics create notes | `src/channels/note-agents.spec.ts`: one note when the topic's creation and first message race, the template, numbering, renames, and `new-topics: main-agent`; `test/example-workspace.e2e-spec.ts` |
 | Claude `ask` Agents can't change configuration without asking | `src/runtimes/claude/edit-policy.spec.ts`: an edit under the settings folder, through a symlink or `../`, asks; `src/runtimes/claude/claude-runtime.spec.ts`: refused in a Workflow run; the Claude smoke test |
 | A migrated installation answers every topic as before | `test/migrate.e2e-spec.ts`: each topic answered by its Agent, resuming its Session |
@@ -150,7 +150,7 @@ Where each [Phase 9 exit criterion](./IMPLEMENTATION_PLAN.md#phase-9-exit-criter
 
 | Criterion | Verified by |
 |---|---|
-| Workflows, their schedules, prompts, and targets are configured only by notes | `test/workflows.e2e-spec.ts`: Workflows served from their notes, each edit applying, across a restart; `test/cli.e2e-spec.ts`: the stubs of the removed commands; `src/persistence/entities/domain-entities.spec.ts`: the schema holds only state |
+| Workflows, their schedules, prompts, and targets are configured only by notes | `test/workflows.e2e-spec.ts`: Workflows served from their notes, each edit applying, across a restart; `test/cli.e2e-spec.ts`: no command changes them; `src/persistence/entities/domain-entities.spec.ts`: the schema holds only state |
 | Schedule edits apply within 10 seconds without spurious catch-up runs | `src/scheduler/schedule-tick.spec.ts`: an edit moves the next run at once, a changed schedule catches nothing up, and a renamed note starts afresh; `test/workflows.e2e-spec.ts` |
 | Recovery, retries, and notifications behave as before | `test/workflows.e2e-spec.ts`: one catch-up run after downtime, interrupted runs retried as a Workflow allows, cancellation, and Notifications kept across a restart; `src/scheduler/schedule-tick.spec.ts`: catch-up only for notes that still exist and are enabled |
 | Broken notes are reported in Telegram once | `src/notifications/broken-note-reports.spec.ts`: once per broken version, nothing for a fix, one message per Channel, and only logs at startup; `test/workflows.e2e-spec.ts`: in the Workflow's Channel |

@@ -21,7 +21,7 @@ import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { findAgentNote, shownPath } from '../settings-files/note-hints.js';
+import { findAgentNote, shownPath } from '../settings-files/note-paths.js';
 import { agentOrigins } from '../settings-files/origins.js';
 
 /**

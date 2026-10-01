@@ -23,24 +23,19 @@ const unused = () => {
 const UNUSED_HANDLERS = {
   check: unused,
   'settings.get': unused,
-  'settings.update': unused,
   'providers.check': unused,
   'backup.create': unused,
   'telegram.chats': unused,
   'telegram.allow': unused,
   'telegram.deny': unused,
+  'telegram.token': unused,
   'agents.list': unused,
   'agents.get': unused,
   'channels.list': unused,
   'channels.get': unused,
-  'channels.assign': unused,
-  'channels.setEnabled': unused,
   'channels.history': unused,
   'workflows.list': unused,
   'workflows.get': unused,
-  'workflows.create': unused,
-  'workflows.edit': unused,
-  'workflows.notify': unused,
   'workflows.run': unused,
   'runs.list': unused,
   'runs.get': unused,
@@ -49,11 +44,7 @@ const UNUSED_HANDLERS = {
   'notifications.list': unused,
   'notifications.get': unused,
   'notifications.retry': unused,
-  'triggers.list': unused,
-  'triggers.add': unused,
-  'triggers.remove': unused,
-  'triggers.setEnabled': unused,
-};
+} satisfies Omit<ControlHandlers, 'status' | 'shutdown'>;
 
 const status: StatusResult = {
   pid: 1234,

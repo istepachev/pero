@@ -96,7 +96,7 @@ describe('Channels (e2e)', () => {
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
-    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await client.call('telegram.token', { token: TOKEN });
     await vi.waitFor(async () =>
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );

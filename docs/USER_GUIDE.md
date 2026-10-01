@@ -23,11 +23,11 @@ Every command works on the workspace found from the current folder (the nearest 
 Pero starts even when nothing is configured, reporting what is missing as degraded. `pero run` then checks what is still needed: the Telegram bot token, and sign-in for the providers in use (the default provider, plus any provider an Agent uses). A legacy data directory has no Agents, so there it also says to run `pero migrate <workspace>`. On a terminal it asks for each one: the token is typed hidden, and it waits while you run `claude auth login` or `codex login` elsewhere. Without a terminal it prints the missing settings with the commands that fix them and returns at once.
 
 ```sh
-pero settings                                           # show everything
-printf '%s' "$TOKEN" | pero settings set telegram-bot-token
+pero settings                                   # show everything
+printf '%s' "$TOKEN" | pero telegram token      # set the bot token
 ```
 
-The installation defaults are properties of `Pero.md` in the settings folder, and its body is the shared instructions; the data folder is `data` in `.pero/config.yaml`. `pero settings set` stores only the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. The old keys, such as `timezone` or `default-working-directory`, say where their value lives now. Changes apply without a restart.
+The installation defaults are properties of `Pero.md` in the settings folder, and its body is the shared instructions; the data folder is `data` in `.pero/config.yaml`. `pero settings` shows them. `pero telegram token` sets the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. Changes apply without a restart.
 
 Pero rereads the notes every 10 seconds, so an edit applies without a restart. A note with errors doesn't stop Pero: `pero status` counts it, and `pero check` lists each error. Since you may edit on your phone, Pero also posts once per broken version of a note in Telegram, in the topics it relates to (an Agent's `topics`, a Workflow's `channel`), or else in the main Agent's primary Channel. The message names each error and what Pero uses meanwhile: the note's last good version, if Pero read one since it started, or nothing. It isn't part of the topic's history. A fix is only logged, and a note already broken when Pero starts is left to `status` and `check`.
 
@@ -37,7 +37,7 @@ Pero rereads the notes every 10 seconds, so an edit applies without a restart. A
 
 Pero talks to you in a private Telegram group with topics, where each topic is a conversation with an Agent of its own:
 
-1. Create a bot with [@BotFather](https://t.me/BotFather) and give Pero its token: an interactive `pero run` asks for it, or `pero settings set telegram-bot-token` reads it from a prompt or stdin.
+1. Create a bot with [@BotFather](https://t.me/BotFather) and give Pero its token: an interactive `pero run` asks for it, or `pero telegram token` reads it from a prompt or stdin.
 2. Create a private group and turn on Topics in its settings. Telegram gives the group a new chat ID when topics are turned on; Pero follows it.
 3. Add the bot to the group as an administrator. Otherwise Telegram shows it only commands, mentions, and replies, unless you turn off its privacy mode with @BotFather `/setprivacy`.
 4. Allow the group. Write anything in it: the bot answers with the group's chat ID and the command to run on the host, `pero telegram allow <chat-id>`. An interactive `pero run` waits for that message and offers to allow the chat itself.

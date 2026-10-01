@@ -175,7 +175,7 @@ describe('Workflows from notes (e2e)', () => {
       });
     api.chats.set(String(FORUM.id), FORUM);
     await start();
-    await client.call('settings.update', { telegramBotToken: TOKEN });
+    await client.call('telegram.token', { token: TOKEN });
     await vi.waitFor(async () =>
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );
@@ -642,7 +642,7 @@ describe('Workflows from notes (e2e)', () => {
       );
       api.chats.set(String(FORUM.id), FORUM);
       await start();
-      await client.call('settings.update', { telegramBotToken: TOKEN });
+      await client.call('telegram.token', { token: TOKEN });
       await vi.waitFor(async () =>
         expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
       );
