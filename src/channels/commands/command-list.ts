@@ -21,6 +21,11 @@ export const COMMANDS: readonly CommandInfo[] = [
     description: 'Start this topic over, without the conversation so far',
   },
   { name: 'stop', description: "Stop the Agent's answer in this topic" },
+  { name: 'model', description: "Show or change this topic's Agent's model" },
+  {
+    name: 'effort',
+    description: "Show or change this topic's Agent's reasoning effort",
+  },
   { name: 'help', description: "What Pero's commands do" },
 ];
 

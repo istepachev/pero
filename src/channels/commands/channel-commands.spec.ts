@@ -130,7 +130,10 @@ describe('ChannelCommands', () => {
       expect(lines.at(-1)).toMatch(
         /^Pero: claude \w+ · codex \w+ · .*telegram/,
       );
-      expect(labels(last())).toEqual([['New session', 'Refresh']]);
+      expect(labels(last())).toEqual([
+        ['New session', 'Refresh'],
+        ['Model', 'Effort'],
+      ]);
       expect(claude.requests).toHaveLength(2);
       expect(await ds.getRepository(Message).count()).toBe(messages);
     });
@@ -144,7 +147,10 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/status');
 
       expect(last().message.text).toMatch(/\nState: answering for \d+s\n/);
-      expect(labels(last())).toEqual([['Stop', 'New session', 'Refresh']]);
+      expect(labels(last())).toEqual([
+        ['Stop', 'New session', 'Refresh'],
+        ['Model', 'Effort'],
+      ]);
       held.release();
       await idle();
     });
@@ -271,11 +277,121 @@ describe('ChannelCommands', () => {
     });
   });
 
+  describe('/effort and /model', () => {
+    it("offers the provider's levels, and a press writes the note", async () => {
+      await ws.pero({ timezone: 'UTC', 'claude-effort': 'medium' });
+      await say(OWNER, '/effort');
+      const picker = last();
+      expect(picker.message.text).toBe(
+        'Agent main uses effort medium (Pero.md).\n' +
+          'Pick one. It applies from the next answer.',
+      );
+      expect(labels(picker)).toEqual([
+        ['low', 'medium', 'high'],
+        ['xhigh', 'max'],
+        ['✓ Default (Pero.md: medium)'],
+        ['« Back'],
+      ]);
+
+      const result = await adapter.press(picker, 'low', OWNER);
+
+      expect(result).toEqual({ notice: 'Effort set' });
+      expect(adapter.edited.at(-1)!.message.text).toBe(
+        'Agent main now uses effort low, from its next answer.\n' +
+          'Config: data/Settings/Agents/Main.md\n— @ada',
+      );
+      expect(ws.read('Agents/Main.md')).toMatch(/^effort: low$/m);
+      await say(OWNER, 'Hello');
+      expect(claude.requests.at(-1)!.providerOptions).toMatchObject({
+        effort: 'low',
+      });
+
+      await adapter.press(adapter.edited.at(-1)!, '« Effort', OWNER);
+      expect(labels(adapter.edited.at(-1)!)).toContainEqual([
+        '✓ low',
+        'medium',
+        'high',
+      ]);
+    });
+
+    it('goes back to the default, and says when nothing changes', async () => {
+      await ws.editAgent('Main', { effort: 'high' });
+
+      await say(OWNER, '/effort default');
+      expect(last().message.text).toBe(
+        'Agent main now uses default effort, from its next answer.\n' +
+          'Config: data/Settings/Agents/Main.md',
+      );
+      expect(ws.read('Agents/Main.md')).not.toMatch(/^effort:/m);
+
+      await say(OWNER, '/effort default');
+      expect(last().message.text).toMatch(
+        /^Agent main already uses default effort\./,
+      );
+    });
+
+    it('shows the choices again for a level the provider lacks', async () => {
+      await say(OWNER, '/effort ultra');
+
+      expect(last().message.text).toMatch(
+        /^There is no effort ultra for claude\.\nAgent main uses default effort\./,
+      );
+      expect(ws.read('Agents/Main.md')).not.toMatch(/^effort:/m);
+    });
+
+    it('sets a typed model, and offers the ones the workspace uses', async () => {
+      await ws.agent('Coach', { topic: 'Running', model: 'claude-opus-4-8' });
+
+      await say(OWNER, '/model sonnet');
+      expect(last().message.text).toMatch(
+        /^Agent main now uses model sonnet, from its next answer\./,
+      );
+      await say(OWNER, '/model');
+
+      expect(labels(last())).toEqual([
+        ['opus', '✓ sonnet', 'haiku'],
+        ['claude-opus-4-8'],
+        ["Default (provider's)"],
+        ['« Back'],
+      ]);
+      await say(OWNER, '/status');
+      expect(last().message.text).toContain(
+        '\nProvider: claude (default) · model sonnet · default effort\n',
+      );
+    });
+
+    it("leaves a note whose properties don't parse as it is", async () => {
+      await say(OWNER, 'Hello');
+      await ws.write('Agents/Main.md', '---\neffort: [\n---\nBe kind.\n');
+
+      await say(OWNER, '/effort low');
+
+      expect(last().message.text).toBe(
+        "Agents/Main.md's properties don't parse; pero check lists the errors",
+      );
+      expect(ws.read('Agents/Main.md')).toBe('---\neffort: [\n---\nBe kind.\n');
+    });
+
+    it("refuses a model name with spaces, and an Agent that isn't there", async () => {
+      await say(OWNER, '/model big one');
+      expect(last().message.text).toMatch(
+        /^A model's name has no spaces: big one\n/,
+      );
+
+      await ws.editAgent('Main', { enabled: false });
+      await say(OWNER, '/effort low');
+      expect(last().message.text).toMatch(/^Agent main is disabled/);
+    });
+  });
+
   it('lists the commands with /help', async () => {
     await say(OWNER, '/help');
 
     expect(last().message.text).toContain('/status — ');
-    expect(labels(last())).toEqual([['Status', 'New session', 'Stop']]);
+    expect(labels(last())).toEqual([
+      ['Status', 'New session', 'Stop'],
+      ['Model', 'Effort'],
+    ]);
   });
 
   it("answers a press in a Channel Pero doesn't know as expired", async () => {

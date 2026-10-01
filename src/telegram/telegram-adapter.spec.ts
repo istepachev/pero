@@ -400,6 +400,7 @@ describe('TelegramAdapter', () => {
       expect(sent[1]?.reply_markup).toMatchObject({
         inline_keyboard: [
           [{ callback_data: '/new ask' }, { callback_data: '/status' }],
+          [{ callback_data: '/model' }, { callback_data: '/effort' }],
         ],
       });
       expect(runtime.requests).toEqual([]);

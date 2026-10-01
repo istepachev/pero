@@ -5,6 +5,12 @@ import type { DataSource } from 'typeorm';
 import { AgentManager } from '../../agents/agent-manager.js';
 import { AgentViews } from '../../agents/agent-views.service.js';
 import { InvalidInputError, NotFoundError } from '../../common/errors.js';
+import {
+  CLAUDE_EFFORTS,
+  CODEX_EFFORTS,
+  type Provider,
+} from '../../config/provider-options.js';
+import type { AgentView } from '../../control/protocol.js';
 import { ComponentHealth } from '../../health/component-health.js';
 import { MessageHistory } from '../../history/message-history.service.js';
 import { Channel } from '../../persistence/entities/channel.entity.js';
@@ -12,6 +18,7 @@ import { Message } from '../../persistence/entities/message.entity.js';
 import { Session } from '../../persistence/entities/session.entity.js';
 import { inTransaction } from '../../persistence/transaction.js';
 import { SessionService } from '../../sessions/session.service.js';
+import { AgentNotes } from '../../settings/agent-notes.service.js';
 import { Definitions, type Route } from '../../settings/definitions.js';
 import { SettingsNotes } from '../../settings/settings-notes.service.js';
 import type {
@@ -23,8 +30,12 @@ import { ChannelSender } from '../channel-sender.js';
 import { unansweredText } from '../channel-stages.js';
 import { buttonCommand } from './command-list.js';
 import {
+  type AgentOption,
   type AgentStatus,
   helpScreen,
+  optionScreen,
+  optionSetScreen,
+  type OptionStatus,
   newConfirmScreen,
   newDoneScreen,
   noAgentScreen,
@@ -32,6 +43,18 @@ import {
   statusScreen,
   stopScreen,
 } from './screens.js';
+
+/**
+ * Well-known model names each provider's CLI accepts, offered first; the
+ * owner types any other.
+ */
+const MODEL_SUGGESTIONS: Record<Provider, readonly string[]> = {
+  claude: ['opus', 'sonnet', 'haiku'],
+  codex: ['gpt-5.5'],
+};
+
+/** How many models `/model` offers as buttons. */
+const MAX_MODEL_CHOICES = 9;
 
 /** A command's answer, and the notice for whoever pressed its button. */
 interface Answer {
@@ -59,6 +82,7 @@ export class ChannelCommands {
     private readonly health: ComponentHealth,
     private readonly definitions: Definitions,
     private readonly notes: SettingsNotes,
+    private readonly agentNotes: AgentNotes,
   ) {}
 
   /** Answers `command`, typed in `channel`, which `route` answers now. */
@@ -119,6 +143,14 @@ export class ChannelCommands {
           return await this.startOver(channel, route, command.args, by);
         case 'stop':
           return this.stop(channel, route, by);
+        case 'model':
+        case 'effort':
+          return await this.option(
+            route,
+            command.name,
+            command.args.trim(),
+            by,
+          );
         default:
           return {
             screen: {
@@ -237,6 +269,97 @@ export class ChannelCommands {
       screen: newDoneScreen(agent, stopped, by),
       notice: 'Started over',
     };
+  }
+
+  /**
+   * `/model` and `/effort`: without a value, the Agent's current one and a
+   * button for each choice; with one, or `default`, it goes into the
+   * Agent's note, from where it applies to the Agent's next answer.
+   */
+  private async option(
+    route: Route,
+    option: AgentOption,
+    value: string,
+    by: string | null,
+  ): Promise<Answer> {
+    if (route.kind !== 'agent') {
+      return {
+        screen: noAgentScreen(unansweredText(route.reason)),
+        notice: null,
+      };
+    }
+    const name = route.agent.name;
+    const status = this.optionStatus(
+      await this.agentViews.details(name),
+      option,
+    );
+    if (value === '') return { screen: optionScreen(status), notice: null };
+    const wanted =
+      value.toLowerCase() === 'default'
+        ? null
+        : option === 'effort'
+          ? value.toLowerCase()
+          : value;
+    const problem =
+      wanted === null
+        ? null
+        : option === 'effort' && !status.choices.includes(wanted)
+          ? `There is no effort ${value} for ${route.agent.provider}.`
+          : /\s/.test(wanted)
+            ? `A model's name has no spaces: ${value}`
+            : null;
+    if (problem !== null) {
+      return { screen: optionScreen(status, problem), notice: null };
+    }
+    const { changed } = await this.agentNotes.setProperty(name, option, wanted);
+    const after = this.optionStatus(
+      await this.agentViews.details(name),
+      option,
+    );
+    return {
+      screen: optionSetScreen(after, changed, by),
+      notice: changed ? `${option === 'model' ? 'Model' : 'Effort'} set` : null,
+    };
+  }
+
+  /** What `/model` or `/effort` shows of `agent`, with its choices. */
+  private optionStatus(agent: AgentView, option: AgentOption): OptionStatus {
+    const defaults =
+      this.definitions.defaults().providerDefaults[agent.provider];
+    const value = agent[option];
+    return {
+      agent: agent.name,
+      file: agent.file,
+      option,
+      value,
+      origin: agent.origins[option],
+      peroDefault: defaults[option],
+      choices:
+        option === 'effort'
+          ? agent.provider === 'claude'
+            ? CLAUDE_EFFORTS
+            : CODEX_EFFORTS
+          : this.modelChoices(agent.provider, [value, defaults.model]),
+    };
+  }
+
+  /**
+   * Models to offer for `provider`: its well-known names, then those the
+   * workspace already uses, such as other Agents' and `Pero.md`'s.
+   */
+  private modelChoices(
+    provider: Provider,
+    used: readonly (string | null)[],
+  ): string[] {
+    const others = this.definitions
+      .agents()
+      .filter((agent) => agent.provider === provider)
+      .map((agent) => agent.model);
+    const choices = new Set<string>(MODEL_SUGGESTIONS[provider]);
+    for (const model of [...used, ...others]) {
+      if (model !== null) choices.add(model);
+    }
+    return [...choices].slice(0, MAX_MODEL_CHOICES);
   }
 
   /** `/stop`: stops the running answer and drops the waiting messages. */

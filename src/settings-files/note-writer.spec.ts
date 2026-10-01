@@ -17,6 +17,7 @@ import {
   freeAgentNote,
   noteFromTemplate,
   renameTopicIn,
+  replaceNoteProperty,
   setNoteProperty,
   topicNoteTitle,
 } from './note-writer.js';
@@ -268,6 +269,66 @@ describe('setNoteProperty', () => {
     ).toBeNull();
     expect(
       setNoteProperty('---\nprovider: [\n---\n', 'provider', 'codex'),
+    ).toBeNull();
+  });
+});
+
+describe('replaceNoteProperty', () => {
+  const note =
+    '---\ntopic: Running   # the topic\nmodel: sonnet  # cheaper\n# effort: high\n---\nYou coach.\n';
+
+  it('replaces a value, keeping comments and the body', () => {
+    expect(replaceNoteProperty(note, 'model', 'opus')).toBe(
+      '---\ntopic: Running   # the topic\nmodel: opus    # cheaper\n# effort: high\n---\nYou coach.\n',
+    );
+    expect(replaceNoteProperty(note, 'model', 'claude-opus-4-8[1m]')).toContain(
+      '\nmodel: claude-opus-4-8[1m] # cheaper\n',
+    );
+  });
+
+  it('adds a property as setNoteProperty does, from its commented line', () => {
+    expect(replaceNoteProperty(note, 'effort', 'low')).toBe(
+      '---\ntopic: Running   # the topic\nmodel: sonnet  # cheaper\neffort: low\n---\nYou coach.\n',
+    );
+    expect(replaceNoteProperty('You coach.\n', 'model', 'opus')).toBe(
+      '---\nmodel: opus\n---\nYou coach.\n',
+    );
+  });
+
+  it('removes a property, and leaves a note without it as it is', () => {
+    expect(replaceNoteProperty(note, 'model', null)).toBe(
+      '---\ntopic: Running   # the topic\n# effort: high\n---\nYou coach.\n',
+    );
+    expect(replaceNoteProperty(note, 'permissions', null)).toBe(note);
+    expect(replaceNoteProperty('Body\n', 'model', null)).toBe('Body\n');
+  });
+
+  it('quotes a value that would read as something else', () => {
+    for (const value of ['5.5', 'true', 'a: b', '#1']) {
+      const text = replaceNoteProperty('---\ntopic: X\n---\n', 'model', value)!;
+      expect(parseNote('Agents/X.md', text)).toMatchObject({
+        ok: true,
+        note: { properties: { model: value } },
+      });
+    }
+  });
+
+  it('goes through the YAML document for a value over several lines', () => {
+    const text = replaceNoteProperty(
+      '---\nmodel: >\n  long\n  name\ntopic: X\n---\n',
+      'model',
+      'opus',
+    )!;
+
+    expect(parseNote('Agents/X.md', text)).toMatchObject({
+      ok: true,
+      note: { properties: { model: 'opus', topic: 'X' } },
+    });
+  });
+
+  it("leaves a note whose properties don't parse alone", () => {
+    expect(
+      replaceNoteProperty('---\nmodel: [\n---\n', 'model', 'opus'),
     ).toBeNull();
   });
 });

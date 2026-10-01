@@ -240,6 +240,80 @@ export function setNoteProperty(
 }
 
 /**
+ * `text`, a note, with property `key` set to `value`, replacing the value
+ * it has, or without it when `value` is null. A property on a line of its
+ * own changes in place, keeping its trailing comment in its column; the
+ * rest of the note stays exactly as written. A property the note doesn't
+ * set yet is added as `setNoteProperty` adds it. A value that would read
+ * as something else, such as `5.5`, is quoted. Null when the note's
+ * properties don't parse.
+ */
+export function replaceNoteProperty(
+  text: string,
+  key: string,
+  value: string | null,
+): string | null {
+  const split = splitNote(text);
+  if (split === null) {
+    return value === null ? text : setNoteProperty(text, key, value);
+  }
+  const document: Document = parseDocument(split.frontmatter, YAML_OPTIONS);
+  if (document.errors.length > 0) return null;
+  if (document.contents !== null && !isMap(document.contents)) return null;
+  if (!(isMap(document.contents) && document.contents.has(key))) {
+    return value === null ? text : setNoteProperty(text, key, value);
+  }
+  const inPlace = replaceLine(split.frontmatter, key, value);
+  if (inPlace !== null) return `${split.opening}${inPlace}${split.rest}`;
+  if (value === null) document.delete(key);
+  else document.set(key, value);
+  return `${split.opening}${document.toString(PRINT_OPTIONS)}${split.rest}`;
+}
+
+/**
+ * `frontmatter` with `key`'s line set to `value`, or gone when `value` is
+ * null; null when its value isn't on that one line, so the change must go
+ * through the YAML document.
+ */
+function replaceLine(
+  frontmatter: string,
+  key: string,
+  value: string | null,
+): string | null {
+  const line = new RegExp(
+    `^${key}:[ \\t]*(?:"[^"\\n]*"|'[^'\\n]*'|[^#\\n]*?)(?:[ \\t]+(#.*))?[ \\t]*(?:\\n|$)`,
+    'm',
+  ).exec(frontmatter);
+  if (line === null) return null;
+  const [whole, comment] = line;
+  let replaced = '';
+  if (value !== null) {
+    const property = `${key}: ${plainWord(value) ? value : JSON.stringify(value)}`;
+    const column = comment === undefined ? 0 : whole.indexOf(comment);
+    replaced =
+      (comment === undefined
+        ? property
+        : `${property.padEnd(column - 1)} ${comment}`) +
+      (whole.endsWith('\n') ? '\n' : '');
+  }
+  const result =
+    frontmatter.slice(0, line.index) +
+    replaced +
+    frontmatter.slice(line.index + whole.length);
+  // Whatever the regular expression missed, the document reads it back.
+  const read = parseDocument(result, YAML_OPTIONS);
+  if (read.errors.length > 0) return null;
+  const got: unknown = read.get(key);
+  return (value === null ? !read.has(key) : got === value) ? result : null;
+}
+
+/** Whether `value` reads back as itself when written bare after `key: `. */
+function plainWord(value: string): boolean {
+  if (!/^[A-Za-z][\w.\-/[\]@]*$/.test(value)) return false;
+  return parseDocument(`v: ${value}`, YAML_OPTIONS).get('v') === value;
+}
+
+/**
  * Writes `text` to `path` unless it exists, in one step: the text goes to a
  * temporary file beside it, which is synced and linked to `path`, so
  * readers never see half a note and an existing one is never replaced.

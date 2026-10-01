@@ -95,7 +95,13 @@ describe('screens', () => {
         'Pero: telegram ok',
       ].join('\n'),
     );
-    expect(buttonIds(screen)).toEqual(['/stop', '/new ask', '/status']);
+    expect(buttonIds(screen)).toEqual([
+      '/stop',
+      '/new ask',
+      '/status',
+      '/model',
+      '/effort',
+    ]);
   });
 
   it("leaves out the context before a first turn, and shows the note's errors and folder problem", () => {
