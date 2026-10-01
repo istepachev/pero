@@ -5,13 +5,13 @@ import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import { Definitions } from '../definitions/definitions.js';
 import { dataSourceOptions } from '../persistence/data-source-options.js';
 import { openDatabase } from '../persistence/open-database.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { Definitions } from '../settings/definitions.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { type Schedule, scheduleFingerprint } from './schedule.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import { MAX_SKIPPED_COUNT, ScheduleTick } from './schedule-tick.js';
@@ -87,13 +87,13 @@ describe('ScheduleTick', () => {
     const definitions = moduleRef.get(Definitions);
     const workflows = definitions.workflows.bind(definitions);
     const workflow = definitions.workflow.bind(definitions);
-    vi.spyOn(definitions, 'workflows').mockImplementation(async () =>
-      (await workflows()).map((defined) =>
+    vi.spyOn(definitions, 'workflows').mockImplementation(() =>
+      workflows().map((defined) =>
         defined.name === name ? { ...defined, schedule } : defined,
       ),
     );
-    vi.spyOn(definitions, 'workflow').mockImplementation(async (wanted) => {
-      const defined = await workflow(wanted);
+    vi.spyOn(definitions, 'workflow').mockImplementation((wanted) => {
+      const defined = workflow(wanted);
       return defined?.name === name ? { ...defined, schedule } : defined;
     });
   }

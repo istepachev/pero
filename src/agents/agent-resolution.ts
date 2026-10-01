@@ -1,6 +1,6 @@
 import type { Provider, ProviderOptions } from '../config/provider-options.js';
 import type { ToolPolicy } from '../config/tool-policy.js';
-import type { AgentDefinition, Defaults } from '../definitions/definitions.js';
+import type { AgentDefinition, Defaults } from '../settings/definitions.js';
 
 /** What a runtime needs from an Agent, with defaults already applied. */
 export interface ResolvedAgent {

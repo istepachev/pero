@@ -17,7 +17,7 @@ import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { BrokenNoteReports } from './broken-note-reports.js';
 import { NotificationsModule } from './notifications.module.js';
 

@@ -20,12 +20,12 @@ import {
   type SettingsSnapshot,
   type TopicLookup,
 } from '../settings-files/snapshot.js';
-import { allowedChannels } from '../settings-notes/allowed-channels.js';
+import { allowedChannels } from '../settings/allowed-channels.js';
 import {
   channelTopicLookup,
   type KnownChannel,
-} from '../settings-notes/channel-topics.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+} from '../settings/channel-topics.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 
 /** A broken note to report, with what the snapshot makes of it. */
 export interface BrokenNoteReport {
@@ -68,8 +68,7 @@ export class BrokenNoteReports
   ) {}
 
   /** Takes the notes broken at startup as known, then follows each change. */
-  async onModuleInit(): Promise<void> {
-    await this.notes.ready();
+  onModuleInit(): void {
     this.known = new Set(this.notes.broken().map(versionKey));
     this.stopListening = this.notes.onChange(({ snapshot }) =>
       this.changed(snapshot),

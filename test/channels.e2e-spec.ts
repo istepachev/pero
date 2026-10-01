@@ -21,7 +21,7 @@ import {
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
-import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
+import { SettingsNotes } from '../src/settings/settings-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,

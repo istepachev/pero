@@ -1,6 +1,6 @@
 import type { EntityManager } from 'typeorm';
-import type { WorkflowDefinition } from '../definitions/definitions.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import type { WorkflowDefinition } from '../settings/definitions.js';
 import { finishRun } from './finish-run.js';
 import { isScheduled } from './run-keys.js';
 

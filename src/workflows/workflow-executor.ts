@@ -9,17 +9,17 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
 import { resolveAgent } from '../agents/agent-resolution.js';
-import {
-  type AgentDefinition,
-  Definitions,
-  type WorkflowDefinition,
-} from '../definitions/definitions.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import {
   type RunStatus,
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import {
+  type AgentDefinition,
+  Definitions,
+  type WorkflowDefinition,
+} from '../settings/definitions.js';
 import {
   type ExecutionSnapshot,
   executionSnapshot,
@@ -151,7 +151,7 @@ export class WorkflowExecutor
     const run = await manager.getRepository(WorkflowRun).findOneBy({ id });
     if (run === null || run.status !== 'running') return;
     const name = run.workflowName;
-    const { workflow, agent } = await this.definitionsOf(name);
+    const { workflow, agent } = this.definitionsOf(name);
     let outcome: string;
     let retried = false;
     if (workflow === null) {
@@ -183,13 +183,13 @@ export class WorkflowExecutor
   }
 
   /** The Workflow named `name` and its Agent, each null if gone. */
-  private async definitionsOf(name: string): Promise<{
+  private definitionsOf(name: string): {
     workflow: WorkflowDefinition | null;
     agent: AgentDefinition | null;
-  }> {
-    const workflow = await this.definitions.workflow(name);
+  } {
+    const workflow = this.definitions.workflow(name);
     const agent =
-      workflow === null ? null : await this.definitions.agent(workflow.agent);
+      workflow === null ? null : this.definitions.agent(workflow.agent);
     return { workflow, agent };
   }
 
@@ -263,7 +263,7 @@ export class WorkflowExecutor
     manager: EntityManager,
   ): Promise<ClaimedRun | null> {
     // Read on every claim, so a changed limit applies without a restart.
-    const defaults = await this.definitions.defaults();
+    const defaults = this.definitions.defaults();
     const { maxConcurrentRuns, timezone } = defaults;
     if (this.stopping || this.active.size >= maxConcurrentRuns) return null;
     const runs = manager.getRepository(WorkflowRun);
@@ -284,7 +284,7 @@ export class WorkflowExecutor
         .getOne();
       if (run === null) return null;
       const name = run.workflowName;
-      const { workflow, agent } = await this.definitionsOf(name);
+      const { workflow, agent } = this.definitionsOf(name);
       // A disabled Workflow still runs by hand.
       const paused =
         workflow !== null && !workflow.enabled && isScheduled(run.triggerKey);
@@ -419,7 +419,7 @@ export class WorkflowExecutor
     }
     await inTransaction(this.dataSource, async (manager) =>
       // The Channels the Workflow notifies now, not when the run started.
-      finishRun(manager, runId, await this.definitions.workflow(workflow), {
+      finishRun(manager, runId, this.definitions.workflow(workflow), {
         status: outcome.status,
         ...(outcome.status === 'completed'
           ? {

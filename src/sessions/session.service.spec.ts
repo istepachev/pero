@@ -10,7 +10,7 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { SessionService } from './session.service.js';
 import { SessionsModule } from './sessions.module.js';
 

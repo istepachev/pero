@@ -12,8 +12,8 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { SessionService } from '../sessions/session.service.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
-import { Definitions, requireAgent } from '../definitions/definitions.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { Definitions, requireAgent } from '../settings/definitions.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { resolveAgent } from './agent-resolution.js';
 import { AgentViews } from './agent-views.service.js';
 import { AgentsModule } from './agents.module.js';
@@ -72,8 +72,8 @@ describe('AgentViews', () => {
   async function turn(name: string, channelId: number): Promise<Session> {
     const definitions = moduleRef.get(Definitions);
     const agent = resolveAgent(
-      await requireAgent(definitions, name),
-      await definitions.defaults(),
+      requireAgent(definitions, name),
+      definitions.defaults(),
     );
     const session = await inTransaction(ds, (manager) =>
       moduleRef.get(SessionService).beginWithin(manager, channelId, agent),

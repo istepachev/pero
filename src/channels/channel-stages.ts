@@ -1,11 +1,11 @@
+import type { Channel } from '../persistence/entities/channel.entity.js';
 import {
   type AgentDefinition,
   type Definitions,
   type Route,
   routeQuery,
   type Unanswered,
-} from '../definitions/definitions.js';
-import type { Channel } from '../persistence/entities/channel.entity.js';
+} from '../settings/definitions.js';
 import type { ChannelEvent, InboundMessage } from './channel-adapter.js';
 
 /*
@@ -21,7 +21,7 @@ export type RoutedChannel = Channel & { agent: AgentDefinition };
 export function routeOf(
   channel: Pick<Channel, 'id' | 'externalKey' | 'title'>,
   definitions: Definitions,
-): Promise<Route> {
+): Route {
   return definitions.route(routeQuery(channel));
 }
 

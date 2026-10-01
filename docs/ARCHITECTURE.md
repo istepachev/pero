@@ -50,7 +50,7 @@ The daemon holds the notes in memory as one immutable **snapshot**: `Pero.md`, e
 
 - **References** resolved in the snapshot: `main-agent`, a Workflow's `agent`, the default Agent from its first `channel`, `topics` claimed by two notes, and each Agent's `effort` against its provider. Topic titles in a Workflow's `channel` and `history-channels` resolve against the Channels Pero has seen in the allowed chats, looked up again on each scan, so a topic seen for the first time is found within one scan with no note changed.
 - **Broken notes** are left out, with only the notes that depend on them. While the daemon runs, a note that breaks keeps its **last good version**, held in memory only, so a restart never loads a copy that could drift from the file. A note is reported broken only after two scans read it failing with the same size and modification time, so a note caught mid-write is never reported. A Workflow whose references don't resolve is left out until they do. `pero status` counts the broken notes in its `settings` component, and `BrokenNoteReports` posts each broken version (keyed by a SHA-256 of its text) once in Telegram: in the Channels it relates to, or else the main Agent's primary Channel, outside Channel history. Notes already broken at startup are only logged.
-- **`Definitions`** is the interface runtime code reads through: `defaults()`, `agent(name)`, `agents()`, `mainAgent()`, `mainAgentName()`, `route(channel)`, `workflow(name)`, `workflows()`, and `onChange(listener)`. Its types name no store: no row IDs and no timestamps. `FileDefinitions` serves it from the snapshot. A legacy data directory gets `LegacyDataDirDefinitions`, with no Agents or Workflows and the defaults its `legacy_settings` row holds. Listeners of `onChange` include the schedule reconciliation (§8) and the providers health depends on.
+- **`Definitions`** is the class runtime code reads through: `defaults()`, `agent(name)`, `agents()`, `mainAgent()`, `mainAgentName()`, `route(channel)`, `workflow(name)`, `workflows()`, and `onChange(listener)`. It serves them from the snapshot in memory, so its reads return values, not promises: `SettingsNotes` loads the first snapshot in `onModuleInit`, and Nest runs that before the startup hooks of the modules that import it. Its types name no store: no row IDs and no timestamps. Listeners of `onChange` include the schedule reconciliation (§8) and the providers health depends on.
 - **Identity** is the note's name, the slug of its file name. State names an Agent or Workflow by that name, never a foreign key, so a Session, message, run, or schedule outlives its note, and renaming a note is a new Agent or Workflow. A renamed Agent starts fresh Sessions that carry over each Channel's history; a renamed Workflow starts a history window and schedule of its own.
 - **Pero's own writes** are few, and each is logged: `pero init`'s skeleton, the token in `.env`, `allowed-chats` and a migrated chat's ID in `config.yaml`, and the Agent notes onboarding writes and the `topics` it renames (§2, Telegram onboarding). Existing files are edited through the `yaml` document API, changing only their own value and keeping comments, ordering, and the body, and replaced atomically; a new note is hard-linked into place from a synced temporary file, so it is never seen half written and never replaces a file. Each write enters the snapshot at once, without waiting for the next scan.
 
@@ -100,19 +100,18 @@ The Channel adapter contract is `start(handlers)`, `stop()`, `send(address, mess
 | Module | Owns | Depends on |
 |---|---|---|
 | `HostConfigModule` | `config.yaml`: the data folder and allowed chats, reread every 10 seconds, and Pero's edits of it | Health |
-| `SettingsNotesModule` | The notes snapshot, rescanning, last good versions, and the Agent notes onboarding writes | Health |
-| `DefinitionsModule` | `Definitions`, the read-only view of defaults, Agents, and Workflows runtime code reads: from the notes in a workspace, or a legacy data directory's defaults | Settings notes |
-| `AgentsModule` | `AgentManager`, Agent resolution, and the Agent views | Definitions, Sessions, History, Runtimes |
+| `SettingsModule` | The notes snapshot, rescanning, last good versions, the Agent notes onboarding writes, and `Definitions`, the read-only view of defaults, Agents, and Workflows runtime code reads | Health |
+| `AgentsModule` | `AgentManager`, Agent resolution, and the Agent views | Settings, Sessions, History, Runtimes |
 | `RuntimesModule` | Runtime interface and Claude/Codex adapters, including the tool policy each applies | SDKs |
-| `ProvidersModule` | Provider sign-in checks for the providers in use | Definitions, Health |
+| `ProvidersModule` | Provider sign-in checks for the providers in use | Settings, Health |
 | `SessionsModule` | Interactive context lifecycle and provider ID mapping | Persistence |
-| `HistoryModule`, `HistoryRetentionModule` | Channel message history and carry-over; the hourly deletion of history older than `history-retention-days` | Definitions, Persistence |
-| `ChannelsModule` | Channel router, onboarding, normalized inbound/outbound contracts, tool approvals | Agents, Definitions, History, Sessions |
+| `HistoryModule`, `HistoryRetentionModule` | Channel message history and carry-over; the hourly deletion of history older than `history-retention-days` | Settings, Persistence |
+| `ChannelsModule` | Channel router, onboarding, normalized inbound/outbound contracts, tool approvals | Agents, Settings, History, Sessions |
 | `TelegramModule` | First Channel adapter: grammY update intake and Telegram delivery | Channels, Health |
-| `WorkflowsModule` | Workflow runs, the bounded executor, history windows, and the Workflow views | Agents, Definitions, History |
-| `SchedulerModule` | Schedule state, polling due schedules, reconciling them with the notes, and startup recovery | Definitions, Workflows |
-| `NotificationsModule` | Durable delivery requests, retry state, channel delivery, and broken-note reports | Channels, Definitions, History |
-| `BackupModule` | Consistent database snapshots archived with `config.yaml` and, on request, the data folder | Definitions, Persistence |
+| `WorkflowsModule` | Workflow runs, the bounded executor, history windows, and the Workflow views | Agents, Settings, History |
+| `SchedulerModule` | Schedule state, polling due schedules, reconciling them with the notes, and startup recovery | Settings, Workflows |
+| `NotificationsModule` | Durable delivery requests, retry state, channel delivery, and broken-note reports | Channels, Settings, History |
+| `BackupModule` | Consistent database snapshots archived with `config.yaml` and, on request, the data folder | Settings, Persistence |
 | `ControlModule` | Owner-only local CLI command endpoint and lifecycle requests | Application services |
 | `HealthModule` | Component health for `pero status` | — |
 | `PersistenceModule` | TypeORM entities, migrations, transactions | SQLite |

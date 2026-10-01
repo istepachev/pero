@@ -7,7 +7,6 @@ import type {
   ChannelView,
   HistoryMessage,
 } from '../control/protocol.js';
-import { Definitions, type Route } from '../definitions/definitions.js';
 import {
   MessageHistory,
   workflowOf,
@@ -16,6 +15,7 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
+import { Definitions, type Route } from '../settings/definitions.js';
 import { routeOf, unansweredSummary } from './channel-stages.js';
 
 /**
@@ -35,19 +35,17 @@ export class ChannelViews {
     const channels = await this.dataSource
       .getRepository(Channel)
       .find({ order: { id: 'ASC' } });
-    return Promise.all(
-      channels.map(async (channel) =>
-        channelView(channel, await routeOf(channel, this.definitions)),
-      ),
+    return channels.map((channel) =>
+      channelView(channel, routeOf(channel, this.definitions)),
     );
   }
 
   /** The Channel with ID `id`; `NotFoundError` if none. */
   async details(id: number): Promise<ChannelDetails> {
-    const { historyCarryover } = await this.definitions.defaults();
+    const { historyCarryover } = this.definitions.defaults();
     return inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, id);
-      const route = await routeOf(channel, this.definitions);
+      const route = routeOf(channel, this.definitions);
       const agent = route.kind === 'agent' ? route.agent : null;
       const active =
         agent === null
@@ -84,7 +82,7 @@ export class ChannelViews {
   ): Promise<{ channel: ChannelView; messages: HistoryMessage[] }> {
     return inTransaction(this.dataSource, async (manager) => {
       const channel = await findChannel(manager, id);
-      const route = await routeOf(channel, this.definitions);
+      const route = routeOf(channel, this.definitions);
       const messages = await this.messages.latestWithin(manager, id, limit);
       return {
         channel: channelView(channel, route),

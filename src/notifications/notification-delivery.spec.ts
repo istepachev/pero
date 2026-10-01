@@ -14,7 +14,6 @@ import {
   privateChat,
 } from '../channels/testing/fake-channel-adapter.js';
 import { ConflictError, NotFoundError } from '../common/errors.js';
-import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -24,7 +23,8 @@ import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { Definitions } from '../settings/definitions.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { WorkflowExecutor } from '../workflows/workflow-executor.js';
 import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';

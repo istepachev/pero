@@ -1058,6 +1058,14 @@ Phase 7 made `Definitions` an abstract class with async methods, so SQLite could
 - **Synchronous reads:** its methods return values, not promises. The daemon loads the first snapshot in `onModuleInit`, before anything reads it, so no read waits on `ready()`. `SettingsNotes.inWorkspace()` goes, since it is always true.
 - **What stays:** `src/settings-files/`, the loader with no Nest imports that `pero check` and `pero init` share with the daemon, and `onChange`.
 
+- **Found while building:**
+  - **One Nest module too:** `SettingsModule` provides `SettingsNotes`, `AgentNotes`, and `Definitions`, replacing `SettingsNotesModule` and `DefinitionsModule`. `WorkspaceChecks` moves to `src/settings/` but stays a provider of `ControlModule`. `SettingsNotes.inWorkspace()` had already gone with 11.3.
+  - **Nest orders the load:** it calls `onModuleInit` on an imported module before the modules that import it, so every reader's own startup hook, such as recovering Workflow runs, sees the first snapshot. A test boots a module that reads `Definitions` in its `onModuleInit` and finds the notes there.
+  - **`snapshot()` stays nullable:** null while the settings folder can't be read. `Definitions` then serves Pero's own defaults and no Agents, as before, and `pero settings` shows no `new-topics` or "set in `Pero.md`".
+  - **Helpers that only awaited definitions are synchronous too:** `requireAgent`, `requireWorkflow`, `routeOf`, `ProviderAuthService.inUse()` and `refreshRequirements()`, and the private helpers of `AgentManager`, `WorkflowExecutor`, `WorkflowRuns`, and `BackupService`. Provider requirements' change listener no longer logs its own error; `SettingsNotes` logs a listener that throws.
+  - **Unit tests boot their module:** with no lazy load, a test that reads definitions calls `init()` first, as `provider-auth.service.spec.ts` now does in one test. The tests of the lazy load go.
+  - **Docs that name the modules change now, not in 11.9:** [Architecture](./ARCHITECTURE.md)'s `Definitions` bullet describes the one class, and its module table has `SettingsModule`; the [tech stack](./TECH_STACK.md) tree has `settings/`; [Testing](./TESTING.md) names the moved specs.
+
 **Done when:**
 - `grep -rn "await .*definitions\." src` finds nothing.
 - The full suite passes, apart from wiring and the removed `await`s.

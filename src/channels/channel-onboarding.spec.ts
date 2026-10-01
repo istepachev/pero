@@ -7,7 +7,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { welcomeText } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';

@@ -25,7 +25,7 @@ import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { NotificationDelivery } from '../src/notifications/notification-delivery.js';
 import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
-import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
+import { SettingsNotes } from '../src/settings/settings-notes.service.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 
 // `npm run test:e2e` builds first.

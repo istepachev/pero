@@ -8,11 +8,6 @@ import type {
   WorkflowScheduleView,
   WorkflowView,
 } from '../control/protocol.js';
-import {
-  type AgentDefinition,
-  Definitions,
-  type WorkflowDefinition,
-} from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import {
@@ -20,8 +15,13 @@ import {
   scheduleStatesWithin,
   stateOf,
 } from '../scheduler/schedule-state.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { findWorkflowNote, shownPath } from '../settings-files/note-paths.js';
+import {
+  type AgentDefinition,
+  Definitions,
+  type WorkflowDefinition,
+} from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 
 /**
  * Workflows as the CLI shows them: their note, their Agent, when they run
@@ -37,7 +37,7 @@ export class WorkflowViews {
 
   /** Every Workflow, by name. */
   list(): Promise<WorkflowView[]> {
-    return this.views(() => this.definitions.workflows());
+    return this.views(this.definitions.workflows());
   }
 
   /**
@@ -45,21 +45,16 @@ export class WorkflowViews {
    * when that has errors and never loaded.
    */
   async details(name: string): Promise<WorkflowView> {
-    const [view] = await this.views(async () => {
-      const workflow = await this.definitions.workflow(name);
-      if (workflow === null) throw missingWorkflow(this.notes, name);
-      return [workflow];
-    });
+    const workflow = this.definitions.workflow(name);
+    if (workflow === null) throw missingWorkflow(this.notes, name);
+    const [view] = await this.views([workflow]);
     if (view === undefined) throw missingWorkflow(this.notes, name);
     return view;
   }
 
-  private async views(
-    read: () => Promise<WorkflowDefinition[]>,
-  ): Promise<WorkflowView[]> {
-    const workflows = await read();
+  private views(workflows: WorkflowDefinition[]): Promise<WorkflowView[]> {
     const agents = new Map(
-      (await this.definitions.agents()).map((agent) => [agent.name, agent]),
+      this.definitions.agents().map((agent) => [agent.name, agent]),
     );
     return inTransaction(this.dataSource, async (manager) => {
       const ids = new Set(

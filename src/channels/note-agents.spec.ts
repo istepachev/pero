@@ -13,10 +13,10 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
-import { Definitions } from '../definitions/definitions.js';
 import { HostConfigModule } from '../host-config/host-config.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
+import { Definitions } from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelRouter } from './channel-router.js';
@@ -139,7 +139,7 @@ describe('Topic routing by notes in a workspace', () => {
   }
 
   it('reads the Agents from the notes', async () => {
-    const coach = await moduleRef.get(Definitions).agent('coach');
+    const coach = moduleRef.get(Definitions).agent('coach');
     expect(coach).toMatchObject({
       name: 'coach',
       title: 'Coach',
@@ -199,9 +199,9 @@ describe('Topic routing by notes in a workspace', () => {
       // No reload wait: it answers the next message.
       await inTopic('6', 'Running');
       expect(answeredBy()).toEqual(['running']);
-      await expect(
-        moduleRef.get(Definitions).agent('running'),
-      ).resolves.toMatchObject({ instructions: 'You help with this topic.' });
+      expect(moduleRef.get(Definitions).agent('running')).toMatchObject({
+        instructions: 'You help with this topic.',
+      });
       expect(sentTexts()).toHaveLength(1);
     });
 

@@ -10,15 +10,15 @@ import { BackupService } from '../backup/backup.service.js';
 import { ChannelViews } from '../channels/channel-views.service.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { WorkspaceLayout } from '../config/workspace-layout.js';
-import { Definitions } from '../definitions/definitions.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { NotificationDelivery } from '../notifications/notification-delivery.js';
 import { NotificationViews } from '../notifications/notification-views.service.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { WorkspaceChecks } from '../settings-notes/workspace-checks.service.js';
 import { PERO_NOTE } from '../settings-files/note-files.js';
 import { shownPath } from '../settings-files/note-paths.js';
+import { Definitions } from '../settings/definitions.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
+import { WorkspaceChecks } from '../settings/workspace-checks.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
@@ -137,15 +137,15 @@ export class ControlService implements OnModuleDestroy {
 
   /** The settings in effect: the workspace's `Pero.md` and `config.yaml`. */
   async settingsView(): Promise<SettingsView> {
-    const defaults = await this.definitions.defaults();
-    const snapshot = await this.notes.ready();
+    const defaults = this.definitions.defaults();
+    const snapshot = this.notes.snapshot();
     const folders = this.notes.folders();
     return {
       defaultProvider: defaults.provider,
       providerDefaults: defaults.providerDefaults,
       defaultWorkingDirectory: defaults.dataFolder,
       sharedInstructions: defaults.sharedInstructions,
-      mainAgent: await this.definitions.mainAgentName(),
+      mainAgent: this.definitions.mainAgentName(),
       historyCarryover: defaults.historyCarryover,
       historyRetentionDays: defaults.historyRetentionDays,
       defaultPermissions: defaults.permissions,

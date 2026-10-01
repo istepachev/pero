@@ -34,9 +34,8 @@ pero/
 │   ├── daemon/          # daemon main.ts and AppModule bootstrap
 │   ├── config/          # workspace discovery, .env, config.yaml, shared schemas; no Nest or TypeORM
 │   ├── settings-files/  # the note parser, schemas, snapshot, and pero check; no Nest or TypeORM
-│   ├── settings-notes/  # the daemon's rescanning snapshot and note writes
+│   ├── settings/        # the daemon's rescanning snapshot, note writes, and Definitions
 │   ├── host-config/     # config.yaml in the daemon
-│   ├── definitions/     # the Definitions interface and its implementations
 │   ├── control/
 │   ├── agents/
 │   ├── runtimes/

@@ -23,8 +23,6 @@ import {
   NotFoundError,
 } from '../common/errors.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
-import type { TestNoteProperties } from '../settings-notes/testing/test-workspace.js';
-import { Definitions } from '../definitions/definitions.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
@@ -36,7 +34,9 @@ import type { RunView } from '../control/protocol.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import type { RuntimeRequest } from '../runtimes/agent-runtime.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { Definitions } from '../settings/definitions.js';
+import type { TestNoteProperties } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import type { HistoryRead } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
@@ -816,7 +816,7 @@ describe('Workflow Runs and the executor', () => {
           await finishRun(
             manager,
             id,
-            await moduleRef.get(Definitions).workflow('brief'),
+            moduleRef.get(Definitions).workflow('brief'),
             { status: 'completed', result: { text: 'Done' } },
           );
           expect(await manager.getRepository(Notification).count()).toBe(1);

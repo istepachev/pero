@@ -8,8 +8,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { reconcileSchedulesWithin } from '../scheduler/schedule-state.js';
-import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
-import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
+import { SettingsNotes } from '../settings/settings-notes.service.js';
+import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { WorkflowViews } from './workflow-views.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 

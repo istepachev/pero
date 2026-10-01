@@ -7,16 +7,18 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { Inject, Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
+import { Definitions } from './definitions.js';
 import {
   type SettingsChange,
   SettingsNotes,
 } from './settings-notes.service.js';
-import { SettingsNotesModule } from './settings-notes.module.js';
+import { SettingsModule } from './settings.module.js';
 
 describe('SettingsNotes', () => {
   let tmp: string;
@@ -39,15 +41,15 @@ describe('SettingsNotes', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Boots the module in the workspace `tmp`. */
-  async function boot() {
+  /** Boots `module`, by default the settings, in the workspace `tmp`. */
+  async function boot(module: object = SettingsModule) {
     const folders = {
       workspace: tmp,
       dataFolder: join(tmp, 'data'),
       settingsFolder: settings,
     };
     moduleRef = await Test.createTestingModule({
-      imports: [SettingsNotesModule],
+      imports: [module as typeof SettingsModule],
     })
       .useMocker((token) => {
         if (token === HostConfigService) {
@@ -136,35 +138,23 @@ describe('SettingsNotes', () => {
     expect(health.get('settings')!.state).toBe('ok');
   });
 
-  it('loads the notes for whoever needs them before startup ends', async () => {
+  it('loads the notes before the startup of modules that read them', async () => {
     write('Agents/Health.md', 'Coach');
-    moduleRef = await Test.createTestingModule({
-      imports: [SettingsNotesModule],
-    })
-      .useMocker((token) =>
-        token === HostConfigService
-          ? {
-              folders: () => ({
-                workspace: tmp,
-                dataFolder: join(tmp, 'data'),
-                settingsFolder: settings,
-              }),
-              allowedChats: () => [],
-            }
-          : token === DataSource
-            ? { getRepository: () => ({ find: () => Promise.resolve([]) }) }
-            : {},
-      )
-      .compile();
-    notes = moduleRef.get(SettingsNotes);
-    const [first, second] = await Promise.all([notes.ready(), notes.ready()]);
-    expect(first!.agents.has('health')).toBe(true);
-    expect(second).toBe(first);
-    await moduleRef.init();
-    expect(notes.snapshot()).toBe(first);
 
-    write('Agents/Health.md', '---\nmodel: opus\n---\nCoach');
-    await notes.rescan();
-    expect((await notes.ready())!.agents.get('health')!.model).toBe('opus');
+    @Injectable()
+    class Reader implements OnModuleInit {
+      agents: string[] = [];
+      constructor(
+        @Inject(Definitions) private readonly definitions: Definitions,
+      ) {}
+      onModuleInit(): void {
+        this.agents = this.definitions.agents().map((agent) => agent.name);
+      }
+    }
+    @Module({ imports: [SettingsModule], providers: [Reader] })
+    class ReaderModule {}
+
+    await boot(ReaderModule);
+    expect(moduleRef.get(Reader).agents).toEqual(['health']);
   });
 });
