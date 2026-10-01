@@ -26,6 +26,11 @@ export const COMMANDS: readonly CommandInfo[] = [
     name: 'effort',
     description: "Show or change this topic's Agent's reasoning effort",
   },
+  { name: 'workflows', description: 'Workflows, when they run, and how' },
+  { name: 'run', description: 'Run a Workflow now' },
+  { name: 'runs', description: 'Recent Workflow runs, and how they went' },
+  { name: 'cancel', description: 'Cancel a waiting or running Workflow run' },
+  { name: 'retry', description: 'Run a failed Workflow run again' },
   { name: 'help', description: "What Pero's commands do" },
 ];
 

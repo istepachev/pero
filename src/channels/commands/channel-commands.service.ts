@@ -4,7 +4,11 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { AgentManager } from '../../agents/agent-manager.js';
 import { AgentViews } from '../../agents/agent-views.service.js';
-import { InvalidInputError, NotFoundError } from '../../common/errors.js';
+import {
+  ConflictError,
+  InvalidInputError,
+  NotFoundError,
+} from '../../common/errors.js';
 import {
   CLAUDE_EFFORTS,
   CODEX_EFFORTS,
@@ -29,9 +33,11 @@ import type {
 import { ChannelSender } from '../channel-sender.js';
 import { unansweredText } from '../channel-stages.js';
 import { buttonCommand } from './command-list.js';
+import { WorkflowCommands } from './workflow-commands.js';
 import {
   type AgentOption,
   type AgentStatus,
+  type Answer,
   helpScreen,
   optionScreen,
   optionSetScreen,
@@ -56,12 +62,6 @@ const MODEL_SUGGESTIONS: Record<Provider, readonly string[]> = {
 /** How many models `/model` offers as buttons. */
 const MAX_MODEL_CHOICES = 9;
 
-/** A command's answer, and the notice for whoever pressed its button. */
-interface Answer {
-  screen: Screen;
-  notice: string | null;
-}
-
 /**
  * Answers the commands Pero handles itself, such as `/status` and `/new`,
  * in the Channel they were sent in. A typed command gets a new message; a
@@ -83,6 +83,7 @@ export class ChannelCommands {
     private readonly definitions: Definitions,
     private readonly notes: SettingsNotes,
     private readonly agentNotes: AgentNotes,
+    private readonly workflows: WorkflowCommands,
   ) {}
 
   /** Answers `command`, typed in `channel`, which `route` answers now. */
@@ -143,6 +144,16 @@ export class ChannelCommands {
           return await this.startOver(channel, route, command.args, by);
         case 'stop':
           return this.stop(channel, route, by);
+        case 'workflows':
+          return await this.workflows.workflows(command.args.trim());
+        case 'run':
+          return await this.workflows.run(command.args.trim(), by);
+        case 'runs':
+          return await this.workflows.runs(command.args.trim());
+        case 'cancel':
+          return await this.workflows.cancel(command.args.trim(), by);
+        case 'retry':
+          return await this.workflows.retry(command.args.trim(), by);
         case 'model':
         case 'effort':
           return await this.option(
@@ -162,7 +173,8 @@ export class ChannelCommands {
     } catch (error) {
       if (
         error instanceof InvalidInputError ||
-        error instanceof NotFoundError
+        error instanceof NotFoundError ||
+        error instanceof ConflictError
       ) {
         return { screen: { text: error.message }, notice: null };
       }

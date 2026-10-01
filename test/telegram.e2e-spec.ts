@@ -1,4 +1,10 @@
-import { mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -348,5 +354,42 @@ describe('Telegram chats and pairing (e2e)', () => {
       effort: 'low',
       origins: { effort: 'note' },
     });
+  });
+
+  it('runs a Workflow picked from the /run menu', async () => {
+    writeFileSync(
+      join(workspace, 'data', 'Settings', 'Workflows', 'Daily brief.md'),
+      'Sum up the day.\n',
+    );
+    await start();
+    await client.call('telegram.allow', { chatId: String(DIRECT.id) });
+    api.push(message(DIRECT, 'One'));
+    await sentTexts(2);
+
+    api.push(command(DIRECT, '/run'));
+    expect((await sentTexts(3)).at(-1)).toMatch(
+      /^Which Workflow should run now\?\n• Daily brief — by hand only$/,
+    );
+    api.push({
+      callback_query: {
+        id: 'query-2',
+        from: OWNER,
+        chat_instance: 'instance',
+        data: '/run daily-brief',
+        message: { message_id: 78, date: 1, chat: DIRECT, text: 'Which' },
+      } as never,
+    });
+
+    await vi.waitFor(() =>
+      expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
+        message_id: 78,
+        text: 'Queued run #1 of Daily brief.\n— Ada',
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(await client.call('runs.list', { limit: 5 })).toMatchObject({
+        runs: [{ id: 1, workflow: 'daily-brief', status: 'completed' }],
+      }),
+    );
   });
 });

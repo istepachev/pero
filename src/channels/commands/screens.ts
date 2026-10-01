@@ -20,12 +20,19 @@ export interface Screen {
   buttons?: ButtonRows;
 }
 
+/** A command's answer, and the notice for whoever pressed its button. */
+export interface Answer {
+  screen: Screen;
+  notice: string | null;
+}
+
 const STATUS: OutboundButton = { id: '/status', label: 'Status' };
 const BACK: OutboundButton = { id: '/status', label: '« Back' };
 const NEW: OutboundButton = { id: '/new ask', label: 'New session' };
 const STOP: OutboundButton = { id: '/stop', label: 'Stop' };
 const MODEL: OutboundButton = { id: '/model', label: 'Model' };
 const EFFORT: OutboundButton = { id: '/effort', label: 'Effort' };
+const WORKFLOWS: OutboundButton = { id: '/workflows', label: 'Workflows' };
 
 /** `/help`: each command with its line, and buttons for the common ones. */
 export function helpScreen(): Screen {
@@ -37,7 +44,7 @@ export function helpScreen(): Screen {
     ].join('\n'),
     buttons: [
       [STATUS, NEW, STOP],
-      [MODEL, EFFORT],
+      [MODEL, EFFORT, WORKFLOWS],
     ],
   };
 }
