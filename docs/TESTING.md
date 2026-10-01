@@ -76,7 +76,7 @@ Before merging a PR that bumps the version, walk through the README's [Get start
    pero --version   # the new version
    ```
 
-2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, then asks for the bot token and a provider sign-in, and `pero status` then shows Telegram and the provider ready.
+2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, asks which provider to use when both CLIs are installed and waits until it is signed in, then asks for the bot token. It offers to install Pero as a service: accept, and it ends with `pero status` showing the service's Pero, with Telegram and the provider ready. `systemctl --user status pero` (or `launchctl print gui/$(id -u)/com.perokit.pero` on macOS) shows it running, and after a reboot `pero status` shows it running again.
 3. **Allow a group.** Create a private group with Topics turned on, add the bot as an administrator, and write in it: `pero run` offers to allow that chat.
 4. **Onboard a topic.** Create one: Pero writes `data/Settings/Agents/<Topic title>.md` and posts a welcome naming the new Agent. A message there gets the provider's answer, and a second one continues the conversation.
 5. **Edit a note.** Change that note's instructions, wait 10 seconds, and write in the topic: the answer follows the edit. Break the note, such as with `provider: codx`: the topic gets one message naming the error, and `pero check` lists it. Fix it again.
