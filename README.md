@@ -81,6 +81,8 @@ model: gpt-5.5
 You are my health coach. My training log is in Health/Log.md.
 ```
 
+Or ask the Agent: *"create a Workflow that…"* or *"be less formal"*. Every Agent knows where its note is and how Pero's settings work, asks what it needs, and writes the note once you allow it. The welcome Pero posts in a new topic names that topic's note.
+
 Defaults for every Agent, such as the provider, model, and time zone, are properties of `data/Settings/Pero.md`, and its text is instructions every Agent shares. Pero reads the notes every 10 seconds, so the next message uses your edit. A note with a mistake doesn't stop Pero: it keeps the note's last good version, and tells you in the chat what's wrong. [Configuring Pero](./docs/CONFIGURATION.md) lists every property.
 
 ### Scheduled workflows

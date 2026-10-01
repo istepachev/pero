@@ -121,8 +121,9 @@ describe('Channel onboarding', () => {
       ]);
       const welcome =
         `This topic talks to Agent groceries-errands: codex, model ` +
-        `gpt-5.5-codex, working in ${ws.root}. To see where to change ` +
-        `it, run on the Pero host: pero agents show groceries-errands`;
+        `gpt-5.5-codex, working in ${ws.root}. Its settings and ` +
+        `instructions are in data/Settings/Agents/Groceries & Errands.md: ` +
+        `edit that note, or ask here to change them.`;
       expect(
         welcomeText(
           {
@@ -131,6 +132,7 @@ describe('Channel onboarding', () => {
             model: 'gpt-5.5-codex',
           },
           ws.root,
+          'data/Settings/Agents/Groceries & Errands.md',
           'topic',
         ),
       ).toBe(welcome);

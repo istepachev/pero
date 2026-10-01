@@ -21,6 +21,7 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 │   ├── config.yaml                  # host settings: data folder, allowed chats (commit it)
 │   ├── .gitignore                   # written by Pero: ignores everything else in .pero/
 │   ├── pero.sqlite                  # state: Sessions, history, runs, Notifications
+│   ├── guide.md                     # written by Pero on each start: how Agents change these settings
 │   ├── logs/
 │   └── run/
 ├── data/                            # the data folder, such as an Obsidian vault
@@ -178,11 +179,13 @@ You are my health coach. My training log is in Health/Log.md; append each workou
 | `skip-git-repo-check` | `true`, `false` | `false` | Let a Codex Agent work outside a Git repository |
 | `enabled` | `true`, `false` | `true` | `false` silences it in its topics and stops its Workflows' schedules |
 
+**Every Agent knows where its settings are.** Its instructions start with where the data folder is, the path of its own note, `Pero.md`, and `Workflows/`, and `.pero/guide.md`, which it reads before changing them. So you can ask an Agent in Telegram to "create a Workflow that…", "answer me less formally", or "use opus", and it asks what it needs, such as when a Workflow should run and where it should post, and writes the note. See [Asking an Agent](./USER_GUIDE.md#asking-an-agent-to-change-settings).
+
 **The main Agent** is the note `main-agent` names (`Main.md` by default). It answers the General topic of every allowed group, groups without topics, and direct chats, each in a Session of its own. It may also list `topics`. When its note is missing, Pero writes it the first time a General topic or direct chat needs it.
 
 **Which Agent answers a topic:** the Agent whose `topics` contains the topic's title. When two Agents claim the same title, neither answers there, and Pero reports the conflict on both notes. A topic no Agent claims is handled by `new-topics`:
 
-- `create-agent`: Pero writes `Agents/<Topic title>.md` with `topics: [<Topic title>]`, starting from `Agents/_Template.md` when you've added one (its properties and body, with `topics` added), and posts a welcome. That Agent answers from the first message. Without a template, the note holds `topics` alone, so the Agent follows `Pero.md`.
+- `create-agent`: Pero writes `Agents/<Topic title>.md` with `topics: [<Topic title>]`, starting from `Agents/_Template.md` when you've added one (its properties and body, with `topics` added), and posts a welcome naming the note. That Agent answers from the first message. Without a template, the note holds `topics` alone, so the Agent follows `Pero.md`.
 - `main-agent`: the main Agent answers, in a Session of its own for that topic.
 
 **The template for new topics** is `Agents/_Template.md`. `pero init` doesn't write it; add it when the Agents Pero writes for new topics should start with more than `topics`. Its name starts with `_`, so it's never an Agent itself. Pero copies its properties, comments included, and its body, and sets `topics`:
@@ -307,6 +310,7 @@ Configuration is yours. Pero writes to it only in these cases, and logs each wri
 | When | Writes |
 |---|---|
 | `pero init` | The skeleton files that don't exist yet |
+| Pero starts | `.pero/guide.md`, the guide for Agents, when it differs from this version's. It isn't configuration: don't edit it |
 | A token is stored (`pero run` asks for it, or `pero telegram token`) | `.env`, and the `.env` line in `.gitignore` if it's missing |
 | `pero telegram allow`/`deny` | The `allowed-chats` list in `config.yaml` |
 | A group gets a new chat ID (topics turned on) | That entry's `id` in `config.yaml` |

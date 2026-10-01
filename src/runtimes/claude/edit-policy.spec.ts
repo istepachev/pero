@@ -158,4 +158,43 @@ describe('editDecision', () => {
       ),
     ).toBe('allow');
   });
+
+  describe("Pero's guide", () => {
+    let guide: string;
+
+    beforeEach(() => {
+      mkdirSync(join(tmp, '.pero'));
+      guide = join(tmp, '.pero', 'guide.md');
+      writeFileSync(guide, '# Pero guide');
+    });
+
+    function read(file_path: unknown, workingDirectory = vault) {
+      return editDecision(
+        'Read',
+        { file_path },
+        { workingDirectory, settingsFolder: settings, guideFile: guide },
+      );
+    }
+
+    it('is read without asking, from any folder and however the path is written', async () => {
+      expect(await read(guide)).toBe('allow');
+      expect(await read('../.pero/guide.md')).toBe('allow');
+      expect(await read(guide, join(settings, 'Agents'))).toBe('allow');
+      symlinkSync(join(tmp, '.pero'), join(vault, 'pero-link'));
+      expect(await read(join(vault, 'pero-link', 'guide.md'))).toBe('allow');
+    });
+
+    it('allows reading nothing else, nor editing it', async () => {
+      expect(await read(join(tmp, '.pero', 'config.yaml'))).toBe('ask');
+      expect(await read(join(tmp, '.env'))).toBe('ask');
+      expect(await read(undefined)).toBe('ask');
+      expect(
+        await editDecision(
+          'Write',
+          { file_path: guide },
+          { workingDirectory: tmp, guideFile: guide },
+        ),
+      ).toBe('ask');
+    });
+  });
 });

@@ -52,6 +52,8 @@ One daemon runs per workspace. It holds a lock on `run/pero.lock` for as long as
 
 The `shutdown` operation, SIGTERM, and SIGINT (Ctrl-C) stop the daemon the same way: it stops intake, waits up to 30 s for active work, closes the database, removes the socket and `run/pero.json`, and exits. `run/pero.lock` stays in place. A second signal exits immediately.
 
+At startup the daemon writes `src/guide/guide.md`, the guide every Agent's instructions point to, to `.pero/guide.md` when that file differs. It ships as a build asset (`nest-cli.json`). Keep it in step with [Configuring Pero](./CONFIGURATION.md) when a property or behavior an Agent might change or explain changes; `src/guide/agent-guide.spec.ts` fails when its property tables or effort levels drift from the note schemas.
+
 With a bot token set, the daemon long-polls Telegram; readiness never waits for it. [Architecture](./ARCHITECTURE.md) and [CLI and service lifecycle](./CLI.md#process-and-command-boundaries) cover the design in depth.
 
 ## Provider smoke tests

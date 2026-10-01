@@ -4,6 +4,12 @@
   "sourceRoot": "src",
   "entryFile": "daemon/main",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "assets": [
+      {
+        "include": "guide/guide.md",
+        "watchAssets": true
+      }
+    ]
   }
 }

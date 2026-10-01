@@ -70,6 +70,9 @@ pero run </dev/null
 step 'pero status'
 pero status
 
+step 'The guide for Agents is in .pero/'
+grep -q '^# Pero guide for Agents' .pero/guide.md || fail 'Pero did not write .pero/guide.md'
+
 step 'Committing the workspace commits config.yaml and nothing secret'
 printf 'PERO_TELEGRAM_BOT_TOKEN=123456789:not-a-real-token\n' >.env
 chmod 600 .env
@@ -78,7 +81,7 @@ staged="$(git diff --cached --name-only)"
 printf '%s\n' "$staged"
 grep -qx '.pero/config.yaml' <<<"$staged" || fail 'config.yaml is not staged'
 grep -qx 'data/Settings/Pero.md' <<<"$staged" || fail 'Pero.md is not staged'
-if grep -Eq '^\.env$|pero\.sqlite|^\.pero/(logs|run)/' <<<"$staged"; then
+if grep -Eq '^\.env$|pero\.sqlite|^\.pero/(logs|run|guide\.md)' <<<"$staged"; then
   fail 'Git would commit a secret or Pero state'
 fi
 git commit --quiet -m 'Pero workspace'

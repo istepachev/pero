@@ -5,6 +5,7 @@ import { AppModule } from '../app.module.js';
 import type { BootstrapConfig } from '../config/bootstrap-config.js';
 import { ensureWorkspaceLayout } from '../config/workspace-layout.js';
 import { ControlService } from '../control/control.service.js';
+import { guideFile, writeAgentGuide } from '../guide/agent-guide.js';
 import {
   findRunningDaemon,
   removeDaemonMetadata,
@@ -80,6 +81,19 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   } catch (error) {
     lock.release();
     throw error;
+  }
+
+  // Agents read it before changing settings; a guide that can't be written
+  // leaves them without it, not Pero.
+  const guide = guideFile(layout.workspace);
+  try {
+    if (writeAgentGuide(guide))
+      logger.info({ file: guide }, 'Wrote the guide for Agents');
+  } catch (error) {
+    logger.warn(
+      { err: error, file: guide },
+      'Could not write the guide for Agents',
+    );
   }
 
   try {

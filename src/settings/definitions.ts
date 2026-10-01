@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { homedir } from 'node:os';
 import { join, posix } from 'node:path';
 import { NotFoundError } from '../common/errors.js';
+import { guideFile } from '../guide/agent-guide.js';
 import type { Provider, ProviderDefaults } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
 import { shownPath } from '../settings-files/note-paths.js';
@@ -33,6 +34,10 @@ export interface Defaults {
   maxConcurrentRuns: number;
   /** The owner's notes and files, which every Agent's instructions name. */
   dataFolder: string;
+  /** The notes themselves, which every Agent's instructions name. */
+  settingsFolder: string;
+  /** The guide to the notes in `.pero/`, which every Agent's instructions name. */
+  guideFile: string;
   /** Placed before each opted-in Agent's own instructions; null for none. */
   sharedInstructions: string | null;
 }
@@ -93,7 +98,7 @@ export class Definitions {
   constructor(private readonly notes: SettingsNotes) {}
 
   defaults(): Defaults {
-    const { snapshot, dataFolder } = this.current();
+    const { snapshot, dataFolder, settingsFolder, workspace } = this.current();
     return {
       provider: snapshot.defaults.provider,
       providerDefaults: snapshot.defaults.providerDefaults,
@@ -103,6 +108,8 @@ export class Definitions {
       historyRetentionDays: snapshot.defaults.historyRetentionDays,
       maxConcurrentRuns: snapshot.defaults.maxConcurrentRuns,
       dataFolder,
+      settingsFolder,
+      guideFile: guideFile(workspace),
       sharedInstructions: snapshot.sharedInstructions,
     };
   }

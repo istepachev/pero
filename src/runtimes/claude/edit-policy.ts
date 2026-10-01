@@ -57,14 +57,24 @@ const CONFIG_FILES = new Set([
  * Decides about `tool`, called with `input`, for an Agent working in
  * `workingDirectory`: an edit in its folder is allowed, except under
  * `settingsFolder` and of the configuration files above, each resolved
- * through `../` and symlinks. Anything else asks, and so does a path that
- * can't be resolved.
+ * through `../` and symlinks. So is reading `guideFile`, Pero's guide to
+ * its settings, which an Agent's instructions name wherever its folder is.
+ * Anything else asks, and so does a path that can't be resolved.
  */
 export async function editDecision(
   tool: string,
   input: Record<string, unknown>,
-  folders: { workingDirectory: string; settingsFolder?: string },
+  folders: {
+    workingDirectory: string;
+    settingsFolder?: string;
+    guideFile?: string;
+  },
 ): Promise<EditDecision> {
+  if (tool === 'Read' && folders.guideFile !== undefined) {
+    return (await readsFile(input, folders.workingDirectory, folders.guideFile))
+      ? 'allow'
+      : 'ask';
+  }
   const key = EDIT_TOOLS[tool];
   const path = key === undefined ? undefined : input[key];
   if (typeof path !== 'string' || path === '') return 'ask';
@@ -84,6 +94,24 @@ export async function editDecision(
       : 'ask';
   } catch {
     return 'ask';
+  }
+}
+
+/** Whether a `Read` with `input` reads `file`, resolved as `editDecision` does. */
+async function readsFile(
+  input: Record<string, unknown>,
+  workingDirectory: string,
+  file: string,
+): Promise<boolean> {
+  const path = input.file_path;
+  if (typeof path !== 'string' || path === '') return false;
+  try {
+    return (
+      (await realPath(resolve(workingDirectory, expandHome(path)))) ===
+      (await realPath(file))
+    );
+  } catch {
+    return false;
   }
 }
 

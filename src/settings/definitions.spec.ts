@@ -72,6 +72,8 @@ describe('Definitions', () => {
       historyRetentionDays: null,
       maxConcurrentRuns: 3,
       dataFolder: FOLDERS.dataFolder,
+      settingsFolder: FOLDERS.settingsFolder,
+      guideFile: '/home/me/workspace/.pero/guide.md',
       sharedInstructions: 'Be brief.',
     });
   });
