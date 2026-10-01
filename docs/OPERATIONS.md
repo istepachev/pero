@@ -8,10 +8,11 @@ Pero needs Node.js 22.17+ or 24.11+ and runs on Linux and macOS:
 
 ```sh
 npm install -g @perokit/pero
+mkdir ~/workspace && cd ~/workspace
 pero run
 ```
 
-Run from the home folder, `pero run` offers to make the workspace Pero runs in, `~/workspace`; commands find it from any folder inside it, and from the home folder. To make it without a terminal, such as in a provisioning script, or in another folder, run `pero init <dir>` first. Run Pero under the OS account whose Claude Code and Codex sign-ins it should use: your own account is simplest. For a dedicated account, such as `pero`, do everything below as that account with its own home directory and environment (`sudo -iu pero`, not `sudo -u pero`), as [Testing](./TESTING.md#provider-smoke-tests-under-the-services-account) describes for the smoke tests.
+In a folder that isn't a workspace yet, `pero run` offers to make it the workspace Pero runs in; commands find it from any folder inside it, and from the home folder. To make it without a terminal, such as in a provisioning script, run `pero init <dir>` first. Run Pero under the OS account whose Claude Code and Codex sign-ins it should use: your own account is simplest. For a dedicated account, such as `pero`, do everything below as that account with its own home directory and environment (`sudo -iu pero`, not `sudo -u pero`), as [Testing](./TESTING.md#provider-smoke-tests-under-the-services-account) describes for the smoke tests.
 
 `pero run` starts Pero in the background and keeps it running after the terminal closes, but not across a reboot. To start it with the machine, let a service manager run `pero run --foreground`. With systemd, a user unit for the account that runs Pero:
 
