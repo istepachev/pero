@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   type BootstrapConfig,
@@ -6,6 +13,7 @@ import {
   resolveBootstrapConfig,
 } from '../../config/bootstrap-config.js';
 import {
+  DEFAULT_DATA_FOLDER,
   hostConfigPath,
   readHostConfig,
   resolveSettingsFolder,
@@ -59,7 +67,8 @@ export interface FirstRun {
 /**
  * The configuration `pero run` starts with. When no workspace is found, a
  * terminal is offered one where it suits (the current folder, or
- * `~/workspace` from home), made as `pero init` makes it; declining, or
+ * `~/workspace` from home), made as `pero init` makes it, with the data
+ * folder the owner picks among the folders already there; declining, or
  * having no terminal, stops with the `pero init` to run.
  *
  * On a terminal, a workspace's first start (no database yet) first settles
@@ -101,10 +110,13 @@ export async function configOrNewWorkspace(
     return { config: config!, firstRun: false };
   }
 
-  const note = peroNotePath(workspace, context.home);
   const block = context.block ?? (() => undefined);
+  let data: string | undefined;
+  let note: string;
   let provider: Provider | null = null;
   try {
+    if (config === null) data = await pickDataFolder(context, workspace);
+    note = peroNotePath(workspace, context.home, data);
     if (context.checkProviders !== false) {
       block();
       provider = await settleProvider(context, providerIn(note));
@@ -116,7 +128,9 @@ export async function configOrNewWorkspace(
 
   block();
   if (config === null) {
-    context.print(formatInit(initWorkspace(suggested, context.home), false));
+    context.print(
+      formatInit(initWorkspace(suggested, context.home, data), false),
+    );
     config = resolveBootstrapConfig({
       workspace: suggested,
       ...(context.home === undefined ? {} : { homeDir: context.home }),
@@ -126,11 +140,63 @@ export async function configOrNewWorkspace(
   return { config, firstRun: true };
 }
 
-/** `Pero.md` of `workspace`, where its `config.yaml` puts the settings. */
-function peroNotePath(workspace: string, home?: string): string {
+/**
+ * The data folder of a new workspace in `workspace`, relative to it: the
+ * owner's pick among the folders already there, with `data/` selected, or
+ * else offered to be created. Asks nothing when there is no folder yet.
+ */
+async function pickDataFolder(
+  context: FirstRunContext,
+  workspace: string,
+): Promise<string> {
+  const folders = foldersIn(workspace);
+  if (folders.length === 0) return DEFAULT_DATA_FOLDER;
+  const choices = folders.map((name) => ({ value: name, name: `${name}/` }));
+  if (!folders.includes(DEFAULT_DATA_FOLDER)) {
+    choices.unshift({
+      value: DEFAULT_DATA_FOLDER,
+      name: `Create ${DEFAULT_DATA_FOLDER}/`,
+    });
+  }
+  return (await context.prompts()).select({
+    message: 'Which folder is the vault your Agents keep notes in?',
+    choices,
+    initial: DEFAULT_DATA_FOLDER,
+  });
+}
+
+/**
+ * The folders directly in `dir`, by name, leaving out hidden ones; a link
+ * to a folder counts, as a linked vault may be. None when `dir` is missing.
+ */
+function foldersIn(dir: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  return names
+    .filter((name) => !name.startsWith('.'))
+    .filter((name) => {
+      try {
+        return statSync(join(dir, name)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * `Pero.md` of `workspace`, where its `config.yaml` puts the settings; in a
+ * workspace without one, in data folder `data`.
+ */
+function peroNotePath(workspace: string, home?: string, data?: string): string {
   const stateDir = workspaceLayout(workspace).stateDir;
   const config = readHostConfig(hostConfigPath(stateDir)) ?? {
-    data: null,
+    data: data ?? null,
     settings: null,
   };
   return join(resolveSettingsFolder(config, workspace, home), PERO_NOTE);
