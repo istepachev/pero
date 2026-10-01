@@ -2,9 +2,11 @@ import { resolvePath } from '../config/bootstrap-config.js';
 import {
   CLAUDE_EFFORTS,
   CODEX_EFFORTS,
+  type Effort,
   type Provider,
 } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
+import type { Schedule } from '../scheduler/schedule.js';
 import { parseNote, type ParsedNote } from './note.js';
 import {
   isIgnoredPath,
@@ -39,29 +41,36 @@ export interface Defaults extends Omit<
 }
 
 /** An Agent as it runs: its note with `Pero.md`'s defaults applied. */
-export interface AgentDefinition {
+export interface Agent {
   name: string;
+  /** Its note's title, such as `Weekly health`. */
   title: string;
   /** Its note's path inside the settings folder. */
   file: string;
   topics: readonly string[];
   provider: Provider;
+  /** Null lets the provider choose. */
   model: string | null;
-  effort: string | null;
+  /** One of `provider`'s levels; null lets the provider choose. */
+  effort: Effort | null;
   permissions: PermissionMode;
-  /** Absolute. */
+  /** The folder it works in, absolute: its own, or the data folder. */
   workingDirectory: string;
+  /** Whether `Pero.md`'s body precedes its own instructions. */
   sharedInstructions: boolean;
+  /** Lets a Codex Agent work in a folder that is not a Git repository. */
   skipGitRepoCheck: boolean;
   enabled: boolean;
+  /** Its note's body; null for none. */
   instructions: string | null;
   /** What the note itself sets, to tell its values from the defaults. */
   note: AgentNote;
 }
 
 /** A Workflow as it runs. */
-export interface WorkflowDefinition {
+export interface Workflow {
   name: string;
+  /** Its note's title. */
   title: string;
   file: string;
   /**
@@ -70,25 +79,43 @@ export interface WorkflowDefinition {
    * Channel ID and no lookup was given to find out which topic that is.
    */
   agent: string | null;
-  /** Null: it runs only by hand. */
-  schedule: { cron: string; timezone: string } | null;
+  /** When it runs by itself; null: it runs only by hand. */
+  schedule: Schedule | null;
+  /** Where each run's answer is posted, as the note names them. */
   channels: readonly ChannelRef[];
+  /** The Channel history each run reads; null reads none. */
   history: WorkflowNoteHistory | null;
   /**
    * The Channels `channels` and `history-channels` name, by ID, once a
    * lookup found them; null without one.
    */
   resolved: ResolvedChannels | null;
+  /** How many times a run of it may start in all. */
   maxAttempts: number;
   enabled: boolean;
+  /** What each run sends the Agent. */
   input: string;
+}
+
+/**
+ * A Workflow whose Agent and Channels a lookup found, as it is wherever
+ * Pero runs with a database.
+ */
+export type ResolvedWorkflow = Workflow & {
+  agent: string;
+  resolved: ResolvedChannels;
+};
+
+/** Whether `workflow`'s Agent and Channels were found. */
+export function isResolved(workflow: Workflow): workflow is ResolvedWorkflow {
+  return workflow.agent !== null && workflow.resolved !== null;
 }
 
 /** The Channels a Workflow's references name, by ID. */
 export interface ResolvedChannels {
   /** Where each run's answer is posted, in the order `channel` names them. */
   targets: readonly number[];
-  /** Whose history runs read: `all`, or those `history-channels` names. */
+  /** Whose history runs read: `all`, or those `history-channels` names, by ID. */
   history: 'all' | readonly number[];
 }
 
@@ -102,10 +129,10 @@ export interface SettingsSnapshot {
    * Pero's own defaults.
    */
   peroProperties: ReadonlySet<string>;
-  agents: ReadonlyMap<string, AgentDefinition>;
+  agents: ReadonlyMap<string, Agent>;
   /** The name of the main Agent; its note may not exist yet. */
   mainAgent: string;
-  workflows: ReadonlyMap<string, WorkflowDefinition>;
+  workflows: ReadonlyMap<string, Workflow>;
   /** Topic titles, lowercased, and the Agent each is answered by. */
   topicClaims: ReadonlyMap<string, string>;
   /** Topic titles, lowercased, that several Agents claim: none answers. */
@@ -275,7 +302,7 @@ export function buildSnapshot(
 
   // Names of Agent notes that exist but are left out, for notes naming them.
   const brokenAgents = new Set<string>();
-  const agents = new Map<string, AgentDefinition>();
+  const agents = new Map<string, Agent>();
   for (const read of withUniqueNames(agentNotes, errors, brokenAgents)) {
     if (!read.result.ok) {
       brokenAgents.add(read.identity.name);
@@ -291,7 +318,7 @@ export function buildSnapshot(
   }
 
   // Topic claims.
-  const claimants = new Map<string, AgentDefinition[]>();
+  const claimants = new Map<string, Agent[]>();
   for (const agent of agents.values()) {
     for (const title of agent.topics) {
       const key = title.toLowerCase();
@@ -353,7 +380,7 @@ export function buildSnapshot(
     mainAgent,
     context.topics,
   );
-  const workflows = new Map<string, WorkflowDefinition>();
+  const workflows = new Map<string, Workflow>();
   for (const read of withUniqueNames(workflowNotes, errors, new Set())) {
     if (!read.result.ok) continue;
     const workflow = resolver.define(read, read.result.value, defaults);
@@ -429,7 +456,7 @@ function defineAgent(
   note: AgentNote,
   defaults: Defaults,
   context: SnapshotContext,
-): AgentDefinition | string {
+): Agent | string {
   const provider = note.provider ?? defaults.provider;
   const efforts = EFFORTS_BY_PROVIDER[provider];
   if (note.effort !== null && !efforts.includes(note.effort)) {
@@ -443,7 +470,8 @@ function defineAgent(
     topics: note.topics,
     provider,
     model: note.model ?? own.model,
-    effort: note.effort ?? own.effort,
+    // Checked above against the provider.
+    effort: (note.effort as Effort | null) ?? own.effort,
     permissions: note.permissions ?? defaults.permissions,
     workingDirectory:
       note.workingDirectory === null
@@ -498,7 +526,7 @@ export function topicClaim(
 /** Resolves what Workflow notes refer to: Agents and Channels. */
 class WorkflowResolver {
   constructor(
-    private readonly agents: ReadonlyMap<string, AgentDefinition>,
+    private readonly agents: ReadonlyMap<string, Agent>,
     private readonly brokenAgents: ReadonlySet<string>,
     private readonly topicClaims: ReadonlyMap<string, string>,
     private readonly conflictedTopics: ReadonlySet<string>,
@@ -511,7 +539,7 @@ class WorkflowResolver {
     read: Read<WorkflowNote>,
     note: WorkflowNote,
     defaults: Defaults,
-  ): WorkflowDefinition | SettingsError[] {
+  ): Workflow | SettingsError[] {
     const errors: SettingsError[] = [];
     const error = (property: string, message: string) =>
       errors.push({ file: read.file, property, message });
@@ -586,7 +614,7 @@ class WorkflowResolver {
                       historyChannels.map(
                         (ref) => this.check(ref) as ResolvedRef,
                       ),
-                    ),
+                    ).sort((a, b) => a - b),
             },
       maxAttempts: note.maxAttempts,
       enabled: note.enabled,

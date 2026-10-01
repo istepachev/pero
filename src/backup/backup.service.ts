@@ -194,10 +194,10 @@ export class BackupService implements BeforeApplicationShutdown {
     const agents = this.definitions.agents();
     return [
       { path: this.dataFolder(), agent: null },
-      ...agents.flatMap(({ name, ownWorkingDirectory }) =>
-        ownWorkingDirectory === null
+      ...agents.flatMap(({ name, note, workingDirectory }) =>
+        note.workingDirectory === null
           ? []
-          : [{ path: ownWorkingDirectory, agent: name }],
+          : [{ path: workingDirectory, agent: name }],
       ),
     ];
   }

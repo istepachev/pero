@@ -128,7 +128,7 @@ describe('Channel onboarding', () => {
           {
             name: 'groceries-errands',
             provider: 'codex',
-            providerOptions: { model: 'gpt-5.5-codex', effort: 'low' },
+            model: 'gpt-5.5-codex',
           },
           ws.dataFolder,
           'topic',

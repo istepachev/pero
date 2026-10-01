@@ -10,10 +10,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Like } from 'typeorm';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import {
-  Definitions,
-  type WorkflowDefinition,
-} from '../settings/definitions.js';
+import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
+import { Definitions } from '../settings/definitions.js';
 import {
   countOccurrences,
   nextOccurrence,
@@ -404,7 +402,7 @@ export class ScheduleTick
 }
 
 /** The names of the disabled Workflows among `workflows`, lower case. */
-function disabledNames(workflows: readonly WorkflowDefinition[]): Set<string> {
+function disabledNames(workflows: readonly ResolvedWorkflow[]): Set<string> {
   return new Set(
     workflows
       .filter((workflow) => !workflow.enabled)

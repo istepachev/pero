@@ -4,10 +4,9 @@ import type { DataSource, EntityManager } from 'typeorm';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { topicClaim } from '../settings-files/snapshot.js';
+import { type Agent, topicClaim } from '../settings-files/snapshot.js';
 import { AgentNotes } from '../settings/agent-notes.service.js';
 import {
-  type AgentDefinition,
   Definitions,
   type Route,
   routeQuery,
@@ -29,11 +28,11 @@ import {
 
 /** Posted in a new Channel: who answers there and how to change it. */
 export function welcomeText(
-  agent: Pick<AgentDefinition, 'name' | 'provider' | 'providerOptions'>,
+  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
   folder: string,
   where: 'topic' | 'chat',
 ): string {
-  const { model } = agent.providerOptions;
+  const { model } = agent;
   return (
     `This ${where} talks to Agent ${agent.name}: ${agent.provider}, ` +
     `${model === null ? 'default model' : `model ${model}`}, ` +
@@ -209,10 +208,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /** Posts the welcome in `channel`, once while Pero runs. */
-  private async welcome(
-    channel: Channel,
-    agent: AgentDefinition,
-  ): Promise<void> {
+  private async welcome(channel: Channel, agent: Agent): Promise<void> {
     if (this.welcomed.has(channel.id)) return;
     this.welcomed.add(channel.id);
     const text = welcomeText(

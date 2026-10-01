@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import type { ResolvedAgent } from '../agents/agent-resolution.js';
+import { type AgentRequest, agentRequest } from '../agents/agent-request.js';
 import {
   PROVIDERS,
   providerOptionsSchema,
 } from '../config/provider-options.js';
 import { toolPolicySchema } from '../config/tool-policy.js';
 import { HISTORY_MESSAGES } from '../config/workflow-input.js';
+import type { Agent } from '../settings-files/snapshot.js';
 
 /**
  * The window of Channel history a run reads, fixed when the executor
@@ -51,7 +52,8 @@ export const executionSnapshotSchema = z.object({
   /** Shared and own instructions, already composed. */
   instructions: z.string(),
   toolPolicy: toolPolicySchema,
-  codexSkipGitRepoCheck: z.boolean(),
+  /** Lets a Codex Agent work in a folder that is not a Git repository. */
+  skipGitRepoCheck: z.boolean(),
   /** What the run sends the Agent, with any history already rendered. */
   input: z.string(),
   /** The Channel history the input carries; absent when it reads none. */
@@ -60,21 +62,32 @@ export const executionSnapshotSchema = z.object({
 
 export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
 
-/** The snapshot of `agent`'s settings with `input` and its `history`. */
+/**
+ * The snapshot of `agent`'s settings, with the shared instructions
+ * composed in, and of `input` and its `history`.
+ */
 export function executionSnapshot(
-  agent: ResolvedAgent,
+  agent: Agent,
+  defaults: { sharedInstructions: string | null },
   input: string,
   history?: HistoryRead,
 ): ExecutionSnapshot {
   return {
     agentName: agent.name,
     provider: agent.provider,
-    providerOptions: agent.providerOptions,
-    workingDirectory: agent.workingDirectory,
-    instructions: agent.instructions,
-    toolPolicy: agent.toolPolicy,
-    codexSkipGitRepoCheck: agent.codexSkipGitRepoCheck,
+    ...agentRequest(agent, defaults),
     input,
     ...(history === undefined ? {} : { history }),
+  };
+}
+
+/** The Agent's part of a runtime request, as `snapshot` captured it. */
+export function snapshotRequest(snapshot: ExecutionSnapshot): AgentRequest {
+  return {
+    instructions: snapshot.instructions,
+    providerOptions: snapshot.providerOptions,
+    workingDirectory: snapshot.workingDirectory,
+    skipGitRepoCheck: snapshot.skipGitRepoCheck,
+    toolPolicy: snapshot.toolPolicy,
   };
 }

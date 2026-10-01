@@ -395,14 +395,14 @@ describe('Workflow Runs and the executor', () => {
       });
       await expect(
         moduleRef.get(AgentManager).runIsolated({
-          agent: {
-            name: 'coach',
-            provider: 'claude',
+          agent: 'coach',
+          provider: 'claude',
+          request: {
             providerOptions: { model: null, effort: null },
             workingDirectory: vault,
             instructions: '',
             toolPolicy: { permissions: 'ask' },
-            codexSkipGitRepoCheck: false,
+            skipGitRepoCheck: false,
           },
           input: 'Late',
           label: 'test',

@@ -2,23 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { homedir } from 'node:os';
 import { join, posix } from 'node:path';
 import { NotFoundError } from '../common/errors.js';
-import type {
-  Provider,
-  ProviderDefaults,
-  ProviderOptions,
-} from '../config/provider-options.js';
+import type { Provider, ProviderDefaults } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
-import type { WorkflowHistory } from '../config/workflow-input.js';
-import type { Schedule } from '../scheduler/schedule.js';
 import { shownPath } from '../settings-files/note-paths.js';
 import { agentNoteFor } from '../settings-files/note-writer.js';
 import { NOTE_FOLDERS } from '../settings-files/note-files.js';
 import {
-  type AgentDefinition as NoteAgent,
+  type Agent,
   buildSnapshot,
+  isResolved,
+  type ResolvedWorkflow,
   type SettingsSnapshot,
   topicClaim,
-  type WorkflowDefinition as NoteWorkflow,
 } from '../settings-files/snapshot.js';
 import { SettingsNotes } from './settings-notes.service.js';
 
@@ -40,48 +35,6 @@ export interface Defaults {
   dataFolder: string;
   /** Placed before each opted-in Agent's own instructions; null for none. */
   sharedInstructions: string | null;
-}
-
-/** An Agent as it runs, with the defaults it follows applied. */
-export interface AgentDefinition {
-  name: string;
-  /** Display name; null shows `name`. */
-  title: string | null;
-  provider: Provider;
-  /** Model and effort for `provider`; null lets the provider choose. */
-  providerOptions: ProviderOptions;
-  permissions: PermissionMode;
-  /** The folder it works in, absolute: its own, or the data folder. */
-  workingDirectory: string;
-  /** Its own folder; null follows the data folder. */
-  ownWorkingDirectory: string | null;
-  /** Its own instructions; null for none. */
-  instructions: string | null;
-  /** Whether the shared instructions precede its own. */
-  sharedInstructions: boolean;
-  /** Lets a Codex Agent work in a folder that is not a Git repository. */
-  skipGitRepoCheck: boolean;
-  enabled: boolean;
-}
-
-/** A Workflow as it runs. */
-export interface WorkflowDefinition {
-  name: string;
-  /** Display name; null shows `name`. */
-  title: string | null;
-  /** The name of the Agent that runs it. */
-  agent: string;
-  /** What each run sends the Agent. */
-  input: string;
-  /** The Channel history each run reads; null reads none. */
-  history: WorkflowHistory | null;
-  /** The Channels, by ID, told of each run that finishes. */
-  targets: number[];
-  /** How many times a run of it may start in all. */
-  maxAttempts: number;
-  /** When it runs by itself: a cron expression in a time zone; null for never. */
-  schedule: Schedule | null;
-  enabled: boolean;
 }
 
 /** A Channel as routing sees it. */
@@ -126,8 +79,7 @@ export type Unanswered =
 
 /** Who answers in a Channel now: an enabled Agent, or no one and why. */
 export type Route =
-  | { kind: 'agent'; agent: AgentDefinition }
-  | { kind: 'unanswered'; reason: Unanswered };
+  { kind: 'agent'; agent: Agent } | { kind: 'unanswered'; reason: Unanswered };
 
 /**
  * What Pero is configured to run: the defaults, the Agents, and the
@@ -156,25 +108,23 @@ export class Definitions {
   }
 
   /** The Agent named `name`, in any case; null if none. */
-  agent(name: string): AgentDefinition | null {
+  agent(name: string): Agent | null {
     const { snapshot } = this.current();
-    const agent = snapshot.agents.get(name.toLowerCase());
-    return agent === undefined ? null : agentDefinition(agent);
+    return snapshot.agents.get(name.toLowerCase()) ?? null;
   }
 
   /** Every Agent, by name. */
-  agents(): AgentDefinition[] {
+  agents(): Agent[] {
     const { snapshot } = this.current();
-    return [...snapshot.agents.values()]
-      .map(agentDefinition)
-      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return [...snapshot.agents.values()].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
   }
 
   /** The Agent primary Channels get; null while no note defines it. */
-  mainAgent(): AgentDefinition | null {
+  mainAgent(): Agent | null {
     const { snapshot } = this.current();
-    const agent = snapshot.agents.get(snapshot.mainAgent);
-    return agent === undefined ? null : agentDefinition(agent);
+    return snapshot.agents.get(snapshot.mainAgent) ?? null;
   }
 
   /** The name of the Agent primary Channels get, even while it is not defined. */
@@ -211,7 +161,7 @@ export class Definitions {
           file: shown(agent.file),
         });
       }
-      return { kind: 'agent', agent: agentDefinition(agent) };
+      return { kind: 'agent', agent };
     };
     const toMain = snapshot.defaults.newTopics === 'main-agent';
 
@@ -244,19 +194,22 @@ export class Definitions {
     }
   }
 
-  /** The Workflow named `name`, in any case; null if none. */
-  workflow(name: string): WorkflowDefinition | null {
+  /**
+   * The Workflow named `name`, in any case; null if none. Its Channel
+   * references always resolve here, since the notes are read with the
+   * Channels Pero has seen.
+   */
+  workflow(name: string): ResolvedWorkflow | null {
     const { snapshot } = this.current();
     const workflow = snapshot.workflows.get(name.toLowerCase());
-    return workflow === undefined ? null : workflowDefinition(workflow);
+    return workflow !== undefined && isResolved(workflow) ? workflow : null;
   }
 
   /** Every Workflow, by name. */
-  workflows(): WorkflowDefinition[] {
+  workflows(): ResolvedWorkflow[] {
     const { snapshot } = this.current();
     return [...snapshot.workflows.values()]
-      .map(workflowDefinition)
-      .filter((workflow) => workflow !== null)
+      .filter(isResolved)
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
 
@@ -298,10 +251,7 @@ export class Definitions {
 }
 
 /** The Agent named `name`; `NotFoundError` if none. */
-export function requireAgent(
-  definitions: Definitions,
-  name: string,
-): AgentDefinition {
+export function requireAgent(definitions: Definitions, name: string): Agent {
   const agent = definitions.agent(name);
   if (agent === null) throw new NotFoundError(`No Agent named ${name}`);
   return agent;
@@ -311,63 +261,8 @@ export function requireAgent(
 export function requireWorkflow(
   definitions: Definitions,
   name: string,
-): WorkflowDefinition {
+): ResolvedWorkflow {
   const workflow = definitions.workflow(name);
   if (workflow === null) throw new NotFoundError(`No Workflow named ${name}`);
   return workflow;
-}
-
-/** The Agent in a note, as runtime code reads it. */
-export function agentDefinition(agent: NoteAgent): AgentDefinition {
-  return {
-    name: agent.name,
-    title: agent.title,
-    provider: agent.provider,
-    // The snapshot checked the effort against the provider.
-    providerOptions: {
-      model: agent.model,
-      effort: agent.effort as ProviderOptions['effort'],
-    },
-    permissions: agent.permissions,
-    workingDirectory: agent.workingDirectory,
-    ownWorkingDirectory:
-      agent.note.workingDirectory === null ? null : agent.workingDirectory,
-    instructions: agent.instructions,
-    sharedInstructions: agent.sharedInstructions,
-    skipGitRepoCheck: agent.skipGitRepoCheck,
-    enabled: agent.enabled,
-  };
-}
-
-/**
- * The Workflow in a note, as runtime code reads it; null until its Channel
- * references resolve, which they do wherever Pero runs with a database.
- */
-export function workflowDefinition(
-  workflow: NoteWorkflow,
-): WorkflowDefinition | null {
-  const { resolved, agent } = workflow;
-  if (resolved === null || agent === null) return null;
-  return {
-    name: workflow.name,
-    title: workflow.title,
-    agent,
-    input: workflow.input,
-    history:
-      workflow.history === null
-        ? null
-        : {
-            channels:
-              resolved.history === 'all'
-                ? 'all'
-                : [...resolved.history].sort((a, b) => a - b),
-            messages: workflow.history.messages,
-            hours: workflow.history.hours,
-            runWhenEmpty: workflow.history.runWhenEmpty,
-          },
-    targets: [...resolved.targets],
-    maxAttempts: workflow.maxAttempts,
-    schedule: workflow.schedule,
-    enabled: workflow.enabled,
-  };
 }

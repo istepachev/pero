@@ -5,8 +5,8 @@ import {
   type RunStatus,
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
-import type { WorkflowDefinition } from '../settings/definitions.js';
 import type { ExecutionSnapshot } from './execution-snapshot.js';
+import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
 
 const logger = new Logger('Notifications');
 
@@ -36,7 +36,7 @@ export interface RunFinish {
 export async function finishRun(
   manager: EntityManager,
   runId: number,
-  workflow: WorkflowDefinition | null,
+  workflow: ResolvedWorkflow | null,
   fields: RunFinish,
   { retried = false }: { retried?: boolean } = {},
 ): Promise<void> {

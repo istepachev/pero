@@ -16,13 +16,14 @@ import { signInHint } from '../providers/provider-auth.js';
 import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import { SessionService } from '../sessions/session.service.js';
+import type { Agent } from '../settings-files/snapshot.js';
 import {
   Definitions,
   requireAgent,
   routeQuery,
 } from '../settings/definitions.js';
 import { SettingsNotes } from '../settings/settings-notes.service.js';
-import { type ResolvedAgent, resolveAgent } from './agent-resolution.js';
+import { type AgentRequest, agentRequest } from './agent-request.js';
 
 /** One message for the Agent assigned to a Channel. */
 export interface TurnInput {
@@ -48,8 +49,11 @@ export interface TurnResult {
  * or record, no history, and no one to approve tools.
  */
 export interface IsolatedTurn {
-  /** The Agent's settings as captured for this turn. */
-  agent: RuntimeAgent;
+  /** The name of the Agent that runs it. */
+  agent: string;
+  provider: Provider;
+  /** The Agent's part of the request, as captured for this turn. */
+  request: AgentRequest;
   input: string;
   /** Names the turn in logs, such as `Workflow daily-brief, run 7`. */
   label: string;
@@ -63,9 +67,6 @@ export interface IsolatedResult {
   /** The provider's ID for the conversation; null if it reported none. */
   providerSessionId: string | null;
 }
-
-/** The Agent settings a turn runs with. */
-export type RuntimeAgent = Omit<ResolvedAgent, 'enabled'>;
 
 /** A turn that produced no answer; the message says why, for the owner. */
 export class TurnError extends Error {
@@ -198,9 +199,10 @@ export class AgentManager implements BeforeApplicationShutdown {
     try {
       // The Agent as the turn starts, then one snapshot of its Session and
       // the history.
-      const resolved = this.resolve(turn.agent);
+      const defined = requireAgent(this.definitions, turn.agent);
+      const request = agentRequest(defined, this.definitions.defaults());
       const first = await inTransaction(this.dataSource, (manager) =>
-        this.prepareWithin(manager, turn, resolved, (agent) =>
+        this.prepareWithin(manager, turn, defined, (agent) =>
           this.sessions.beginWithin(manager, turn.channelId, agent),
         ),
       );
@@ -216,7 +218,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       const resumed = session.providerSessionId;
       let text: string;
       try {
-        text = await this.runInSession(first, turn, where, controller);
+        text = await this.runInSession(first, request, turn, where, controller);
       } catch (error) {
         if (!lostConversation(error, resumed)) throw error;
         // The provider no longer has the conversation, as after a restore
@@ -236,7 +238,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         if (retry.session === null) return null;
         session = retry.session;
         where = `${base}, Session ${session.id} (${agent.provider})`;
-        text = await this.runInSession(retry, turn, where, controller);
+        text = await this.runInSession(retry, request, turn, where, controller);
       }
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
@@ -254,12 +256,6 @@ export class AgentManager implements BeforeApplicationShutdown {
     }
   }
 
-  /** The Agent named `name`, resolved against the defaults. */
-  private resolve(name: string): ResolvedAgent {
-    const agent = requireAgent(this.definitions, name);
-    return resolveAgent(agent, this.definitions.defaults());
-  }
-
   /**
    * Inside the caller's transaction: why `agent` no longer takes the turn,
    * or the Session `begin` gives it, with the turn's message attached and
@@ -268,8 +264,8 @@ export class AgentManager implements BeforeApplicationShutdown {
   private async prepareWithin(
     manager: EntityManager,
     turn: TurnInput,
-    agent: ResolvedAgent,
-    begin: (agent: ResolvedAgent) => Promise<Session>,
+    agent: Agent,
+    begin: (agent: Agent) => Promise<Session>,
   ): Promise<PreparedTurn> {
     const skipped = await skipReasonWithin(
       manager,
@@ -298,9 +294,13 @@ export class AgentManager implements BeforeApplicationShutdown {
     return { agent, session, input, posted, carried };
   }
 
-  /** Runs a prepared turn in its Session; resolves to the reply text. */
+  /**
+   * Runs a prepared turn in its Session with `request`, the Agent's part of
+   * it; resolves to the reply text.
+   */
   private async runInSession(
     { agent, session, input, posted, carried }: ReadyTurn,
+    request: AgentRequest,
     turn: TurnInput,
     where: string,
     controller: AbortController,
@@ -312,8 +312,8 @@ export class AgentManager implements BeforeApplicationShutdown {
       this.logger.log(`Passed ${posted} Workflow message(s) into ${where}`);
     }
     return this.run(
-      agent,
-      input,
+      agent.provider,
+      { ...request, input },
       {
         ...(session.providerSessionId === null
           ? {}
@@ -334,20 +334,26 @@ export class AgentManager implements BeforeApplicationShutdown {
     if (turn.signal?.aborted) cancel();
     turn.signal?.addEventListener('abort', cancel, { once: true });
     const startedAt = Date.now();
-    const { agent } = turn;
-    const where = `${turn.label}, Agent ${agent.name} (${agent.provider})`;
+    const { provider } = turn;
+    const where = `${turn.label}, Agent ${turn.agent} (${provider})`;
     try {
       let providerSessionId: string | null = null;
-      const text = await this.run(agent, turn.input, {}, controller, (id) => {
-        providerSessionId = id;
-      });
+      const text = await this.run(
+        provider,
+        { ...turn.request, input: turn.input },
+        {},
+        controller,
+        (id) => {
+          providerSessionId = id;
+        },
+      );
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
       );
-      this.signedIn(agent.provider);
+      this.signedIn(provider);
       return { text, providerSessionId };
     } catch (error) {
-      throw this.failure(error, agent.provider, where, startedAt, controller);
+      throw this.failure(error, provider, where, startedAt, controller);
     } finally {
       turn.signal?.removeEventListener('abort', cancel);
       this.running.delete(controller);
@@ -388,31 +394,26 @@ export class AgentManager implements BeforeApplicationShutdown {
   }
 
   /**
-   * Runs the turn on the Agent's runtime, passing each provider session ID
+   * Runs the turn on `provider`'s runtime, passing each provider session ID
    * it reports to `onSession`; resolves to the reply text.
    */
   private async run(
-    agent: RuntimeAgent,
-    input: string,
+    provider: Provider,
+    request: AgentRequest & { input: string },
     options: { providerSessionId?: string; approve?: ToolApprover },
     controller: AbortController,
     onSession: (providerSessionId: string) => unknown,
   ): Promise<string> {
-    const runtime = this.runtimes.get(agent.provider);
+    const runtime = this.runtimes.get(provider);
     if (runtime === null) {
-      throw new TurnError(`the ${agent.provider} runtime isn't available yet`);
+      throw new TurnError(`the ${provider} runtime isn't available yet`);
     }
     const folders = this.notes.folders();
     let result: string | null = null;
     let streamed = '';
     for await (const event of runtime.execute({
-      input,
-      instructions: agent.instructions,
-      providerOptions: agent.providerOptions,
-      workingDirectory: agent.workingDirectory,
-      skipGitRepoCheck: agent.codexSkipGitRepoCheck,
+      ...request,
       ...options,
-      toolPolicy: agent.toolPolicy,
       // So that an Agent can't change its own configuration unasked.
       settingsFolder: folders.settingsFolder,
       signal: controller.signal,
@@ -437,7 +438,7 @@ export class AgentManager implements BeforeApplicationShutdown {
 
 /** A turn ready to run in its Session. */
 interface ReadyTurn {
-  agent: ResolvedAgent;
+  agent: Agent;
   session: Session;
   input: string;
   /** How many Workflow messages the input passes on. */
@@ -448,7 +449,7 @@ interface ReadyTurn {
 
 /** A turn ready to run, or why its Agent no longer takes it. */
 type PreparedTurn =
-  ReadyTurn | { agent: ResolvedAgent; session: null; skipped: string };
+  ReadyTurn | { agent: Agent; session: null; skipped: string };
 
 /**
  * Whether `error` says the provider no longer has the conversation
@@ -472,7 +473,7 @@ async function skipReasonWithin(
   manager: EntityManager,
   definitions: Definitions,
   turn: Pick<TurnInput, 'channelId' | 'agent'>,
-  agent: Pick<ResolvedAgent, 'enabled'>,
+  agent: Pick<Agent, 'enabled'>,
 ): Promise<string | null> {
   if (!agent.enabled) return 'the Agent is disabled';
   const channel = await manager

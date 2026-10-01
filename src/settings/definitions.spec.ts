@@ -94,14 +94,16 @@ describe('Definitions', () => {
         '---\ntopics: Health\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
       'Agents/Home/Main.md': 'Help.',
     });
-    expect(definitions.agent('HEALTH')).toEqual({
+    expect(definitions.agent('HEALTH')).toMatchObject({
       name: 'health',
       title: 'Health',
+      file: 'Agents/Health.md',
+      topics: ['Health'],
       provider: 'claude',
-      providerOptions: { model: 'opus', effort: 'low' },
+      model: 'opus',
+      effort: 'low',
       permissions: 'bypass',
       workingDirectory: '/home/me/workspace/projects/health',
-      ownWorkingDirectory: '/home/me/workspace/projects/health',
       instructions: 'Coach me.',
       sharedInstructions: true,
       skipGitRepoCheck: false,
@@ -109,7 +111,7 @@ describe('Definitions', () => {
     });
     expect(definitions.agent('main')).toMatchObject({
       workingDirectory: FOLDERS.dataFolder,
-      ownWorkingDirectory: null,
+      note: { workingDirectory: null },
     });
     expect(definitions.agent('coach')).toBeNull();
     expect(definitions.agents().map((agent) => agent.name)).toEqual([
@@ -149,15 +151,17 @@ describe('Definitions', () => {
     expect(definitions.workflow('WEEKLY-REPORT')).toEqual({
       name: 'weekly-report',
       title: 'Weekly report',
+      file: 'Workflows/Weekly report.md',
       agent: 'health',
       input: 'Write the weekly report.',
+      channels: ['Health', 'Home/General', 4],
       history: {
-        channels: [2, 3],
+        channels: ['English', 'Health'],
         messages: 'people',
         hours: 24,
         runWhenEmpty: false,
       },
-      targets: [2, 1, 4],
+      resolved: { targets: [2, 1, 4], history: [2, 3] },
       maxAttempts: 2,
       schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       enabled: true,
@@ -165,7 +169,7 @@ describe('Definitions', () => {
     expect(definitions.workflow('brief')).toMatchObject({
       agent: 'main',
       history: null,
-      targets: [],
+      resolved: { targets: [], history: 'all' },
       schedule: { cron: '0 9 * * *', timezone: 'Europe/Berlin' },
       enabled: false,
     });

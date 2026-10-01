@@ -14,7 +14,6 @@ import { SessionService } from '../sessions/session.service.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
 import { Definitions, requireAgent } from '../settings/definitions.js';
 import { TestWorkspace } from '../settings/testing/test-workspace.js';
-import { resolveAgent } from './agent-resolution.js';
 import { AgentViews } from './agent-views.service.js';
 import { AgentsModule } from './agents.module.js';
 
@@ -71,10 +70,7 @@ describe('AgentViews', () => {
   /** A turn of `name` in `channelId` that reached its provider. */
   async function turn(name: string, channelId: number): Promise<Session> {
     const definitions = moduleRef.get(Definitions);
-    const agent = resolveAgent(
-      requireAgent(definitions, name),
-      definitions.defaults(),
-    );
+    const agent = requireAgent(definitions, name);
     const session = await inTransaction(ds, (manager) =>
       moduleRef.get(SessionService).beginWithin(manager, channelId, agent),
     );

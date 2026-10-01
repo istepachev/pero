@@ -20,11 +20,11 @@ import {
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
 import {
   Definitions,
   requireAgent,
   requireWorkflow,
-  type WorkflowDefinition,
 } from '../settings/definitions.js';
 import { SettingsNotes } from '../settings/settings-notes.service.js';
 import {
@@ -169,7 +169,7 @@ export class WorkflowRuns {
   }
 
   /** Refuses to queue a run of `workflow` unless its Agent is enabled. */
-  private requireRunnable(workflow: WorkflowDefinition): void {
+  private requireRunnable(workflow: ResolvedWorkflow): void {
     const agent = requireAgent(this.definitions, workflow.agent);
     if (!agent.enabled) {
       throw new InvalidInputError(

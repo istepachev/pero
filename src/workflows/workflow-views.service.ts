@@ -16,11 +16,8 @@ import {
   stateOf,
 } from '../scheduler/schedule-state.js';
 import { findWorkflowNote, shownPath } from '../settings-files/note-paths.js';
-import {
-  type AgentDefinition,
-  Definitions,
-  type WorkflowDefinition,
-} from '../settings/definitions.js';
+import type { Agent, ResolvedWorkflow } from '../settings-files/snapshot.js';
+import { Definitions } from '../settings/definitions.js';
 import { SettingsNotes } from '../settings/settings-notes.service.js';
 
 /**
@@ -52,17 +49,17 @@ export class WorkflowViews {
     return view;
   }
 
-  private views(workflows: WorkflowDefinition[]): Promise<WorkflowView[]> {
+  private views(workflows: ResolvedWorkflow[]): Promise<WorkflowView[]> {
     const agents = new Map(
       this.definitions.agents().map((agent) => [agent.name, agent]),
     );
     return inTransaction(this.dataSource, async (manager) => {
       const ids = new Set(
-        workflows.flatMap((workflow) => [
-          ...workflow.targets,
-          ...(workflow.history === null || workflow.history.channels === 'all'
+        workflows.flatMap(({ history, resolved }) => [
+          ...resolved.targets,
+          ...(history === null || resolved.history === 'all'
             ? []
-            : workflow.history.channels),
+            : resolved.history),
         ]),
       );
       const channels = new Map(
@@ -89,8 +86,8 @@ export class WorkflowViews {
 
   /** `workflow` as the CLI shows it; null when a rescan since removed its note. */
   private view(
-    workflow: WorkflowDefinition,
-    agent: AgentDefinition | null,
+    workflow: ResolvedWorkflow,
+    agent: Agent | null,
     channels: ReadonlyMap<number, WorkflowChannelView>,
     states: ReadonlyMap<string, ScheduleTimes>,
   ): WorkflowView | null {
@@ -101,7 +98,7 @@ export class WorkflowViews {
         const channel = channels.get(id);
         return channel === undefined ? [] : [channel];
       });
-    const { history } = workflow;
+    const { history, resolved } = workflow;
     return {
       name: workflow.name,
       title: workflow.title,
@@ -112,13 +109,13 @@ export class WorkflowViews {
       enabled: workflow.enabled,
       maxAttempts: workflow.maxAttempts,
       schedule: scheduleView(workflow, states),
-      channels: named(workflow.targets),
+      channels: named(resolved.targets),
       history:
         history === null
           ? null
           : {
               channels:
-                history.channels === 'all' ? 'all' : named(history.channels),
+                resolved.history === 'all' ? 'all' : named(resolved.history),
               messages: history.messages,
               hours: history.hours,
               runWhenEmpty: history.runWhenEmpty,
@@ -183,7 +180,7 @@ function channelView(channel: Channel): WorkflowChannelView {
 
 /** `workflow`'s schedule, with where `states` say it stands; null if none. */
 function scheduleView(
-  { name, schedule }: WorkflowDefinition,
+  { name, schedule }: ResolvedWorkflow,
   states: ReadonlyMap<string, ScheduleTimes>,
 ): WorkflowScheduleView | null {
   if (schedule === null) return null;

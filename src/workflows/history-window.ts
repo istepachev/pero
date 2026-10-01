@@ -1,8 +1,8 @@
 import type { EntityManager } from 'typeorm';
-import type { WorkflowHistory } from '../config/workflow-input.js';
 import { renderHistoryInput } from '../history/history-input.js';
 import type { MessageHistory } from '../history/message-history.service.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
 import {
   type HistoryRead,
   type HistoryWindowSnapshot,
@@ -16,14 +16,10 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /** What a run being claimed reads its history window with. */
 export interface HistoryWindowRequest {
-  /** The name of the run's Workflow. */
-  workflowName: string;
-  /** The Workflow's history input; null when it reads none. */
-  config: WorkflowHistory | null;
+  /** The run's Workflow: its history input and its input template. */
+  workflow: Pick<ResolvedWorkflow, 'name' | 'history' | 'resolved' | 'input'>;
   /** The window a retry inherits from the run it retries, if any. */
   inherited: unknown;
-  /** The Workflow's input template. */
-  template: string;
   /** When the run is claimed. */
   now: Date;
   /** The installation's time zone, for the transcript. */
@@ -46,18 +42,16 @@ export async function readHistoryWindow(
   let window: HistoryWindowSnapshot;
   if (inherited.success) {
     window = inherited.data;
-  } else if (request.config === null) {
+  } else if (request.workflow.history === null) {
     return null;
   } else {
-    const { config } = request;
+    const { history: config, resolved, name } = request.workflow;
     const untilId = await history.latestIdWithin(manager);
     const afterId =
-      config.hours === null
-        ? await previousWindowEnd(manager, request.workflowName)
-        : null;
+      config.hours === null ? await previousWindowEnd(manager, name) : null;
     const hours = config.hours ?? FIRST_WINDOW_HOURS;
     window = {
-      channels: config.channels,
+      channels: resolved.history === 'all' ? 'all' : [...resolved.history],
       messages: config.messages,
       runWhenEmpty: config.runWhenEmpty,
       afterId,
@@ -70,7 +64,7 @@ export async function readHistoryWindow(
   }
   const messages = await history.windowWithin(manager, window);
   const { input, dropped } = renderHistoryInput(
-    request.template,
+    request.workflow.input,
     messages.map((message) => ({
       // The foreign key guarantees the Channel.
       channel: message.channel!.title ?? message.channel!.externalKey,

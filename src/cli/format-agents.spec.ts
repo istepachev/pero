@@ -8,7 +8,7 @@ import {
 
 const notes: AgentView = {
   name: 'notes',
-  title: null,
+  title: 'Notes',
   provider: 'claude',
   model: null,
   effort: null,
@@ -17,7 +17,7 @@ const notes: AgentView = {
   instructions: null,
   useSharedInstructions: true,
   permissions: 'ask',
-  codexSkipGitRepoCheck: false,
+  skipGitRepoCheck: false,
   enabled: true,
   main: true,
   file: 'data/Settings/Agents/Notes.md',
@@ -71,7 +71,7 @@ const coder: AgentView = {
   instructions: 'Write tests first.\nKeep it short.',
   useSharedInstructions: false,
   permissions: 'bypass',
-  codexSkipGitRepoCheck: true,
+  skipGitRepoCheck: true,
   enabled: false,
   main: false,
   file: 'data/Settings/Agents/Coder.md',

@@ -8,21 +8,18 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { AgentManager, TurnError } from '../agents/agent-manager.js';
-import { resolveAgent } from '../agents/agent-resolution.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import {
   type RunStatus,
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import {
-  type AgentDefinition,
-  Definitions,
-  type WorkflowDefinition,
-} from '../settings/definitions.js';
+import type { Agent, ResolvedWorkflow } from '../settings-files/snapshot.js';
+import { Definitions } from '../settings/definitions.js';
 import {
   type ExecutionSnapshot,
   executionSnapshot,
+  snapshotRequest,
 } from './execution-snapshot.js';
 import { finishRun } from './finish-run.js';
 import { readHistoryWindow } from './history-window.js';
@@ -184,8 +181,8 @@ export class WorkflowExecutor
 
   /** The Workflow named `name` and its Agent, each null if gone. */
   private definitionsOf(name: string): {
-    workflow: WorkflowDefinition | null;
-    agent: AgentDefinition | null;
+    workflow: ResolvedWorkflow | null;
+    agent: Agent | null;
   } {
     const workflow = this.definitions.workflow(name);
     const agent =
@@ -304,18 +301,16 @@ export class WorkflowExecutor
         this.logger.warn(`Run ${run.id} of Workflow ${name}: ${refused}`);
         continue;
       }
-      const resolved = resolveAgent(agent, defaults);
       const now = new Date();
       const history = await readHistoryWindow(manager, this.history, {
-        workflowName: run.workflowName,
-        config: workflow.history,
+        workflow,
         inherited: run.executionConfig?.history,
-        template: workflow.input,
         now,
         timeZone: timezone,
       });
       const snapshot = executionSnapshot(
-        resolved,
+        agent,
+        defaults,
         history?.input ?? workflow.input,
         history?.read,
       );
@@ -380,15 +375,9 @@ export class WorkflowExecutor
     let outcome: Outcome;
     try {
       const { text, providerSessionId } = await this.agentManager.runIsolated({
-        agent: {
-          name: snapshot.agentName,
-          provider: snapshot.provider,
-          providerOptions: snapshot.providerOptions,
-          workingDirectory: snapshot.workingDirectory,
-          instructions: snapshot.instructions,
-          toolPolicy: snapshot.toolPolicy,
-          codexSkipGitRepoCheck: snapshot.codexSkipGitRepoCheck,
-        },
+        agent: snapshot.agentName,
+        provider: snapshot.provider,
+        request: snapshotRequest(snapshot),
         input: snapshot.input,
         label,
         signal,
