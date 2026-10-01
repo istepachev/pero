@@ -148,6 +148,11 @@ export const allowedChatSchema = z.object({
   topics: z.boolean().nullable(),
   /** Why the bot cannot see every message there; null when it can. */
   problem: z.string().nullable(),
+  /**
+   * Why the group is unsafe to serve: it is public, so anyone can join
+   * and talk to its Agents. Null when it is not, or from an older daemon.
+   */
+  danger: z.string().nullable().default(null),
   /** When a daemon from before `config.yaml` recorded the allowing. */
   allowedAt: z.iso.datetime().optional(),
 });

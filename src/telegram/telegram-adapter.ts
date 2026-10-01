@@ -39,6 +39,8 @@ export interface ChatLookup {
   title: string | null;
   /** Whether a group has topics; false for a direct chat. */
   topics: boolean;
+  /** A group's public username, by which anyone can find and join it. */
+  username: string | null;
 }
 
 /** The Bot API server Pero talks to unless told otherwise. */
@@ -231,6 +233,7 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
         title,
         status,
         found?.topics ?? null,
+        found?.username ?? null,
         bot.botInfo,
         reason,
       ),
@@ -253,7 +256,13 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
         >[1],
       );
       const described = describeChat(chat);
-      return described && { ...described, topics: chat.is_forum === true };
+      return (
+        described && {
+          ...described,
+          topics: chat.is_forum === true,
+          username: described.kind === 'group' ? (chat.username ?? null) : null,
+        }
+      );
     } catch (error) {
       this.logger.debug(
         `Failed to look up Telegram chat ${chatKey}: ${this.describe(error)}`,
@@ -455,6 +464,7 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
         event.chat.title ?? chat.title,
         event.status,
         known?.topics ?? null,
+        known?.username ?? null,
         me,
         null,
       ),
@@ -527,12 +537,16 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
   }
 }
 
-/** The bot's standing in a group, with what to do when it can't see all. */
+/**
+ * The bot's standing in a group, with what to do when it can't see all,
+ * and the danger of a group anyone can join.
+ */
 function access(
   chatKey: string,
   title: string | null,
   status: ChatAccess['status'],
   topics: boolean | null,
+  username: string | null,
   me: UserFromGetMe,
   reason: string | null,
 ): ChatAccess {
@@ -548,7 +562,22 @@ function access(
   } else if (status === 'unknown') {
     problem = `couldn't check the bot's rights in ${name}: ${reason}`;
   }
-  return { chatKey, title, status, topics, problem, checkedAt: new Date() };
+  const danger =
+    username === null
+      ? null
+      : `${name} is a public group (@${username}): anyone can find it, ` +
+        `join, and talk to its Agents; make it private in the group's ` +
+        `settings (Group type)`;
+  return {
+    chatKey,
+    title,
+    status,
+    topics,
+    username,
+    problem,
+    danger,
+    checkedAt: new Date(),
+  };
 }
 
 /** `buttons` in one row; none removes a message's keyboard. */

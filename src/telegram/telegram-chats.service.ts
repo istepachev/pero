@@ -145,6 +145,7 @@ export class TelegramChats implements OnModuleInit {
       bot: access?.status ?? null,
       topics: access?.topics ?? null,
       problem: access?.problem ?? null,
+      danger: access?.danger ?? null,
     };
   }
 }

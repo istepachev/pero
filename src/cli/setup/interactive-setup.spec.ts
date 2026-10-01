@@ -43,6 +43,10 @@ class FakeDaemon {
     allowed: [allowedChat('1234', 'private', 'Ada')],
     pairing: [],
   };
+  /** How Telegram stands in a group allowed here. */
+  allowAs: Partial<AllowedChatView> = {};
+  /** Called when an allowed chat is allowed again, which checks it again. */
+  onRecheck: (chat: AllowedChatView) => AllowedChatView = (chat) => chat;
   /** Called before each answer to `telegram.chats`, with its count. */
   onChatsPoll: (poll: number) => void = () => undefined;
   private chatsPolls = 0;
@@ -98,12 +102,26 @@ class FakeDaemon {
       }
       if (op === 'telegram.allow') {
         const { chatId } = params as { chatId: string };
+        const existing = this.telegram.allowed.find((c) => c.chatId === chatId);
+        if (existing) {
+          const chat = this.onRecheck(existing);
+          this.telegram = {
+            ...this.telegram,
+            allowed: this.telegram.allowed.map((c) =>
+              c.chatId === chatId ? chat : c,
+            ),
+          };
+          return { chat, alreadyAllowed: true };
+        }
         const request = this.telegram.pairing.find((r) => r.chatId === chatId);
-        const chat = allowedChat(
-          chatId,
-          request?.kind ?? 'group',
-          request?.title ?? null,
-        );
+        const chat = {
+          ...allowedChat(
+            chatId,
+            request?.kind ?? 'group',
+            request?.title ?? null,
+          ),
+          ...this.allowAs,
+        };
         this.telegram = {
           ...this.telegram,
           allowed: [...this.telegram.allowed, chat],
@@ -134,6 +152,7 @@ function allowedChat(
     bot: kind === 'group' ? 'administrator' : null,
     topics: kind === 'group' ? true : null,
     problem: null,
+    danger: null,
     allowedAt: since,
   };
 }
@@ -349,6 +368,118 @@ describe('runInteractiveSetup', () => {
 
       expect(asked).toEqual([WAITING]);
       expect(printed.at(-1)).toBe('Setup complete');
+    });
+
+    it('waits for the bot to become an administrator of a group it allows', async () => {
+      askToPair(3, '-100777', 'Home');
+      daemon.allowAs = { bot: 'member' };
+      const promote = daemon.onChatsPoll;
+      daemon.onChatsPoll = (n) => {
+        promote(n);
+        if (n === 7) {
+          daemon.telegram = {
+            ...daemon.telegram,
+            allowed: daemon.telegram.allowed.map((chat) => ({
+              ...chat,
+              bot: 'administrator',
+            })),
+          };
+        }
+      };
+
+      const { done, asked } = run([true, WAIT]);
+      await done;
+
+      expect(asked).toEqual([
+        'Allow group "Home" (-100777)? (y/n)',
+        'Waiting for @pero_test_bot to become an administrator (Enter to skip)',
+      ]);
+      expect(printed).toContain(
+        'Make @pero_test_bot an administrator of group "Home" (-100777) (group settings → Administrators → Add Admin), so it sees every message there.',
+      );
+      expect(printed).toContain(
+        '@pero_test_bot is an administrator of group "Home" (-100777).',
+      );
+      // Only once the group is set up.
+      expect(
+        printed.indexOf('Send a message there again to start talking to Pero.'),
+      ).toBe(
+        printed.indexOf(
+          '@pero_test_bot is an administrator of group "Home" (-100777).',
+        ) + 1,
+      );
+      expect(printed.at(-1)).toBe('Setup complete');
+    });
+
+    it('lists the bot as an administrator still to make when skipped', async () => {
+      daemon.telegram = {
+        bot: 'pero_test_bot',
+        allowed: [
+          { ...allowedChat('-100777', 'group', 'Home'), bot: 'member' },
+        ],
+        pairing: [],
+      };
+
+      const { done, asked } = run(['']);
+      await done;
+
+      expect(asked).toEqual([
+        'Waiting for @pero_test_bot to become an administrator (Enter to skip)',
+      ]);
+      expect(printed).toContain(
+        'Skipped; until @pero_test_bot is an administrator, Telegram shows it only commands, mentions, and replies there.',
+      );
+      expect(printed.at(-1)).toContain(
+        'Telegram: the bot is not an administrator of group "Home" (-100777) — make it one',
+      );
+    });
+
+    it('shows the danger of a public group, and checks again until it is private', async () => {
+      const danger =
+        'Home (-100777) is a public group (@home): anyone can find it, join, and talk to its Agents';
+      daemon.telegram = {
+        bot: 'pero_test_bot',
+        allowed: [{ ...allowedChat('-100777', 'group', 'Home'), danger }],
+        pairing: [],
+      };
+      let checks = 0;
+      daemon.onRecheck = (chat) =>
+        ++checks === 2 ? { ...chat, danger: null } : chat;
+
+      const { done, asked } = run(['', '']);
+      await done;
+
+      expect(asked).toEqual([
+        'Make the group private, then press Enter to check again (s to skip)',
+        'Make the group private, then press Enter to check again (s to skip)',
+      ]);
+      expect(printed).toContain(`Danger: ${danger}`);
+      expect(printed).toContain('Still public: group "Home" (-100777)');
+      expect(printed).toContain('group "Home" (-100777) is private now.');
+      expect(printed.at(-1)).toBe('Setup complete');
+    });
+
+    it('lets the owner keep a public group, listing it as still to fix', async () => {
+      daemon.telegram = {
+        bot: 'pero_test_bot',
+        allowed: [
+          {
+            ...allowedChat('-100777', 'group', 'Home'),
+            danger: 'Home (-100777) is a public group (@home)',
+          },
+        ],
+        pairing: [],
+      };
+
+      const { done } = run(['s']);
+      await done;
+
+      expect(printed).toContain(
+        'Skipped; anyone can still join group "Home" (-100777). Make it private, or pero telegram deny -100777',
+      );
+      expect(printed.at(-1)).toContain(
+        'Telegram: group "Home" (-100777) is public, so anyone can join it and talk to its Agents',
+      );
     });
 
     it('skips pairing while a chat is allowed', async () => {

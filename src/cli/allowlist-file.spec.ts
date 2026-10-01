@@ -40,6 +40,7 @@ describe('allowing and denying in config.yaml', () => {
         bot: null,
         topics: null,
         problem: null,
+        danger: null,
       },
       alreadyAllowed: false,
     });

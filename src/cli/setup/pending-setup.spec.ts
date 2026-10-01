@@ -204,6 +204,7 @@ describe('pendingSetup', () => {
             bot: null,
             topics: null,
             problem: null,
+            danger: null,
             allowedAt: since,
           },
         ],
