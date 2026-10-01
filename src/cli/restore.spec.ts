@@ -85,10 +85,10 @@ describe('restoreBackup', () => {
       data: { 'Settings/Pero.md': 'Hi', 'a.md': 'A' },
     });
 
-    const result = await restoreBackup(file, root, ws);
+    const result = await restoreBackup(file, ws);
 
     expect(result).toMatchObject({
-      dataDir: root,
+      stateDir: root,
       config: 'restored',
       notAllowed: [],
       data: { folder: join(ws, 'notes'), copied: 2, kept: 0 },
@@ -117,7 +117,7 @@ describe('restoreBackup', () => {
       data: { 'a.md': 'older', 'b.md': 'B' },
     });
 
-    const result = await restoreBackup(file, root, ws);
+    const result = await restoreBackup(file, ws);
 
     expect(result).toMatchObject({
       config: 'kept',
@@ -135,7 +135,7 @@ describe('restoreBackup', () => {
     writeFileSync(join(root, 'config.yaml'), 'data: data\n');
     const file = await backup({ config: 'data: data\n' });
 
-    await expect(restoreBackup(file, root, ws)).resolves.toMatchObject({
+    await expect(restoreBackup(file, ws)).resolves.toMatchObject({
       config: 'unchanged',
       notAllowed: [],
       missing: [
@@ -150,7 +150,7 @@ describe('restoreBackup', () => {
     writeFileSync(join(root, 'config.yaml'), '# mine\n');
     const file = await backup({ config: 'data: notes\n' });
 
-    const result = await restoreBackup(file, root, ws, {
+    const result = await restoreBackup(file, ws, {
       replaceConfig: true,
     });
 
@@ -171,7 +171,7 @@ describe('restoreBackup', () => {
       data: { 'a.md': 'A' },
     });
 
-    const result = restoreBackup(file, root, ws);
+    const result = restoreBackup(file, ws);
 
     await expect(result).rejects.toThrow(CliError);
     await expect(result).rejects.toThrow(`${root} already has a database`);
@@ -184,12 +184,12 @@ describe('restoreBackup', () => {
     writeFileSync(join(root, 'config.yaml'), 'dta: notes\n');
     const file = await backup({ config: 'data: notes\n' });
 
-    await expect(restoreBackup(file, root, ws)).rejects.toThrow(/dta/);
+    await expect(restoreBackup(file, ws)).rejects.toThrow(/dta/);
     expect(readdirSync(root)).toEqual(['config.yaml']);
     expect(readdirSync(ws)).toEqual(['.pero']);
 
     await expect(
-      restoreBackup(file, root, ws, { replaceConfig: true }),
+      restoreBackup(file, ws, { replaceConfig: true }),
     ).resolves.toMatchObject({ config: 'replaced' });
   });
 
@@ -197,15 +197,11 @@ describe('restoreBackup', () => {
     const junk = join(tmp, 'junk.tgz');
     writeFileSync(junk, 'not an archive');
 
-    await expect(restoreBackup(junk, root, ws)).rejects.toThrow(
-      BackupFormatError,
-    );
+    await expect(restoreBackup(junk, ws)).rejects.toThrow(BackupFormatError);
     expect(readdirSync(tmp)).toEqual(['junk.tgz']);
 
     mkdirSync(ws);
-    await expect(restoreBackup(junk, root, ws)).rejects.toThrow(
-      BackupFormatError,
-    );
+    await expect(restoreBackup(junk, ws)).rejects.toThrow(BackupFormatError);
     expect(readdirSync(ws)).toEqual([]);
   });
 });

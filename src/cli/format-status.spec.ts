@@ -7,7 +7,8 @@ const since = '2026-09-28T10:00:00.000Z';
 const status: StatusResult = {
   pid: 4242,
   version: '1.2.0',
-  dataDir: '/home/owner/.pero',
+  workspace: '/srv/ws',
+  stateDir: '/srv/ws/.pero',
   startedAt: since,
   uptimeMs: 192_500,
   health: 'degraded',
@@ -28,27 +29,17 @@ describe('formatStatus', () => {
     expect(formatStatus(status, '1.2.0')).toBe(
       [
         'Pero is running',
-        '  PID             4242',
-        '  Version         1.2.0',
-        '  Data directory  /home/owner/.pero (legacy)',
-        '  Uptime          3m 12s',
-        '  Health          degraded',
+        '  PID        4242',
+        '  Version    1.2.0',
+        '  Workspace  /srv/ws',
+        '  Uptime     3m 12s',
+        '  Health     degraded',
         '',
         'Components',
         '  claude    ok',
         '  telegram  unconfigured  Bot token is not set',
       ].join('\n'),
     );
-  });
-
-  it('shows a workspace instead of a data directory', () => {
-    const text = formatStatus(
-      { ...status, dataDir: '/srv/ws/.pero', workspace: '/srv/ws' },
-      '1.2.0',
-    );
-
-    expect(text).toContain('  Workspace  /srv/ws\n');
-    expect(text).not.toContain('Data directory');
   });
 
   it('marks a component health does not depend on', () => {

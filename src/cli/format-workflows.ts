@@ -13,17 +13,8 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
   if (workflows.length === 0) {
     return 'No Workflows yet. Add a note to the Workflows folder in the settings folder.';
   }
-  const notes = workflows.some((workflow) => workflow.file !== null);
   const lines = table([
-    [
-      'NAME',
-      'AGENT',
-      'SCHEDULE',
-      'NEXT RUN',
-      'CHANNELS',
-      'STATE',
-      ...(notes ? ['NOTE'] : []),
-    ],
+    ['NAME', 'AGENT', 'SCHEDULE', 'NEXT RUN', 'CHANNELS', 'STATE', 'NOTE'],
     ...workflows.map((workflow) => [
       `${workflow.name}${workflow.errors.length > 0 ? ' !' : ''}`,
       agent(workflow),
@@ -31,7 +22,7 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
       workflow.schedules.map((one) => nextRun(workflow, one)).join('; ') || '—',
       workflow.channels.map(channelLabel).join(', ') || '—',
       state(workflow.enabled),
-      ...(notes ? [workflow.file ?? '—'] : []),
+      workflow.file,
     ]),
   ]);
   if (workflows.some((workflow) => workflow.errors.length > 0)) {
@@ -48,7 +39,7 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
   const lines = [
     `Workflow ${workflow.name}${workflow.title === null ? '' : ` "${workflow.title}"`}`,
     ...table([
-      ...(workflow.file === null ? [] : [['note', workflow.file]]),
+      ['note', workflow.file],
       ['agent', agent(workflow)],
       ['input', preview(workflow.inputTemplate)],
       ...(workflow.schedules.length === 0

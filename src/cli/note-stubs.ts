@@ -18,7 +18,6 @@ import {
   type ConfigurationFiles,
   findAgentNote,
   findWorkflowNote,
-  legacyHint,
   SETTING_HOMES,
   settingHint,
   type TriggerAction,
@@ -35,15 +34,11 @@ import { CliError } from './errors.js';
  * they say which file to edit and exit 1, whether or not Pero runs.
  */
 
-/**
- * The configuration files of the workspace `config` found; a `CliError`
- * saying a legacy data directory needs a workspace.
- */
+/** The configuration files of the workspace `config` found. */
 export function configurationFiles(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
 ): ConfigurationFiles {
-  const { workspace, dataDir } = config;
-  if (workspace === null) throw new CliError(legacyHint(dataDir));
+  const { workspace } = config;
   const configFile = hostConfigPath(join(workspace, STATE_DIR_NAME));
   let settings = { data: null, settings: null } as {
     data: string | null;
@@ -64,7 +59,7 @@ export function configurationFiles(
 
 /** `pero agents <action> <name>`: names the note to edit instead. */
 export async function agentStub(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
   action: AgentAction,
   name: string,
 ): Promise<never> {
@@ -79,7 +74,7 @@ export async function agentStub(
 
 /** `pero workflows <action> <name>`: names the note to edit instead. */
 export async function workflowStub(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
   action: WorkflowAction,
   name: string,
 ): Promise<never> {
@@ -97,7 +92,7 @@ export async function workflowStub(
  * of Workflow `workflow`.
  */
 export async function triggerStub(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
   action: TriggerAction,
   workflow: string | null,
 ): Promise<never> {
@@ -119,7 +114,7 @@ export async function triggerStub(
  * the note of Agent `agent`.
  */
 export async function channelStub(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
   action: ChannelAction,
   agent: string | null,
 ): Promise<never> {
@@ -141,7 +136,7 @@ export async function channelStub(
  * undefined for a key that is still set this way, the bot token.
  */
 export function settingStub(
-  config: Pick<BootstrapConfig, 'workspace' | 'dataDir'>,
+  config: Pick<BootstrapConfig, 'workspace'>,
   key: string,
 ): void {
   const home = SETTING_HOMES[key];

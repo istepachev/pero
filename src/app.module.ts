@@ -2,7 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AgentsModule } from './agents/agents.module.js';
 import { ChannelsModule } from './channels/channels.module.js';
-import type { DataDirLayout } from './config/data-dir.js';
+import type { WorkspaceLayout } from './config/workspace-layout.js';
 import { resolveDaemonEnv } from './config/daemon-env.js';
 import { ControlModule } from './control/control.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -18,7 +18,7 @@ import { TelegramModule } from './telegram/telegram.module.js';
 import { WorkflowsModule } from './workflows/workflows.module.js';
 
 export interface AppOptions {
-  layout: DataDirLayout;
+  layout: WorkspaceLayout;
   /**
    * Where settings such as the Telegram bot token may come from; by default
    * the process's own environment.
@@ -44,7 +44,6 @@ export class AppModule {
         HostConfigModule.forRoot({
           file: options.layout.configFile,
           workspace: options.layout.workspace,
-          base: options.layout.workspace ?? options.layout.root,
         }),
         AgentsModule,
         ChannelsModule,
@@ -55,7 +54,6 @@ export class AppModule {
         NotificationsModule,
         HistoryRetentionModule,
         TelegramModule.forRoot({
-          secretsDir: options.layout.secrets,
           envFile: options.layout.envFile,
           gitignore: options.layout.workspaceGitignore,
           env,

@@ -20,8 +20,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
-import { type DataDirLayout, ensureDataDir } from '../config/data-dir.js';
-import { HostConfigModule } from '../host-config/host-config.module.js';
+import {
+  type WorkspaceLayout,
+  ensureWorkspaceLayout,
+} from '../config/workspace-layout.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { MIGRATIONS } from '../persistence/migrations/index.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
@@ -33,7 +35,7 @@ import { BackupService } from './backup.service.js';
 describe('BackupService', () => {
   let tmp: string;
   let ws: TestWorkspace;
-  let layout: DataDirLayout;
+  let layout: WorkspaceLayout;
   let vault: string;
   let own: string;
   let moduleRef: TestingModule;
@@ -42,7 +44,7 @@ describe('BackupService', () => {
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-backup-'));
     ws = TestWorkspace.create('pero-backup-ws-');
-    layout = ensureDataDir(ws.stateFolder, ws.root);
+    layout = ensureWorkspaceLayout(ws.root);
     vault = join(tmp, 'vault');
     own = join(tmp, 'own');
     mkdirSync(vault);
@@ -210,8 +212,11 @@ describe('BackupService', () => {
   it('rejects a destination it should not write', async () => {
     const cases: [string, RegExp][] = [
       ['backup.tgz', /must be an absolute path/],
-      [join(layout.root, 'backup.tgz'), /must be outside the state directory/],
-      [layout.root, /must be outside the state directory/],
+      [
+        join(layout.stateDir, 'backup.tgz'),
+        /must be outside the state directory/,
+      ],
+      [layout.stateDir, /must be outside the state directory/],
       [join(tmp, 'missing', 'backup.tgz'), /does not exist/],
       [vault, /is a folder/],
     ];
@@ -220,33 +225,6 @@ describe('BackupService', () => {
       await expect(result).rejects.toThrow(InvalidInputError);
       await expect(result).rejects.toThrow(message);
     }
-  });
-
-  it('refuses a legacy data directory', async () => {
-    await moduleRef.close();
-    const legacy = ensureDataDir(join(tmp, 'legacy'));
-    moduleRef = await Test.createTestingModule({
-      imports: [
-        PersistenceModule.forRoot({ database: legacy.database }),
-        HostConfigModule.forRoot({
-          file: legacy.configFile,
-          workspace: null,
-          base: legacy.root,
-        }),
-        AgentsModule,
-        BackupModule.forRoot({ layout: legacy }),
-      ],
-    }).compile();
-    await moduleRef.init();
-    const file = join(tmp, 'backup.tgz');
-
-    const result = moduleRef.get(BackupService).create(file);
-
-    await expect(result).rejects.toThrow(InvalidInputError);
-    await expect(result).rejects.toThrow(
-      'Backups are of a workspace; make one with pero init <folder>',
-    );
-    expect(existsSync(file)).toBe(false);
   });
 
   it('writes one backup at a time', async () => {

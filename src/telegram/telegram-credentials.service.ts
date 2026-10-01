@@ -6,13 +6,7 @@ import {
   setEnvValue,
 } from '../config/env-file.js';
 import {
-  deleteSecret,
-  readSecret,
-  writeSecret,
-} from '../config/secret-store.js';
-import {
   TELEGRAM_TOKEN_ENV,
-  TELEGRAM_TOKEN_SECRET,
   telegramBotTokenSchema,
 } from '../config/settings-input.js';
 import type { TokenSource } from '../control/protocol.js';
@@ -21,15 +15,11 @@ import { CONNECTING_DETAIL } from './telegram-status.js';
 
 export const TELEGRAM_OPTIONS = Symbol('TELEGRAM_OPTIONS');
 
-export { TELEGRAM_TOKEN_SECRET };
-
 export interface TelegramOptions {
-  /** A legacy data directory's owner-only `secrets/`; unused with `envFile`. */
-  secretsDir: string;
-  /** A workspace's `.env`, which holds the token instead of `secrets/`. */
-  envFile?: string | null;
+  /** The workspace's `.env`, which holds the token. */
+  envFile: string;
   /** The workspace's `.gitignore`, made to list `.env` when it is written. */
-  gitignore?: string | null;
+  gitignore: string;
   /** The daemon's environment, which may carry the token. */
   env: NodeJS.ProcessEnv;
   /** The Bot API server; Telegram's own unless set. */
@@ -38,8 +28,8 @@ export interface TelegramOptions {
 
 /**
  * The Telegram bot token: from the environment when it is set there,
- * otherwise from the workspace's `.env`, or from `secrets/` in a legacy data
- * directory. Never logged and never sent to the CLI. It
+ * otherwise from the workspace's `.env`. Never logged and never sent to
+ * the CLI. It
  * reports the Telegram component while there is no valid token; with one,
  * it reports connecting until the adapter says how the connection stands.
  */
@@ -84,20 +74,10 @@ export class TelegramCredentials implements OnModuleInit {
    */
   set(token: string | null): void {
     const value = token === null ? null : telegramBotTokenSchema.parse(token);
-    const { envFile, gitignore, secretsDir } = this.options;
-    if (envFile) {
-      setEnvValue(envFile, TELEGRAM_TOKEN_ENV, value);
-      if (
-        value !== null &&
-        gitignore &&
-        ensureGitignoreLine(gitignore, '.env')
-      ) {
-        this.logger.log(`Added .env to ${gitignore}`);
-      }
-    } else if (value === null) {
-      deleteSecret(secretsDir, TELEGRAM_TOKEN_SECRET);
-    } else {
-      writeSecret(secretsDir, TELEGRAM_TOKEN_SECRET, value);
+    const { envFile, gitignore } = this.options;
+    setEnvValue(envFile, TELEGRAM_TOKEN_ENV, value);
+    if (value !== null && ensureGitignoreLine(gitignore, '.env')) {
+      this.logger.log(`Added .env to ${gitignore}`);
     }
     this.logger.log(
       value === null ? 'Stored bot token removed' : 'Bot token stored',
@@ -136,11 +116,7 @@ export class TelegramCredentials implements OnModuleInit {
       return;
     }
     const parsed = stored ? telegramBotTokenSchema.safeParse(stored) : null;
-    this.currentSource = stored
-      ? this.options.envFile
-        ? 'env-file'
-        : 'secrets'
-      : null;
+    this.currentSource = stored ? 'env-file' : null;
     this.current = parsed?.success ? parsed.data : null;
     if (!parsed) {
       this.health.report('telegram', 'unconfigured', 'Bot token is not set');
@@ -155,10 +131,9 @@ export class TelegramCredentials implements OnModuleInit {
     }
   }
 
-  /** The token stored in `.env` or `secrets/`, trimmed; null when none is. */
+  /** The token stored in `.env`, trimmed; null when none is. */
   private stored(): string | null {
-    const { envFile, secretsDir } = this.options;
-    if (!envFile) return readSecret(secretsDir, TELEGRAM_TOKEN_SECRET);
+    const { envFile } = this.options;
     return readEnvFile(envFile)?.get(TELEGRAM_TOKEN_ENV)?.trim() || null;
   }
 }

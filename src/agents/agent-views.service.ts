@@ -40,9 +40,9 @@ export class AgentViews {
   /** Every Agent, by name. */
   async list(): Promise<AgentView[]> {
     const main = (await this.definitions.mainAgent())?.name ?? null;
-    return (await this.definitions.agents()).map((agent) =>
-      this.view(agent, main),
-    );
+    return (await this.definitions.agents())
+      .map((agent) => this.view(agent, main))
+      .filter((view) => view !== null);
   }
 
   /** The Agent named `name` with its Channels; `NotFoundError` if none. */
@@ -51,27 +51,24 @@ export class AgentViews {
     if (agent === null) throw this.notFound(name);
     const main = (await this.definitions.mainAgent())?.name ?? null;
     const defaults = await this.definitions.defaults();
+    const shown = this.view(agent, main);
+    if (shown === null) throw this.notFound(name);
     const view = {
-      ...this.view(agent, main),
+      ...shown,
       channels: await this.channels(agent, defaults),
     };
     return { ...view, folderProblem: await folderProblem(view) };
   }
 
-  /** `agent` as the CLI shows it, with its note when notes define it. */
-  private view(agent: AgentDefinition, main: string | null): AgentView {
+  /**
+   * `agent` as the CLI shows it, with its note; null when a rescan since
+   * removed the note.
+   */
+  private view(agent: AgentDefinition, main: string | null): AgentView | null {
     const snapshot = this.notes.snapshot();
     const folders = this.notes.folders();
     const note = snapshot?.agents.get(agent.name);
-    if (snapshot === null || folders === null || note === undefined) {
-      return {
-        ...agentView(agent, main),
-        file: null,
-        topics: [],
-        origins: null,
-        errors: [],
-      };
-    }
+    if (snapshot === null || note === undefined) return null;
     return {
       ...agentView(agent, main),
       file: shownPath(
@@ -93,7 +90,7 @@ export class AgentViews {
   private notFound(name: string): NotFoundError {
     const snapshot = this.notes.snapshot();
     const folders = this.notes.folders();
-    if (snapshot !== null && folders !== null) {
+    if (snapshot !== null) {
       const broken = findAgentNote(
         snapshot.errors.map((error) => error.file),
         name,

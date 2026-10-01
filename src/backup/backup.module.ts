@@ -1,13 +1,13 @@
 import { type DynamicModule, Module } from '@nestjs/common';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import { DefinitionsModule } from '../definitions/definitions.module.js';
 import { BACKUP_LAYOUT, BackupService } from './backup.service.js';
 
 export interface BackupOptions {
-  layout: DataDirLayout;
+  layout: WorkspaceLayout;
 }
 
-/** Backups of the data directory, written by the running daemon. */
+/** Backups of the workspace, written by the running daemon. */
 @Module({})
 export class BackupModule {
   static forRoot(options: BackupOptions): DynamicModule {

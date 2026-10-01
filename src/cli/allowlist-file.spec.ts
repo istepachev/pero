@@ -9,17 +9,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InvalidInputError, NotFoundError } from '../common/errors.js';
-import { dataDirLayout, type DataDirLayout } from '../config/data-dir.js';
+import {
+  type WorkspaceLayout,
+  workspaceLayout,
+} from '../config/workspace-layout.js';
 import { readHostConfig } from '../config/host-config.js';
 import { allowInFile, denyInFile } from './allowlist-file.js';
 
 describe('allowing and denying in config.yaml', () => {
   let tmp: string;
-  let layout: DataDirLayout;
+  let layout: WorkspaceLayout;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-allowlist-'));
-    layout = dataDirLayout(join(tmp, 'ws', '.pero'), join(tmp, 'ws'));
+    layout = workspaceLayout(join(tmp, 'ws'));
   });
 
   afterEach(() => {
@@ -47,14 +50,8 @@ describe('allowing and denying in config.yaml', () => {
     });
   });
 
-  it('leaves data unset in a legacy data directory', () => {
-    const legacy = dataDirLayout(join(tmp, 'legacy'));
-    allowInFile(legacy, '123456789');
-    expect(readHostConfig(legacy.configFile)?.data).toBeNull();
-  });
-
   it('keeps comments and titles, and says when a chat was already there', () => {
-    mkdirSync(layout.root, { recursive: true });
+    mkdirSync(layout.stateDir, { recursive: true });
     writeFileSync(
       layout.configFile,
       '# mine\ntelegram:\n  allowed-chats:\n    - id: 42\n      title: Me\n',

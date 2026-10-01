@@ -160,9 +160,6 @@ export class FileDefinitions extends Definitions {
   }> {
     const snapshot = await this.notes.ready();
     const folders = this.notes.folders();
-    if (folders === null) {
-      throw new Error('Agents come from notes only in a workspace');
-    }
     return {
       snapshot:
         snapshot ??

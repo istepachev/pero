@@ -1,6 +1,6 @@
 import {
   chmodSync,
-  mkdirSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -10,25 +10,22 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readSecret, writeSecret } from '../config/secret-store.js';
 import { ComponentHealth } from '../health/component-health.js';
-import {
-  TELEGRAM_TOKEN_SECRET,
-  TelegramCredentials,
-} from './telegram-credentials.service.js';
+import { TelegramCredentials } from './telegram-credentials.service.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 const OTHER = '987654321:BBEhBOweik6ad9r_QXMENQjcrGbqCr4K-xy';
 
 describe('TelegramCredentials', () => {
   let tmp: string;
-  let secretsDir: string;
+  let envFile: string;
+  let gitignore: string;
   let health: ComponentHealth;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-telegram-'));
-    secretsDir = join(tmp, 'secrets');
-    mkdirSync(secretsDir, { mode: 0o700 });
+    envFile = join(tmp, '.env');
+    gitignore = join(tmp, '.gitignore');
     health = new ComponentHealth();
   });
 
@@ -37,12 +34,17 @@ describe('TelegramCredentials', () => {
   });
 
   function create(env: NodeJS.ProcessEnv = {}) {
-    const credentials = new TelegramCredentials({ secretsDir, env }, health);
+    const credentials = new TelegramCredentials(
+      { envFile, gitignore, env },
+      health,
+    );
     credentials.onModuleInit();
     return credentials;
   }
 
   const telegram = () => health.list().find((c) => c.name === 'telegram');
+  const stored = () =>
+    existsSync(envFile) ? readFileSync(envFile, 'utf8') : null;
 
   it('is unconfigured without a token', () => {
     const credentials = create();
@@ -55,37 +57,41 @@ describe('TelegramCredentials', () => {
     });
   });
 
-  it('stores a token owner-only and uses it at once', () => {
+  it('stores the token in .env, owner-only, and lists .env in .gitignore', () => {
+    writeFileSync(envFile, '# Secrets\nOTHER=1\n', { mode: 0o600 });
+    writeFileSync(gitignore, 'node_modules/\n');
     const credentials = create();
 
     credentials.set(TOKEN);
+    credentials.set(OTHER);
 
-    expect(credentials.token()).toBe(TOKEN);
-    expect(credentials.source()).toBe('secrets');
+    expect(credentials.token()).toBe(OTHER);
+    expect(credentials.source()).toBe('env-file');
     // The adapter reports the connection from here on.
     expect(telegram()).toMatchObject({
       state: 'degraded',
       detail: 'Connecting to Telegram',
     });
-    expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBe(TOKEN);
-    expect(statSync(join(secretsDir, TELEGRAM_TOKEN_SECRET)).mode & 0o777).toBe(
-      0o600,
+    expect(stored()).toBe(
+      `# Secrets\nOTHER=1\nPERO_TELEGRAM_BOT_TOKEN=${OTHER}\n`,
     );
-  });
-
-  it('reads a stored token on start and forgets it once removed', () => {
-    create().set(TOKEN);
-    const credentials = create();
-    expect(credentials.token()).toBe(TOKEN);
+    expect(statSync(envFile).mode & 0o777).toBe(0o600);
+    expect(readFileSync(gitignore, 'utf8')).toBe('node_modules/\n.env\n');
 
     credentials.set(null);
-
+    expect(stored()).toBe('# Secrets\nOTHER=1\n');
     expect(credentials.token()).toBeNull();
     expect(telegram()).toMatchObject({ state: 'unconfigured' });
-    expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBeNull();
   });
 
-  it('prefers the environment over the stored token', () => {
+  it('reads .env on start', () => {
+    writeFileSync(envFile, `PERO_TELEGRAM_BOT_TOKEN="${TOKEN}"\n`, {
+      mode: 0o600,
+    });
+    expect(create().token()).toBe(TOKEN);
+  });
+
+  it('prefers the environment over .env', () => {
     create().set(OTHER);
 
     const credentials = create({ PERO_TELEGRAM_BOT_TOKEN: TOKEN });
@@ -97,7 +103,7 @@ describe('TelegramCredentials', () => {
     // Stored, but the environment still wins.
     credentials.set(OTHER);
     expect(credentials.token()).toBe(TOKEN);
-    expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBe(OTHER);
+    expect(stored()).toBe(`PERO_TELEGRAM_BOT_TOKEN=${OTHER}\n`);
   });
 
   it('reports an invalid token in the environment as degraded', () => {
@@ -112,7 +118,9 @@ describe('TelegramCredentials', () => {
   });
 
   it('reports a damaged stored token as degraded', () => {
-    writeFileSync(join(secretsDir, TELEGRAM_TOKEN_SECRET), 'garbage\n');
+    writeFileSync(envFile, 'PERO_TELEGRAM_BOT_TOKEN=garbage\n', {
+      mode: 0o600,
+    });
 
     const credentials = create();
 
@@ -137,85 +145,24 @@ describe('TelegramCredentials', () => {
     const credentials = create();
 
     expect(() => credentials.set('nope')).toThrow();
-    expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBeNull();
+    expect(stored()).toBeNull();
   });
 
-  describe('in a workspace', () => {
-    let envFile: string;
-    let gitignore: string;
+  it('refuses a .env others can read, until it is owner-only again', () => {
+    writeFileSync(envFile, `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`);
+    chmodSync(envFile, 0o644);
 
-    beforeEach(() => {
-      envFile = join(tmp, '.env');
-      gitignore = join(tmp, '.gitignore');
+    const credentials = create();
+
+    expect(credentials.token()).toBeNull();
+    expect(credentials.source()).toBe('env-file');
+    expect(telegram()).toMatchObject({
+      state: 'degraded',
+      detail: `${envFile} is readable by other users; run chmod 600 ${envFile}`,
     });
 
-    function inWorkspace(env: NodeJS.ProcessEnv = {}) {
-      const credentials = new TelegramCredentials(
-        { secretsDir, envFile, gitignore, env },
-        health,
-      );
-      credentials.onModuleInit();
-      return credentials;
-    }
-
-    it('stores the token in .env, owner-only, and lists .env in .gitignore', () => {
-      writeFileSync(envFile, '# Secrets\nOTHER=1\n', { mode: 0o600 });
-      writeFileSync(gitignore, 'node_modules/\n');
-      const credentials = inWorkspace();
-
-      credentials.set(TOKEN);
-      credentials.set(OTHER);
-
-      expect(credentials.token()).toBe(OTHER);
-      expect(credentials.source()).toBe('env-file');
-      expect(readFileSync(envFile, 'utf8')).toBe(
-        `# Secrets\nOTHER=1\nPERO_TELEGRAM_BOT_TOKEN=${OTHER}\n`,
-      );
-      expect(statSync(envFile).mode & 0o777).toBe(0o600);
-      expect(readFileSync(gitignore, 'utf8')).toBe('node_modules/\n.env\n');
-      expect(readSecret(secretsDir, TELEGRAM_TOKEN_SECRET)).toBeNull();
-
-      credentials.set(null);
-      expect(readFileSync(envFile, 'utf8')).toBe('# Secrets\nOTHER=1\n');
-      expect(credentials.token()).toBeNull();
-    });
-
-    it('reads .env on start, never the legacy secrets/', () => {
-      writeSecret(secretsDir, TELEGRAM_TOKEN_SECRET, OTHER);
-      expect(inWorkspace().token()).toBeNull();
-
-      writeFileSync(envFile, `PERO_TELEGRAM_BOT_TOKEN="${TOKEN}"\n`, {
-        mode: 0o600,
-      });
-      expect(inWorkspace().token()).toBe(TOKEN);
-    });
-
-    it('lets the environment win over .env', () => {
-      writeFileSync(envFile, `PERO_TELEGRAM_BOT_TOKEN=${OTHER}\n`, {
-        mode: 0o600,
-      });
-      const credentials = inWorkspace({ PERO_TELEGRAM_BOT_TOKEN: TOKEN });
-
-      expect(credentials.token()).toBe(TOKEN);
-      expect(credentials.source()).toBe('environment');
-    });
-
-    it('refuses a .env others can read, until it is owner-only again', () => {
-      writeFileSync(envFile, `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`);
-      chmodSync(envFile, 0o644);
-
-      const credentials = inWorkspace();
-
-      expect(credentials.token()).toBeNull();
-      expect(credentials.source()).toBe('env-file');
-      expect(telegram()).toMatchObject({
-        state: 'degraded',
-        detail: `${envFile} is readable by other users; run chmod 600 ${envFile}`,
-      });
-
-      // Storing it again writes the file owner-only.
-      credentials.set(TOKEN);
-      expect(credentials.token()).toBe(TOKEN);
-    });
+    // Storing it again writes the file owner-only.
+    credentials.set(TOKEN);
+    expect(credentials.token()).toBe(TOKEN);
   });
 });

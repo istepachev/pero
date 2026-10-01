@@ -3,7 +3,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { BackupModule } from '../backup/backup.module.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { DefinitionsModule } from '../definitions/definitions.module.js';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import { HealthModule } from '../health/health.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
@@ -13,7 +13,7 @@ import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
 
 export interface ControlOptions {
-  layout: DataDirLayout;
+  layout: WorkspaceLayout;
 }
 
 /**

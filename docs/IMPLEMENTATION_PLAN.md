@@ -974,6 +974,18 @@ Pero works on a workspace and nothing else:
 - **Views and setup:** `(legacy)` in `pero status`, the migrate hint in setup and `pero settings`, and the nullable `file` and `origins` of an Agent view go.
 - **Tests:** `src/definitions/boundary.spec.ts` goes, since nothing is left to guard. So do the legacy cases in the e2e suites (`--data-dir` in `cli`, `daemon`, `control`, `channels`, and `lifecycle`), and in `bootstrap-config`, `data-dir`, `host-config.service`, `channel-onboarding`, and `persistence.module` specs.
 
+- **Found while building:**
+  - **The layout is built from the workspace alone:** `workspaceLayout(workspace)` and `ensureWorkspaceLayout(workspace)` derive `.pero/`, and its `root` is `stateDir`. `DataDirError` is `StateDirError`. `restoreBackup` takes the workspace and derives `.pero/` too.
+  - **`dataDir` became `workspace` and `stateDir`** in the `status` result and the daemon's `run/pero.json`, both required, so `pero status` always shows the workspace. The daemon's start log names the workspace.
+  - **`config.yaml` needs no database:** `HostConfigService` no longer opens it. The template always writes `data: data`, so `defaultHostConfig` loses its option and `dataFolderValue` goes. `resolveDataFolder` takes the workspace and always returns a folder.
+  - **`inWorkspace()` is gone already** from `HostConfigService` and `SettingsNotes`, since it was always true, so 11.7 has one item less. `SettingsNotes` and `BrokenNoteReports` require `HostConfigService`; a spec that booted without one, such as `session.service.spec.ts`, boots a `TestWorkspace`.
+  - **Views lose what only the legacy data directory left null:** the settings view's `files`, `mainAgent`, and `defaultWorkingDirectory`, and the Workflow view's `file`, as well as the Agent view's `file` and `origins`. `mainAgentName()` returns a string. A view whose note a rescan removed meanwhile is left out of a list, or not found. `pero agents ls` and `pero workflows ls` always show the note column.
+  - **The token sources are `environment` and `env-file`.** `pero settings` and setup no longer take the location of a legacy data directory.
+  - **`pero init` no longer refuses a folder holding `pero.sqlite`,** which guarded a data directory. It still refuses the home folder, saying every folder under it would find it.
+  - **The CLI e2e suite works on `tmp/ws`** where it used a legacy data directory: `pero run -w` makes `.pero/` in a folder without one. Its stubs case checks `settings set` with Pero running instead, and a case checks that `PERO_HOME` finds nothing and `--data-dir` is an unknown option.
+  - **The done-when grep also finds `domain-entities.spec.ts` and `entities/index.ts`,** which test and export the `legacy_` tables and `LegacyChannelAgent` the migrations create. They go with them in 11.6. A comment in `schedule-tick.spec.ts` that named the migrations no longer says "legacy".
+  - **The docs still describe the legacy data directory** until 11.9, as they still describe `pero migrate`.
+
 **Done when:**
 - `--data-dir` is an unknown option, and `PERO_HOME` is ignored.
 - Outside `src/persistence/migrations/` and `LegacyChannelAgent`, which 11.6 removes, `git grep -il legacy src test scripts` finds nothing.

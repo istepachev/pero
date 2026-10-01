@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { join, relative } from 'node:path';
 import { isHomeFolder, STATE_DIR_NAME } from './bootstrap-config.js';
-import { STATE_GITIGNORE } from './data-dir.js';
+import { STATE_GITIGNORE } from './workspace-layout.js';
 import { ensureGitignoreLine } from './env-file.js';
 import {
   defaultHostConfig,
@@ -96,12 +96,7 @@ export function initWorkspace(
 ): { workspace: string; entries: SkeletonEntry[] } {
   if (isHomeFolder(dir, home)) {
     throw new WorkspaceInitError(
-      `${dir} is your home folder, which can't be a workspace: its .pero is the legacy data directory. Use a folder of its own, such as ~/workspace.`,
-    );
-  }
-  if (existsSync(join(dir, 'pero.sqlite'))) {
-    throw new WorkspaceInitError(
-      `${dir} is a Pero data directory; make the workspace in another folder`,
+      `${dir} is your home folder, which can't be a workspace: every folder under it would find it. Use a folder of its own, such as ~/workspace.`,
     );
   }
   const entries: SkeletonEntry[] = [];

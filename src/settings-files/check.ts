@@ -93,7 +93,7 @@ export async function checkWorkspace(
   }
   if (config !== null && config.data !== null) {
     // Startup creates the default `data/`; a folder named here must exist.
-    const folder = resolveDataFolder(config, workspace, true, homeDir)!;
+    const folder = resolveDataFolder(config, workspace, homeDir);
     if (folder !== join(workspace, DEFAULT_DATA_FOLDER)) {
       try {
         await validateWorkingDirectory(folder);

@@ -3,8 +3,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -35,7 +35,8 @@ const { version } = JSON.parse(
 
 describe('Control endpoint (e2e)', () => {
   let tmp: string;
-  let dataDir: string;
+  let workspace: string;
+  let state: string;
   let socketPath: string;
   let client: ControlClient;
   let app: Daemon | undefined;
@@ -45,9 +46,10 @@ describe('Control endpoint (e2e)', () => {
     api = new FakeBotApi();
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    dataDir = join(tmp, 'pero');
-    socketPath = join(dataDir, 'run', 'pero.sock');
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    workspace = join(tmp, 'ws');
+    state = join(workspace, '.pero');
+    socketPath = join(state, 'run', 'pero.sock');
     client = createControlClient(socketPath);
   });
 
@@ -60,7 +62,7 @@ describe('Control endpoint (e2e)', () => {
 
   function start() {
     return startDaemon({
-      config: resolveBootstrapConfig({ dataDir, env: {} }),
+      config: resolveBootstrapConfig({ workspace, env: {} }),
       foreground: false,
       // Telegram is the fake Bot API, never the real one.
       env: { PERO_TELEGRAM_API_ROOT: api.url },
@@ -73,7 +75,7 @@ describe('Control endpoint (e2e)', () => {
     await client.shutdown();
     await expect(daemon.stopped).resolves.toEqual({ graceful: true });
     expect(existsSync(socketPath)).toBe(false);
-    expect(existsSync(join(dataDir, 'run', 'pero.json'))).toBe(false);
+    expect(existsSync(join(state, 'run', 'pero.json'))).toBe(false);
     expect(dataSource.isInitialized).toBe(false);
   }
 
@@ -85,7 +87,8 @@ describe('Control endpoint (e2e)', () => {
     expect(status).toMatchObject({
       pid: process.pid,
       version,
-      dataDir,
+      workspace,
+      stateDir: state,
       uptimeMs: expect.any(Number),
     });
     expect(Date.parse(status.startedAt)).toBeLessThanOrEqual(Date.now());
@@ -108,8 +111,7 @@ describe('Control endpoint (e2e)', () => {
       { name: 'claude', state: 'unconfigured', required: true },
       { name: 'codex', state: 'unconfigured', required: false },
       { name: 'config', state: 'ok', required: true },
-      // A legacy data directory, whose Agents and settings can't change.
-      { name: 'settings', state: 'degraded', required: true },
+      { name: 'settings', state: 'ok', required: true },
       { name: 'telegram', state: 'unconfigured', required: true },
     ]);
   });
@@ -140,7 +142,7 @@ describe('Control endpoint (e2e)', () => {
       } as never),
     ).rejects.toThrow(InvalidInputError);
     expect(await client.call('settings.get')).toEqual(before);
-    expect(readdirSync(join(dataDir, 'secrets'))).toEqual([]);
+    expect(existsSync(join(workspace, '.env'))).toBe(false);
 
     const view = await client.call('settings.update', {
       telegramBotToken: token,
@@ -148,7 +150,7 @@ describe('Control endpoint (e2e)', () => {
 
     expect(view).toMatchObject({
       maxConcurrentRuns: before.maxConcurrentRuns,
-      telegramBotToken: { set: true, source: 'secrets' },
+      telegramBotToken: { set: true, source: 'env-file' },
     });
     expect(JSON.stringify(view)).not.toContain(token);
     await vi.waitFor(async () =>
@@ -189,12 +191,12 @@ describe('Control endpoint (e2e)', () => {
 
     expect(statSync(socketPath).isSocket()).toBe(true);
     expect(statSync(socketPath).mode & 0o077).toBe(0);
-    expect(statSync(join(dataDir, 'run')).mode & 0o077).toBe(0);
+    expect(statSync(join(state, 'run')).mode & 0o077).toBe(0);
   });
 
   it('does not answer when migrations cannot run', async () => {
-    mkdirSync(dataDir, { recursive: true });
-    writeFileSync(join(dataDir, 'pero.sqlite'), 'not a database'.repeat(100));
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(state, 'pero.sqlite'), 'not a database'.repeat(100));
 
     await expect(start()).rejects.toThrow();
 
@@ -248,7 +250,7 @@ describe('Control endpoint (e2e)', () => {
   });
 
   it('replaces a socket left behind by a killed daemon', async () => {
-    mkdirSync(join(dataDir, 'run'), { recursive: true, mode: 0o700 });
+    mkdirSync(join(state, 'run'), { recursive: true, mode: 0o700 });
     const holder = spawn(process.execPath, [
       '-e',
       `require('node:net').createServer().listen(process.argv[1], () => console.log('up'))`,
@@ -261,16 +263,16 @@ describe('Control endpoint (e2e)', () => {
 
     app = await start();
 
-    await expect(client.status()).resolves.toMatchObject({ dataDir });
+    await expect(client.status()).resolves.toMatchObject({ workspace });
   });
 
-  it('refuses a second daemon on the same data directory', async () => {
+  it('refuses a second daemon on the same workspace', async () => {
     app = await start();
 
     await expect(start()).rejects.toThrow(DaemonAlreadyRunningError);
     await expect(start()).rejects.toThrow(
-      `Pero is already running for data directory ${dataDir} (pid ${process.pid})`,
+      `Pero is already running for workspace ${workspace} (pid ${process.pid})`,
     );
-    await expect(client.status()).resolves.toMatchObject({ dataDir });
+    await expect(client.status()).resolves.toMatchObject({ workspace });
   });
 });

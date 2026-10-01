@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-/** Held for the life of a daemon; only one per data directory at a time. */
+/** Held for the life of a daemon; only one per workspace at a time. */
 export interface DaemonLock {
   /** Gives the lock up. Safe to call more than once. */
   release(): void;

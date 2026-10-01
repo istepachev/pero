@@ -86,15 +86,6 @@ describe('Workflow formatting', () => {
     );
   });
 
-  it('lists the Workflows of a legacy data directory without notes', () => {
-    expect(formatWorkflowList([{ ...review, file: null }])).toBe(
-      [
-        'NAME            AGENT  SCHEDULE                    NEXT RUN          CHANNELS  STATE',
-        'evening-review  coach  0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English   enabled',
-      ].join('\n'),
-    );
-  });
-
   it('says where to add the first Workflow', () => {
     expect(formatWorkflowList([])).toBe(
       'No Workflows yet. Add a note to the Workflows folder in the settings folder.',
@@ -137,7 +128,6 @@ describe('Workflow formatting', () => {
       formatWorkflowDetails({
         ...review,
         title: null,
-        file: null,
         agentEnabled: false,
         enabled: false,
         maxAttempts: 3,
@@ -157,6 +147,7 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'Workflow evening-review',
+        '  note      data/Settings/Workflows/Evening review.md',
         '  agent     coach (disabled)',
         "  input     Review today's chats. (2 lines)",
         '  schedule  none: it runs by hand, with pero workflows run',

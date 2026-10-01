@@ -23,9 +23,9 @@ const workspace: SettingsView = {
   setInPero: ['claude-model', 'history-retention-days', 'timezone'],
 };
 
-describe('formatSettings in a workspace', () => {
+describe('formatSettings', () => {
   it("shows Pero.md, marking Pero's own defaults, then config.yaml and the token", () => {
-    expect(formatSettings(workspace, '/home/me/workspace/.pero')).toBe(
+    expect(formatSettings(workspace)).toBe(
       [
         'data/Settings/Pero.md',
         '  provider                claude (default)',
@@ -44,28 +44,6 @@ describe('formatSettings in a workspace', () => {
         '.pero/config.yaml',
         '  data                    /home/me/workspace/data',
         'Telegram bot token: set (.env)',
-      ].join('\n'),
-    );
-  });
-});
-
-describe('formatSettings in a legacy data directory', () => {
-  it('says it needs a workspace, and shows only the token', () => {
-    expect(
-      formatSettings(
-        {
-          ...workspace,
-          files: null,
-          newTopics: null,
-          setInPero: null,
-          telegramBotToken: { set: true, source: 'secrets' },
-        },
-        '/home/me/.pero',
-      ),
-    ).toBe(
-      [
-        '/home/me/.pero is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.',
-        'Telegram bot token: set (secrets)',
       ].join('\n'),
     );
   });

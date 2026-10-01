@@ -58,7 +58,8 @@ const UNUSED_HANDLERS = {
 const status: StatusResult = {
   pid: 1234,
   version: '1.2.3',
-  dataDir: '/srv/pero',
+  workspace: '/srv/ws',
+  stateDir: '/srv/ws/.pero',
   startedAt: '2026-09-28T00:00:00.000Z',
   uptimeMs: 5,
   health: 'ok',

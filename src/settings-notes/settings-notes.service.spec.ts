@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import {
-  LEGACY_SETTINGS_DETAIL,
   type SettingsChange,
   SettingsNotes,
 } from './settings-notes.service.js';
@@ -40,15 +39,13 @@ describe('SettingsNotes', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Boots the module in a workspace, or in a legacy data directory. */
-  async function boot(workspace = true) {
-    const folders = workspace
-      ? {
-          workspace: tmp,
-          dataFolder: join(tmp, 'data'),
-          settingsFolder: settings,
-        }
-      : null;
+  /** Boots the module in the workspace `tmp`. */
+  async function boot() {
+    const folders = {
+      workspace: tmp,
+      dataFolder: join(tmp, 'data'),
+      settingsFolder: settings,
+    };
     moduleRef = await Test.createTestingModule({
       imports: [SettingsNotesModule],
     })
@@ -56,7 +53,6 @@ describe('SettingsNotes', () => {
         if (token === HostConfigService) {
           return {
             folders: () => folders,
-            inWorkspace: () => workspace,
             allowedChats: () => [],
           };
         }
@@ -140,20 +136,6 @@ describe('SettingsNotes', () => {
     expect(health.get('settings')!.state).toBe('ok');
   });
 
-  it('says a legacy data directory needs a workspace, and reads no notes', async () => {
-    write('Agents/Health.md', 'Coach');
-    await boot(false);
-    expect(notes.snapshot()).toBeNull();
-    await notes.rescan();
-    expect(notes.snapshot()).toBeNull();
-    expect(notes.folders()).toBeNull();
-    expect(health.get('settings')).toMatchObject({
-      state: 'degraded',
-      detail: LEGACY_SETTINGS_DETAIL,
-      required: true,
-    });
-  });
-
   it('loads the notes for whoever needs them before startup ends', async () => {
     write('Agents/Health.md', 'Coach');
     moduleRef = await Test.createTestingModule({
@@ -167,7 +149,6 @@ describe('SettingsNotes', () => {
                 dataFolder: join(tmp, 'data'),
                 settingsFolder: settings,
               }),
-              inWorkspace: () => true,
               allowedChats: () => [],
             }
           : token === DataSource

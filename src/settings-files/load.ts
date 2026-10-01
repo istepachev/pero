@@ -37,7 +37,7 @@ export async function loadSettings(
   input: LoadSettingsInput,
 ): Promise<LoadedSettings> {
   const { workspace, config, homeDir } = input;
-  const dataFolder = resolveDataFolder(config, workspace, true, homeDir)!;
+  const dataFolder = resolveDataFolder(config, workspace, homeDir);
   const settingsFolder = resolveSettingsFolder(config, workspace, homeDir);
   const notes = await readNotes(
     settingsFolder,

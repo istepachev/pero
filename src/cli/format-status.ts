@@ -10,7 +10,7 @@ export function formatStatus(status: StatusResult, cliVersion: string): string {
     ...table([
       ['PID', String(status.pid)],
       ['Version', status.version],
-      location(status),
+      ['Workspace', status.workspace],
       ['Uptime', formatDuration(status.uptimeMs)],
       ['Health', status.health],
     ]).map((row) => `  ${row}`),
@@ -38,15 +38,6 @@ export function formatStatus(status: StatusResult, cliVersion: string): string {
     );
   }
   return lines.join('\n');
-}
-
-/** The workspace, or the data directory, marked legacy when it is one. */
-function location(status: StatusResult): [string, string] {
-  if (typeof status.workspace === 'string') {
-    return ['Workspace', status.workspace];
-  }
-  // Absent: a daemon from before workspaces, where every one was legacy.
-  return ['Data directory', `${status.dataDir} (legacy)`];
 }
 
 /** A short duration such as `42s`, `3m 12s`, `2h 5m`, or `3d 4h`. */

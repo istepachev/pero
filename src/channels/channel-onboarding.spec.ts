@@ -1,22 +1,17 @@
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
-import { hostConfigIn } from '../host-config/testing/host-config-in.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { welcomeText } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';
-import { ChannelTurns, unansweredText } from './channel-stages.js';
+import { ChannelTurns } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
 import {
   chatMigrated,
@@ -44,7 +39,7 @@ describe('Channel onboarding', () => {
   /** Starts onboarding with the host config `hostConfig`, allowing both chats. */
   async function boot(
     database: string,
-    hostConfig: ReturnType<typeof hostConfigIn>,
+    hostConfig: ReturnType<TestWorkspace['hostConfig']>,
   ): Promise<void> {
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -90,10 +85,6 @@ describe('Channel onboarding', () => {
 
   function allMessages(): Promise<Message[]> {
     return ds.getRepository(Message).find({ order: { id: 'ASC' } });
-  }
-
-  function sentTexts(): string[] {
-    return adapter.sent.map((sent) => sent.message.text);
   }
 
   describe('in a workspace', () => {
@@ -189,6 +180,14 @@ describe('Channel onboarding', () => {
       expect(String(warn.mock.calls[0]![0])).toContain('Service unreachable');
       // Only the message that was received; the welcome never went out.
       expect((await allMessages()).map((m) => m.origin)).toEqual(['user']);
+    });
+
+    it("retitles a renamed topic's Channel", async () => {
+      await adapter.emit(topicCreated(GROUP, '7', { title: 'Groceries' }));
+
+      await adapter.emit(topicRenamed(GROUP, '7', 'Shopping'));
+
+      expect((await channelFor(`${GROUP.key}:7`)).title).toBe('Shopping');
     });
 
     it('creates nothing when a renamed topic is unknown', async () => {
@@ -291,47 +290,6 @@ describe('Channel onboarding', () => {
           expect.stringContaining('already exists'),
         );
       });
-    });
-  });
-
-  describe('in a legacy data directory', () => {
-    let tmp: string;
-
-    beforeEach(async () => {
-      tmp = mkdtempSync(join(tmpdir(), 'pero-onboarding-'));
-      await boot(join(tmp, 'pero.sqlite'), hostConfigIn(tmp));
-    });
-
-    afterEach(() => {
-      rmSync(tmp, { recursive: true, force: true });
-    });
-
-    it('records Channels with no Agent, and says once that Pero needs a workspace', async () => {
-      await adapter.emit(topicCreated(GROUP, '7', { title: 'Groceries' }));
-      await adapter.deliver(
-        inboundMessage(GROUP, { topic: '7', title: 'Groceries' }),
-      );
-      await adapter.deliver(
-        inboundMessage(GROUP, { topic: '7', title: 'Groceries' }),
-      );
-      await adapter.deliver(inboundMessage(OWNER));
-
-      expect(
-        (await allChannels()).map((channel) => channel.externalKey),
-      ).toEqual([`${GROUP.key}:7`, OWNER.key]);
-      expect(await ds.getRepository(LegacyChannelAgent).count()).toBe(0);
-      const hint = unansweredText({ kind: 'legacy' });
-      expect(hint).toMatch(/make a workspace/);
-      expect(sentTexts()).toEqual([hint, hint]);
-      expect(turns.handle).not.toHaveBeenCalled();
-    });
-
-    it("retitles a renamed topic's Channel", async () => {
-      await adapter.emit(topicCreated(GROUP, '7', { title: 'Groceries' }));
-
-      await adapter.emit(topicRenamed(GROUP, '7', 'Shopping'));
-
-      expect((await channelFor(`${GROUP.key}:7`)).title).toBe('Shopping');
     });
   });
 });

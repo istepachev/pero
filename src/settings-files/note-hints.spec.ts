@@ -4,7 +4,6 @@ import {
   channelHint,
   findAgentNote,
   findWorkflowNote,
-  legacyHint,
   SETTING_HOMES,
   settingHint,
   shownPath,
@@ -170,11 +169,5 @@ describe('note hints', () => {
       'The data folder is set in config.yaml now: set data in .pero/config.yaml, then restart Pero.',
     );
     expect(SETTING_HOMES['telegram-bot-token']).toBeUndefined();
-  });
-
-  it('says a legacy data directory needs a workspace', () => {
-    expect(legacyHint('/home/me/.pero')).toBe(
-      '/home/me/.pero is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.',
-    );
   });
 });

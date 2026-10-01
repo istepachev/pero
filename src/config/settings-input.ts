@@ -31,9 +31,6 @@ export const MAX_HISTORY_RETENTION_DAYS = 36_500;
 /** Environment variable with a Telegram bot token; wins over a stored one. */
 export const TELEGRAM_TOKEN_ENV = 'PERO_TELEGRAM_BOT_TOKEN';
 
-/** File name of the stored bot token in a legacy data directory's `secrets/`. */
-export const TELEGRAM_TOKEN_SECRET = 'telegram-bot-token';
-
 /** A Telegram bot token as @BotFather issues it. Issues never echo it. */
 export const telegramBotTokenSchema = z
   .string()

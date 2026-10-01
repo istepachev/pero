@@ -23,10 +23,6 @@ export const SETTINGS_NOTES_TICK_MS = 10_000;
 /** The health component the notes report as. */
 export const SETTINGS_COMPONENT = 'settings';
 
-/** What the `settings` component says in a legacy data directory. */
-export const LEGACY_SETTINGS_DETAIL =
-  'legacy data directory: no Agents answer; make a workspace with pero init <folder>';
-
 /** Where the notes are, and the folders they are read against. */
 export interface SettingsFolders {
   workspace: string;
@@ -52,9 +48,7 @@ export interface SettingsChange {
  * seen in the allowed chats, looked up on each scan: when those change,
  * the snapshot is built again, though no note changed.
  *
- * `FileDefinitions` serves the definitions from the snapshot. In a legacy
- * data directory there are no notes: the `settings` component says to make
- * a workspace, and this does nothing else.
+ * `FileDefinitions` serves the definitions from the snapshot.
  */
 @Injectable()
 export class SettingsNotes
@@ -62,7 +56,6 @@ export class SettingsNotes
 {
   private readonly logger = new Logger('Settings');
   private reloader: SettingsReloader | null = null;
-  private locations: SettingsFolders | null = null;
   /** The first load, started by whichever needs the notes first. */
   private loaded: Promise<void> | null = null;
   private readonly listeners = new Set<(change: SettingsChange) => void>();
@@ -74,17 +67,11 @@ export class SettingsNotes
 
   constructor(
     private readonly health: ComponentHealth,
-    // Absent only in tests that need no notes: as in a legacy data directory.
-    @Optional() private readonly hostConfig?: HostConfigService,
+    private readonly hostConfig: HostConfigService,
     // Absent only in tests without a database: references then are
     // checked for syntax only, as in pero check without Pero.
     @Optional() @InjectDataSource() private readonly dataSource?: DataSource,
   ) {}
-
-  /** Whether Pero runs from a workspace, which has notes. */
-  inWorkspace(): boolean {
-    return this.hostConfig?.inWorkspace() ?? false;
-  }
 
   /**
    * Loads the notes before the daemon answers its control socket, if
@@ -98,7 +85,7 @@ export class SettingsNotes
    * The snapshot in use, loading the notes the first time: startup work,
    * such as recovering Workflow runs, may need them before
    * `onApplicationBootstrap`. `config.yaml` has been read by then, its
-   * module being global. Null in a legacy data directory.
+   * module being global. Null when the settings folder can't be read.
    */
   async ready(): Promise<SettingsSnapshot | null> {
     await (this.loaded ??= this.load());
@@ -106,18 +93,7 @@ export class SettingsNotes
   }
 
   private async load(): Promise<void> {
-    const folders = this.hostConfig?.folders() ?? null;
-    if (folders === null) {
-      if (this.hostConfig !== undefined) {
-        this.health.report(
-          SETTINGS_COMPONENT,
-          'degraded',
-          LEGACY_SETTINGS_DETAIL,
-        );
-      }
-      return;
-    }
-    this.locations = folders;
+    const folders = this.folders();
     this.reloader = new SettingsReloader(folders.settingsFolder, {
       workspace: folders.workspace,
       dataFolder: folders.dataFolder,
@@ -128,11 +104,11 @@ export class SettingsNotes
   }
 
   /**
-   * The workspace, data folder, and settings folder the notes were loaded
-   * from, absolute; null until then, and in a legacy data directory.
+   * The workspace, data folder, and settings folder the notes are read
+   * from, absolute: as they were at startup.
    */
-  folders(): SettingsFolders | null {
-    return this.locations;
+  folders(): SettingsFolders {
+    return this.hostConfig.folders();
   }
 
   /** Lets a rescan under way finish. */
@@ -146,14 +122,14 @@ export class SettingsNotes
     void this.rescan();
   }
 
-  /** The snapshot in use; null in a legacy data directory. */
+  /** The snapshot in use; null until the notes could be read. */
   snapshot(): SettingsSnapshot | null {
     return this.reloader?.current() ?? null;
   }
 
   /**
    * The notes the snapshot in use reports errors for, each with the
-   * version read; none in a legacy data directory.
+   * version read.
    */
   broken(): BrokenNote[] {
     return this.reloader?.broken() ?? [];
@@ -174,7 +150,7 @@ export class SettingsNotes
     this.current ??= this.reload(this.reloader)
       .catch((error: unknown) => {
         this.logger.error(
-          `Could not read the settings in ${this.locations?.settingsFolder}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not read the settings in ${this.folders().settingsFolder}: ${error instanceof Error ? error.message : String(error)}`,
         );
       })
       .finally(() => {
@@ -200,7 +176,7 @@ export class SettingsNotes
     const { snapshot, changed, appeared, fixed } = reload;
     if (first) {
       this.logger.log(
-        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.locations?.settingsFolder}`,
+        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.folders().settingsFolder}`,
       );
     } else if (changed.length > 0) {
       this.logger.log(`Settings notes changed: ${changed.join(', ')}`);
@@ -225,7 +201,7 @@ export class SettingsNotes
    * they fail to load, the ones it has stay.
    */
   private async lookUpTopics(reloader: SettingsReloader): Promise<void> {
-    if (this.dataSource === undefined || this.hostConfig === undefined) return;
+    if (this.dataSource === undefined) return;
     let channels;
     try {
       channels = await allowedChannels(

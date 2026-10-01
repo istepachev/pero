@@ -2,7 +2,6 @@ import { homedir } from 'node:os';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { InvalidInputError } from '../common/errors.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import {
   checkWorkspace,
@@ -24,14 +23,8 @@ export class WorkspaceChecks {
   ) {}
 
   async check(): Promise<WorkspaceCheck> {
-    const folders = this.hostConfig.folders();
-    if (folders === null) {
-      throw new InvalidInputError(
-        'This Pero runs from a legacy data directory: its Agents and Workflows are in its database, and there are no notes to check',
-      );
-    }
     return checkWorkspace({
-      workspace: folders.workspace,
+      workspace: this.hostConfig.folders().workspace,
       homeDir: homedir(),
       hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       topics: channelTopicLookup(

@@ -152,11 +152,7 @@ export class AgentNotes {
   }
 
   private settingsFolder(): string {
-    const folders = this.notes.folders();
-    if (folders === null) {
-      throw new Error('Pero writes Agent notes only in a workspace');
-    }
-    return folders.settingsFolder;
+    return this.notes.folders().settingsFolder;
   }
 }
 

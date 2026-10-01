@@ -415,7 +415,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       ...options,
       toolPolicy: agent.toolPolicy,
       // So that an Agent can't change its own configuration unasked.
-      ...(folders === null ? {} : { settingsFolder: folders.settingsFolder }),
+      settingsFolder: folders.settingsFolder,
       signal: controller.signal,
     })) {
       switch (event.type) {

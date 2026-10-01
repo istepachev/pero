@@ -56,10 +56,9 @@ export type ComponentStatus = z.infer<typeof componentStatusSchema>;
 export const statusResultSchema = z.object({
   pid: z.int().positive(),
   version: z.string(),
-  /** The state directory: `<workspace>/.pero`, or a legacy data directory. */
-  dataDir: z.string(),
-  /** The workspace; null for a legacy data directory, absent before 0.2. */
-  workspace: z.string().nullable().optional(),
+  workspace: z.string(),
+  /** The state directory, `<workspace>/.pero`. */
+  stateDir: z.string(),
   /** When the daemon became ready. */
   startedAt: z.iso.datetime(),
   uptimeMs: z.int().nonnegative(),
@@ -70,11 +69,8 @@ export const statusResultSchema = z.object({
 
 export type StatusResult = z.infer<typeof statusResultSchema>;
 
-/**
- * Where the bot token comes from: the daemon's environment, the workspace's
- * `.env`, or a legacy data directory's `secrets/`.
- */
-export const TOKEN_SOURCES = ['environment', 'env-file', 'secrets'] as const;
+/** Where the bot token comes from: the daemon's environment, or `.env`. */
+export const TOKEN_SOURCES = ['environment', 'env-file'] as const;
 
 export type TokenSource = (typeof TOKEN_SOURCES)[number];
 
@@ -82,10 +78,10 @@ export type TokenSource = (typeof TOKEN_SOURCES)[number];
 export const settingsViewSchema = z.object({
   defaultProvider: z.enum(PROVIDERS),
   providerDefaults: providerDefaultsSchema,
-  defaultWorkingDirectory: z.string().nullable(),
+  defaultWorkingDirectory: z.string(),
   sharedInstructions: z.string().nullable(),
-  /** The name of the Agent primary Channels get; null until one is chosen. */
-  mainAgent: z.string().nullable(),
+  /** The name of the Agent primary Channels get. */
+  mainAgent: z.string(),
   historyCarryover: z.int(),
   /** Days of message history kept; null keeps all of it. */
   historyRetentionDays: z.int().nullable(),
@@ -101,16 +97,15 @@ export const settingsViewSchema = z.object({
     source: z.enum(TOKEN_SOURCES).nullable(),
   }),
   /**
-   * In a workspace, where the settings are: `Pero.md` and `config.yaml`,
-   * relative to the workspace when inside it; null in a legacy data
-   * directory, which has no settings to change.
+   * Where the settings are: `Pero.md` and `config.yaml`, relative to the
+   * workspace when inside it.
    */
-  files: z.object({ pero: z.string(), config: z.string() }).nullable(),
-  /** What a topic no Agent claims gets; null in a legacy data directory. */
+  files: z.object({ pero: z.string(), config: z.string() }),
+  /** What a topic no Agent claims gets; null until the notes are read. */
   newTopics: z.enum(NEW_TOPICS).nullable(),
   /**
    * The properties `Pero.md` sets; the others are Pero's own defaults.
-   * Null in a legacy data directory.
+   * Null until the notes are read.
    */
   setInPero: z.array(z.string()).nullable(),
 });
@@ -197,26 +192,18 @@ export const agentViewSchema = z.object({
   enabled: z.boolean(),
   /** Whether it is the Agent primary Channels get when onboarded. */
   main: z.boolean(),
-  /**
-   * The note that defines it, relative to the workspace when inside it;
-   * null in a legacy data directory.
-   */
-  file: z.string().nullable(),
+  /** The note that defines it, relative to the workspace when inside it. */
+  file: z.string(),
   /** Titles of the topics it claims. */
   topics: z.array(z.string()),
-  /**
-   * Where its values come from: the note, `Pero.md`, or Pero's defaults;
-   * null in a legacy data directory.
-   */
-  origins: z
-    .object({
-      provider: z.enum(VALUE_ORIGINS),
-      model: z.enum(VALUE_ORIGINS),
-      effort: z.enum(VALUE_ORIGINS),
-      permissions: z.enum(VALUE_ORIGINS),
-      workingDirectory: z.enum(['note', 'data']),
-    })
-    .nullable(),
+  /** Where its values come from: the note, `Pero.md`, or Pero's defaults. */
+  origins: z.object({
+    provider: z.enum(VALUE_ORIGINS),
+    model: z.enum(VALUE_ORIGINS),
+    effort: z.enum(VALUE_ORIGINS),
+    permissions: z.enum(VALUE_ORIGINS),
+    workingDirectory: z.enum(['note', 'data']),
+  }),
   /** Its note's errors, while its last good version stays in use. */
   errors: z.array(
     z.object({ property: z.string().nullable(), message: z.string() }),
@@ -364,11 +351,8 @@ export type WorkflowScheduleView = z.infer<typeof workflowScheduleSchema>;
 export const workflowViewSchema = z.object({
   name: z.string(),
   title: z.string().nullable(),
-  /**
-   * Its note, relative to the workspace when inside it; null in a legacy
-   * data directory.
-   */
-  file: z.string().nullable(),
+  /** Its note, relative to the workspace when inside it. */
+  file: z.string(),
   /** The name of the Agent its runs use. */
   agent: z.string(),
   agentEnabled: z.boolean(),
@@ -392,10 +376,7 @@ export const workflowViewSchema = z.object({
       runWhenEmpty: z.boolean(),
     })
     .nullable(),
-  /**
-   * Its note's errors, for which its last good version is in use; empty in
-   * a legacy data directory.
-   */
+  /** Its note's errors, for which its last good version is in use. */
   errors: z.array(
     z.object({ property: z.string().nullable(), message: z.string() }),
   ),

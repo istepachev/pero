@@ -80,7 +80,7 @@ const historyChannelsSchema = z.union(
 
 /**
  * The Channel history a Workflow's runs read as input, as a note's
- * `history-*` properties give it and a legacy data directory stored it.
+ * `history-*` properties give it.
  */
 export const workflowHistorySchema = z.strictObject({
   channels: historyChannelsSchema,

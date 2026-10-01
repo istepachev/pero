@@ -114,7 +114,7 @@ describe('Restore drill (e2e)', () => {
       foreground: false,
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
-    client = createControlClient(join(config.dataDir, 'run', 'pero.sock'));
+    client = createControlClient(join(config.stateDir, 'run', 'pero.sock'));
   }
 
   async function connected() {
@@ -240,12 +240,11 @@ describe('Restore drill (e2e)', () => {
   }
 
   /**
-   * Runs the built `pero` CLI from `tmp`, without PERO_HOME,
-   * PERO_WORKSPACE, or a token in its environment.
+   * Runs the built `pero` CLI from `tmp`, without PERO_WORKSPACE or a
+   * token in its environment.
    */
   function pero(args: string[]): Promise<{ code: number; stderr: string }> {
     const {
-      PERO_HOME: _home,
       PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env

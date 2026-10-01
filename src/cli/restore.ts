@@ -20,12 +20,13 @@ import {
 } from '../backup/archive.js';
 import { copyTree, type CopyTreeResult } from '../backup/copy-tree.js';
 import { writeFileAtomic } from '../config/atomic-file.js';
-import { ensureDataDir } from '../config/data-dir.js';
 import {
   type HostConfig,
   readHostConfig,
   resolveDataFolder,
 } from '../config/host-config.js';
+import { STATE_DIR_NAME } from '../config/bootstrap-config.js';
+import { ensureWorkspaceLayout } from '../config/workspace-layout.js';
 import { CliError } from './errors.js';
 
 export interface RestoreOptions {
@@ -35,7 +36,7 @@ export interface RestoreOptions {
 
 export interface RestoreResult {
   /** The state directory the backup now lives in. */
-  dataDir: string;
+  stateDir: string;
   manifest: BackupManifest;
   /**
    * Folders the restored workspace uses that do not exist here: the data
@@ -56,10 +57,10 @@ export interface RestoreResult {
 
 /**
  * Restores backup `file` into `workspace`, such as a fresh clone of its
- * repository, whose state directory `root` has no database; both are
+ * repository, whose state directory `.pero/` has no database; both are
  * created when missing. The workspace may already hold files, so each is
  * copied without overwriting:
- * - the database first, which claims `root`: a daemon that started
+ * - the database first, which claims `.pero/`: a daemon that started
  *   meanwhile makes the restore stop there, with nothing changed;
  * - `config.yaml`, unless the workspace has its own and `replaceConfig`
  *   is not set;
@@ -68,10 +69,10 @@ export interface RestoreResult {
  */
 export async function restoreBackup(
   file: string,
-  root: string,
   workspace: string,
   options: RestoreOptions = {},
 ): Promise<RestoreResult> {
+  const root = join(workspace, STATE_DIR_NAME);
   const target = await existing(root);
   if (target !== null) await refuseDatabase(root, target);
 
@@ -100,11 +101,7 @@ export async function restoreBackup(
       options.replaceConfig ?? false,
     );
 
-    const folder = resolveDataFolder(
-      hostConfig ?? { data: null },
-      workspace,
-      true,
-    )!;
+    const folder = resolveDataFolder(hostConfig ?? { data: null }, workspace);
     const data = manifest.includesData
       ? {
           folder,
@@ -112,9 +109,9 @@ export async function restoreBackup(
         }
       : null;
 
-    ensureDataDir(state, workspace);
+    ensureWorkspaceLayout(workspace);
     return {
-      dataDir: state,
+      stateDir: state,
       manifest,
       missing: await missingHere(manifest, hostConfig === null ? null : folder),
       config: config.action,

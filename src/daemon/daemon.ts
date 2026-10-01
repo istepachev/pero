@@ -3,7 +3,7 @@ import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module.js';
 import type { BootstrapConfig } from '../config/bootstrap-config.js';
-import { describeLocation, ensureDataDir } from '../config/data-dir.js';
+import { ensureWorkspaceLayout } from '../config/workspace-layout.js';
 import { ControlService } from '../control/control.service.js';
 import {
   findRunningDaemon,
@@ -38,20 +38,20 @@ export interface Daemon {
   readonly stopped: Promise<StopResult>;
 }
 
-/** Another daemon holds the data directory. */
+/** Another daemon holds the workspace. */
 export class DaemonAlreadyRunningError extends Error {
   override name = 'DaemonAlreadyRunningError';
 }
 
 /**
- * Takes the data directory's lock, prepares logging, and starts the daemon.
+ * Takes the workspace's lock, prepares logging, and starts the daemon.
  * It has no network listener: the CLI reaches it through the control socket,
  * which opens once the database is migrated. Process metadata is written
  * last, once the daemon answers.
  */
 export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const { config } = options;
-  const layout = ensureDataDir(config.dataDir, config.workspace);
+  const layout = ensureWorkspaceLayout(config.workspace);
 
   // Before logging, so a refused daemon never writes to the other one's log.
   const lock = acquireDaemonLock(layout.lockFile);
@@ -61,7 +61,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     });
     const pid = running ? ` (pid ${running.metadata.pid})` : '';
     throw new DaemonAlreadyRunningError(
-      `Pero is already running for ${describeLocation(layout)}${pid}`,
+      `Pero is already running for workspace ${layout.workspace}${pid}`,
     );
   }
   const cleanup = () => {
@@ -104,8 +104,8 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       writeDaemonMetadata(layout.metadataFile, {
         pid,
         version,
-        dataDir: layout.root,
         workspace: layout.workspace,
+        stateDir: layout.stateDir,
         socket: layout.controlSocket,
         startedAt,
       });
@@ -115,7 +115,6 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     }
     logger.info(
       {
-        dataDir: layout.root,
         workspace: layout.workspace,
         socket: layout.controlSocket,
       },

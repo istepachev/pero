@@ -59,7 +59,6 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
   /** Runs `pero -w <workspace> check` to completion. */
   function check(...args: string[]) {
     const {
-      PERO_HOME: _home,
       PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env

@@ -60,7 +60,8 @@ class FakeDaemon {
     return {
       pid: 1,
       version: '0.0.0',
-      dataDir: '/tmp/pero',
+      workspace: '/tmp/ws',
+      stateDir: '/tmp/ws/.pero',
       startedAt: since,
       uptimeMs: 0,
       health: 'degraded',
@@ -115,7 +116,7 @@ class FakeDaemon {
       if (change.telegramBotToken) {
         this.settings = {
           ...this.settings,
-          telegramBotToken: { set: true, source: 'secrets' },
+          telegramBotToken: { set: true, source: 'env-file' },
         };
       }
       return this.settings;
@@ -211,18 +212,6 @@ describe('runInteractiveSetup', () => {
     expect(printed.join('\n')).not.toContain(TOKEN);
   });
 
-  it('asks nothing about folders in a legacy data directory, and says to make a workspace', async () => {
-    daemon.settings = { ...daemon.settings, files: null };
-    daemon.signedIn.add('claude');
-    const { done, asked } = run([TOKEN]);
-    await done;
-
-    expect(asked).toEqual(['Bot token (Enter to skip) (hidden)']);
-    expect(printed.at(-1)).toMatch(
-      /^Setup needed:\n {2}This legacy data directory has no Agents — pero init <folder>/,
-    );
-  });
-
   it('skips the token, and asks again for one that is not valid', async () => {
     daemon.signedIn.add('claude');
     const { done, asked } = run(['nope', '']);
@@ -289,7 +278,7 @@ describe('runInteractiveSetup', () => {
     beforeEach(() => {
       daemon.settings = {
         ...daemon.settings,
-        telegramBotToken: { set: true, source: 'secrets' },
+        telegramBotToken: { set: true, source: 'env-file' },
       };
       daemon.signedIn.add('claude');
       daemon.telegram = { bot: null, allowed: [], pairing: [] };

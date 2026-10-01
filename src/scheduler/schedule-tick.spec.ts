@@ -297,8 +297,7 @@ describe('ScheduleTick', () => {
     const sqlTime = (date: Date) =>
       date.toISOString().replace('T', ' ').replace('Z', '');
     const offline = await openDatabase(dataSourceOptions(ws.database));
-    // Legacy Workflows, legacy definitions, Channel routes, then schedule
-    // state.
+    // Back to before ScheduleState: it and the three migrations after it.
     for (let step = 0; step < 4; step++) {
       await offline.undoLastMigration({ transaction: 'each' });
     }

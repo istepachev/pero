@@ -1,22 +1,13 @@
 import { TELEGRAM_TOKEN_ENV } from '../config/settings-input.js';
 import type { SettingsView } from '../control/protocol.js';
-import { legacyHint } from '../settings-files/note-hints.js';
 import { table } from './format-status.js';
 import { preview } from './preview.js';
 
 /**
- * `pero settings show`. In a workspace: the `Pero.md` properties, each
- * marked when it is Pero's own default, then `config.yaml`'s data folder
- * and the bot token. In the legacy data directory `dataDir`: that it needs
- * a workspace, and the bot token.
+ * `pero settings show`: the `Pero.md` properties, each marked when it is
+ * Pero's own default, then `config.yaml`'s data folder and the bot token.
  */
-export function formatSettings(view: SettingsView, dataDir: string): string {
-  if (view.files === null) {
-    return [
-      legacyHint(dataDir),
-      `Telegram bot token: ${formatToken(view)}`,
-    ].join('\n');
-  }
+export function formatSettings(view: SettingsView): string {
   const set = new Set(view.setInPero ?? []);
   const value = (property: string, shown: string) =>
     set.has(property) ? shown : `${shown} (default)`;
@@ -34,7 +25,7 @@ export function formatSettings(view: SettingsView, dataDir: string): string {
     ['codex-effort', option('codex', 'effort')],
     ['permissions', value('permissions', view.defaultPermissions)],
     ['timezone', value('timezone', view.timezone)],
-    ['main-agent', value('main-agent', view.mainAgent ?? 'main')],
+    ['main-agent', value('main-agent', view.mainAgent)],
     ['new-topics', value('new-topics', view.newTopics ?? 'create-agent')],
     [
       'history-carryover',
@@ -57,7 +48,7 @@ export function formatSettings(view: SettingsView, dataDir: string): string {
       value('max-concurrent-runs', String(view.maxConcurrentRuns)),
     ],
     ['(body)', preview(view.sharedInstructions)],
-    ['data', view.defaultWorkingDirectory ?? '(not set)'],
+    ['data', view.defaultWorkingDirectory],
   ]);
   return [
     view.files.pero,
@@ -76,7 +67,7 @@ export function formatToken({ telegramBotToken }: SettingsView): string {
       ? TELEGRAM_TOKEN_ENV
       : source === 'env-file'
         ? '.env'
-        : source;
+        : null;
   if (set) return `set (${from})`;
   return from ? `not valid (${from})` : 'not set';
 }

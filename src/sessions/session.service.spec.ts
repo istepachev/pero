@@ -10,11 +10,13 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { TestWorkspace } from '../settings-notes/testing/test-workspace.js';
 import { SessionService } from './session.service.js';
 import { SessionsModule } from './sessions.module.js';
 
 describe('SessionService', () => {
   let tmp: string;
+  let ws: TestWorkspace;
   let vault: string;
   let moduleRef: TestingModule;
   let ds: DataSource;
@@ -25,9 +27,11 @@ describe('SessionService', () => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-sessions-'));
     vault = join(tmp, 'vault');
     mkdirSync(vault);
+    ws = TestWorkspace.create('pero-sessions-ws-');
     moduleRef = await Test.createTestingModule({
       imports: [
-        PersistenceModule.forRoot({ database: join(tmp, 'pero.sqlite') }),
+        PersistenceModule.forRoot({ database: ws.database }),
+        ws.hostConfig(),
         AgentsModule,
         SessionsModule,
       ],
@@ -50,6 +54,7 @@ describe('SessionService', () => {
 
   afterEach(async () => {
     await moduleRef.close();
+    ws.delete();
     rmSync(tmp, { recursive: true, force: true });
   });
 
