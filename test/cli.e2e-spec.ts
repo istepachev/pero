@@ -65,6 +65,9 @@ interface Result {
 }
 
 describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
+  /** The temporary folder as the OS names it, shorter than its real path. */
+  let shortTmp: string;
+  /** Its real path, as Pero resolves a workspace inside it. */
   let tmp: string;
   let layout: WorkspaceLayout;
   /** Where the fake provider CLIs look for their sign-in. */
@@ -78,7 +81,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     api = new FakeBotApi();
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    shortTmp = mkdtempSync(join(tmpdir(), 'pero-'));
+    tmp = realpathSync(shortTmp);
     layout = workspaceLayout(join(tmp, 'ws'));
     authDir = join(tmp, 'auth');
     mkdirSync(authDir);
@@ -1430,7 +1434,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       realpathSync(tmp),
       'w'.repeat(MAX_SOCKET_PATH_BYTES),
     );
-    const runtime = join(tmp, 'runtime');
+    // Not the real path, which on macOS is too long for the socket too.
+    const runtime = join(shortTmp, 'runtime');
     mkdirSync(runtime);
     const env = { XDG_RUNTIME_DIR: runtime };
     const state = workspaceLayout(workspace);
