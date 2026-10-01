@@ -1039,6 +1039,12 @@ Replace the sixteen migrations with one, `InitialSchema`, generated from the ent
 
 A database made before this step won't open. Development databases are thrown away, which is fine, since no installation exists.
 
+- **Found while building:**
+  - **The generated migration needed reordering.** TypeORM's SQLite generator creates the tables without their foreign keys, then rebuilds `notifications`, `sessions`, and `messages` through temporary tables to add them. `InitialSchema` creates the tables in dependency order, each with its foreign keys, and `down` drops them in reverse. Against the sixteen migrations' schema, only column order differs (`skipped_count`, `last_error`, and `notification_id` sit where the entities declare them), and `UQ_schedules_workflow_name` replaces `UQ_schedules_workflow_fingerprint`.
+  - **A changed schedule updates its Workflow's row** rather than inserting a new one and dropping the old: the new fingerprint, the next time after now, and no `last_run_at`, as the new row had. A changed schedule whose first time can't be computed still loses its row. Views still match a row to the schedule by fingerprint.
+  - **Tests of names and of the 0.1 tables go with them:** slug checks and duplicate names, allowed chats, notification targets, and Triggers. `domain-entities.spec.ts` seeds state alone and gains a test of one schedule row per Workflow. `persistence.module.spec.ts` already migrates an empty database and reverts it, so `domain-entities.spec.ts` checks only that the schema holds the state tables. `schedule-tick.spec.ts` loses its test across the schedule state migration.
+  - **The persistence table in [Architecture](./ARCHITECTURE.md) changes now, not in 11.9:** it loses the `legacy_*` rows, and `schedules` is unique by `workflow_name`. So do the `legacy_` tables in [Operating Pero](./OPERATIONS.md) and the migration tests [Testing](./TESTING.md) named. The legacy data directory's prose waits for 11.9.
+
 **Done when:**
 - `MIGRATIONS` holds one migration, and `migration:generate` against a fresh database finds no difference from the entities.
 - The architecture's persistence table, in 11.9, lists exactly the tables the migration creates.

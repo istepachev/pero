@@ -280,64 +280,6 @@ describe('ScheduleTick', () => {
     });
   });
 
-  it('neither loses nor repeats a run across the schedule state migration', async () => {
-    // The release before kept schedules as Triggers; the note says the same.
-    await ws.workflow('brief', {
-      agent: 'coach',
-      cron: '0 * * * *',
-      timezone: 'UTC',
-    });
-    await moduleRef.close();
-    // As the release before left it, down since the top of the hour two
-    // hours ago: the run before that queued by its Trigger, and the
-    // Trigger's next run the first time missed.
-    const lastHour = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
-    const due = new Date(lastHour - 2 * HOUR_MS);
-    const before = new Date(due.getTime() - HOUR_MS);
-    const sqlTime = (date: Date) =>
-      date.toISOString().replace('T', ' ').replace('Z', '');
-    const offline = await openDatabase(dataSourceOptions(ws.database));
-    // Back to before ScheduleState: it and the three migrations after it.
-    for (let step = 0; step < 4; step++) {
-      await offline.undoLastMigration({ transaction: 'each' });
-    }
-    const [{ id: workflowId }] = (await offline.query(
-      `INSERT INTO "workflows" ("name", "agent_name", "input_template") ` +
-        `VALUES ('brief', 'coach', 'Run brief.') RETURNING "id"`,
-    )) as [{ id: number }];
-    const [{ id }] = (await offline.query(
-      `INSERT INTO "triggers" ("workflow_id", "kind", "config_json", "timezone", "next_run_at", "last_run_at") ` +
-        `VALUES (?, 'schedule', '{"cron":"0 * * * *"}', 'UTC', ?, ?) RETURNING "id"`,
-      [workflowId, sqlTime(due), sqlTime(before)],
-    )) as [{ id: number }];
-    await offline.query(
-      `INSERT INTO "workflow_runs" ("workflow_name", "trigger_id", "trigger_key", "status") ` +
-        `VALUES ('brief', ?, ?, 'completed')`,
-      [id, `schedule:${id}:${before.toISOString()}`],
-    );
-    await offline.destroy();
-
-    // Migrates, then catches up at once.
-    await boot();
-    await executor.idle();
-
-    const runs = await allRuns();
-    expect(
-      runs.map((run) => [run.triggerKey, run.skippedCount, run.status]),
-    ).toEqual([
-      [`schedule:${id}:${before.toISOString()}`, 0, 'completed'],
-      [`schedule:brief:${due.toISOString()}`, 2, 'completed'],
-    ]);
-    expect((await state('brief')).nextRunAt).toEqual(
-      new Date(lastHour + HOUR_MS),
-    );
-
-    await moduleRef.close();
-    await boot();
-    await executor.idle();
-    expect(await allRuns()).toHaveLength(2);
-  });
-
   it('adds the times that come due while a run waits to start to its skipped count', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
     const held = claude.hold();

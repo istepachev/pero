@@ -165,7 +165,6 @@ The database holds only state; Agents, Workflows, and the defaults are notes:
 - **Channels and Sessions:** each Channel Pero has seen, with its topic's title, and the provider session ID each Session resumes.
 - **Message history:** the text of each Channel (see below).
 - **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
-- **What a legacy data directory defined:** its Agents, settings, Workflows, Triggers, and each Channel's Agent, kept in `legacy_` tables only for `pero migrate`.
 
 Outside the data directory:
 - **Working folders:** the data folder and each Agent's own folder. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.

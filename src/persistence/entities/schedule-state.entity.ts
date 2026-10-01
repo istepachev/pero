@@ -1,15 +1,14 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Where a schedule of a Workflow stands: when it next comes due, and when
- * it last started a run. The schedule itself is a definition; its
- * fingerprint names it, so a changed schedule is a new row.
+ * Where the schedule of a Workflow stands: when it next comes due, and
+ * when it last started a run. The schedule itself is a definition; its
+ * fingerprint tells whether the row is still the Workflow's schedule, so a
+ * changed schedule replaces the row's times.
  */
 @Entity('schedules')
-// One row per schedule, until plan step 11.6 makes it one per Workflow.
-@Index('UQ_schedules_workflow_fingerprint', ['workflowName', 'fingerprint'], {
-  unique: true,
-})
+// One row per Workflow, as a Workflow has one schedule.
+@Index('UQ_schedules_workflow_name', ['workflowName'], { unique: true })
 @Index('IDX_schedules_next_run_at', ['nextRunAt'])
 export class ScheduleState {
   @PrimaryGeneratedColumn({ type: 'integer' })
