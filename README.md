@@ -30,19 +30,19 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
    pero run
    ```
 
-   `~/workspace` is your workspace: the folder Pero and your Agents run in, with the data folder where Agents keep notes in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one, and asks which of the folders already there is your data folder, such as an existing notes vault; it suggests `data/`, creating it when missing. On the first start it has you pick the provider your Agents use, Claude or Codex, among the CLIs it finds, and doesn't start until that CLI is signed in. Then it asks for what it still needs, such as your Telegram bot token, offers to install Pero as a service that starts with the machine, and ends with `pero status`. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
+   `~/workspace` is your workspace: the folder Pero and your Agents run in, with the data folder where Agents keep notes in `data/` and Pero's own state in `.pero/`. In a folder that isn't a workspace yet, `pero run` offers to make it one, and asks which of the folders already there is your data folder, such as an existing notes vault; it suggests `data/`, creating it when missing. On the first start it has you pick the provider your Agents use, Claude or Codex, among the CLIs it finds, and doesn't start until that CLI is signed in. Then it asks for what it still needs, such as your Telegram bot token, and offers to install Pero as a service that starts with the machine. You can stop at any step and run `pero run` again later to continue. Commands find `~/workspace` from your home folder and from any folder inside it.
 
    To make a workspace without starting Pero, such as from a script with no terminal, run `pero init <dir>`. It only writes what's missing, so it also fills in a cloned workspace.
 
 2. **Create a Telegram bot** with [@BotFather](https://t.me/BotFather), then paste its token when `pero run` asks for it.
 
-3. **Create a private Telegram group,** turn on **Topics** in its settings, and add your bot as an **administrator**. Keep the group private: anyone who can write there can talk to your Agents.
+3. **Create a private Telegram group,** turn on **Topics** in its settings, and add your bot as an **administrator**. Keep the group private: anyone who can write there can talk to your Agents, and your Agents can run code on your machine.
 
-4. **Allow the group.** Write anything in it. `pero run` offers to allow that chat. You can also allow it later with the command the bot replies with: `pero telegram allow <chat-id>`.
+4. **Allow the group.** Write anything in it. `pero run` offers to allow that chat. You can also allow it later with the command the bot replies with: `pero telegram allow <chat-id>`. A group's chat ID is negative, such as `-1001234567890`; keep the minus sign.
 
 5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic: a note Pero writes in `data/Settings/Agents/`, whose text is the Agent's instructions. The General topic talks to your main Agent, `Agents/Main.md`.
 
-You can also message the bot directly and allow your user ID the same way. That chat talks to your main Agent, too.
+You can also message the bot directly and allow your user ID the same way. That chat talks to your main Agent, too, in a conversation of its own, apart from the group's General topic. You can use both: `pero run` only offers to allow the first chat, so allow the other with `pero telegram allow <chat-id>`.
 
 To start from a complete setup instead, with a Health Agent and two Workflows, copy the [example workspace](./examples/workspace/).
 
