@@ -76,7 +76,7 @@ Before merging a PR that bumps the version, walk through the README's [Get start
    pero --version   # the new version
    ```
 
-2. **`pero run` from the home folder.** It offers to make `~/workspace`, then asks for the bot token and a provider sign-in, and `pero status` then shows Telegram and the provider ready.
+2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, then asks for the bot token and a provider sign-in, and `pero status` then shows Telegram and the provider ready.
 3. **Allow a group.** Create a private group with Topics turned on, add the bot as an administrator, and write in it: `pero run` offers to allow that chat.
 4. **Onboard a topic.** Create one: Pero writes `data/Settings/Agents/<Topic title>.md` and posts a welcome naming the new Agent. A message there gets the provider's answer, and a second one continues the conversation.
 5. **Edit a note.** Change that note's instructions, wait 10 seconds, and write in the topic: the answer follows the edit. Break the note, such as with `provider: codx`: the topic gets one message naming the error, and `pero check` lists it. Fix it again.
@@ -102,7 +102,7 @@ The tests that matter most guard the boundaries that could lose or misroute work
 
 | Behavior | Verified by |
 |---|---|
-| `pero run` from home, or `pero init ~/workspace` then `pero run`, sets up a working Pero with its state in `.pero/` and its token in `.env` | `src/cli/setup/first-run.spec.ts`: the offer to make `~/workspace`; `test/cli.e2e-spec.ts`: `init` and a run from home, and the token in `.env`; `test/daemon.e2e-spec.ts`: the state in `.pero/`; `scripts/check-packed-install.sh` |
+| `pero run` in a new folder, or `pero init ~/workspace` then `pero run`, sets up a working Pero with its state in `.pero/` and its token in `.env` | `src/cli/setup/first-run.spec.ts`: the offer to make a workspace; `test/cli.e2e-spec.ts`: `init` and a run from home, and the token in `.env`; `test/daemon.e2e-spec.ts`: the state in `.pero/`; `scripts/check-packed-install.sh` |
 | Pero is ready without Telegram or providers, and keeps running when they fail | `test/control.e2e-spec.ts` |
 | One daemon runs per workspace, and a killed one never blocks the next start | `test/lifecycle.e2e-spec.ts`; `test/control.e2e-spec.ts` |
 | A CLI command never loads the database stack or the Telegram client | `test/cli.e2e-spec.ts`, with `test/fixtures/deny-daemon-deps.mjs` preloaded |
