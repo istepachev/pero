@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkPropertyNames, editDistance } from './properties.js';
 
 const FILE = 'Agents/Coach.md';
-const KNOWN = ['topics', 'provider', 'model', 'effort', 'permissions'];
+const KNOWN = ['topic', 'provider', 'model', 'effort', 'permissions'];
 
 describe('checkPropertyNames', () => {
   it('keeps known properties', () => {
@@ -40,7 +40,7 @@ describe('checkPropertyNames', () => {
     const suggestion = (property: string) =>
       checkPropertyNames(FILE, { [property]: 1 }, KNOWN).errors[0]!.message;
     expect(suggestion('Model')).toBe('unknown property (did you mean model?)');
-    expect(suggestion('topic')).toBe('unknown property (did you mean topics?)');
+    expect(suggestion('topics')).toBe('unknown property (did you mean topic?)');
     expect(suggestion('permission')).toBe(
       'unknown property (did you mean permissions?)',
     );

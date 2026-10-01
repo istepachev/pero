@@ -262,7 +262,7 @@ describe('Workflow Runs and the executor', () => {
   });
 
   it('runs with the settings captured when it started, whatever is edited meanwhile', async () => {
-    await ws.editPero({}, 'Be kind.');
+    await ws.editAgent('Main', {}, 'Be kind.');
     await manualWorkflow('brief', 'First input.');
     const held = claude.hold();
 
@@ -280,6 +280,7 @@ describe('Workflow Runs and the executor', () => {
       },
       'Be brief.',
     );
+    await ws.editAgent('Main', {}, 'Be blunt.');
     await ws.editWorkflow('brief', {}, 'Second input.');
     held.release();
     await executor.idle();
@@ -304,7 +305,7 @@ describe('Workflow Runs and the executor', () => {
     expect(codex.requests).toHaveLength(1);
     expect(codex.requests[0]).toMatchObject({
       input: 'Second input.',
-      instructions: `${ws.agentContext('Coach')}\n\nBe kind.\n\nBe brief.`,
+      instructions: `${ws.agentContext('Coach')}\n\nBe blunt.\n\nBe brief.`,
       providerOptions: { model: 'gpt-6', effort: 'high' },
       workingDirectory: own,
     });

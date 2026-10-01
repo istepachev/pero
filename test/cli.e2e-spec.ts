@@ -532,12 +532,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(['init', workspace])).code).toBe(0);
     writeFileSync(
       join(settingsFolder, 'Pero.md'),
-      '---\nclaude-effort: high\ntimezone: Europe/Berlin\n---\nBe brief.\n',
+      '---\nclaude-effort: high\ntimezone: Europe/Berlin\n---\n',
     );
     mkdirSync(join(settingsFolder, 'Agents', 'Home'));
     writeFileSync(
       join(settingsFolder, 'Agents', 'Home', 'Coach.md'),
-      '---\ntopics: [Health, Running]\nmodel: sonnet\npermissions: bypass\nworking-directory: data/Health\n---\nYou coach.\n',
+      '---\ntopic: Health\nmodel: sonnet\npermissions: bypass\nworking-directory: data/Health\n---\nYou coach.\n',
     );
     mkdirSync(join(workspace, 'data', 'Health'));
     writeFileSync(
@@ -551,7 +551,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(ls).toMatchObject({ code: 0, stderr: '' });
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^coach +claude +sonnet +high +${escape(join(workspace, 'data', 'Health'))} +bypass +enabled +Health, Running +data/Settings/Agents/Home/Coach\\.md$`,
+        `^coach +claude +sonnet +high +${escape(join(workspace, 'data', 'Health'))} +bypass +enabled +Health +data/Settings/Agents/Home/Coach\\.md$`,
         'm',
       ),
     );
@@ -566,18 +566,18 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toBe(
       [
         'Agent coach "Coach"',
-        '  note                 data/Settings/Agents/Home/Coach.md',
-        '  topics               Health, Running',
-        '  provider             claude (default)',
-        '  model                sonnet',
-        '  effort               high (Pero.md)',
-        `  working directory    ${join(workspace, 'data', 'Health')}`,
-        '  instructions         You coach.',
-        '  shared instructions  on',
-        '  permissions          bypass',
-        '  codex git check      required',
-        '  state                enabled',
-        '  main agent           no',
+        '  note               data/Settings/Agents/Home/Coach.md',
+        '  topic              Health',
+        '  provider           claude (default)',
+        '  model              sonnet',
+        '  effort             high (Pero.md)',
+        `  working directory  ${join(workspace, 'data', 'Health')}`,
+        '  instructions       You coach.',
+        '  main instructions  on',
+        '  permissions        bypass',
+        '  codex git check    required',
+        '  state              enabled',
+        '  main agent         no',
         '',
         'No Channel goes to it yet.',
         '',
@@ -604,7 +604,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       ].join('\n'),
     );
     expect(settings.stdout).toMatch(/^ {2}timezone +Europe\/Berlin$/m);
-    expect(settings.stdout).toMatch(/^ {2}\(body\) +Be brief\.$/m);
     expect(settings.stdout).toContain(
       `.pero/config.yaml\n  data                    ${join(workspace, 'data')}\n`,
     );
@@ -612,12 +611,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     // An edit to Pero.md applies within a rescan.
     writeFileSync(
       join(settingsFolder, 'Pero.md'),
-      '---\nclaude-model: opus\nclaude-effort: high\n---\nBe brief.\n',
+      '---\nclaude-model: opus\nclaude-effort: high\n---\n',
     );
     await vi.waitFor(
       async () =>
         expect((await ws('agents', 'show', 'main')).stdout).toContain(
-          '  model                opus (Pero.md)\n',
+          '  model              opus (Pero.md)\n',
         ),
       { timeout: 15_000, interval: 500 },
     );

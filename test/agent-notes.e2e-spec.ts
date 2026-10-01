@@ -64,8 +64,8 @@ describe('Agents from notes (e2e)', () => {
     initWorkspace(workspace, tmp);
     mkdirSync(join(workspace, 'other'));
     clock = Date.parse('2026-01-01T00:00:00Z');
-    write('Pero.md', 'Be brief.');
-    write('Agents/Groceries.md', '---\ntopics: Groceries\n---\nYou shop.');
+    write('Agents/Main.md', 'Be brief.');
+    write('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
     write('Agents/Pantry.md', '---\nmodel: haiku\n---\nYou stock up.');
     client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
@@ -168,7 +168,7 @@ describe('Agents from notes (e2e)', () => {
     );
   }
 
-  it('applies edits to the body, model, effort, and Pero.md from the next turn of the same Session', async () => {
+  it("applies edits to the body, model, effort, Pero.md, and the main Agent's instructions from the next turn of the same Session", async () => {
     await groceries();
     // The guide the instructions point to is written at startup.
     expect(readFileSync(guideFile(workspace), 'utf8')).toBe(agentGuide());
@@ -181,7 +181,7 @@ describe('Agents from notes (e2e)', () => {
 
     await edit(
       'Agents/Groceries.md',
-      '---\ntopics: Groceries\nmodel: sonnet\neffort: high\n---\nYou shop cheaply.',
+      '---\ntopic: Groceries\nmodel: sonnet\neffort: high\n---\nYou shop cheaply.',
     );
     expect(await say('Eggs')).toBe('echo: Eggs');
     expect(lastRequest('claude')).toMatchObject({
@@ -190,11 +190,10 @@ describe('Agents from notes (e2e)', () => {
       providerSessionId: first!.providerSessionId,
     });
 
-    // Pero.md changes every Agent that doesn't set the value itself.
-    await edit(
-      'Pero.md',
-      '---\nclaude-model: opus\nclaude-effort: low\n---\nBe kind.',
-    );
+    // Pero.md changes every Agent that doesn't set the value itself, and
+    // the main Agent's instructions start every other Agent's.
+    await edit('Pero.md', '---\nclaude-model: opus\nclaude-effort: low\n---');
+    await edit('Agents/Main.md', 'Be kind.');
     expect(await say('Bread')).toBe('echo: Bread');
     expect(lastRequest('claude')).toMatchObject({
       instructions: `${context('Groceries')}\n\nBe kind.\n\nYou shop cheaply.`,
@@ -208,7 +207,7 @@ describe('Agents from notes (e2e)', () => {
       effort: 'low',
       origins: { model: 'note', effort: 'pero' },
     });
-    await edit('Agents/Groceries.md', '---\ntopics: Groceries\n---\nYou shop.');
+    await edit('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
     expect(await say('Tea')).toBe('echo: Tea');
     expect(lastRequest('claude')).toMatchObject({
       providerOptions: { model: 'opus', effort: 'low' },
@@ -229,7 +228,7 @@ describe('Agents from notes (e2e)', () => {
 
     await edit(
       'Agents/Groceries.md',
-      '---\ntopics: Groceries\nprovider: codex\n---\nYou shop.',
+      '---\ntopic: Groceries\nprovider: codex\n---\nYou shop.',
     );
     const carried = await say('Eggs');
     expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
@@ -242,7 +241,7 @@ describe('Agents from notes (e2e)', () => {
 
     await edit(
       'Agents/Groceries.md',
-      '---\ntopics: Groceries\nprovider: codex\nworking-directory: other\n---\nYou shop.',
+      '---\ntopic: Groceries\nprovider: codex\nworking-directory: other\n---\nYou shop.',
     );
     expect(await say('Butter')).toMatch(
       /^echo: \[Earlier conversation.*User: Eggs.*\n\nButter$/s,
@@ -266,22 +265,22 @@ describe('Agents from notes (e2e)', () => {
     // answers, and Pero says why once.
     await edit(
       'Agents/Pantry.md',
-      '---\ntopics: Groceries\nmodel: haiku\n---\nYou stock up.',
+      '---\ntopic: Groceries\nmodel: haiku\n---\nYou stock up.',
     );
     await daemon!.app.get(BrokenNoteReports).idle();
     expect(api.sent().at(-1)).toMatchObject({
       message_thread_id: TOPIC,
       text: [
         'Errors in data/Settings/Agents/Groceries.md:',
-        'topics: "Groceries" is also claimed by Agents/Pantry.md, so neither answers there',
+        'topic: "Groceries" is also claimed by Agents/Pantry.md, so neither answers there',
         '',
         'Errors in data/Settings/Agents/Pantry.md:',
-        'topics: "Groceries" is also claimed by Agents/Groceries.md, so neither answers there',
+        'topic: "Groceries" is also claimed by Agents/Groceries.md, so neither answers there',
       ].join('\n'),
     });
     expect(await say('Eggs')).toBe(
       'No one answers in this topic: data/Settings/Agents/Groceries.md and ' +
-        'data/Settings/Agents/Pantry.md claim "Groceries" in their topics. ' +
+        'data/Settings/Agents/Pantry.md set topic: Groceries. ' +
         'Keep it in only one of them.',
     );
     const told = api.sent().length;

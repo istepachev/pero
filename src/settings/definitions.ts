@@ -38,8 +38,11 @@ export interface Defaults {
   settingsFolder: string;
   /** The guide to the notes in `.pero/`, which every Agent's instructions name. */
   guideFile: string;
-  /** Placed before each opted-in Agent's own instructions; null for none. */
-  sharedInstructions: string | null;
+  /**
+   * The main Agent's instructions, placed before every other Agent's own
+   * unless its note opts out; null for none.
+   */
+  mainInstructions: string | null;
 }
 
 /** A Channel as routing sees it. */
@@ -75,7 +78,7 @@ export type Unanswered =
   | { kind: 'conflict'; title: string; files: string[] }
   /** Only notes that have errors and never loaded, in `files`, claim it. */
   | { kind: 'unloaded'; title: string; files: string[] }
-  /** No Agent claims the topic; `note` is one that could. */
+  /** No Agent claims the topic; `note` is the one Pero writes for it. */
   | { kind: 'unclaimed'; title: string; note: string }
   /** Pero hasn't seen the topic's title yet, so nothing can claim it. */
   | { kind: 'untitled' }
@@ -110,7 +113,7 @@ export class Definitions {
       dataFolder,
       settingsFolder,
       guideFile: guideFile(workspace),
-      sharedInstructions: snapshot.sharedInstructions,
+      mainInstructions: snapshot.mainInstructions,
     };
   }
 
@@ -141,8 +144,8 @@ export class Definitions {
 
   /**
    * Who answers in `channel` now. A primary Channel gets the main Agent,
-   * and a topic the Agent whose `topics` claims its title; `new-topics`
-   * decides an unclaimed one.
+   * and a topic the Agent whose `topic` is its title; an unclaimed topic
+   * gets none until Pero writes its note.
    */
   route(channel: RouteQuery): Route {
     const { snapshot, settingsFolder, workspace } = this.current();
@@ -170,15 +173,9 @@ export class Definitions {
       }
       return { kind: 'agent', agent };
     };
-    const toMain = snapshot.defaults.newTopics === 'main-agent';
-
     if (channel.primary) return answered(snapshot.mainAgent);
     const title = channel.title?.trim() ?? '';
-    if (title === '') {
-      return toMain
-        ? answered(snapshot.mainAgent)
-        : unanswered({ kind: 'untitled' });
-    }
+    if (title === '') return unanswered({ kind: 'untitled' });
     const claim = topicClaim(snapshot, title);
     switch (claim.kind) {
       case 'agent':
@@ -191,13 +188,11 @@ export class Definitions {
           files: claim.files.map(shown),
         });
       case 'unclaimed':
-        return toMain
-          ? answered(snapshot.mainAgent)
-          : unanswered({
-              kind: 'unclaimed',
-              title,
-              note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
-            });
+        return unanswered({
+          kind: 'unclaimed',
+          title,
+          note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
+        });
     }
   }
 

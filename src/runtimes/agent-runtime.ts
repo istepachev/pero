@@ -30,7 +30,7 @@ export type ToolApprover = (
 /** One turn of an Agent, with its settings already resolved. */
 export interface RuntimeRequest {
   input: string;
-  /** The shared instructions, unless the Agent opts out, then its own. */
+  /** The main Agent's instructions, unless the Agent opts out, then its own. */
   instructions: string;
   /** Model and effort; the adapter omits each null one. */
   providerOptions: ProviderOptions;

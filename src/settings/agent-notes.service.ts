@@ -36,7 +36,7 @@ export class AgentNotes {
 
   /**
    * Writes the Agent note for the topic titled `title` from `_Template.md`,
-   * with `topics` set to the title. Returns its path in the settings
+   * with `topic` set to the title. Returns its path in the settings
    * folder, or null when Pero already wrote one for that title and it is
    * still there, since a second would only conflict with it.
    */
@@ -111,17 +111,11 @@ export class AgentNotes {
   }
 
   /**
-   * Renames topic `from` to `to` in the `topics` of `file`, a note in the
-   * settings folder, or adds `to` after it with `keep`, keeping the note's
-   * comments and body. False, after a note in the log, when the note no
-   * longer lists `from` or doesn't parse.
+   * Sets the `topic` of `file`, a note in the settings folder, from `from`
+   * to `to`, keeping the note's comments and body. False, after a note in
+   * the log, when its topic is no longer `from` or it doesn't parse.
    */
-  async renameTopic(
-    file: string,
-    from: string,
-    to: string,
-    keep: boolean,
-  ): Promise<boolean> {
+  async renameTopic(file: string, from: string, to: string): Promise<boolean> {
     const path = join(this.settingsFolder(), file);
     let text: string;
     let mode: number;
@@ -134,19 +128,15 @@ export class AgentNotes {
       );
       return false;
     }
-    const renamed = renameTopicIn(text, from, to, keep);
+    const renamed = renameTopicIn(text, from, to);
     if (renamed === null) {
       this.logger.warn(
-        `Left ${file} as it is: its topics don't list "${from}", or its properties don't parse`,
+        `Left ${file} as it is: its topic isn't "${from}", or its properties don't parse`,
       );
       return false;
     }
     writeFileAtomic(path, renamed, mode);
-    this.logger.log(
-      keep
-        ? `Added topic "${to}" to ${file}, keeping "${from}" for the other topics of that title`
-        : `Renamed topic "${from}" to "${to}" in ${file}`,
-    );
+    this.logger.log(`Renamed topic "${from}" to "${to}" in ${file}`);
     await this.notes.refresh();
     return true;
   }

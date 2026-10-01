@@ -106,7 +106,7 @@ describe('ChannelRouter', () => {
   ) {
     await ws.agent(
       noteTitle(agentName),
-      key.includes(':') && title !== null ? { topics: title } : {},
+      key.includes(':') && title !== null ? { topic: title } : {},
     );
     return ds.getRepository(Channel).save({
       integrationKind: 'telegram',

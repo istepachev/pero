@@ -391,7 +391,7 @@ describe('Interactive path end to end (e2e)', () => {
     // A new provider starts a fresh Session with the Channel's history.
     await note(
       'Groceries',
-      ['topics: Groceries', 'provider: codex'],
+      ['topic: Groceries', 'provider: codex'],
       'You shop.',
     );
     const carried = await say(FORUM, GROCERIES, 'Bread');
@@ -419,7 +419,7 @@ describe('Interactive path end to end (e2e)', () => {
     // An Agent with its own folder works there; the other stays in the workspace.
     await note(
       'Kitchen',
-      ['topics: Kitchen', `working-directory: ${other}`],
+      ['topic: Kitchen', `working-directory: ${other}`],
       'You cook.',
     );
     await say(FORUM, KITCHEN, 'Pan');

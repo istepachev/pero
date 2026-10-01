@@ -275,7 +275,7 @@ describe('Restore drill (e2e)', () => {
     );
     writeFileSync(
       join(settings, 'Agents', 'Coder.md'),
-      `---\ntopics: Kitchen\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
+      `---\ntopic: Kitchen\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
     );
     writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
       mode: 0o600,

@@ -144,7 +144,6 @@ export class ControlService implements OnModuleDestroy {
       defaultProvider: defaults.provider,
       providerDefaults: defaults.providerDefaults,
       dataFolder: defaults.dataFolder,
-      sharedInstructions: defaults.sharedInstructions,
       mainAgent: this.definitions.mainAgentName(),
       historyCarryover: defaults.historyCarryover,
       historyRetentionDays: defaults.historyRetentionDays,
@@ -159,7 +158,6 @@ export class ControlService implements OnModuleDestroy {
         ),
         config: shownPath(folders.workspace, this.layout.configFile),
       },
-      newTopics: snapshot?.defaults.newTopics ?? null,
       setInPero: snapshot === null ? null : [...snapshot.peroProperties].sort(),
     };
   }

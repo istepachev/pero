@@ -35,11 +35,6 @@ import { fromZodIssues, type SettingsError } from './settings-error.js';
  * Obsidian leaves one added without a value, counts as not set.
  */
 
-/** What a topic no Agent claims gets: a new Agent note, or the main Agent. */
-export const NEW_TOPICS = ['create-agent', 'main-agent'] as const;
-
-export type NewTopics = (typeof NEW_TOPICS)[number];
-
 /** The name of the main Agent when `Pero.md` names none: `Main.md`. */
 export const DEFAULT_MAIN_AGENT = 'main';
 
@@ -66,19 +61,16 @@ export interface PeroNote {
   timezone: string | null;
   /** The name of the main Agent's note. */
   mainAgent: string;
-  newTopics: NewTopics;
   historyCarryover: number;
   /** Null keeps all history. */
   historyRetentionDays: number | null;
   maxConcurrentRuns: number;
-  /** The body: placed before each Agent's own instructions. */
-  sharedInstructions: string | null;
 }
 
 /** An Agent note's own settings; null takes the value from `Pero.md`. */
 export interface AgentNote {
-  /** Titles of the topics it answers in, each once whatever its case. */
-  topics: string[];
+  /** The title of the one topic it answers in; null for none. */
+  topic: string | null;
   provider: Provider | null;
   model: string | null;
   /** Any provider's level; not yet checked against the Agent's provider. */
@@ -86,7 +78,8 @@ export interface AgentNote {
   permissions: PermissionMode | null;
   /** As written; null works in the workspace. */
   workingDirectory: string | null;
-  sharedInstructions: boolean;
+  /** Leaves the main Agent's instructions out of its own. */
+  skipMainInstructions: boolean;
   skipGitRepoCheck: boolean;
   enabled: boolean;
   /** The body. */
@@ -173,22 +166,26 @@ const topicTitle = z.preprocess(
   text,
 );
 
-const topics = oneOrMore(topicTitle).transform((titles) => {
-  const seen = new Set<string>();
-  return titles.filter((title) => {
-    const key = title.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-});
+/** One topic title: an Agent answers one topic, which no other claims. */
+const oneTopic = z
+  .unknown()
+  .superRefine((value, ctx) => {
+    if (Array.isArray(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'must be one topic title, not a list: an Agent answers one topic',
+      });
+    }
+  })
+  .pipe(topicTitle);
 
 /**
- * The topic titles `value`, a `topics` property as YAML gives it, names;
+ * The topic title `value`, a `topic` property as YAML gives it, names;
  * null when it names none, as for a value of the wrong type.
  */
-export function topicTitles(value: unknown): string[] | null {
-  const read = topics.safeParse(value);
+export function topicTitleOf(value: unknown): string | null {
+  const read = oneTopic.safeParse(value);
   return read.success ? read.data : null;
 }
 
@@ -226,7 +223,6 @@ const peroProperties = z
     permissions: oneOf(PERMISSION_MODES),
     timezone: timeZone,
     'main-agent': noteName,
-    'new-topics': oneOf(NEW_TOPICS),
     'history-carryover': wholeNumber(0),
     'history-retention-days': wholeNumber(1, MAX_HISTORY_RETENTION_DAYS),
     'max-concurrent-runs': wholeNumber(1, MAX_CONCURRENT_RUNS_LIMIT),
@@ -235,7 +231,7 @@ const peroProperties = z
 
 const agentProperties = z
   .object({
-    topics,
+    topic: oneTopic,
     provider: oneOf(PROVIDERS),
     model: text,
     effort: oneOf(EFFORTS),
@@ -244,7 +240,7 @@ const agentProperties = z
       (path) => !path.includes('\0'),
       'must not contain a NUL byte',
     ),
-    'shared-instructions': bool,
+    'skip-main-instructions': bool,
     'skip-git-repo-check': bool,
     enabled: bool,
   })
@@ -286,6 +282,19 @@ export function readPeroNote(
   note: ParsedNote,
 ): NoteResult<PeroNote> {
   const result = readProperties(file, note, peroProperties);
+  if (note.body !== null) {
+    const error = {
+      file,
+      property: null,
+      message:
+        "holds settings only: move its text to the main Agent's note, " +
+        'whose instructions every Agent starts with',
+    };
+    return {
+      ok: false,
+      errors: result.ok ? [error] : [...result.errors, error],
+    };
+  }
   if (!result.ok) return result;
   const p = result.value;
   return {
@@ -305,12 +314,10 @@ export function readPeroNote(
       permissions: p.permissions ?? 'ask',
       timezone: p.timezone ?? null,
       mainAgent: p['main-agent'] ?? DEFAULT_MAIN_AGENT,
-      newTopics: p['new-topics'] ?? 'create-agent',
       historyCarryover: p['history-carryover'] ?? DEFAULT_HISTORY_CARRYOVER,
       historyRetentionDays: p['history-retention-days'] ?? null,
       maxConcurrentRuns:
         p['max-concurrent-runs'] ?? DEFAULT_MAX_CONCURRENT_RUNS,
-      sharedInstructions: note.body,
     },
   };
 }
@@ -326,13 +333,13 @@ export function readAgentNote(
   return {
     ok: true,
     value: {
-      topics: p.topics ?? [],
+      topic: p.topic ?? null,
       provider: p.provider ?? null,
       model: p.model ?? null,
       effort: p.effort ?? null,
       permissions: p.permissions ?? null,
       workingDirectory: p['working-directory'] ?? null,
-      sharedInstructions: p['shared-instructions'] ?? true,
+      skipMainInstructions: p['skip-main-instructions'] ?? false,
       skipGitRepoCheck: p['skip-git-repo-check'] ?? false,
       enabled: p.enabled ?? true,
       instructions: note.body,

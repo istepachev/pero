@@ -151,42 +151,42 @@ describe('BrokenNoteReports', () => {
     ]);
   });
 
-  it('posts to the topics of an Agent note while its last good version stays in use', async () => {
-    await ws.agent('Coach', { topics: ['Health', 'Home'] }, 'You coach.');
+  it('posts to the topic of an Agent note while its last good version stays in use', async () => {
+    await ws.agent('Coach', { topic: 'Health' }, 'You coach.');
     await start();
 
     await ws.editAgent('Coach', { effort: 'huge' });
     // A version with errors is used, and reported, once a second scan finds it.
     expect(await posted()).toEqual([]);
     await ws.rescan();
-    const [health, home] = await posted();
-    expect(health).toEqual([
-      '-1001:7',
+    expect(await posted()).toEqual([
       [
-        'Errors in data/Settings/Agents/Coach.md:',
-        'effort: must be low, medium, high, xhigh, max, minimal, ultra, or persistent',
-        'Its last good version stays in use.',
-      ].join('\n'),
+        '-1001:7',
+        [
+          'Errors in data/Settings/Agents/Coach.md:',
+          'effort: must be low, medium, high, xhigh, max, minimal, ultra, or persistent',
+          'Its last good version stays in use.',
+        ].join('\n'),
+      ],
     ]);
-    expect(home).toEqual(['-1001:8', health![1]]);
   });
 
   it('posts one message per Channel for notes broken together', async () => {
-    await ws.agent('Coach', { topics: 'Health' }, 'You coach.');
+    await ws.agent('Coach', { topic: 'Health' }, 'You coach.');
     await start();
 
-    await ws.agent('Doctor', { topics: 'Health' }, 'You heal.');
+    await ws.agent('Doctor', { topic: 'Health' }, 'You heal.');
     const sent = await posted();
     expect(sent).toHaveLength(1);
     expect(sent[0]![0]).toBe('-1001:7');
     expect(sent[0]![1].split('\n\n')).toEqual([
       [
         'Errors in data/Settings/Agents/Coach.md:',
-        'topics: "Health" is also claimed by Agents/Doctor.md, so neither answers there',
+        'topic: "Health" is also claimed by Agents/Doctor.md, so neither answers there',
       ].join('\n'),
       [
         'Errors in data/Settings/Agents/Doctor.md:',
-        'topics: "Health" is also claimed by Agents/Coach.md, so neither answers there',
+        'topic: "Health" is also claimed by Agents/Coach.md, so neither answers there',
       ].join('\n'),
     ]);
   });

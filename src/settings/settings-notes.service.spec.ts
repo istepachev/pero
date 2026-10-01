@@ -79,10 +79,10 @@ describe('SettingsNotes', () => {
   }
 
   it('loads the notes at startup and reports them ok', async () => {
-    write('Agents/Health.md', '---\ntopics: Health\n---\nCoach');
+    write('Agents/Health.md', '---\ntopic: Health\n---\nCoach');
     await boot();
     expect(notes.snapshot()!.agents.get('health')).toMatchObject({
-      topics: ['Health'],
+      topic: 'Health',
       workingDirectory: tmp,
     });
     expect(health.get('settings')).toMatchObject({

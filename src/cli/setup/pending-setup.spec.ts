@@ -38,7 +38,6 @@ const settings: SettingsView = {
     codex: { model: null, effort: null },
   },
   dataFolder: '/home/owner/workspace/data',
-  sharedInstructions: null,
   mainAgent: 'main',
   historyCarryover: 50,
   historyRetentionDays: null,
@@ -47,7 +46,6 @@ const settings: SettingsView = {
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
   files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
-  newTopics: 'create-agent',
   setInPero: [],
 };
 

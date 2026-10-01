@@ -134,7 +134,7 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     );
     writeFileSync(
       join(settings, 'Agents', 'Health.md'),
-      '---\ntopics: Health\n---\nCoach',
+      '---\ntopic: Health\n---\nCoach',
     );
     writeFileSync(
       join(settings, 'Workflows', 'Report.md'),

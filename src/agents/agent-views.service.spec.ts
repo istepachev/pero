@@ -116,10 +116,12 @@ describe('AgentViews', () => {
   });
 
   it("predicts each Channel's next turn from its active Session", async () => {
-    await ws.agent('Notes', { topics: ['One', 'Two', 'Three'] });
-    const first = await channel('One', '-100:1');
-    const second = await channel('Two', '-100:2');
-    await channel('Three', '-100:3');
+    // The main Agent answers the General topic of each group.
+    await ws.agent('Notes');
+    await ws.pero({ 'main-agent': 'Notes' });
+    const first = await channel('General', '-100');
+    const second = await channel('General', '-200');
+    await channel('General', '-300');
     const session = await turn('notes', first);
     await turn('notes', second);
 
@@ -127,7 +129,7 @@ describe('AgentViews', () => {
     const edited = await views.details('NOTES');
     expect(edited.channels.map((c) => [c.key, c.nextTurn])).toEqual([
       [
-        '-100:1',
+        '-100',
         {
           kind: 'resume',
           reason: null,
@@ -136,9 +138,9 @@ describe('AgentViews', () => {
           carriesOver: false,
         },
       ],
-      ['-100:2', expect.objectContaining({ kind: 'resume' })],
+      ['-200', expect.objectContaining({ kind: 'resume' })],
       [
-        '-100:3',
+        '-300',
         {
           kind: 'new',
           reason: null,
@@ -160,7 +162,7 @@ describe('AgentViews', () => {
   });
 
   it('keeps the Session when the data folder moves', async () => {
-    await ws.agent('Notes', { topics: 'One' });
+    await ws.agent('Notes', { topic: 'One' });
     const topic = await channel('One', '-100:1');
     await turn('notes', topic);
 

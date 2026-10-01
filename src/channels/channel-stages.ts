@@ -38,8 +38,8 @@ export function unansweredText(reason: Unanswered): string {
       );
     case 'conflict':
       return (
-        `No one answers in this topic: ${together(reason.files)} claim ` +
-        `"${reason.title}" in their topics. Keep it in only one of them.`
+        `No one answers in this topic: ${together(reason.files)} set ` +
+        `topic: ${reason.title}. Keep it in only one of them.`
       );
     case 'unloaded':
       return (
@@ -51,9 +51,8 @@ export function unansweredText(reason: Unanswered): string {
       );
     case 'unclaimed':
       return (
-        `No Agent answers in this topic: none lists "${reason.title}" in its ` +
-        `topics. Add it to an Agent note's topics, or create ${reason.note} ` +
-        `with topics: [${reason.title}].`
+        `No Agent answers in this topic: no Agent note sets ` +
+        `topic: ${reason.title}. Create ${reason.note} with that property.`
       );
     case 'untitled':
       return (

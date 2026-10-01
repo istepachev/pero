@@ -76,7 +76,7 @@ export class AgentViews {
         folders.workspace,
         join(folders.settingsFolder, note.file),
       ),
-      topics: [...note.topics],
+      topic: note.topic,
       origins: agentOrigins(note, snapshot.peroProperties),
       errors: snapshot.errors
         .filter((error) => error.file === note.file)
@@ -159,7 +159,7 @@ export class AgentViews {
 function agentView(
   agent: Agent,
   main: string | null,
-): Omit<AgentView, 'file' | 'topics' | 'origins' | 'errors'> {
+): Omit<AgentView, 'file' | 'topic' | 'origins' | 'errors'> {
   return {
     name: agent.name,
     title: agent.title,
@@ -170,7 +170,7 @@ function agentView(
       agent.note.workingDirectory === null ? null : agent.workingDirectory,
     effectiveWorkingDirectory: agent.workingDirectory,
     instructions: agent.instructions,
-    useSharedInstructions: agent.sharedInstructions,
+    useMainInstructions: agent.mainInstructions,
     permissions: agent.permissions,
     skipGitRepoCheck: agent.skipGitRepoCheck,
     enabled: agent.enabled,

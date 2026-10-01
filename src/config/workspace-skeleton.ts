@@ -35,6 +35,7 @@ export class WorkspaceInitError extends Error {
 const PERO_NOTE = `---
 # Installation defaults: each applies to every Agent and Workflow that
 # doesn't set its own. Remove the # in front of a line to change it.
+# Instructions go in the Agents' notes, not here.
 # provider: claude            # claude or codex
 # claude-model: opus
 # claude-effort: high
@@ -42,24 +43,24 @@ const PERO_NOTE = `---
 # permissions: ask            # ask or bypass
 # timezone: Europe/Berlin     # the host's when not set
 # main-agent: Main            # the Agent note for General topics and direct chats
-# new-topics: create-agent    # or main-agent
 # history-carryover: 50
 # history-retention-days: 90  # keep everything when not set
 # max-concurrent-runs: 2
 ---
-You are a calm, concise personal assistant. Reply in the language you're written to in.
 `;
 
 const MAIN_NOTE = `---
 # The main Agent: it answers the General topic of every allowed group,
-# groups without topics, and direct chats. Remove the # to change a line.
-# topics: [Health]            # topics it also answers in, by title
+# groups without topics, and direct chats. Every topic's Agent starts
+# with these instructions, then adds its own.
+# Remove the # to change a line.
 # provider: claude
 # model: sonnet
 # effort: high
 # permissions: ask
 # working-directory: projects/site   # relative to the workspace
 ---
+You are a calm, concise personal assistant. Reply in the language you're written to in.
 You help with everyday questions and keep my notes tidy.
 `;
 

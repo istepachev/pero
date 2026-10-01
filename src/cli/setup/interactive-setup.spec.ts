@@ -25,7 +25,6 @@ class FakeDaemon {
       codex: { model: null, effort: null },
     },
     dataFolder: '/home/owner/workspace/data',
-    sharedInstructions: null,
     mainAgent: 'main',
     historyCarryover: 50,
     historyRetentionDays: null,
@@ -34,7 +33,6 @@ class FakeDaemon {
     maxConcurrentRuns: 2,
     telegramBotToken: { set: false, source: null },
     files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
-    newTopics: 'create-agent',
     setInPero: [],
   };
   signedIn = new Set<string>();
