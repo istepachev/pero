@@ -51,9 +51,9 @@ export function welcomeText(
 /**
  * Records each new Channel in an allowed chat, and welcomes it when an
  * Agent answers there. Notes choose that Agent on every message, and Pero
- * writes the note that answers a topic no Agent claims (with
- * `new-topics: create-agent`) and the main Agent's when a primary Channel
- * finds none; a renamed topic's title follows in the note that claims it.
+ * writes the note that answers a topic no Agent claims and the main
+ * Agent's when a primary Channel finds none; a renamed topic's title
+ * follows in the note that claims it.
  */
 @Injectable()
 export class ChannelOnboardingService extends ChannelOnboarding {
@@ -157,8 +157,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
 
   /**
    * Whether Pero writes a note where no one answers for `reason`: a topic
-   * no Agent claims, which `unclaimed` means only with `new-topics:
-   * create-agent`, or a primary Channel without the main Agent's note.
+   * no Agent claims, or a primary Channel without the main Agent's note.
    */
   private writesFor(channel: Channel, reason: Unanswered): boolean {
     return (
@@ -238,11 +237,11 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * Retitles a renamed topic's Channel, first renaming the title in the
-   * `topics` of the one note claiming it; runs in the queue, so no message
+   * Retitles a renamed topic's Channel, first setting the `topic` of the
+   * one note claiming it to the new title; runs in the queue, so no message
    * routes between the two. The note is left as it is when another Agent
-   * claims the new title already, and keeps the old title too while
-   * another topic Pero knows has it.
+   * claims the new title already, or while another topic Pero knows has the
+   * old title, which then keeps the Agent.
    */
   private rename(
     kind: IntegrationKind,
@@ -281,17 +280,21 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       const agent =
         claim.kind === 'agent' ? snapshot.agents.get(claim.agent) : undefined;
       const taken = topicClaim(snapshot, to);
-      if (agent !== undefined && taken.kind === 'unclaimed') {
-        const keep = (
-          await channels.find({ where: { integrationKind: kind } })
-        ).some(
+      const shared =
+        agent !== undefined &&
+        (await channels.find({ where: { integrationKind: kind } })).some(
           (other) =>
             other.id !== channel.id &&
             !routeQuery(other).primary &&
             other.title?.trim().toLowerCase() === from.toLowerCase(),
         );
+      if (agent !== undefined && shared) {
+        this.logger.log(
+          `Left ${agent.file} as it is: another topic is still titled "${from}"`,
+        );
+      } else if (agent !== undefined && taken.kind === 'unclaimed') {
         try {
-          await this.agentNotes.renameTopic(agent.file, from, to, keep);
+          await this.agentNotes.renameTopic(agent.file, from, to);
         } catch (error) {
           this.logger.warn(
             `Could not rename topic "${from}" in ${agent.file}: ${describe(error)}`,

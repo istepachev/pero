@@ -1,7 +1,6 @@
 import { TELEGRAM_TOKEN_ENV } from '../config/settings-input.js';
 import type { SettingsView, TokenView } from '../control/protocol.js';
 import { table } from './format-status.js';
-import { preview } from './preview.js';
 
 /**
  * `pero settings`: the `Pero.md` properties, each marked when it is
@@ -26,7 +25,6 @@ export function formatSettings(view: SettingsView): string {
     ['permissions', value('permissions', view.defaultPermissions)],
     ['timezone', value('timezone', view.timezone)],
     ['main-agent', value('main-agent', view.mainAgent)],
-    ['new-topics', value('new-topics', view.newTopics ?? 'create-agent')],
     [
       'history-carryover',
       value(
@@ -47,14 +45,13 @@ export function formatSettings(view: SettingsView): string {
       'max-concurrent-runs',
       value('max-concurrent-runs', String(view.maxConcurrentRuns)),
     ],
-    ['(body)', preview(view.sharedInstructions)],
     ['data', view.dataFolder],
   ]);
   return [
     view.files.pero,
-    ...rows.slice(0, 13).map((row) => `  ${row}`),
+    ...rows.slice(0, 11).map((row) => `  ${row}`),
     view.files.config,
-    `  ${rows[13]}`,
+    `  ${rows[11]}`,
     `Telegram bot token: ${formatToken(view.telegramBotToken)}`,
   ].join('\n');
 }

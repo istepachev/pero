@@ -14,8 +14,8 @@ Replace the chat ID in `.pero/config.yaml` with your group's first, or run `pero
 | File | What it configures |
 |---|---|
 | `.pero/config.yaml` | The data folder, and the group Pero serves |
-| `data/Settings/Pero.md` | Defaults for every Agent and Workflow, and the instructions they share |
-| `data/Settings/Agents/Main.md` | The main Agent: General and direct chats |
+| `data/Settings/Pero.md` | Defaults for every Agent and Workflow |
+| `data/Settings/Agents/Main.md` | The main Agent: General and direct chats; every other Agent starts with its instructions |
 | `data/Settings/Agents/Health.md` | The Agent of the Health topic |
 | `data/Settings/Agents/_Template.md` | Optional, not written by `pero init`: the starting point for the Agent of each new topic |
 | `data/Settings/Workflows/Weekly health report.md` | Sundays at 12:00, a report from the training log, posted to Health |

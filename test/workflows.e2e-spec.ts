@@ -94,15 +94,9 @@ describe('Workflows from notes (e2e)', () => {
     await daemon?.app.get(SettingsNotes).refresh();
   }
 
-  /**
-   * Writes `Pero.md` with `properties`; a topic no note claims goes to the
-   * main Agent. Read at once when Pero runs.
-   */
+  /** Writes `Pero.md` with `properties`, read at once when Pero runs. */
   async function pero(properties: string[] = []) {
-    await note(
-      'Pero.md',
-      ['---', 'new-topics: main-agent', ...properties, '---', ''].join('\n'),
-    );
+    await note('Pero.md', ['---', ...properties, '---', ''].join('\n'));
   }
 
   /**
@@ -180,13 +174,24 @@ describe('Workflows from notes (e2e)', () => {
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
-    // The topic onboards its Agent, which answers.
+    // The topic's creation writes its Agent's note, and that Agent answers.
+    api.push({
+      message: {
+        message_id: nextMessageId++,
+        date: 0,
+        chat: FORUM,
+        from: OWNER,
+        message_thread_id: 7,
+        is_topic_message: true,
+        forum_topic_created: { name: 'English', icon_color: 0 },
+      } as never,
+    });
     say('Hello');
     await vi.waitFor(() => expect(texts()).toContain('echo: Hello'));
     const channel = (await client.call('channels.list')).channels.find(
       ({ key }) => key === `${FORUM.id}:7`,
     )!;
-    // Telegram named no title, so the note names the topic by its ID.
+    // A Channel ID names the topic too.
     await manualBrief([`channel: ${channel.id}`]);
     return { channel, say, texts };
   }
@@ -310,7 +315,7 @@ describe('Workflows from notes (e2e)', () => {
       message_thread_id: 7,
       text: [
         'Errors in data/Settings/Workflows/Brief.md:',
-        'channel: no topic titled "Helth"; seen topics: none yet',
+        'channel: no topic titled "Helth"; seen topics: English',
         "It's left out until it's fixed.",
       ].join('\n'),
     });
@@ -627,7 +632,7 @@ describe('Workflows from notes (e2e)', () => {
       await pero(['timezone: Europe/Berlin']);
       write(
         'Agents/Health.md',
-        '---\ntopics: [Health]\neffort: high\n---\nYou are my health coach.',
+        '---\ntopic: Health\neffort: high\n---\nYou are my health coach.',
       );
       await workflow(
         'Weekly health report',

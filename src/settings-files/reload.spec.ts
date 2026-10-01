@@ -39,7 +39,7 @@ describe('SettingsReloader', () => {
   const agent = (name: string) => reloader.current()!.agents.get(name);
 
   it('loads every note on the first scan, errors and all', async () => {
-    await write('Agents/Health.md', '---\ntopics: Health\n---\nCoach');
+    await write('Agents/Health.md', '---\ntopic: Health\n---\nCoach');
     await write('Agents/Broken.md', '---\nmodle: x\n---');
     const reload = await reloader.rescan();
     expect(reload).toMatchObject({
@@ -221,13 +221,14 @@ describe('SettingsReloader', () => {
     ]);
   });
 
-  it('applies Pero.md to every Agent', async () => {
+  it('applies Pero.md and the main Agent’s instructions to every Agent', async () => {
     await write('Agents/Health.md', 'Coach');
     await reloader.rescan();
-    await write('Pero.md', '---\nclaude-model: opus\n---\nShared');
+    await write('Pero.md', '---\nclaude-model: opus\n---');
+    await write('Agents/Main.md', 'Shared');
     await reloader.rescan();
     expect(agent('health')!.model).toBe('opus');
-    expect(reloader.current()!.sharedInstructions).toBe('Shared');
+    expect(reloader.current()!.mainInstructions).toBe('Shared');
   });
 
   it('rescans 500 unchanged notes quickly', async () => {

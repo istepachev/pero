@@ -14,7 +14,7 @@ Read it when the owner asks you to create or change an Agent, a Workflow, or Per
 │   └── guide.md                # this guide
 └── data/                       # the data folder: the owner's notes, such as an Obsidian vault
     └── Settings/               # the settings folder
-        ├── Pero.md             # installation defaults; its body is instructions every Agent shares
+        ├── Pero.md             # installation defaults, settings only
         ├── Agents/<Title>.md   # one note per Agent; its body is that Agent's instructions
         └── Workflows/<Title>.md  # one note per Workflow; its body is what each run asks
 ```
@@ -52,8 +52,8 @@ A run starts a fresh conversation, apart from the chat. Its Agent can't ask the 
 
 ### Creating or changing an Agent
 
-- **Topics:** a Telegram topic belongs to the Agent whose `topics` lists its title. A new topic nobody claims gets an Agent note written by Pero, so the usual way to add an Agent is for the owner to create a topic and then edit its note.
-- **Instructions:** the note's body. When the owner says "be less formal" or "remember that my log is in Health/Log.md", that's an edit of your own note's body.
+- **Topics:** one topic, one Agent. A Telegram topic belongs to the Agent whose `topic` is its title; the main Agent answers General topics and direct chats and has no `topic`. A new topic nobody claims gets an Agent note written by Pero, so the usual way to add an Agent is for the owner to create a topic and then edit its note.
+- **Instructions:** the note's body. Every other Agent's instructions start with the main Agent's body, then its own. When the owner says "remember that my log is in Health/Log.md", that's an edit of your own note's body; a change meant for every Agent, such as "be less formal everywhere", is an edit of the main Agent's note.
 - **Settings the owner may ask about:** `model`, `effort`, `provider`, `permissions`, `working-directory`, `enabled`.
 
 ## Properties
@@ -68,24 +68,23 @@ A run starts a fresh conversation, apart from the chat. Its Agent can't ask the 
 | `permissions` | `ask`, `bypass` | `ask` | How Agents' tools are approved |
 | `timezone` | IANA zone, such as `Europe/Berlin` | the host's | Time zone for schedules |
 | `main-agent` | Agent note name | `Main` | Answers General topics, groups without topics, and direct chats |
-| `new-topics` | `create-agent`, `main-agent` | `create-agent` | What a topic no Agent claims gets |
 | `history-carryover` | 0 or more | 50 | Messages a fresh conversation starts with |
 | `history-retention-days` | whole days, or empty | keep everything | Delete older message history |
 | `max-concurrent-runs` | 1–10 | 2 | Workflow runs at once |
 
-Its body is placed before every Agent's own instructions, unless the Agent sets `shared-instructions: false`. Changing a default changes every Agent that doesn't set its own value.
+It holds settings only: text after its frontmatter is an error. Changing a default changes every Agent that doesn't set its own value.
 
 ### Agent notes
 
 | Property | Values | Default | Meaning |
 |---|---|---|---|
-| `topics` | list of topic titles | none | Telegram topics it answers in, matched ignoring case |
+| `topic` | one topic title | none | The Telegram topic it answers in, matched ignoring case; not for the main Agent |
 | `provider` | `claude`, `codex` | `Pero.md` | Which provider runs it |
 | `model` | model name | `Pero.md` `<provider>-model` | Its model |
 | `effort` | provider's levels | `Pero.md` `<provider>-effort` | Its effort |
 | `permissions` | `ask`, `bypass` | `Pero.md` | How its tools are approved |
 | `working-directory` | path | the workspace | The folder it works in |
-| `shared-instructions` | `true`, `false` | `true` | Put `Pero.md`'s body before its own |
+| `skip-main-instructions` | `true`, `false` | `false` | Leave the main Agent's instructions out of its own |
 | `skip-git-repo-check` | `true`, `false` | `false` | Let a Codex Agent work outside a Git repository |
 | `enabled` | `true`, `false` | `true` | `false` silences it and stops its Workflows' schedules |
 
@@ -135,14 +134,14 @@ Read Health/Log.md and post a short plan for today's workout, based on the last 
 
 ### Topic titles
 
-`channel`, `history-channels`, and `topics` name Telegram topics by title:
+`channel`, `history-channels`, and `topic` name Telegram topics by title:
 
 - `General` is a group's General topic, which the main Agent answers.
 - A title in `channel` or `history-channels` must be a topic Pero has already seen a message in; until then the Workflow is left out and Pero reports it.
 - When two allowed groups have topics with the same title, write `<chat title>/<topic title>`, such as `Home/Health`.
 - A direct chat has no title: use its Channel ID from `pero channels`, such as `channel: 5`.
 
-To post into the topic you're talking in, use one of your own `topics`, or `General` if you're the main Agent answering the General topic. When unsure, ask the owner which topic.
+To post into the topic you're talking in, use your own `topic`, or `General` if you're the main Agent answering the General topic. When unsure, ask the owner which topic.
 
 ## How Pero works
 

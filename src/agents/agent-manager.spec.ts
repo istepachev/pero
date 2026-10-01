@@ -188,7 +188,6 @@ describe('AgentManager', () => {
   });
 
   it("builds the request from the Agent's resolved settings", async () => {
-    await ws.pero({}, 'Be kind.');
     await say(OWNER, 'Hello');
     await ws.editAgent(
       'Main',
@@ -201,7 +200,8 @@ describe('AgentManager', () => {
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
     expect(claude.requests[1]).toMatchObject({
       input: 'Again',
-      instructions: `${ws.agentContext('Main')}\n\nBe kind.\n\nBe brief.`,
+      // The main Agent's own instructions, which it doesn't repeat.
+      instructions: `${ws.agentContext('Main')}\n\nBe brief.`,
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       workingDirectory: workspace,
       skipGitRepoCheck: false,

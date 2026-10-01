@@ -1,6 +1,6 @@
 ---
 # The starting point for the Agent of a new topic: Pero copies these
-# properties and this text, and sets topics to the topic's title.
+# properties and this text, and sets topic to the topic's title.
 # Files whose names start with _ are never Agents themselves.
 # model: sonnet
 # effort: high

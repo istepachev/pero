@@ -15,13 +15,13 @@ const notes: AgentView = {
   workingDirectory: null,
   effectiveWorkingDirectory: '/home/ws',
   instructions: null,
-  useSharedInstructions: true,
+  useMainInstructions: false,
   permissions: 'ask',
   skipGitRepoCheck: false,
   enabled: true,
   main: true,
   file: 'data/Settings/Agents/Notes.md',
-  topics: [],
+  topic: null,
   origins: {
     provider: 'default',
     model: 'default',
@@ -43,7 +43,8 @@ const health: AgentView = {
   instructions: 'Coach me.',
   main: false,
   file: 'data/Settings/Agents/Health.md',
-  topics: ['Health', 'Running'],
+  topic: 'Health',
+  useMainInstructions: true,
   origins: {
     provider: 'default',
     model: 'note',
@@ -69,13 +70,13 @@ const coder: AgentView = {
   workingDirectory: '/srv/code',
   effectiveWorkingDirectory: '/srv/code',
   instructions: 'Write tests first.\nKeep it short.',
-  useSharedInstructions: false,
+  useMainInstructions: false,
   permissions: 'bypass',
   skipGitRepoCheck: true,
   enabled: false,
   main: false,
   file: 'data/Settings/Agents/Coder.md',
-  topics: ['Code'],
+  topic: 'Code',
   origins: {
     provider: 'note',
     model: 'note',
@@ -94,12 +95,12 @@ const resume = {
 };
 
 describe('formatAgentList', () => {
-  it('lists each Agent with its topics and note, the main one marked', () => {
+  it('lists each Agent with its topic and note, the main one marked', () => {
     expect(formatAgentList([coder, notes])).toBe(
       [
-        'NAME     PROVIDER  MODEL    EFFORT   FOLDER                PERMISSIONS  STATE     TOPICS  NOTE',
-        'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code    data/Settings/Agents/Coder.md',
-        'notes *  claude    default  default  /home/ws (workspace)  ask          enabled   —       data/Settings/Agents/Notes.md',
+        'NAME     PROVIDER  MODEL    EFFORT   FOLDER                PERMISSIONS  STATE     TOPIC  NOTE',
+        'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code   data/Settings/Agents/Coder.md',
+        'notes *  claude    default  default  /home/ws (workspace)  ask          enabled   —      data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
       ].join('\n'),
@@ -115,9 +116,9 @@ describe('formatAgentList', () => {
   it('marks notes with errors', () => {
     expect(formatAgentList([health, { ...notes, model: 'opus' }])).toBe(
       [
-        'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPICS           NOTE',
-        'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health, Running  data/Settings/Agents/Health.md',
-        'notes *   claude    opus    default  /home/ws (workspace)  ask          enabled  —                data/Settings/Agents/Notes.md',
+        'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPIC   NOTE',
+        'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health  data/Settings/Agents/Health.md',
+        'notes *   claude    opus    default  /home/ws (workspace)  ask          enabled  —       data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
         '! its note has errors, so its last good version is in use; pero check lists them',
@@ -127,7 +128,7 @@ describe('formatAgentList', () => {
 });
 
 describe('formatAgentDetails', () => {
-  it('shows the note, its topics, where each value comes from, and its errors', () => {
+  it('shows the note, its topic, where each value comes from, and its errors', () => {
     expect(
       formatAgentDetails({
         ...health,
@@ -137,18 +138,18 @@ describe('formatAgentDetails', () => {
     ).toBe(
       [
         'Agent health "Health"',
-        '  note                 data/Settings/Agents/Health.md',
-        '  topics               Health, Running',
-        '  provider             claude (default)',
-        '  model                sonnet',
-        '  effort               high (Pero.md)',
-        '  working directory    /ws/data/Health',
-        '  instructions         Coach me.',
-        '  shared instructions  on',
-        '  permissions          ask (Pero.md)',
-        '  codex git check      required',
-        '  state                enabled',
-        '  main agent           no',
+        '  note               data/Settings/Agents/Health.md',
+        '  topic              Health',
+        '  provider           claude (default)',
+        '  model              sonnet',
+        '  effort             high (Pero.md)',
+        '  working directory  /ws/data/Health',
+        '  instructions       Coach me.',
+        '  main instructions  on',
+        '  permissions        ask (Pero.md)',
+        '  codex git check    required',
+        '  state              enabled',
+        '  main agent         no',
         '',
         'Its note has errors, so its last good version is in use:',
         '  effort: must be low, medium, high, xhigh, or max for claude',
@@ -188,18 +189,18 @@ describe('formatAgentDetails', () => {
     expect(formatAgentDetails(details)).toBe(
       [
         'Agent coder "Coder"',
-        '  note                 data/Settings/Agents/Coder.md',
-        '  topics               Code',
-        '  provider             codex',
-        '  model                gpt-5.5',
-        '  effort               high',
-        '  working directory    /srv/code',
-        '  instructions         Write tests first. (2 lines)',
-        '  shared instructions  off',
-        '  permissions          bypass',
-        '  codex git check      skipped',
-        '  state                disabled',
-        '  main agent           no',
+        '  note               data/Settings/Agents/Coder.md',
+        '  topic              Code',
+        '  provider           codex',
+        '  model              gpt-5.5',
+        '  effort             high',
+        '  working directory  /srv/code',
+        '  instructions       Write tests first. (2 lines)',
+        '  main instructions  off',
+        '  permissions        bypass',
+        '  codex git check    skipped',
+        '  state              disabled',
+        '  main agent         no',
         '',
         'Warning: Working directory /srv/code does not exist',
         '',

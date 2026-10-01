@@ -23,10 +23,11 @@ export interface InstructionDefaults {
   settingsFolder: string;
   /** The guide to Pero's settings that every Agent's instructions name. */
   guideFile: string;
-  sharedInstructions: string | null;
+  /** The main Agent's instructions; null for none. */
+  mainInstructions: string | null;
 }
 
-/** `agent`'s part of a runtime request, with the shared instructions composed in. */
+/** `agent`'s part of a runtime request, with the main Agent's instructions composed in. */
 export function agentRequest(
   agent: Agent,
   defaults: InstructionDefaults,
@@ -42,17 +43,17 @@ export function agentRequest(
 
 /**
  * The instructions sent to the runtime: the Agent's context (where the data
- * folder is, and where its settings are), the shared instructions unless
- * the Agent opts out, then the Agent's own, separated by blank lines.
- * Empty parts are left out.
+ * folder is, and where its settings are), the main Agent's instructions
+ * unless this is the main Agent or opts out, then the Agent's own,
+ * separated by blank lines. Empty parts are left out.
  */
 export function composeInstructions(
-  agent: Pick<Agent, 'title' | 'file' | 'instructions' | 'sharedInstructions'>,
+  agent: Pick<Agent, 'title' | 'file' | 'instructions' | 'mainInstructions'>,
   defaults: InstructionDefaults,
 ): string {
   const parts = [
     agentContext(agent, defaults),
-    agent.sharedInstructions ? defaults.sharedInstructions : null,
+    agent.mainInstructions ? defaults.mainInstructions : null,
     agent.instructions,
   ];
   return parts
@@ -63,7 +64,7 @@ export function composeInstructions(
 
 /**
  * What every Agent's instructions start with, whether or not it takes the
- * shared instructions: where the data folder is, and where its settings are.
+ * main Agent's: where the data folder is, and where its settings are.
  */
 export function agentContext(
   agent: Pick<Agent, 'title' | 'file'>,

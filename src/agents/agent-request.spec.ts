@@ -17,17 +17,17 @@ const HEALTH = { title: 'Health', file: 'Agents/Health.md' };
 const CONTEXT = agentContext(HEALTH, FOLDERS);
 
 describe('composeInstructions', () => {
-  const shared = { ...FOLDERS, sharedInstructions: 'Answer in English.' };
+  const main = { ...FOLDERS, mainInstructions: 'Answer in English.' };
 
-  it('starts with the context, then the shared instructions, then the Agent’s own', () => {
+  it('starts with the context, then the main Agent’s instructions, then its own', () => {
     expect(
       composeInstructions(
         {
           ...HEALTH,
           instructions: 'Track spending.',
-          sharedInstructions: true,
+          mainInstructions: true,
         },
-        shared,
+        main,
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
@@ -35,15 +35,15 @@ describe('composeInstructions', () => {
     );
   });
 
-  it('leaves the shared instructions out when the Agent opts out', () => {
+  it('leaves the main Agent’s instructions out for the main Agent or one that opts out', () => {
     expect(
       composeInstructions(
         {
           ...HEALTH,
           instructions: 'Track spending.',
-          sharedInstructions: false,
+          mainInstructions: false,
         },
-        shared,
+        main,
       ),
     ).toBe(`${CONTEXT}\n\nTrack spending.`);
   });
@@ -51,8 +51,8 @@ describe('composeInstructions', () => {
   it('leaves out empty parts, keeping the context', () => {
     expect(
       composeInstructions(
-        { ...HEALTH, instructions: null, sharedInstructions: true },
-        shared,
+        { ...HEALTH, instructions: null, mainInstructions: true },
+        main,
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.`);
     expect(
@@ -60,15 +60,15 @@ describe('composeInstructions', () => {
         {
           ...HEALTH,
           instructions: 'Track spending.',
-          sharedInstructions: true,
+          mainInstructions: true,
         },
-        { ...FOLDERS, sharedInstructions: null },
+        { ...FOLDERS, mainInstructions: null },
       ),
     ).toBe(`${CONTEXT}\n\nTrack spending.`);
     expect(
       composeInstructions(
-        { ...HEALTH, instructions: '  ', sharedInstructions: true },
-        { ...FOLDERS, sharedInstructions: '' },
+        { ...HEALTH, instructions: '  ', mainInstructions: true },
+        { ...FOLDERS, mainInstructions: '' },
       ),
     ).toBe(CONTEXT);
   });
@@ -79,9 +79,9 @@ describe('composeInstructions', () => {
         {
           ...HEALTH,
           instructions: '\nTrack spending.\n',
-          sharedInstructions: true,
+          mainInstructions: true,
         },
-        { ...FOLDERS, sharedInstructions: 'Answer in English.\n\n' },
+        { ...FOLDERS, mainInstructions: 'Answer in English.\n\n' },
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
   });
@@ -106,13 +106,13 @@ describe('settingsNote', () => {
 describe('agentRequest', () => {
   it("maps the Agent's settings and composes the instructions", () => {
     const note: Agent['note'] = {
-      topics: [],
+      topic: null,
       provider: 'codex',
       model: 'gpt-5',
       effort: 'high',
       permissions: 'bypass',
       workingDirectory: null,
-      sharedInstructions: true,
+      skipMainInstructions: false,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'Track spending.',
@@ -121,13 +121,13 @@ describe('agentRequest', () => {
       name: 'coach',
       title: 'Coach',
       file: 'Agents/Coach.md',
-      topics: [],
+      topic: null,
       provider: 'codex',
       model: 'gpt-5',
       effort: 'high',
       permissions: 'bypass',
       workingDirectory: '/vault',
-      sharedInstructions: true,
+      mainInstructions: true,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'Track spending.',
@@ -141,7 +141,7 @@ describe('agentRequest', () => {
     expect(
       agentRequest(agent, {
         ...folders,
-        sharedInstructions: 'Answer in English.',
+        mainInstructions: 'Answer in English.',
       }),
     ).toEqual({
       instructions: `${agentContext(agent, folders)}\n\nAnswer in English.\n\nTrack spending.`,

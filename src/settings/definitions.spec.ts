@@ -58,7 +58,8 @@ describe('Definitions', () => {
   it('reads the defaults from Pero.md and the data folder from config.yaml', () => {
     const { definitions } = definitionsOf({
       'Pero.md':
-        '---\nprovider: codex\ncodex-model: gpt-5.5\nhistory-carryover: 10\nmax-concurrent-runs: 3\ntimezone: Europe/Berlin\n---\nBe brief.',
+        '---\nprovider: codex\ncodex-model: gpt-5.5\nhistory-carryover: 10\nmax-concurrent-runs: 3\ntimezone: Europe/Berlin\n---',
+      'Agents/Main.md': 'Be brief.',
     });
     expect(definitions.defaults()).toEqual({
       provider: 'codex',
@@ -74,17 +75,17 @@ describe('Definitions', () => {
       dataFolder: FOLDERS.dataFolder,
       settingsFolder: FOLDERS.settingsFolder,
       guideFile: '/home/me/workspace/.pero/guide.md',
-      sharedInstructions: 'Be brief.',
+      mainInstructions: 'Be brief.',
     });
   });
 
   it("uses Pero's own defaults while Pero.md is broken", () => {
     const { definitions } = definitionsOf({
-      'Pero.md': '---\nprovider: gemini\n---\nBe brief.',
+      'Pero.md': '---\nprovider: gemini\n---',
     });
     expect(definitions.defaults()).toMatchObject({
       provider: 'claude',
-      sharedInstructions: null,
+      mainInstructions: null,
     });
   });
 
@@ -92,21 +93,21 @@ describe('Definitions', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\nclaude-model: opus\nclaude-effort: high\n---',
       'Agents/Health.md':
-        '---\ntopics: Health\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
+        '---\ntopic: Health\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
       'Agents/Home/Main.md': 'Help.',
     });
     expect(definitions.agent('HEALTH')).toMatchObject({
       name: 'health',
       title: 'Health',
       file: 'Agents/Health.md',
-      topics: ['Health'],
+      topic: 'Health',
       provider: 'claude',
       model: 'opus',
       effort: 'low',
       permissions: 'bypass',
       workingDirectory: '/home/me/workspace/projects/health',
       instructions: 'Coach me.',
-      sharedInstructions: true,
+      mainInstructions: true,
       skipGitRepoCheck: false,
       enabled: true,
     });
@@ -144,7 +145,7 @@ describe('Definitions', () => {
   it('gives each Workflow its note with the Channels it names by ID', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\ntimezone: Europe/Berlin\n---',
-      'Agents/Health.md': '---\ntopics: Health\n---\nCoach me.',
+      'Agents/Health.md': '---\ntopic: Health\n---\nCoach me.',
       'Workflows/Weekly report.md':
         '---\nday: sunday\nhour: 12\nchannel: [Health, Home/General, 4]\nhistory: true\nhistory-channels: [English, Health]\nhistory-hours: 24\nmax-attempts: 2\n---\nWrite the weekly report.',
       'Workflows/Brief.md': '---\nhour: 9\nenabled: false\n---\nBrief me.',

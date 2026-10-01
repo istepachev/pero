@@ -19,7 +19,7 @@ export function formatAgentList(agents: readonly AgentView[]): string {
       'FOLDER',
       'PERMISSIONS',
       'STATE',
-      'TOPICS',
+      'TOPIC',
       'NOTE',
     ],
     ...agents.map((agent) => [
@@ -30,7 +30,7 @@ export function formatAgentList(agents: readonly AgentView[]): string {
       folder(agent),
       agent.permissions,
       agent.enabled ? 'enabled' : 'disabled',
-      agent.topics.join(', ') || '—',
+      agent.topic ?? '—',
       agent.file,
     ]),
   ]);
@@ -59,13 +59,16 @@ export function formatAgentDetails(agent: AgentDetails): string {
     `Agent ${agent.name} "${agent.title}"`,
     ...table([
       ['note', agent.file],
-      ['topics', agent.topics.join(', ') || '(none)'],
+      ['topic', agent.topic ?? '(none)'],
       ['provider', `${agent.provider}${from(origins.provider)}`],
       ['model', option(agent.model, origins.model)],
       ['effort', option(agent.effort, origins.effort)],
       ['working directory', folder(agent)],
       ['instructions', preview(agent.instructions)],
-      ['shared instructions', agent.useSharedInstructions ? 'on' : 'off'],
+      [
+        'main instructions',
+        agent.main ? 'its own' : agent.useMainInstructions ? 'on' : 'off',
+      ],
       ['permissions', `${agent.permissions}${from(origins.permissions)}`],
       ['codex git check', agent.skipGitRepoCheck ? 'skipped' : 'required'],
       ['state', agent.enabled ? 'enabled' : 'disabled'],

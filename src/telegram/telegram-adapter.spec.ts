@@ -256,10 +256,14 @@ describe('TelegramAdapter', () => {
 
   describe('addresses', () => {
     it('answers a forum topic in that topic', async () => {
-      // A topic whose title Pero hasn't seen goes to the main Agent.
-      await ws.pero({ 'new-topics': 'main-agent' });
       await start({ allow: [FORUM] });
 
+      api.push(
+        inTopic(FORUM, 42, {
+          text: undefined,
+          forum_topic_created: { name: 'Health', icon_color: 0 },
+        }),
+      );
       api.push(inTopic(FORUM, 42, { text: 'Hello' }));
 
       const [welcome, reply] = await sentCount(2);
@@ -269,7 +273,7 @@ describe('TelegramAdapter', () => {
           message_thread_id: 42,
         });
       }
-      expect(welcome?.text).toMatch(/^This topic talks to Agent main/);
+      expect(welcome?.text).toMatch(/^This topic talks to Agent health/);
       expect(reply?.text).toBe('echo: Hello');
     });
 
@@ -334,7 +338,7 @@ describe('TelegramAdapter', () => {
           externalKey: '-1001234567890:42',
           title: 'Fitness',
         });
-        expect(ws.read('Agents/Health.md')).toContain('- Fitness');
+        expect(ws.read('Agents/Health.md')).toContain('topic: Fitness');
       });
     });
 

@@ -19,10 +19,10 @@ describe('parseNote', () => {
   it('splits frontmatter from the body', () => {
     expect(
       parsed(
-        '---\ntopics: [Health]\neffort: high\n---\nYou are my health coach.\n',
+        '---\ntopic: Health\neffort: high\n---\nYou are my health coach.\n',
       ),
     ).toEqual({
-      properties: { topics: ['Health'], effort: 'high' },
+      properties: { topic: 'Health', effort: 'high' },
       body: 'You are my health coach.',
     });
   });
@@ -123,7 +123,7 @@ describe('parseNote', () => {
         message: expect.stringMatching(/^line 3: Map keys must be unique/),
       },
     ]);
-    expect(errors('---\na: 1\ntopics: [Health\n---')).toEqual([
+    expect(errors('---\na: 1\ntopic: [Health\n---')).toEqual([
       expect.objectContaining({
         message: expect.stringMatching(/^line \d+: /),
       }),

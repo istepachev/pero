@@ -58,8 +58,8 @@ describe('Channels (e2e)', () => {
     workspace = join(tmp, 'ws');
     initWorkspace(workspace, tmp);
     clock = Date.parse('2026-01-01T00:00:00Z');
-    write('Agents/Groceries.md', '---\ntopics: Groceries\n---\nYou shop.');
-    write('Agents/Kitchen.md', '---\ntopics: Kitchen\n---\nYou cook.');
+    write('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
+    write('Agents/Kitchen.md', '---\ntopic: Kitchen\n---\nYou cook.');
     client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
   });
@@ -204,12 +204,9 @@ describe('Channels (e2e)', () => {
     expect(second).toMatchObject({ agentName: 'kitchen' });
 
     await edit('Agents/Groceries.md', 'You shop.');
-    await edit(
-      'Agents/Kitchen.md',
-      '---\ntopics: [Kitchen, Groceries]\n---\nYou cook.',
-    );
+    await edit('Agents/Shopper.md', '---\ntopic: Groceries\n---\nYou buy.');
     expect(await client.call('channels.get', { id: groceries })).toMatchObject({
-      agent: 'kitchen',
+      agent: 'shopper',
       nextTurn: { kind: 'new', carriesOver: true },
     });
     expect(
@@ -223,7 +220,7 @@ describe('Channels (e2e)', () => {
     expect(carried).not.toMatch(/Soup/);
     expect(carried).toMatch(/\n\nBread$/);
 
-    // One Agent now, still a Session per Channel.
+    // The other Channel keeps its Agent and Session.
     expect(await say(KITCHEN, 'Stew')).toBe('echo: Stew');
     expect(await sessions()).toEqual([
       expect.objectContaining({ id: first!.id, status: 'closed' }),
@@ -235,7 +232,7 @@ describe('Channels (e2e)', () => {
       }),
       expect.objectContaining({
         channelId: groceries,
-        agentName: 'kitchen',
+        agentName: 'shopper',
         status: 'active',
       }),
     ]);
@@ -249,7 +246,7 @@ describe('Channels (e2e)', () => {
 
     await edit(
       'Agents/Groceries.md',
-      '---\ntopics: Groceries\nenabled: false\n---\nYou shop.',
+      '---\ntopic: Groceries\nenabled: false\n---\nYou shop.',
     );
     expect(await client.call('channels.get', { id: groceries })).toMatchObject({
       agent: 'groceries',
@@ -265,7 +262,7 @@ describe('Channels (e2e)', () => {
     await handled(createTopic(GROCERIES, 'Groceries'));
     expect(api.sent()).toHaveLength(sent);
 
-    await edit('Agents/Groceries.md', '---\ntopics: Groceries\n---\nYou shop.');
+    await edit('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
     expect(await say(GROCERIES, 'Eggs')).toBe('echo: Eggs');
     expect(await sessions()).toEqual(before);
   });
