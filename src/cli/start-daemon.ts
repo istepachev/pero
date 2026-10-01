@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import { findRunningDaemon } from '../control/daemon-metadata.js';
 import type { StatusResult } from '../control/protocol.js';
 import { CliError } from './errors.js';
@@ -40,7 +40,7 @@ export interface StartDaemonResult {
  * `CliError` with the daemon's output and log paths when it fails to start.
  */
 export async function startDetachedDaemon(
-  layout: DataDirLayout,
+  layout: WorkspaceLayout,
   options: StartDaemonOptions = {},
 ): Promise<StartDaemonResult> {
   const running = await findRunning(layout);
@@ -56,9 +56,8 @@ export async function startDetachedDaemon(
       [
         '--enable-source-maps',
         options.daemonMain ?? DAEMON_MAIN,
-        ...(layout.workspace === null
-          ? ['--data-dir', layout.root]
-          : ['--workspace', layout.workspace]),
+        '--workspace',
+        layout.workspace,
       ],
       { detached: true, stdio: ['ignore', output, output] },
     );
@@ -109,14 +108,14 @@ export async function startDetachedDaemon(
   );
 }
 
-async function findRunning(layout: DataDirLayout) {
+async function findRunning(layout: WorkspaceLayout) {
   const running = await findRunningDaemon(layout.metadataFile, {
     timeoutMs: PROBE_TIMEOUT_MS,
   });
   return running?.status ?? null;
 }
 
-function logPaths(layout: DataDirLayout): string {
+function logPaths(layout: WorkspaceLayout): string {
   return `Logs: ${layout.logFile}, ${layout.daemonOutputFile}`;
 }
 

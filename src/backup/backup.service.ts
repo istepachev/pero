@@ -19,7 +19,7 @@ import Database from 'better-sqlite3';
 import type { DataSource } from 'typeorm';
 import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import type { BackupResult } from '../control/protocol.js';
 import { Definitions } from '../definitions/definitions.js';
 import {
@@ -42,7 +42,7 @@ export class BackupService implements BeforeApplicationShutdown {
   private running: Promise<unknown> | undefined;
 
   constructor(
-    @Inject(BACKUP_LAYOUT) private readonly layout: DataDirLayout,
+    @Inject(BACKUP_LAYOUT) private readonly layout: WorkspaceLayout,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: Definitions,
   ) {}
@@ -59,12 +59,7 @@ export class BackupService implements BeforeApplicationShutdown {
     file: string,
     options: { includeData?: boolean } = {},
   ): Promise<BackupResult> {
-    const workspace = this.layout.workspace;
-    if (workspace === null) {
-      throw new InvalidInputError(
-        'Backups are of a workspace; make one with pero init <folder>',
-      );
-    }
+    const { workspace } = this.layout;
     if (this.running) {
       throw new ConflictError('A backup is already being written');
     }
@@ -110,8 +105,11 @@ export class BackupService implements BeforeApplicationShutdown {
       );
       if (dataFolder !== null) {
         // The staging folder too, should a link put the backup inside it.
-        const skip = new Set([this.layout.root, staging]);
-        if (this.layout.envFile) skip.add(this.layout.envFile);
+        const skip = new Set([
+          this.layout.stateDir,
+          staging,
+          this.layout.envFile,
+        ]);
         await copyTree(dataFolder, join(staging, DATA_ENTRY), skip);
       }
       const manifest: BackupManifest = {
@@ -157,9 +155,9 @@ export class BackupService implements BeforeApplicationShutdown {
       );
     }
     const destination = resolve(file);
-    if (isInside(destination, this.layout.root)) {
+    if (isInside(destination, this.layout.stateDir)) {
       throw new InvalidInputError(
-        `Backup file ${destination} must be outside the state directory ${this.layout.root}`,
+        `Backup file ${destination} must be outside the state directory ${this.layout.stateDir}`,
       );
     }
     const dataFolder = includeData ? await this.dataFolder() : null;
@@ -186,7 +184,7 @@ export class BackupService implements BeforeApplicationShutdown {
   /** The data folder, which a workspace always has. */
   private async dataFolder(): Promise<string> {
     const { dataFolder } = await this.definitions.defaults();
-    return dataFolder!;
+    return dataFolder;
   }
 
   /**

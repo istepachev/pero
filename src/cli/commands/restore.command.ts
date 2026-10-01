@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { Command, Option } from 'nest-commander';
 import type { WorkingDirectoryRef } from '../../backup/archive.js';
-import { describeLocation } from '../../config/data-dir.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { ControlError } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
@@ -20,24 +19,19 @@ export class RestoreCommand extends PeroCommand {
     [file]: string[],
     options: { replaceConfig?: boolean } = {},
   ): Promise<void> {
-    const layout = this.layout();
-    const { workspace } = layout;
-    if (workspace === null) {
-      throw new CliError(
-        'pero restore restores into a workspace: pass --workspace <folder>, such as a fresh clone',
-      );
-    }
-    await this.refuseRunningDaemon(describeLocation(layout));
+    const { workspace } = this.layout();
+    await this.refuseRunningDaemon(workspace);
 
     const result = await restoreBackup(
       resolve(process.cwd(), file!),
-      layout.root,
       workspace,
-      { replaceConfig: options.replaceConfig ?? false },
+      {
+        replaceConfig: options.replaceConfig ?? false,
+      },
     );
-    const { dataDir, manifest } = result;
+    const { stateDir, manifest } = result;
     console.log(
-      `Restored the backup from ${manifest.createdAt} (Pero ${manifest.peroVersion}) into ${dataDir}.`,
+      `Restored the backup from ${manifest.createdAt} (Pero ${manifest.peroVersion}) into ${stateDir}.`,
     );
     for (const line of describeRestore(result)) console.log(line);
     console.log(`Start it with pero run --workspace ${workspace}`);
@@ -59,7 +53,7 @@ export class RestoreCommand extends PeroCommand {
    * A friendly early check only: restoring into a missing or empty folder is
    * what guarantees that no daemon uses it.
    */
-  private async refuseRunningDaemon(where: string): Promise<void> {
+  private async refuseRunningDaemon(workspace: string): Promise<void> {
     try {
       await this.client().status();
     } catch (error) {
@@ -69,7 +63,7 @@ export class RestoreCommand extends PeroCommand {
       throw error;
     }
     throw new CliError(
-      `Pero is running for ${where} — stop it with pero stop before restoring`,
+      `Pero is running for workspace ${workspace} — stop it with pero stop before restoring`,
     );
   }
 }
@@ -84,7 +78,7 @@ function describeMissing(folder: WorkingDirectoryRef): string {
 /** What a restore into a workspace did beyond the database, line by line. */
 function describeRestore(result: RestoreResult): string[] {
   const lines: string[] = [];
-  const config = `${result.dataDir}/config.yaml`;
+  const config = `${result.stateDir}/config.yaml`;
   if (result.config === 'kept') {
     lines.push(`Kept ${config}; the backup's was not used.`);
     if (result.notAllowed.length > 0) {

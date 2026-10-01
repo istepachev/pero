@@ -1,5 +1,5 @@
 import { Command, Option } from 'nest-commander';
-import { ensureDataDir } from '../../config/data-dir.js';
+import { ensureWorkspaceLayout } from '../../config/workspace-layout.js';
 import { ControlError } from '../../control/protocol.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
@@ -37,15 +37,11 @@ export class RunCommand extends PeroCommand {
       await runDaemonProcess({ config, foreground: true });
     }
 
-    const layout = ensureDataDir(config.dataDir, config.workspace);
+    const layout = ensureWorkspaceLayout(config.workspace);
     const { started, status } = await startDetachedDaemon(layout);
-    const where =
-      typeof status.workspace === 'string'
-        ? `workspace ${status.workspace}`
-        : `data directory ${status.dataDir}`;
     console.log(
       `Pero is ${started ? 'running' : 'already running'} ` +
-        `(pid ${status.pid}, ${where})`,
+        `(pid ${status.pid}, workspace ${status.workspace})`,
     );
     await this.setUp(status.version);
   }

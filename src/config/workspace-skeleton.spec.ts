@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseNote } from '../settings-files/note.js';
 import { readAgentNote, readPeroNote } from '../settings-files/schemas.js';
-import { STATE_GITIGNORE } from './data-dir.js';
+import { STATE_GITIGNORE } from './workspace-layout.js';
 import { defaultHostConfig, readHostConfig } from './host-config.js';
 import { initWorkspace, WorkspaceInitError } from './workspace-skeleton.js';
 
@@ -120,15 +120,10 @@ describe('initWorkspace', () => {
     }
   });
 
-  it('refuses the home folder and a legacy data directory', () => {
+  it('refuses the home folder', () => {
     expect(() => initWorkspace(home, home)).toThrow(WorkspaceInitError);
-    expect(() => initWorkspace(home, home)).toThrow(/is your home folder/);
-
-    const legacy = join(tmp, 'legacy');
-    mkdirSync(legacy);
-    writeFileSync(join(legacy, 'pero.sqlite'), '');
-    expect(() => initWorkspace(legacy, home)).toThrow(
-      `${legacy} is a Pero data directory; make the workspace in another folder`,
+    expect(() => initWorkspace(home, home)).toThrow(
+      `${home} is your home folder, which can't be a workspace: every folder under it would find it. Use a folder of its own, such as ~/workspace.`,
     );
   });
 });

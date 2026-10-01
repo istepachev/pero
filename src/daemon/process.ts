@@ -1,6 +1,6 @@
 import type { BootstrapConfig } from '../config/bootstrap-config.js';
 import { ConfigError } from '../config/bootstrap-config.js';
-import { DataDirError } from '../config/data-dir.js';
+import { StateDirError } from '../config/workspace-layout.js';
 import { ControlSocketError } from '../control/control-server.js';
 import { DaemonAlreadyRunningError, startDaemon } from './daemon.js';
 
@@ -46,7 +46,7 @@ export async function runDaemonProcess(
 export function reportStartupError(error: unknown): void {
   const expected =
     error instanceof ConfigError ||
-    error instanceof DataDirError ||
+    error instanceof StateDirError ||
     error instanceof ControlSocketError ||
     error instanceof DaemonAlreadyRunningError;
   console.error(expected ? error.message : error);

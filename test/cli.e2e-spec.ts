@@ -22,11 +22,11 @@ import Database from 'better-sqlite3';
 import type { Chat } from 'grammy/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  dataDirLayout,
-  type DataDirLayout,
   MAX_SOCKET_PATH_BYTES,
   STATE_GITIGNORE,
-} from '../src/config/data-dir.js';
+  type WorkspaceLayout,
+  workspaceLayout,
+} from '../src/config/workspace-layout.js';
 import { PACKAGE_VERSION } from '../src/common/package-version.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import { createControlClient } from '../src/control/client.js';
@@ -66,11 +66,11 @@ interface Result {
 
 describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   let tmp: string;
-  let layout: DataDirLayout;
+  let layout: WorkspaceLayout;
   /** Where the fake provider CLIs look for their sign-in. */
   let authDir: string;
   /** Other state directories a test started a daemon in. */
-  const others: DataDirLayout[] = [];
+  const others: WorkspaceLayout[] = [];
   let api: FakeBotApi;
   const children: ChildProcess[] = [];
 
@@ -78,8 +78,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     api = new FakeBotApi();
     await api.listen();
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    layout = dataDirLayout(join(tmp, 'pero'));
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    layout = workspaceLayout(join(tmp, 'ws'));
     authDir = join(tmp, 'auth');
     mkdirSync(authDir);
   });
@@ -103,8 +103,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   /**
    * Runs `pero` to completion with `input` on stdin, from `tmp` unless
-   * `cwd` says otherwise; the environment carries no PERO_HOME,
-   * PERO_WORKSPACE, or Telegram token, the fake provider CLIs that
+   * `cwd` says otherwise; the environment carries no PERO_WORKSPACE or
+   * Telegram token, the fake provider CLIs that
    * the daemon inherits read their sign-in from `authDir`, and Telegram is
    * the fake Bot API.
    */
@@ -118,7 +118,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     } = {},
   ): Promise<Result> {
     const {
-      PERO_HOME: _home,
       PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env
@@ -151,7 +150,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
    * degraded while no chat is allowed.
    */
   async function connectedStatus(
-    target: (...args: string[]) => string[] = withDataDir,
+    target: (...args: string[]) => string[] = inWorkspace,
   ): Promise<Result> {
     let status: Result | undefined;
     await vi.waitFor(
@@ -166,27 +165,22 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     return status!;
   }
 
-  const withDataDir = (...args: string[]) => [
-    '--data-dir',
-    layout.root,
-    ...args,
-  ];
+  /** The arguments that run `pero` in the workspace `tmp/ws`. */
+  const inWorkspace = (...args: string[]) => ['-w', layout.workspace, ...args];
 
   /**
-   * Makes `tmp/ws` a workspace, with `notes` by their path in its settings
-   * folder, and the installation the test runs; returns the arguments
-   * that run `pero` there.
+   * Makes `tmp/ws` a workspace with `pero init`'s skeleton, with `notes`
+   * by their path in its settings folder; returns the arguments that run
+   * `pero` there.
    */
   function useWorkspace(
     notes: Record<string, string> = {},
   ): (...args: string[]) => string[] {
-    const root = join(realpathSync(tmp), 'ws');
-    initWorkspace(root, tmp);
+    initWorkspace(layout.workspace, tmp);
     for (const [file, text] of Object.entries(notes)) {
-      writeFileSync(join(root, 'data', 'Settings', file), text);
+      writeFileSync(join(layout.workspace, 'data', 'Settings', file), text);
     }
-    layout = dataDirLayout(join(root, '.pero'), root);
-    return (...args) => ['-w', root, ...args];
+    return inWorkspace;
   }
 
   /** Restarts the daemon of `target`, which then reads its notes again. */
@@ -196,16 +190,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   }
 
   it('runs once, reports status, and stops safely twice', async () => {
-    const first = await pero(withDataDir('run'));
+    const first = await pero(inWorkspace('run'));
     expect(first).toMatchObject({ code: 0, stderr: '' });
     const pid = Number(/\(pid (\d+),/.exec(first.stdout)?.[1]);
     expect(first.stdout).toContain(
-      `Pero is running (pid ${pid}, data directory ${layout.root})`,
+      `Pero is running (pid ${pid}, workspace ${layout.workspace})`,
     );
     expect(first.stdout).toContain(
       [
         'Setup needed:',
-        '  This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
@@ -214,12 +207,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     // Codex is neither the default provider nor used by an Agent.
     expect(first.stdout).not.toContain('codex');
 
-    const second = await pero(withDataDir('run'));
+    const second = await pero(inWorkspace('run'));
     expect(second.code).toBe(0);
     expect(second.stdout).toContain(`Pero is already running (pid ${pid},`);
     expect(readDaemonMetadata(layout.metadataFile)?.pid).toBe(pid);
 
-    const status = await pero(withDataDir('status'));
+    const status = await pero(inWorkspace('status'));
     expect(status.code).toBe(0);
     expect(status.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
     expect(status.stdout).toMatch(/Health +degraded/);
@@ -228,36 +221,36 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     }
     expect(status.stdout).toMatch(/codex +unconfigured .*\(not in use\)\n/);
 
-    const stop = await pero(withDataDir('stop'));
+    const stop = await pero(inWorkspace('stop'));
     expect(stop).toMatchObject({ code: 0, stdout: 'Pero stopped\n' });
     expect(isAlive(pid)).toBe(false);
     expect(readdirSync(layout.run)).toEqual(['pero.lock']);
 
-    const again = await pero(withDataDir('stop'));
+    const again = await pero(inWorkspace('stop'));
     expect(again).toMatchObject({
       code: 0,
-      stdout: `Pero isn't running (data directory ${layout.root})\n`,
+      stdout: `Pero isn't running (workspace ${layout.workspace})\n`,
     });
   });
 
   it('configures Telegram through settings without a restart, never showing the token', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
     const pid = readDaemonMetadata(layout.metadataFile)?.pid;
-    const before = await pero(withDataDir('status'));
+    const before = await pero(inWorkspace('status'));
     expect(before.stdout).toMatch(
       /telegram +unconfigured +Bot token is not set/,
     );
     expect(before.stdout).toMatch(/Health +degraded/);
 
     const set = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token'),
+      inWorkspace('settings', 'set', 'telegram-bot-token'),
       {
         input: `${TOKEN}\n`,
       },
     );
     expect(set).toMatchObject({
       code: 0,
-      stdout: 'telegram-bot-token is now set (secrets)\n',
+      stdout: 'telegram-bot-token is now set (.env)\n',
       stderr: '',
     });
 
@@ -265,14 +258,15 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const status = await connectedStatus();
     expect(status.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
-    const show = await pero(withDataDir('settings', 'show'));
+    const show = await pero(inWorkspace('settings', 'show'));
     expect(show.code).toBe(0);
-    expect(show.stdout).toMatch(/^Telegram bot token: set \(secrets\)$/m);
-    const secret = join(layout.secrets, 'telegram-bot-token');
-    expect(statSync(secret).mode & 0o777).toBe(0o600);
-    expect(readFileSync(secret, 'utf8')).toBe(`${TOKEN}\n`);
+    expect(show.stdout).toMatch(/^Telegram bot token: set \(\.env\)$/m);
+    expect(statSync(layout.envFile).mode & 0o777).toBe(0o600);
+    expect(readFileSync(layout.envFile, 'utf8')).toBe(
+      `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`,
+    );
 
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(inWorkspace('stop'))).code).toBe(0);
     const seen = [
       set.stdout,
       set.stderr,
@@ -286,11 +280,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     for (const text of seen) expect(text).not.toContain(TOKEN.split(':')[1]);
   });
 
-  it('keeps the token of a workspace in its .env, which Git must ignore', async () => {
-    const workspace = join(realpathSync(tmp), 'ws');
-    const state = dataDirLayout(join(workspace, '.pero'), workspace);
-    others.push(state);
-    const ws = (...args: string[]) => ['-w', workspace, ...args];
+  it('keeps the token in .env, which Git must ignore', async () => {
+    const { workspace } = layout;
+    const ws = inWorkspace;
     mkdirSync(workspace);
     execFileSync('git', ['init', '-q', workspace]);
     writeFileSync(join(workspace, '.gitignore'), 'node_modules/\n');
@@ -308,7 +300,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`,
     );
     expect(statSync(envFile).mode & 0o777).toBe(0o600);
-    expect(existsSync(join(state.root, 'secrets'))).toBe(false);
+    expect(existsSync(join(layout.stateDir, 'secrets'))).toBe(false);
 
     // Stored again, the .gitignore line is not added twice.
     await pero(ws('settings', 'set', 'telegram-bot-token'), {
@@ -344,8 +336,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       set.stderr,
       status!.stdout,
       show.stdout,
-      readFileSync(state.logFile, 'utf8'),
-      readFileSync(state.daemonOutputFile, 'utf8'),
+      readFileSync(layout.logFile, 'utf8'),
+      readFileSync(layout.daemonOutputFile, 'utf8'),
     ];
     for (const text of seen) {
       expect(text).not.toContain(TOKEN.split(':')[1]);
@@ -360,19 +352,19 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       title: 'Household',
       is_forum: true,
     });
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    await pero(withDataDir('settings', 'set', 'telegram-bot-token'), {
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
+    await pero(inWorkspace('settings', 'set', 'telegram-bot-token'), {
       input: `${TOKEN}\n`,
     });
     const before = await connectedStatus();
     expect(before.stdout).toMatch(
       /telegram +degraded +Connected as @pero_test_bot; no chat is allowed yet: add the bot to a group or message it, then pero telegram allow <chat-id>\n/,
     );
-    const run = await pero(withDataDir('run'));
+    const run = await pero(inWorkspace('run'));
     expect(run.stdout).toContain(
       '  Telegram: no chat is allowed yet — add the bot to a group as an administrator or message it, then pero telegram allow <chat-id>',
     );
-    expect((await pero(withDataDir('telegram'))).stdout).toContain(
+    expect((await pero(inWorkspace('telegram'))).stdout).toContain(
       'No chat is allowed yet. To pair one:',
     );
 
@@ -382,7 +374,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       `${readFileSync(layout.configFile, 'utf8')}# my own note\n`,
     );
     const allow = await pero(
-      withDataDir('telegram', 'allow', '-1001234567890'),
+      inWorkspace('telegram', 'allow', '-1001234567890'),
     );
     expect(allow).toMatchObject({ code: 0, stderr: '' });
     expect(allow.stdout).toBe('Allowed: group "Household" (-1001234567890)\n');
@@ -393,24 +385,24 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       'telegram',
       'allow',
       '-1001234567890',
-      '--data-dir',
-      layout.root,
+      '--workspace',
+      layout.workspace,
     ]);
     expect(again.stdout).toBe(
       'Already allowed: group "Household" (-1001234567890)\n',
     );
-    const chats = await pero(withDataDir('telegram', 'chats'));
+    const chats = await pero(inWorkspace('telegram', 'chats'));
     expect(chats).toMatchObject({ code: 0, stderr: '' });
     expect(chats.stdout).toMatch(/^Bot: @pero_test_bot$/m);
     expect(chats.stdout).toMatch(
       /^ {2}-1001234567890 +group +Household +on +administrator$/m,
     );
-    const status = await pero(withDataDir('status'));
+    const status = await pero(inWorkspace('status'));
     expect(status.stdout).toMatch(
       /telegram +ok +Connected as @pero_test_bot\n/,
     );
 
-    const deny = await pero(withDataDir('telegram', 'deny', '-1001234567890'));
+    const deny = await pero(inWorkspace('telegram', 'deny', '-1001234567890'));
     expect(deny).toMatchObject({
       code: 0,
       stdout:
@@ -421,13 +413,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(config).not.toContain('\n    - id: -1001234567890\n');
     expect(config).toMatch(/# my own note\n$/);
     const missing = await pero(
-      withDataDir('telegram', 'deny', '-1001234567890'),
+      inWorkspace('telegram', 'deny', '-1001234567890'),
     );
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain(
       'Telegram chat -1001234567890 is not allowed',
     );
-    const invalid = await pero(withDataDir('telegram', 'allow', 'general'));
+    const invalid = await pero(inWorkspace('telegram', 'allow', 'general'));
     expect(invalid.code).toBe(1);
     expect(invalid.stderr).toContain(
       'chat-id: must be a Telegram chat ID, such as -1001234567890 or 123456789',
@@ -435,10 +427,10 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('refuses a token as an argument, and one that is not valid, without echoing either', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
 
     const argument = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token', TOKEN),
+      inWorkspace('settings', 'set', 'telegram-bot-token', TOKEN),
     );
     expect(argument).toMatchObject({
       code: 1,
@@ -448,7 +440,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
 
     const invalid = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token'),
+      inWorkspace('settings', 'set', 'telegram-bot-token'),
       { input: 'secret-but-wrong\n' },
     );
     expect(invalid).toMatchObject({
@@ -457,8 +449,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr:
         'telegram-bot-token: must be a bot token from @BotFather, such as 123456789:AAE…\n',
     });
-    expect(existsSync(join(layout.secrets, 'telegram-bot-token'))).toBe(false);
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect(existsSync(layout.envFile)).toBe(false);
+    expect((await pero(inWorkspace('stop'))).code).toBe(0);
     expect(readFileSync(layout.logFile, 'utf8')).not.toContain(
       'secret-but-wrong',
     );
@@ -525,29 +517,19 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: expect.stringMatching(/^Unknown setting "nope"\. Settings: /),
     });
 
-    // A legacy data directory, running or not, has nothing to change.
-    const legacy = `${layout.root} is a legacy data directory, which has no Agents any more. Make a workspace with pero init <folder>, whose notes define them.\n`;
-    expect(await pero(withDataDir('agents', 'create', 'notes'))).toEqual({
+    // The same while Pero runs.
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
+    expect(await ws('settings', 'set', 'timezone', 'UTC')).toMatchObject({
       code: 1,
-      stdout: '',
-      stderr: legacy,
+      stderr:
+        'Settings are in notes now: set timezone in data/Settings/Pero.md.\n',
     });
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    expect(
-      await pero(withDataDir('settings', 'set', 'timezone', 'UTC')),
-    ).toMatchObject({ code: 1, stderr: legacy });
-    expect((await pero(withDataDir('settings'))).stdout).toBe(
-      `${legacy}Telegram bot token: not set\n`,
-    );
-    expect((await pero(withDataDir('status'))).stdout).toContain(
-      'settings  degraded      legacy data directory: no Agents answer; make a workspace with pero init <folder>',
-    );
   });
 
   it('shows the Agents and settings the notes hold, as they change', async () => {
     const workspace = join(realpathSync(tmp), 'ws');
     const settingsFolder = join(workspace, 'data', 'Settings');
-    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    const state = workspaceLayout(workspace);
     others.push(state);
     expect((await pero(['init', workspace])).code).toBe(0);
     writeFileSync(
@@ -1090,7 +1072,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('takes the token from PERO_TELEGRAM_BOT_TOKEN in the daemon environment', async () => {
-    const run = await pero(withDataDir('run'), {
+    const run = await pero(inWorkspace('run'), {
       env: { PERO_TELEGRAM_BOT_TOKEN: TOKEN },
     });
     expect(run.code).toBe(0);
@@ -1100,7 +1082,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     await connectedStatus();
     expect(api.callsOf('getMe')[0]?.token).toBe(TOKEN);
     const set = await pero(
-      withDataDir('settings', 'set', 'telegram-bot-token'),
+      inWorkspace('settings', 'set', 'telegram-bot-token'),
       {
         input: OTHER_TOKEN,
       },
@@ -1112,7 +1094,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         'PERO_TELEGRAM_BOT_TOKEN overrides the stored token while it is set\n',
     });
 
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(inWorkspace('stop'))).code).toBe(0);
     const log = readFileSync(layout.logFile, 'utf8');
     expect(log).not.toContain(TOKEN.split(':')[1]);
     expect(log).not.toContain(OTHER_TOKEN.split(':')[1]);
@@ -1165,7 +1147,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       ['settings', 'show'],
       ['settings', 'unset', 'telegram-bot-token'],
     ]) {
-      expect(await pero(withDataDir(...args))).toMatchObject({
+      expect(await pero(inWorkspace(...args))).toMatchObject({
         code: 1,
         stderr: `${NOT_RUNNING}\n`,
       });
@@ -1173,7 +1155,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('keeps the daemon running after the CLI and its process group end', async () => {
-    const cli = spawn(process.execPath, [PERO, ...withDataDir('run')], {
+    const cli = spawn(process.execPath, [PERO, ...inWorkspace('run')], {
       detached: true,
       stdio: 'ignore',
     });
@@ -1193,7 +1175,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('fails a command that needs the daemon without starting one', async () => {
-    const result = await pero(withDataDir('ping'));
+    const result = await pero(inWorkspace('ping'));
 
     expect(result).toMatchObject({
       code: 1,
@@ -1205,19 +1187,19 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('reports status of a stopped daemon with exit code 3', async () => {
-    const result = await pero(withDataDir('status'));
+    const result = await pero(inWorkspace('status'));
 
     expect(result).toMatchObject({
       code: 3,
-      stderr: `Pero isn't running (data directory ${layout.root})\n`,
+      stderr: `Pero isn't running (workspace ${layout.workspace})\n`,
     });
   });
 
   it('prints why the daemon failed to start and where its logs are', async () => {
-    mkdirSync(layout.root, { recursive: true });
+    mkdirSync(layout.stateDir, { recursive: true });
     writeFileSync(layout.database, 'not a database'.repeat(100));
 
-    const result = await pero(withDataDir('run'));
+    const result = await pero(inWorkspace('run'));
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(
@@ -1233,7 +1215,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   it('runs in the foreground as one process until SIGTERM', async () => {
     const child = spawn(
       process.execPath,
-      [PERO, 'run', '--foreground', ...withDataDir()],
+      [PERO, 'run', '--foreground', ...inWorkspace()],
       { stdio: ['ignore', 'pipe', 'inherit'] },
     );
     children.push(child);
@@ -1266,22 +1248,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(readdirSync(layout.run)).toEqual(['pero.lock']);
   });
 
-  it('accepts the data directory before or after the command, or from PERO_HOME', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const pid = readDaemonMetadata(layout.metadataFile)?.pid;
-
-    for (const result of [
-      await pero(['status', '--data-dir', layout.root]),
-      await pero(['status'], { env: { PERO_HOME: layout.root } }),
-    ]) {
-      expect(result.code).toBe(0);
-      expect(result.stdout).toMatch(new RegExp(`PID +${pid}\\n`));
-    }
-  });
-
   it('finds a workspace from options, PERO_WORKSPACE, or the current folder', async () => {
     const workspace = join(realpathSync(tmp), 'ws');
-    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    const state = workspaceLayout(workspace);
     others.push(state);
 
     const run = await pero(['run', '-w', workspace]);
@@ -1314,24 +1283,29 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 3,
       stderr: `Pero isn't running (workspace ${workspace})\n`,
     });
+    // Only a workspace: PERO_HOME names none, and --data-dir is no option.
     expect(
-      await pero(['status', '-w', workspace, '--data-dir', layout.root]),
+      await pero(['status'], { env: { HOME: tmp, PERO_HOME: state.stateDir } }),
+    ).toMatchObject({
+      code: 3,
+      stderr: expect.stringContaining('No Pero workspace found'),
+    });
+    expect(
+      await pero(['status', '-w', workspace, '--data-dir', state.stateDir]),
     ).toMatchObject({
       code: 1,
-      stderr: expect.stringContaining(
-        '--workspace: cannot be combined with --data-dir',
-      ),
+      stderr: expect.stringContaining("unknown option '--data-dir'"),
     });
   });
 
   it('stops startup on an invalid config.yaml, naming the file, line, and key', async () => {
-    mkdirSync(layout.root, { recursive: true });
+    mkdirSync(layout.stateDir, { recursive: true });
     writeFileSync(
       layout.configFile,
       'telegram:\n  allowed-chats:\n    - id: family\n',
     );
 
-    const run = await pero(withDataDir('run', '--foreground'));
+    const run = await pero(inWorkspace('run', '--foreground'));
 
     expect(run.code).toBe(1);
     expect(run.stderr).toContain(
@@ -1341,7 +1315,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('allows and denies chats in config.yaml while Pero is stopped', async () => {
-    mkdirSync(layout.root, { recursive: true });
+    mkdirSync(layout.stateDir, { recursive: true });
     writeFileSync(
       layout.configFile,
       '# my Pero\ntelegram:\n  allowed-chats: []\n',
@@ -1352,7 +1326,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       "Pero isn't running; the change is in config.yaml and applies when it starts.\n";
 
     const allow = await pero(
-      withDataDir('telegram', 'allow', '-1001234567890'),
+      inWorkspace('telegram', 'allow', '-1001234567890'),
       { nodeArgs },
     );
     expect(allow).toMatchObject({
@@ -1364,7 +1338,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       '# my Pero\ntelegram:\n  allowed-chats:\n    - id: -1001234567890\n',
     );
 
-    const deny = await pero(withDataDir('telegram', 'deny', '-1001234567890'), {
+    const deny = await pero(inWorkspace('telegram', 'deny', '-1001234567890'), {
       nodeArgs,
     });
     expect(deny).toMatchObject({
@@ -1377,7 +1351,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(readFileSync(layout.configFile, 'utf8')).toBe(
       '# my Pero\ntelegram:\n  allowed-chats: []\n',
     );
-    const again = await pero(withDataDir('telegram', 'deny', '-1001234567890'));
+    const again = await pero(inWorkspace('telegram', 'deny', '-1001234567890'));
     expect(again).toMatchObject({
       code: 1,
       stderr: expect.stringContaining(
@@ -1431,7 +1405,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
 
     // From home, ~/workspace is found now, with its data folder set up.
-    others.push(dataDirLayout(join(workspace, '.pero'), workspace));
+    others.push(workspaceLayout(workspace));
     const run = await pero(['run'], { env, cwd: home });
     expect(run.code).toBe(0);
     expect(run.stdout).toContain(`, workspace ${workspace})\n`);
@@ -1451,15 +1425,6 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(existsSync(join(tmp, 'workspace'))).toBe(false);
   });
 
-  it('marks a data directory as legacy', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const status = await pero(withDataDir('status'));
-    expect(status.stdout).toContain(
-      `  Data directory  ${layout.root} (legacy)\n`,
-    );
-    expect(existsSync(join(layout.root, '.gitignore'))).toBe(false);
-  });
-
   it('reaches a workspace whose path is too long for a socket in it', async () => {
     const workspace = join(
       realpathSync(tmp),
@@ -1468,7 +1433,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const runtime = join(tmp, 'runtime');
     mkdirSync(runtime);
     const env = { XDG_RUNTIME_DIR: runtime };
-    const state = dataDirLayout(join(workspace, '.pero'), workspace);
+    const state = workspaceLayout(workspace);
     others.push(state);
 
     expect((await pero(['run', '-w', workspace], { env })).code).toBe(0);
@@ -1488,22 +1453,22 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('shows recent logs readably whether or not the daemon runs', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const running = await pero(withDataDir('logs'));
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
+    const running = await pero(inWorkspace('logs'));
     expect(running.code).toBe(0);
     expect(running.stdout).toMatch(STARTED_ENTRY);
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(inWorkspace('stop'))).code).toBe(0);
 
-    const stopped = await pero(withDataDir('logs'));
+    const stopped = await pero(inWorkspace('logs'));
     expect(stopped).toMatchObject({ code: 0, stderr: '' });
     expect(stopped.stdout).toMatch(STARTED_ENTRY);
     expect(stopped.stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/);
     expect(stopped.stdout).not.toContain('{"level"');
 
-    const one = await pero(withDataDir('logs', '-n', '1'));
+    const one = await pero(inWorkspace('logs', '-n', '1'));
     expect(one.stdout).toMatch(/^[^\n]+ INFO {2}Pero daemon stopped\n$/);
 
-    const json = await pero(withDataDir('logs', '--json', '--lines', '2'));
+    const json = await pero(inWorkspace('logs', '--json', '--lines', '2'));
     const entries = json.stdout
       .trim()
       .split('\n')
@@ -1513,20 +1478,20 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   });
 
   it('reports a missing log directory without creating anything', async () => {
-    const result = await pero(withDataDir('logs'));
+    const result = await pero(inWorkspace('logs'));
 
     expect(result).toMatchObject({
       code: 0,
       stdout: '',
       stderr: `No logs yet in ${layout.logs}\n`,
     });
-    expect(existsSync(layout.root)).toBe(false);
+    expect(existsSync(layout.stateDir)).toBe(false);
   });
 
   it('follows new entries, from before the log exists until stopped', async () => {
     const follower = spawn(process.execPath, [
       PERO,
-      ...withDataDir('logs', '--follow'),
+      ...inWorkspace('logs', '--follow'),
     ]);
     children.push(follower);
     let stdout = '';
@@ -1538,12 +1503,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       FOLLOWER_WAIT,
     );
 
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
     await vi.waitFor(
       () => expect(stdout).toMatch(STARTED_ENTRY),
       FOLLOWER_WAIT,
     );
-    expect((await pero(withDataDir('stop'))).code).toBe(0);
+    expect((await pero(inWorkspace('stop'))).code).toBe(0);
     await vi.waitFor(
       () => expect(stdout).toMatch(/ INFO {2}Pero daemon stopped\n$/),
       FOLLOWER_WAIT,
@@ -1555,7 +1520,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   it('rejects a line count that is not a positive whole number', async () => {
     for (const count of ['0', '-3', '1.5', 'many']) {
-      const result = await pero(withDataDir('logs', '-n', count));
+      const result = await pero(inWorkspace('logs', '-n', count));
       expect(result).toMatchObject({
         code: 1,
         stderr: `--lines must be a positive whole number, not "${count}"\n`,
@@ -1568,7 +1533,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const ws = useWorkspace();
     const source = join(cwd, 'ws');
     const fresh = join(cwd, 'fresh');
-    const freshLayout = dataDirLayout(join(fresh, '.pero'), fresh);
+    const freshLayout = workspaceLayout(fresh);
     others.push(freshLayout);
     const file = join(cwd, 'backup.tgz');
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
@@ -1586,7 +1551,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: expect.stringMatching(
         new RegExp(
-          `^Backed up ${escape(layout.root)} to ${escape(file)} \\(\\d+\\.\\d KB\\)\\n$`,
+          `^Backed up ${escape(layout.stateDir)} to ${escape(file)} \\(\\d+\\.\\d KB\\)\\n$`,
         ),
       ),
       stderr: '',
@@ -1599,7 +1564,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: expect.stringMatching(
         new RegExp(
-          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(freshLayout.root)}\\.\\n` +
+          `^Restored the backup from \\S+ \\(Pero ${escape(PACKAGE_VERSION)}\\) into ${escape(freshLayout.stateDir)}\\.\\n` +
             `Start it with pero run --workspace ${escape(fresh)}\\n$`,
         ),
       ),
@@ -1631,7 +1596,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     const ws = useWorkspace();
     const source = join(cwd, 'ws');
     const clone = join(cwd, 'clone');
-    others.push(dataDirLayout(join(clone, '.pero'), clone));
+    others.push(workspaceLayout(clone));
     expect((await pero(ws('run'))).code).toBe(0);
     const token = await pero(ws('settings', 'set', 'telegram-bot-token'), {
       input: `${TOKEN}\n`,
@@ -1647,7 +1612,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(backup).toMatchObject({ code: 0, stderr: '' });
     expect(backup.stdout).toMatch(
       new RegExp(
-        `^Backed up ${escape(layout.root)} and the data folder to ${escape(join(cwd, 'ws.tgz'))} `,
+        `^Backed up ${escape(layout.stateDir)} and the data folder to ${escape(join(cwd, 'ws.tgz'))} `,
       ),
     );
     expect((await pero(ws('stop'))).code).toBe(0);
@@ -1692,7 +1657,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect((await pero(ws('stop'))).code).toBe(0);
     expect(await pero(ws('restore', file))).toMatchObject({
       code: 1,
-      stderr: `${layout.root} already has a database. Restore into a workspace without one, such as a fresh clone, or stop Pero and move ${layout.database} aside first.\n`,
+      stderr: `${layout.stateDir} already has a database. Restore into a workspace without one, such as a fresh clone, or stop Pero and move ${layout.database} aside first.\n`,
     });
     const fresh = join(tmp, 'fresh');
     expect(
@@ -1702,39 +1667,20 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       stderr: `${join(tmp, 'nope')} does not exist\n`,
     });
     expect(existsSync(fresh)).toBe(false);
-
-    const legacy = join(tmp, 'legacy');
-    expect(await pero(['restore', file, '--data-dir', legacy])).toMatchObject({
-      code: 1,
-      stderr:
-        'pero restore restores into a workspace: pass --workspace <folder>, such as a fresh clone\n',
-    });
-    expect(existsSync(legacy)).toBe(false);
-  });
-
-  it('backs up only a workspace', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
-    const file = join(tmp, 'backup.tgz');
-
-    expect(await pero(withDataDir('backup', file))).toMatchObject({
-      code: 1,
-      stderr: 'Backups are of a workspace; make one with pero init <folder>\n',
-    });
-    expect(existsSync(file)).toBe(false);
   });
 
   it('needs the daemon for a backup', async () => {
-    expect(await pero(withDataDir('backup', join(tmp, 'b.tgz')))).toMatchObject(
+    expect(await pero(inWorkspace('backup', join(tmp, 'b.tgz')))).toMatchObject(
       {
         code: 1,
         stderr: `${NOT_RUNNING}\n`,
       },
     );
-    expect(existsSync(layout.root)).toBe(false);
+    expect(existsSync(layout.stateDir)).toBe(false);
   });
 
   it('never loads the database stack for status, ping, logs, settings, and stop', async () => {
-    expect((await pero(withDataDir('run'))).code).toBe(0);
+    expect((await pero(inWorkspace('run'))).code).toBe(0);
     const nodeArgs = ['--import', DENY_DAEMON_DEPS];
 
     for (const command of [
@@ -1746,12 +1692,12 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       'telegram',
       'stop',
     ]) {
-      const result = await pero(withDataDir(command), { nodeArgs });
+      const result = await pero(inWorkspace(command), { nodeArgs });
       expect(result, command).toMatchObject({ code: 0, stderr: '' });
     }
     const follower = spawn(
       process.execPath,
-      [...nodeArgs, PERO, ...withDataDir('logs', '--follow')],
+      [...nodeArgs, PERO, ...inWorkspace('logs', '--follow')],
       { stdio: ['ignore', 'pipe', 'inherit'] },
     );
     children.push(follower);
@@ -1763,7 +1709,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
     expect(follower.exitCode).toBeNull();
     // The hook itself works: the daemon cannot start under it.
-    const foreground = await pero(withDataDir('run', '--foreground'), {
+    const foreground = await pero(inWorkspace('run', '--foreground'), {
       nodeArgs,
     });
     expect(foreground.code).not.toBe(0);

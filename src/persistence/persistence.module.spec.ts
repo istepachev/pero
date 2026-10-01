@@ -75,52 +75,9 @@ describe('PersistenceModule', () => {
 
     await expect(
       ds.query(
-        `INSERT INTO "legacy_channel_agents" ("channel_id", "agent_name") ` +
-          `VALUES (42, 'main')`,
+        `INSERT INTO "sessions" ("agent_name", "channel_id", "provider", "working_directory") ` +
+          `VALUES ('main', 42, 'claude', '/srv')`,
       ),
-    ).rejects.toMatchObject({
-      driverError: { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },
-    });
-  });
-
-  it('keeps the settings row it seeded as legacy_settings', async () => {
-    const ds = await start();
-
-    expect(
-      await ds.query(
-        `SELECT "id", "default_provider", "provider_defaults", "timezone", ` +
-          `"max_concurrent_runs" FROM "legacy_settings"`,
-      ),
-    ).toEqual([
-      {
-        id: 1,
-        default_provider: 'claude',
-        provider_defaults:
-          '{"claude":{"model":null,"effort":null},"codex":{"model":null,"effort":null}}',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        max_concurrent_runs: 2,
-      },
-    ]);
-  });
-
-  it('keeps the checks of the legacy tables', async () => {
-    const ds = await start();
-
-    await expect(
-      ds.query(
-        `INSERT INTO "legacy_settings" ("id", "provider_defaults", "timezone") ` +
-          `VALUES (2, '{}', 'UTC')`,
-      ),
-    ).rejects.toMatchObject({
-      driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
-    });
-    await expect(
-      ds.query(`UPDATE "legacy_settings" SET "default_provider" = 'gpt'`),
-    ).rejects.toMatchObject({
-      driverError: { code: 'SQLITE_CONSTRAINT_CHECK' },
-    });
-    await expect(
-      ds.query(`UPDATE "legacy_settings" SET "main_agent_id" = 42`),
     ).rejects.toMatchObject({
       driverError: { code: 'SQLITE_CONSTRAINT_FOREIGNKEY' },
     });
@@ -133,7 +90,10 @@ describe('PersistenceModule', () => {
     expect(log).toHaveBeenCalledWith(
       `Applied migration ${MIGRATIONS[0]!.name}`,
     );
-    await ds.query(`UPDATE "legacy_settings" SET "timezone" = 'Europe/Berlin'`);
+    await ds.query(
+      `INSERT INTO "channels" ("integration_kind", "external_key", "address_json") ` +
+        `VALUES ('telegram', '42', '{}')`,
+    );
     log.mockClear();
 
     ds = await restart();
@@ -142,8 +102,8 @@ describe('PersistenceModule', () => {
       expect.stringMatching(/^Applied migration/),
     );
     expect(await appliedMigrations(ds)).toEqual(applied);
-    expect(await ds.query(`SELECT "timezone" FROM "legacy_settings"`)).toEqual([
-      { timezone: 'Europe/Berlin' },
+    expect(await ds.query(`SELECT "external_key" FROM "channels"`)).toEqual([
+      { external_key: '42' },
     ]);
   });
 
@@ -167,8 +127,5 @@ describe('PersistenceModule', () => {
 
     await ds.runMigrations({ transaction: 'each' });
     expect(await tables()).toEqual(migrated);
-    expect(await ds.query(`SELECT "id" FROM "legacy_settings"`)).toEqual([
-      { id: 1 },
-    ]);
   });
 });

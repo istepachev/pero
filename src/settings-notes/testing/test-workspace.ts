@@ -41,6 +41,10 @@ export class TestWorkspace {
   /** `.pero/`. */
   readonly stateFolder: string;
   readonly database: string;
+  /** `.env`, where the bot token is stored. */
+  readonly envFile: string;
+  /** The workspace's `.gitignore`. */
+  readonly gitignore: string;
   private readonly notes = new Map<string, TestNote>();
   /** Each write gets a later modification time, whatever the clock. */
   private clock = Date.parse('2026-01-01T00:00:00Z');
@@ -54,6 +58,8 @@ export class TestWorkspace {
     this.settingsFolder = join(this.dataFolder, 'Settings');
     this.stateFolder = join(root, STATE_DIR_NAME);
     this.database = join(this.stateFolder, 'pero.sqlite');
+    this.envFile = join(root, '.env');
+    this.gitignore = join(root, '.gitignore');
     mkdirSync(this.settingsFolder, { recursive: true });
     mkdirSync(this.stateFolder, { recursive: true });
   }
@@ -68,7 +74,6 @@ export class TestWorkspace {
     return HostConfigModule.forRoot({
       file: join(this.stateFolder, HOST_CONFIG_FILE),
       workspace: this.root,
-      base: this.root,
     });
   }
 

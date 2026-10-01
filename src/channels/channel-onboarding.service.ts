@@ -44,12 +44,10 @@ export function welcomeText(
 
 /**
  * Records each new Channel in an allowed chat, and welcomes it when an
- * Agent answers there. In a workspace, notes choose that Agent on every
- * message, and Pero writes the note that answers a topic no Agent claims
- * (with `new-topics: create-agent`) and the main Agent's when a primary
- * Channel finds none; a renamed topic's title follows in the note that
- * claims it. A legacy data directory has no Agents: its Channels are
- * only recorded.
+ * Agent answers there. Notes choose that Agent on every message, and Pero
+ * writes the note that answers a topic no Agent claims (with
+ * `new-topics: create-agent`) and the main Agent's when a primary Channel
+ * finds none; a renamed topic's title follows in the note that claims it.
  */
 @Injectable()
 export class ChannelOnboardingService extends ChannelOnboarding {

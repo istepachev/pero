@@ -16,7 +16,7 @@ export const LOG_LEVELS = [
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-/** Pero's own folder inside a workspace, and the legacy data directory's name. */
+/** Pero's own folder inside a workspace. */
 export const STATE_DIR_NAME = '.pero';
 
 /** The workspace tried when none is found from the current folder. */
@@ -24,13 +24,10 @@ export const DEFAULT_WORKSPACE_NAME = 'workspace';
 
 /** Settings the process needs before it can open its state directory. */
 export interface BootstrapConfig {
-  /**
-   * Absolute path of the state directory: `<workspace>/.pero`, or a legacy
-   * data directory.
-   */
-  dataDir: string;
-  /** Absolute path of the workspace; null for a legacy data directory. */
-  workspace: string | null;
+  /** Absolute path of the workspace. */
+  workspace: string;
+  /** Absolute path of its state directory, `<workspace>/.pero`. */
+  stateDir: string;
   logLevel: LogLevel;
 }
 
@@ -44,8 +41,6 @@ export interface DiscoveryFs {
 export interface BootstrapConfigInput {
   /** Value of the `--workspace` option, if given. */
   workspace?: string;
-  /** Value of the `--data-dir` option, if given. */
-  dataDir?: string;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   homeDir?: string;
@@ -58,8 +53,8 @@ export class ConfigError extends Error {
 }
 
 /**
- * Nothing names a workspace, none is found, and there is no legacy
- * `~/.pero`: Pero has nothing to work on until `pero init` makes one.
+ * Nothing names a workspace and none is found: Pero has nothing to work
+ * on until `pero init` makes one.
  */
 export class NoWorkspaceError extends ConfigError {
   override name = 'NoWorkspaceError';
@@ -90,33 +85,21 @@ const path = z
   .refine((value) => !value.includes('\0'), 'must not contain a NUL byte');
 
 // Keys are the names the owner typed, so issues can be reported verbatim.
-const sources = z
-  .object({
-    '--workspace': path.optional(),
-    '--data-dir': path.optional(),
-    PERO_WORKSPACE: path.optional(),
-    PERO_HOME: path.optional(),
-    PERO_LOG_LEVEL: z
-      .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
-      .optional(),
-  })
-  .refine(
-    (values) =>
-      values['--workspace'] === undefined || values['--data-dir'] === undefined,
-    {
-      path: ['--workspace'],
-      message: 'cannot be combined with --data-dir; give one of them',
-    },
-  );
+const sources = z.object({
+  '--workspace': path.optional(),
+  PERO_WORKSPACE: path.optional(),
+  PERO_LOG_LEVEL: z
+    .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
+    .optional(),
+});
 
 /**
  * Resolves bootstrap configuration. Explicit choices come first: the
- * `--workspace` or `--data-dir` option, then `PERO_WORKSPACE`, then
- * `PERO_HOME`. Otherwise the workspace is the nearest folder holding
- * `.pero/`, from `cwd` upward (the home folder itself never counts: its
- * `.pero` is the legacy data directory), then `~/workspace` when it holds
- * `.pero/`, and finally the legacy data directory `~/.pero` when it
- * exists. With none of them, it throws `NoWorkspaceError`.
+ * `--workspace` option, then `PERO_WORKSPACE`. Otherwise the workspace is
+ * the nearest folder holding `.pero/`, from `cwd` upward, then
+ * `~/workspace` when it holds `.pero/`. The home folder itself never
+ * counts, since every folder under it would resolve to it. With none of
+ * them, it throws `NoWorkspaceError`.
  *
  * A leading `~` is expanded and relative paths resolve against `cwd`. A
  * workspace is identified by its real path, so a symlinked folder is the
@@ -132,9 +115,7 @@ export function resolveBootstrapConfig(
 
   const parsed = sources.safeParse({
     '--workspace': input.workspace,
-    '--data-dir': input.dataDir,
     PERO_WORKSPACE: env.PERO_WORKSPACE,
-    PERO_HOME: env.PERO_HOME,
     PERO_LOG_LEVEL: env.PERO_LOG_LEVEL,
   });
   if (!parsed.success) {
@@ -148,31 +129,17 @@ export function resolveBootstrapConfig(
   const logLevel = values.PERO_LOG_LEVEL ?? 'info';
   const inWorkspace = (dir: string): BootstrapConfig => {
     const workspace = canonical(resolvePath(dir, cwd, home), fs);
-    return { dataDir: join(workspace, STATE_DIR_NAME), workspace, logLevel };
+    return { workspace, stateDir: join(workspace, STATE_DIR_NAME), logLevel };
   };
-  const legacy = (dir: string): BootstrapConfig => ({
-    dataDir: resolvePath(dir, cwd, home),
-    workspace: null,
-    logLevel,
-  });
 
-  if (values['--workspace'] !== undefined) {
-    return inWorkspace(values['--workspace']);
-  }
-  if (values['--data-dir'] !== undefined) return legacy(values['--data-dir']);
-  if (values.PERO_WORKSPACE !== undefined) {
-    return inWorkspace(values.PERO_WORKSPACE);
-  }
-  if (values.PERO_HOME !== undefined) return legacy(values.PERO_HOME);
+  const named = values['--workspace'] ?? values.PERO_WORKSPACE;
+  if (named !== undefined) return inWorkspace(named);
 
   const found = findWorkspace(resolve(cwd), home, fs);
   if (found !== null) return inWorkspace(found);
   const fallback = join(home, DEFAULT_WORKSPACE_NAME);
   if (fs.isDirectory(join(fallback, STATE_DIR_NAME))) {
     return inWorkspace(fallback);
-  }
-  if (fs.isDirectory(join(home, STATE_DIR_NAME))) {
-    return legacy(join(home, STATE_DIR_NAME));
   }
   throw new NoWorkspaceError(suggestedWorkspace(cwd, home, fs));
 }

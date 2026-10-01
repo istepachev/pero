@@ -36,7 +36,6 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
   /** Runs `pero` from `cwd` with `home` as the home folder. */
   function pero(args: string[], cwd = home): Promise<Result> {
     const {
-      PERO_HOME: _home,
       PERO_WORKSPACE: _workspace,
       PERO_TELEGRAM_BOT_TOKEN: _token,
       ...env
@@ -148,15 +147,5 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     const result = await pero(['check']);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('Create one with: pero init');
-  });
-
-  it('refuses a legacy data directory, which has no notes', async () => {
-    const legacy = join(home, 'legacy');
-    mkdirSync(legacy);
-    const result = await pero(['--data-dir', legacy, 'check']);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toBe(
-      `${legacy} is a legacy data directory: its Agents and Workflows are in its database, and there are no notes to check\n`,
-    );
   });
 });

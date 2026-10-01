@@ -1,7 +1,6 @@
 import { Command } from 'nest-commander';
 import { PACKAGE_VERSION } from '../../common/package-version.js';
 import { NoWorkspaceError } from '../../config/bootstrap-config.js';
-import { describeLocation } from '../../config/data-dir.js';
 import { gitEnvFileProblem } from '../../config/env-file.js';
 import { DaemonNotRunningError } from '../../control/client.js';
 import { CliError } from '../errors.js';
@@ -26,10 +25,7 @@ export class StatusCommand extends PeroCommand {
       throw new CliError(error.message, NOT_RUNNING_EXIT_CODE);
     }
     // Checked here, not by the daemon, so it holds whether Pero runs or not.
-    const problem =
-      layout.workspace === null
-        ? null
-        : await gitEnvFileProblem(layout.workspace);
+    const problem = await gitEnvFileProblem(layout.workspace);
     try {
       const status = await this.client().status();
       console.log(formatStatus(status, PACKAGE_VERSION));
@@ -37,7 +33,7 @@ export class StatusCommand extends PeroCommand {
       if (!(error instanceof DaemonNotRunningError)) throw error;
       if (problem !== null) console.error(`Error: ${problem}`);
       throw new CliError(
-        `Pero isn't running (${describeLocation(layout)})`,
+        `Pero isn't running (workspace ${layout.workspace})`,
         NOT_RUNNING_EXIT_CODE,
       );
     }

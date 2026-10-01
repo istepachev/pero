@@ -10,7 +10,6 @@ export function formatAgentList(agents: readonly AgentView[]): string {
   if (agents.length === 0) {
     return 'No Agents yet. Add a note to the Agents folder in the settings folder.';
   }
-  const notes = agents.some((agent) => agent.file !== null);
   const lines = table([
     [
       'NAME',
@@ -20,7 +19,8 @@ export function formatAgentList(agents: readonly AgentView[]): string {
       'FOLDER',
       'PERMISSIONS',
       'STATE',
-      ...(notes ? ['TOPICS', 'NOTE'] : []),
+      'TOPICS',
+      'NOTE',
     ],
     ...agents.map((agent) => [
       `${agent.name}${agent.main ? ' *' : ''}${agent.errors.length > 0 ? ' !' : ''}`,
@@ -30,7 +30,8 @@ export function formatAgentList(agents: readonly AgentView[]): string {
       folder(agent),
       agent.permissions,
       agent.enabled ? 'enabled' : 'disabled',
-      ...(notes ? [agent.topics.join(', ') || '—', agent.file ?? '—'] : []),
+      agent.topics.join(', ') || '—',
+      agent.file,
     ]),
   ]);
   const footnotes = [
@@ -49,27 +50,23 @@ export function formatAgentList(agents: readonly AgentView[]): string {
 
 /** `pero agents show`: settings, then each Channel's next turn. */
 export function formatAgentDetails(agent: AgentDetails): string {
-  const from = (origin: ValueOrigin | undefined) =>
+  const from = (origin: ValueOrigin) =>
     origin === 'pero' ? ' (Pero.md)' : origin === 'default' ? ' (default)' : '';
-  const option = (value: string | null, origin: ValueOrigin | undefined) =>
+  const option = (value: string | null, origin: ValueOrigin) =>
     value === null ? '(provider default)' : `${value}${from(origin)}`;
   const { origins } = agent;
   const lines = [
     `Agent ${agent.name}${agent.title === null ? '' : ` "${agent.title}"`}`,
     ...table([
-      ...(agent.file === null
-        ? []
-        : [
-            ['note', agent.file],
-            ['topics', agent.topics.join(', ') || '(none)'],
-          ]),
-      ['provider', `${agent.provider}${from(origins?.provider)}`],
-      ['model', option(agent.model, origins?.model)],
-      ['effort', option(agent.effort, origins?.effort)],
+      ['note', agent.file],
+      ['topics', agent.topics.join(', ') || '(none)'],
+      ['provider', `${agent.provider}${from(origins.provider)}`],
+      ['model', option(agent.model, origins.model)],
+      ['effort', option(agent.effort, origins.effort)],
       ['working directory', folder(agent)],
       ['instructions', preview(agent.instructions)],
       ['shared instructions', agent.useSharedInstructions ? 'on' : 'off'],
-      ['permissions', `${agent.permissions}${from(origins?.permissions)}`],
+      ['permissions', `${agent.permissions}${from(origins.permissions)}`],
       ['codex git check', agent.codexSkipGitRepoCheck ? 'skipped' : 'required'],
       ['state', agent.enabled ? 'enabled' : 'disabled'],
       [
@@ -130,5 +127,5 @@ export function describeNextTurn(turn: NextTurn): string {
 
 function folder(agent: AgentView): string {
   if (agent.workingDirectory !== null) return agent.effectiveWorkingDirectory;
-  return `${agent.effectiveWorkingDirectory} (${agent.origins === null ? 'default' : 'data folder'})`;
+  return `${agent.effectiveWorkingDirectory} (data folder)`;
 }

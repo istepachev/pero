@@ -22,8 +22,8 @@ export interface Defaults {
   historyRetentionDays: number | null;
   /** Upper bound on Workflow Runs executing at once. */
   maxConcurrentRuns: number;
-  /** Where Agents without a folder of their own work; null until set. */
-  dataFolder: string | null;
+  /** Where Agents without a folder of their own work. */
+  dataFolder: string;
   /** Placed before each opted-in Agent's own instructions; null for none. */
   sharedInstructions: string | null;
 }
@@ -75,8 +75,6 @@ export interface WorkflowDefinition {
 
 /** A Channel as routing sees it. */
 export interface RouteQuery {
-  /** Its ID, which a legacy data directory routes by. */
-  id: number;
   /** A group's General topic, a group without topics, or a direct chat. */
   primary: boolean;
   /** The topic's title; null while Pero hasn't seen it. */
@@ -88,12 +86,10 @@ export interface RouteQuery {
  * its chat's; a topic's adds the topic's ID after a colon.
  */
 export function routeQuery(channel: {
-  id: number;
   externalKey: string;
   title: string | null;
 }): RouteQuery {
   return {
-    id: channel.id,
     primary: !channel.externalKey.includes(':'),
     title: channel.title,
   };
@@ -115,9 +111,7 @@ export type Unanswered =
   /** Pero hasn't seen the topic's title yet, so nothing can claim it. */
   | { kind: 'untitled' }
   /** No note defines the main Agent; `note` is the one to add. */
-  | { kind: 'no-main-agent'; agent: string; note: string }
-  /** A legacy data directory has no Agents: only a workspace's notes define them. */
-  | { kind: 'legacy' };
+  | { kind: 'no-main-agent'; agent: string; note: string };
 
 /** Who answers in a Channel now: an enabled Agent, or no one and why. */
 export type Route =
@@ -139,19 +133,16 @@ export abstract class Definitions {
   /** Every Agent, by name. */
   abstract agents(): Promise<AgentDefinition[]>;
 
-  /** The Agent primary Channels get; null while none is chosen. */
+  /** The Agent primary Channels get; null while no note defines it. */
   abstract mainAgent(): Promise<AgentDefinition | null>;
 
-  /**
-   * The name of the Agent primary Channels get, even while it is not
-   * defined; null while none is chosen.
-   */
-  abstract mainAgentName(): Promise<string | null>;
+  /** The name of the Agent primary Channels get, even while it is not defined. */
+  abstract mainAgentName(): Promise<string>;
 
   /**
-   * Who answers in `channel` now. In a workspace, a primary Channel gets
-   * the main Agent, and a topic the Agent whose `topics` claims its title;
-   * `new-topics` decides an unclaimed one.
+   * Who answers in `channel` now. A primary Channel gets the main Agent,
+   * and a topic the Agent whose `topics` claims its title; `new-topics`
+   * decides an unclaimed one.
    */
   abstract route(channel: RouteQuery): Promise<Route>;
 

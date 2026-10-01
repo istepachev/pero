@@ -4,13 +4,17 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
-import { dataDirLayout, type DataDirLayout } from '../src/config/data-dir.js';
+import {
+  type WorkspaceLayout,
+  workspaceLayout,
+} from '../src/config/workspace-layout.js';
 import { createControlClient } from '../src/control/client.js';
 import {
   findRunningDaemon,
@@ -29,14 +33,14 @@ interface DaemonProcess {
 
 describe('Daemon lifecycle (e2e)', { timeout: 30_000 }, () => {
   let tmp: string;
-  let layout: DataDirLayout;
+  let layout: WorkspaceLayout;
   let inProcess: Daemon | undefined;
   const children: ChildProcess[] = [];
 
   beforeEach(() => {
     // Short: macOS limits socket paths to 104 bytes.
-    tmp = mkdtempSync(join(tmpdir(), 'pero-'));
-    layout = dataDirLayout(join(tmp, 'pero'));
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-')));
+    layout = workspaceLayout(join(tmp, 'ws'));
   });
 
   afterEach(async () => {
@@ -54,7 +58,10 @@ describe('Daemon lifecycle (e2e)', { timeout: 30_000 }, () => {
 
   function startInProcess() {
     return startDaemon({
-      config: resolveBootstrapConfig({ dataDir: layout.root, env: {} }),
+      config: resolveBootstrapConfig({
+        workspace: layout.workspace,
+        env: {},
+      }),
       foreground: false,
     });
   }
@@ -62,7 +69,7 @@ describe('Daemon lifecycle (e2e)', { timeout: 30_000 }, () => {
   function spawnDaemon(): DaemonProcess {
     const child = spawn(
       process.execPath,
-      [DAEMON_MAIN, '--data-dir', layout.root],
+      [DAEMON_MAIN, '--workspace', layout.workspace],
       { stdio: ['ignore', 'ignore', 'pipe'] },
     );
     children.push(child);
@@ -109,14 +116,14 @@ describe('Daemon lifecycle (e2e)', { timeout: 30_000 }, () => {
     });
   }
 
-  it('refuses a second daemon on the same data directory', async () => {
+  it('refuses a second daemon on the same workspace', async () => {
     inProcess = await startInProcess();
 
     const second = spawnDaemon();
 
     await expect(second.exited).resolves.toEqual({ code: 1, signal: null });
     expect(second.stderr().trim()).toBe(
-      `Pero is already running for data directory ${layout.root} (pid ${process.pid})`,
+      `Pero is already running for workspace ${layout.workspace} (pid ${process.pid})`,
     );
     const client = createControlClient(layout.controlSocket);
     await expect(client.status()).resolves.toMatchObject({

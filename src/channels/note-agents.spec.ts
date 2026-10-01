@@ -10,15 +10,11 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { getDataSourceToken } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
 import { Definitions } from '../definitions/definitions.js';
-import { FileDefinitions } from '../definitions/file-definitions.js';
 import { HostConfigModule } from '../host-config/host-config.module.js';
-import { LegacyChannelAgent } from '../persistence/entities/legacy-channel-agent.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { SettingsNotes } from '../settings-notes/settings-notes.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
@@ -46,7 +42,6 @@ const OWNER = privateChat('1234');
 describe('Topic routing by notes in a workspace', () => {
   let workspace: string;
   let moduleRef: TestingModule;
-  let ds: DataSource;
   let adapter: FakeChannelAdapter;
   /** Each write gets a later modification time, whatever the clock. */
   let clock: number;
@@ -97,7 +92,6 @@ describe('Topic routing by notes in a workspace', () => {
         HostConfigModule.forRoot({
           file: join(workspace, '.pero', 'config.yaml'),
           workspace,
-          base: workspace,
         }),
         AgentsModule,
         ChannelsModule,
@@ -108,7 +102,6 @@ describe('Topic routing by notes in a workspace', () => {
       .useValue(turns)
       .compile();
     await moduleRef.init();
-    ds = moduleRef.get<DataSource>(getDataSourceToken());
     const allowedChats = moduleRef.get(AllowedChatsService);
     for (const chat of [GROUP, OWNER]) {
       await allowedChats.allow({
@@ -146,7 +139,6 @@ describe('Topic routing by notes in a workspace', () => {
   }
 
   it('reads the Agents from the notes', async () => {
-    expect(moduleRef.get(Definitions)).toBe(moduleRef.get(FileDefinitions));
     const coach = await moduleRef.get(Definitions).agent('coach');
     expect(coach).toMatchObject({
       name: 'coach',
@@ -156,7 +148,7 @@ describe('Topic routing by notes in a workspace', () => {
     });
   });
 
-  it('sends General topics and direct chats to the main Agent, and stores no route', async () => {
+  it('sends General topics and direct chats to the main Agent', async () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'Hi' }));
     await adapter.deliver(inboundMessage(GROUP, { text: 'Hi' }));
 
@@ -165,7 +157,6 @@ describe('Topic routing by notes in a workspace', () => {
       expect.stringMatching(/^This chat talks to Agent coach: claude/),
       expect.stringMatching(/^This chat talks to Agent coach: claude/),
     ]);
-    expect(await ds.getRepository(LegacyChannelAgent).count()).toBe(0);
   });
 
   it('sends a topic to the Agent that claims its title', async () => {

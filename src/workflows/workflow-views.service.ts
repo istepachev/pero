@@ -46,7 +46,8 @@ export class WorkflowViews {
       if (workflow === null) throw missingWorkflow(this.notes, name);
       return [workflow];
     });
-    return view!;
+    if (view === undefined) throw missingWorkflow(this.notes, name);
+    return view;
   }
 
   private async views(
@@ -74,23 +75,28 @@ export class WorkflowViews {
         manager,
         workflows.length === 1 ? workflows[0]!.name : undefined,
       );
-      return workflows.map((workflow) =>
-        this.view(
-          workflow,
-          agents.get(workflow.agent) ?? null,
-          channels,
-          states,
-        ),
-      );
+      return workflows
+        .map((workflow) =>
+          this.view(
+            workflow,
+            agents.get(workflow.agent) ?? null,
+            channels,
+            states,
+          ),
+        )
+        .filter((view) => view !== null);
     });
   }
 
+  /** `workflow` as the CLI shows it; null when a rescan since removed its note. */
   private view(
     workflow: WorkflowDefinition,
     agent: AgentDefinition | null,
     channels: ReadonlyMap<number, WorkflowChannelView>,
     states: ReadonlyMap<string, ScheduleTimes>,
-  ): WorkflowView {
+  ): WorkflowView | null {
+    const note = this.note(workflow.name);
+    if (note === null) return null;
     const named = (ids: readonly number[]) =>
       ids.flatMap((id) => {
         const channel = channels.get(id);
@@ -100,7 +106,7 @@ export class WorkflowViews {
     return {
       name: workflow.name,
       title: workflow.title,
-      ...this.note(workflow.name),
+      ...note,
       agent: workflow.agent,
       agentEnabled: agent?.enabled ?? false,
       inputTemplate: workflow.input,
@@ -129,14 +135,12 @@ export class WorkflowViews {
     };
   }
 
-  /** The note of the Workflow named `name`, and its errors. */
-  private note(name: string): Pick<WorkflowView, 'file' | 'errors'> {
+  /** The note of the Workflow named `name`, and its errors; null if none. */
+  private note(name: string): Pick<WorkflowView, 'file' | 'errors'> | null {
     const snapshot = this.notes.snapshot();
     const folders = this.notes.folders();
     const note = snapshot?.workflows.get(name);
-    if (snapshot === null || folders === null || note === undefined) {
-      return { file: null, errors: [] };
-    }
+    if (snapshot === null || note === undefined) return null;
     return {
       file: shownPath(
         folders.workspace,
@@ -159,7 +163,7 @@ export function missingWorkflow(
 ): NotFoundError {
   const snapshot = notes.snapshot();
   const folders = notes.folders();
-  if (snapshot !== null && folders !== null) {
+  if (snapshot !== null) {
     const broken = findWorkflowNote(
       snapshot.errors.map((error) => error.file),
       name,

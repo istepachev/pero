@@ -5,7 +5,7 @@ import {
   NotFoundError,
 } from '../common/errors.js';
 import { ConfigError } from '../config/bootstrap-config.js';
-import { DataDirError } from '../config/data-dir.js';
+import { StateDirError } from '../config/workspace-layout.js';
 import { EnvFilePermissionError } from '../config/env-file.js';
 import { WorkspaceInitError } from '../config/workspace-skeleton.js';
 import { DaemonNotRunningError } from '../control/client.js';
@@ -27,7 +27,7 @@ export class CliError extends Error {
 const EXPECTED_ERRORS = [
   CliError,
   ConfigError,
-  DataDirError,
+  StateDirError,
   DaemonNotRunningError,
   ControlError,
   InvalidInputError,

@@ -22,7 +22,8 @@ function status(components: ComponentStatus[]): StatusResult {
   return {
     pid: 1,
     version: '0.0.0',
-    dataDir: '/home/owner/.pero',
+    workspace: '/home/owner/workspace',
+    stateDir: '/home/owner/workspace/.pero',
     startedAt: since,
     uptimeMs: 0,
     health: 'degraded',
@@ -51,7 +52,7 @@ const settings: SettingsView = {
 };
 
 describe('pendingSetup', () => {
-  it('lists the migration a legacy data directory needs, Telegram, and providers in use', () => {
+  it('lists Telegram and the providers in use', () => {
     const pending = pendingSetup(
       status([
         component(
@@ -62,13 +63,12 @@ describe('pendingSetup', () => {
         component('codex', 'unconfigured', 'Not signed in', false),
         component('telegram', 'unconfigured', 'Bot token is not set'),
       ]),
-      { ...settings, files: null },
+      settings,
     );
 
     expect(formatPendingSetup(pending)).toBe(
       [
         'Setup needed:',
-        '  This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
         '  Telegram: Bot token is not set — pero settings set telegram-bot-token (reads it from stdin), or start Pero with PERO_TELEGRAM_BOT_TOKEN',
         '  claude: Not signed in — run claude auth login, then pero run to check again',
         'Run pero run in a terminal to set these up step by step.',
@@ -87,7 +87,7 @@ describe('pendingSetup', () => {
         {
           ...settings,
           defaultWorkingDirectory: '/home/owner/notes',
-          telegramBotToken: { set: true, source: 'secrets' },
+          telegramBotToken: { set: true, source: 'env-file' },
         },
       ),
     ).toEqual([]);
@@ -103,7 +103,7 @@ describe('pendingSetup', () => {
         {
           ...settings,
           defaultWorkingDirectory: '/home/owner/notes',
-          telegramBotToken: { set: true, source: 'secrets' },
+          telegramBotToken: { set: true, source: 'env-file' },
         },
       ),
     ).toEqual([]);
@@ -122,7 +122,7 @@ describe('pendingSetup', () => {
       {
         ...settings,
         defaultWorkingDirectory: '/home/owner/notes',
-        telegramBotToken: { set: true, source: 'secrets' },
+        telegramBotToken: { set: true, source: 'env-file' },
       },
     );
 
@@ -160,7 +160,7 @@ describe('pendingSetup', () => {
     const configured: SettingsView = {
       ...settings,
       defaultWorkingDirectory: '/home/owner/notes',
-      telegramBotToken: { set: true, source: 'secrets' },
+      telegramBotToken: { set: true, source: 'env-file' },
     };
     const none: TelegramChats = { bot: 'pero_bot', allowed: [], pairing: [] };
 

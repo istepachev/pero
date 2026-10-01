@@ -3,7 +3,10 @@ import {
   type BootstrapConfig,
   resolveBootstrapConfig,
 } from '../config/bootstrap-config.js';
-import { dataDirLayout, type DataDirLayout } from '../config/data-dir.js';
+import {
+  type WorkspaceLayout,
+  workspaceLayout,
+} from '../config/workspace-layout.js';
 import {
   type ControlClient,
   type ControlClientOptions,
@@ -23,19 +26,17 @@ export interface DaemonConnection {
 /** Base for `pero` commands: resolves the workspace and the daemon. */
 export abstract class PeroCommand extends CommandRunner {
   /**
-   * Bootstrap configuration from `--workspace` or `--data-dir`, the
-   * environment, or the workspace found from the current folder.
+   * Bootstrap configuration from `--workspace`, the environment, or the
+   * workspace found from the current folder.
    */
   protected config(): BootstrapConfig {
-    const { workspace, dataDir } =
-      this.command.optsWithGlobals<GlobalOptions>();
-    return resolveBootstrapConfig({ workspace, dataDir });
+    const { workspace } = this.command.optsWithGlobals<GlobalOptions>();
+    return resolveBootstrapConfig({ workspace });
   }
 
-  /** The state directory's paths; nothing is created. */
-  protected layout(): DataDirLayout {
-    const { dataDir, workspace } = this.config();
-    return dataDirLayout(dataDir, workspace);
+  /** The workspace's paths; nothing is created. */
+  protected layout(): WorkspaceLayout {
+    return workspaceLayout(this.config().workspace);
   }
 
   /**

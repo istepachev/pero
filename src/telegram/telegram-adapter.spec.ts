@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -44,7 +44,6 @@ const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 
 describe('TelegramAdapter', () => {
   let ws: TestWorkspace;
-  let secretsDir: string;
   let api: FakeBotApi;
   let runtime: FakeAgentRuntime;
   let moduleRef: TestingModule | undefined;
@@ -53,8 +52,6 @@ describe('TelegramAdapter', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-telegram-');
     await ws.agent('Main');
-    secretsDir = join(ws.root, 'secrets');
-    mkdirSync(secretsDir, { mode: 0o700 });
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
@@ -82,7 +79,8 @@ describe('TelegramAdapter', () => {
         AgentsModule,
         ChannelsModule,
         TelegramModule.forRoot({
-          secretsDir,
+          envFile: ws.envFile,
+          gitignore: ws.gitignore,
           env: options.env ?? { PERO_TELEGRAM_BOT_TOKEN: TOKEN },
           apiRoot: api.url,
         }),

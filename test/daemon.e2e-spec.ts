@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -9,18 +10,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
-import { STATE_GITIGNORE } from '../src/config/data-dir.js';
+import { STATE_GITIGNORE } from '../src/config/workspace-layout.js';
 import { createControlClient } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 
 describe('Daemon startup (e2e)', () => {
   let tmp: string;
-  let dataDir: string;
+  let workspace: string;
+  let state: string;
   let daemon: Daemon | undefined;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-daemon-'));
-    dataDir = join(tmp, 'pero');
+    workspace = join(realpathSync(tmp), 'ws');
+    state = join(workspace, '.pero');
   });
 
   afterEach(async () => {
@@ -30,11 +33,11 @@ describe('Daemon startup (e2e)', () => {
   });
 
   function config() {
-    return resolveBootstrapConfig({ dataDir, env: {} });
+    return resolveBootstrapConfig({ workspace, env: {} });
   }
 
   function logEntries(): Record<string, unknown>[] {
-    return readFileSync(join(dataDir, 'logs', 'pero.log'), 'utf8')
+    return readFileSync(join(state, 'logs', 'pero.log'), 'utf8')
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -45,15 +48,19 @@ describe('Daemon startup (e2e)', () => {
     msg: expect.stringMatching(/^Applied migration /),
   });
 
-  it('creates the data directory layout and writes JSON logs', async () => {
+  it('keeps its state in the .pero folder of the workspace, with JSON logs', async () => {
     daemon = await startDaemon({ config: config(), foreground: false });
 
-    for (const dir of ['logs', 'run', 'secrets']) {
-      expect(statSync(join(dataDir, dir)).isDirectory()).toBe(true);
+    for (const dir of ['logs', 'run']) {
+      expect(statSync(join(state, dir)).isDirectory()).toBe(true);
     }
-    expect(statSync(join(dataDir, 'pero.sqlite')).isFile()).toBe(true);
-    expect(statSync(join(dataDir, 'run', 'pero.sock')).isSocket()).toBe(true);
-    expect(statSync(join(dataDir, 'run', 'pero.json')).isFile()).toBe(true);
+    expect(existsSync(join(state, 'secrets'))).toBe(false);
+    expect(statSync(join(state, 'pero.sqlite')).isFile()).toBe(true);
+    expect(statSync(join(state, 'run', 'pero.sock')).isSocket()).toBe(true);
+    expect(statSync(join(state, 'run', 'pero.json')).isFile()).toBe(true);
+    expect(readFileSync(join(state, '.gitignore'), 'utf8')).toBe(
+      STATE_GITIGNORE,
+    );
 
     const entries = logEntries();
     expect(entries).toContainEqual(appliedMigration);
@@ -61,30 +68,13 @@ describe('Daemon startup (e2e)', () => {
       level: 30,
       msg: 'Pero daemon started',
       pid: process.pid,
-      dataDir,
-      socket: join(dataDir, 'run', 'pero.sock'),
+      workspace,
+      socket: join(state, 'run', 'pero.sock'),
     });
-  });
-
-  it('keeps its state in the .pero folder of a workspace', async () => {
-    const workspace = join(realpathSync(tmp), 'ws');
-    daemon = await startDaemon({
-      config: resolveBootstrapConfig({ workspace, env: {} }),
-      foreground: false,
-    });
-    const state = join(workspace, '.pero');
-
-    for (const dir of ['logs', 'run']) {
-      expect(statSync(join(state, dir)).isDirectory()).toBe(true);
-    }
-    expect(statSync(join(state, 'pero.sqlite')).isFile()).toBe(true);
-    expect(readFileSync(join(state, '.gitignore'), 'utf8')).toBe(
-      STATE_GITIGNORE,
-    );
     const client = createControlClient(join(state, 'run', 'pero.sock'));
     await expect(client.status()).resolves.toMatchObject({
-      dataDir: state,
       workspace,
+      stateDir: state,
     });
   });
 
@@ -98,7 +88,7 @@ describe('Daemon startup (e2e)', () => {
     const secondRun = logEntries().slice(firstRun);
     expect(secondRun).not.toContainEqual(appliedMigration);
     expect(secondRun.at(-1)).toMatchObject({ msg: 'Pero daemon started' });
-    const client = createControlClient(join(dataDir, 'run', 'pero.sock'));
-    await expect(client.status()).resolves.toMatchObject({ dataDir });
+    const client = createControlClient(join(state, 'run', 'pero.sock'));
+    await expect(client.status()).resolves.toMatchObject({ workspace });
   });
 });

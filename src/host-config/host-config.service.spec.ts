@@ -12,12 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { getDataSourceToken } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '../config/bootstrap-config.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { PersistenceModule } from '../persistence/persistence.module.js';
 import { HostConfigModule } from './host-config.module.js';
 import {
   type AllowedChatsChange,
@@ -26,14 +23,12 @@ import {
 
 describe('HostConfigService', () => {
   let tmp: string;
-  let database: string;
   let workspace: string;
   let file: string;
   let moduleRef: TestingModule | undefined;
 
   beforeEach(() => {
     tmp = realpathSync(mkdtempSync(join(tmpdir(), 'pero-host-')));
-    database = join(tmp, 'pero.sqlite');
     workspace = join(tmp, 'ws');
     file = join(workspace, '.pero', 'config.yaml');
     mkdirSync(join(workspace, '.pero'), { recursive: true });
@@ -46,36 +41,9 @@ describe('HostConfigService', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Opens the database without the service, to arrange rows first. */
-  async function withDatabase(
-    arrange: (dataSource: DataSource) => Promise<unknown>,
-  ): Promise<void> {
-    const ref = await Test.createTestingModule({
-      imports: [PersistenceModule.forRoot({ database })],
-    }).compile();
-    await ref.init();
-    await arrange(ref.get<DataSource>(getDataSourceToken()));
-    await ref.close();
-  }
-
-  async function start(
-    options: { legacy?: boolean } = {},
-  ): Promise<HostConfigService> {
-    const legacyDir = join(tmp, 'legacy');
-    mkdirSync(legacyDir, { recursive: true });
+  async function start(): Promise<HostConfigService> {
     moduleRef = await Test.createTestingModule({
-      imports: [
-        PersistenceModule.forRoot({ database }),
-        HostConfigModule.forRoot(
-          options.legacy
-            ? {
-                file: join(legacyDir, 'config.yaml'),
-                workspace: null,
-                base: legacyDir,
-              }
-            : { file, workspace, base: workspace },
-        ),
-      ],
+      imports: [HostConfigModule.forRoot({ file, workspace })],
     }).compile();
     await moduleRef.init();
     return moduleRef.get(HostConfigService);
@@ -83,25 +51,6 @@ describe('HostConfigService', () => {
 
   /** The data folder the running Pero uses. */
   const dataFolder = () => moduleRef!.get(HostConfigService).dataFolder();
-
-  /** Sets the default working directory a legacy installation kept. */
-  const setLegacyFolder = (dataSource: DataSource, folder: string) =>
-    dataSource.query(
-      `UPDATE "legacy_settings" SET "default_working_directory" = ?`,
-      [folder],
-    );
-
-  /** Adds a chat a legacy installation allowed but hasn't moved yet. */
-  const allowLegacyChat = (
-    dataSource: DataSource,
-    chatKey: string,
-    title: string | null,
-  ) =>
-    dataSource.query(
-      `INSERT INTO "legacy_allowed_chats" ("integration_kind", "chat_key", "kind", "title") ` +
-        `VALUES ('telegram', ?, ?, ?)`,
-      [chatKey, chatKey.startsWith('-') ? 'group' : 'private', title],
-    );
 
   it('creates config.yaml with the data folder once, in a new workspace', async () => {
     await start();
@@ -114,48 +63,6 @@ describe('HostConfigService', () => {
     writeFileSync(file, `${readFileSync(file, 'utf8')}# kept\n`);
     await start();
     expect(readFileSync(file, 'utf8')).toMatch(/# kept\n$/);
-  });
-
-  it('carries the default working directory and allowed chats over once', async () => {
-    const vault = join(workspace, 'vault');
-    mkdirSync(vault);
-    await withDatabase(async (dataSource) => {
-      await setLegacyFolder(dataSource, vault);
-      await allowLegacyChat(dataSource, '-1009007199254740993', 'Home');
-      await allowLegacyChat(dataSource, '123456789', null);
-    });
-
-    const service = await start();
-
-    expect(service.allowedChats()).toEqual([
-      { chatKey: '-1009007199254740993', title: 'Home' },
-      { chatKey: '123456789', title: null },
-    ]);
-    const text = readFileSync(file, 'utf8');
-    expect(text).toContain('\ndata: vault\n');
-    expect(text).toContain(
-      '    - id: -1009007199254740993\n      title: Home\n    - id: 123456789\n',
-    );
-    const dataSource = moduleRef!.get<DataSource>(getDataSourceToken());
-    expect(
-      await dataSource.query(`SELECT * FROM "legacy_allowed_chats"`),
-    ).toEqual([]);
-    expect(dataFolder()).toBe(vault);
-
-    // Denied by hand, it stays denied on the next start.
-    await moduleRef!.close();
-    writeFileSync(file, text.replace(/ {4}- id: 123456789\n/, ''));
-    expect((await start()).allowedChats()).toHaveLength(1);
-  });
-
-  it('adds rows found later, such as from a restored database, to the file', async () => {
-    await start();
-    await moduleRef!.close();
-    await withDatabase((dataSource) => allowLegacyChat(dataSource, '42', null));
-
-    const service = await start();
-
-    expect(service.allowedChats()).toEqual([{ chatKey: '42', title: null }]);
   });
 
   it('serves the data folder config.yaml names', async () => {
@@ -313,28 +220,6 @@ describe('HostConfigService', () => {
         detail: `${file} is missing; the last valid version stays in use`,
       });
       errors.mockRestore();
-    });
-  });
-
-  describe('in a legacy data directory', () => {
-    it('leaves data unset without a default working directory', async () => {
-      await start({ legacy: true });
-
-      const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
-      expect(text).toContain('\n# data: data\n');
-      expect(dataFolder()).toBeNull();
-      expect(moduleRef!.get(HostConfigService).folders()).toBeNull();
-    });
-
-    it('writes the default working directory as an absolute path, and only warns when it is gone', async () => {
-      const vault = join(tmp, 'vault');
-      await withDatabase((dataSource) => setLegacyFolder(dataSource, vault));
-
-      await start({ legacy: true });
-
-      const text = readFileSync(join(tmp, 'legacy', 'config.yaml'), 'utf8');
-      expect(text).toContain(`\ndata: ${vault}\n`);
-      expect(dataFolder()).toBe(vault);
     });
   });
 });

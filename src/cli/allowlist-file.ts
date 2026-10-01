@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { InvalidInputError, NotFoundError } from '../common/errors.js';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import {
   allowChat,
   chatKindOf,
@@ -20,18 +20,18 @@ import type { AllowedChatView } from '../control/protocol.js';
 
 /** Adds chat `chatId` to `config.yaml`, creating the file if needed. */
 export function allowInFile(
-  layout: DataDirLayout,
+  layout: WorkspaceLayout,
   chatId: string,
 ): { chat: AllowedChatView; alreadyAllowed: boolean } {
   const chatKey = checkChatId(chatId);
-  mkdirSync(layout.root, { recursive: true, mode: 0o700 });
+  mkdirSync(layout.stateDir, { recursive: true, mode: 0o700 });
   let added = false;
   const config = editHostConfig(
     layout.configFile,
     (document) => {
       added = allowChat(document, chatKey, null);
     },
-    () => defaultHostConfig(layout.workspace === null ? { data: null } : {}),
+    () => defaultHostConfig(),
   );
   const entry = config.allowedChats.find((chat) => chat.chatKey === chatKey);
   return { chat: view(chatKey, entry?.title ?? null), alreadyAllowed: !added };
@@ -39,7 +39,7 @@ export function allowInFile(
 
 /** Removes chat `chatId` from `config.yaml`; throws when it isn't there. */
 export function denyInFile(
-  layout: DataDirLayout,
+  layout: WorkspaceLayout,
   chatId: string,
 ): { chat: AllowedChatView } {
   const chatKey = checkChatId(chatId);

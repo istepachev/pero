@@ -12,7 +12,6 @@ import { ConfigError } from './bootstrap-config.js';
 import {
   allowChat,
   chatKindOf,
-  dataFolderValue,
   defaultHostConfig,
   denyChat,
   editHostConfig,
@@ -62,9 +61,6 @@ describe('parseHostConfig', () => {
       settings: null,
       allowedChats: [],
     });
-    expect(
-      parseHostConfig('config.yaml', defaultHostConfig({ data: null })).data,
-    ).toBeNull();
   });
 
   it('names the file, line, and key of each problem', () => {
@@ -241,13 +237,10 @@ describe('config.yaml on disk', () => {
 
 describe('data folder', () => {
   it('resolves relative to the workspace, with data/ by default', () => {
-    expect(resolveDataFolder({ data: null }, '/ws', true)).toBe('/ws/data');
-    expect(resolveDataFolder({ data: 'vault' }, '/ws', true)).toBe('/ws/vault');
-    expect(resolveDataFolder({ data: '~/notes' }, '/ws', true, '/home/o')).toBe(
+    expect(resolveDataFolder({ data: null }, '/ws')).toBe('/ws/data');
+    expect(resolveDataFolder({ data: 'vault' }, '/ws')).toBe('/ws/vault');
+    expect(resolveDataFolder({ data: '~/notes' }, '/ws', '/home/o')).toBe(
       '/home/o/notes',
-    );
-    expect(resolveDataFolder({ data: null }, '/home/o/.pero', false)).toBe(
-      null,
     );
   });
 
@@ -266,13 +259,6 @@ describe('data folder', () => {
     expect(settings({ data: null, settings: '/srv/settings' })).toBe(
       '/srv/settings',
     );
-  });
-
-  it('is written relative to the workspace when inside it', () => {
-    expect(dataFolderValue('/ws/data', '/ws')).toBe('data');
-    expect(dataFolderValue('/ws', '/ws')).toBe('.');
-    expect(dataFolderValue('/srv/notes', '/ws')).toBe('/srv/notes');
-    expect(dataFolderValue('/ws/data', null)).toBe('/ws/data');
   });
 });
 

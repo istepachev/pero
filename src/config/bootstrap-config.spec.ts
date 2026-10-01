@@ -28,27 +28,19 @@ function fakeFs(...dirs: string[]): DiscoveryFs {
   };
 }
 
-/** Resolves on a machine where only the legacy `~/.pero` exists. */
+/** Resolves from `/work`, the only workspace on the machine. */
 function resolve(input: BootstrapConfigInput = {}) {
   return resolveBootstrapConfig({
     env: {},
     cwd,
     homeDir: home,
-    fs: fakeFs('/home/owner/.pero'),
+    fs: fakeFs('/work/.pero'),
     ...input,
   });
 }
 
 describe('resolveBootstrapConfig', () => {
-  it('defaults to the legacy ~/.pero and info logs', () => {
-    expect(resolve()).toEqual({
-      dataDir: '/home/owner/.pero',
-      workspace: null,
-      logLevel: 'info',
-    });
-  });
-
-  it('asks for pero init when there is no workspace and no ~/.pero', () => {
+  it('asks for pero init when no workspace is found', () => {
     const none = (dir: string) => () => resolve({ cwd: dir, fs: fakeFs() });
 
     expect(none('/work/notes')).toThrow(NoWorkspaceError);
@@ -66,32 +58,25 @@ describe('resolveBootstrapConfig', () => {
     expect.assertions(3);
   });
 
-  it('uses --workspace, keeping state in its .pero', () => {
+  it('uses --workspace, keeping state in its .pero, and info logs', () => {
     expect(resolve({ workspace: '~/notes' })).toEqual({
-      dataDir: '/home/owner/notes/.pero',
       workspace: '/home/owner/notes',
+      stateDir: '/home/owner/notes/.pero',
       logLevel: 'info',
     });
   });
 
-  it('refuses --workspace together with --data-dir', () => {
-    expect(() => resolve({ workspace: '/ws', dataDir: '/srv/pero' })).toThrow(
-      '--workspace: cannot be combined with --data-dir; give one of them',
-    );
+  it('prefers --workspace, then PERO_WORKSPACE', () => {
+    const env = { PERO_WORKSPACE: '/srv/ws' };
+    expect(resolve({ env, workspace: 'here' }).workspace).toBe('/work/here');
+    expect(resolve({ env }).workspace).toBe('/srv/ws');
   });
 
-  it('prefers options, then PERO_WORKSPACE, then PERO_HOME', () => {
-    const env = { PERO_WORKSPACE: '/ws', PERO_HOME: '/srv/pero' };
-    expect(resolve({ env, dataDir: '/opt/pero' })).toMatchObject({
-      dataDir: '/opt/pero',
-      workspace: null,
-    });
-    expect(resolve({ env, workspace: 'here' }).workspace).toBe('/work/here');
-    expect(resolve({ env }).workspace).toBe('/ws');
-    expect(resolve({ env: { PERO_HOME: '/srv/pero' } })).toMatchObject({
-      dataDir: '/srv/pero',
-      workspace: null,
-    });
+  it('ignores PERO_HOME', () => {
+    const fs = fakeFs('/home/owner/.pero', '/srv/pero');
+    expect(() => resolve({ fs, env: { PERO_HOME: '/srv/pero' } })).toThrow(
+      NoWorkspaceError,
+    );
   });
 
   it('finds the nearest folder with .pero/ from the current folder up', () => {
@@ -104,18 +89,17 @@ describe('resolveBootstrapConfig', () => {
 
   it('prefers an explicit choice over a workspace found from here', () => {
     const fs = fakeFs('/work/.pero');
-    expect(resolve({ fs, env: { PERO_HOME: '/srv/pero' } }).workspace).toBe(
-      null,
+    expect(resolve({ fs, env: { PERO_WORKSPACE: '/ws' } }).workspace).toBe(
+      '/ws',
     );
     expect(resolve({ fs }).workspace).toBe('/work');
   });
 
   it('never takes the home folder for a workspace', () => {
     const fs = fakeFs('/home/owner/.pero');
-    expect(resolve({ cwd: '/home/owner/notes', fs })).toMatchObject({
-      dataDir: '/home/owner/.pero',
-      workspace: null,
-    });
+    expect(() => resolve({ cwd: '/home/owner/notes', fs })).toThrow(
+      NoWorkspaceError,
+    );
   });
 
   it('falls back to ~/workspace when it holds .pero/', () => {
@@ -123,44 +107,35 @@ describe('resolveBootstrapConfig', () => {
     expect(resolve({ fs }).workspace).toBe('/home/owner/workspace');
   });
 
-  it('uses PERO_HOME over the default', () => {
-    expect(resolve({ env: { PERO_HOME: '/srv/pero' } }).dataDir).toBe(
-      '/srv/pero',
-    );
-  });
-
-  it('uses --data-dir over PERO_HOME', () => {
-    const config = resolve({
-      dataDir: '/opt/pero',
-      env: { PERO_HOME: '/srv/pero' },
-    });
-    expect(config.dataDir).toBe('/opt/pero');
-  });
-
   it('resolves relative paths against cwd and expands ~', () => {
-    expect(resolve({ dataDir: 'data/../pero' }).dataDir).toBe('/work/pero');
-    expect(resolve({ env: { PERO_HOME: '~/alt' } }).dataDir).toBe(
+    expect(resolve({ workspace: 'data/../ws' }).workspace).toBe('/work/ws');
+    expect(resolve({ env: { PERO_WORKSPACE: '~/alt' } }).workspace).toBe(
       '/home/owner/alt',
     );
-    expect(resolve({ dataDir: '~' }).dataDir).toBe('/home/owner');
   });
 
   it('normalizes absolute paths and trims whitespace', () => {
-    expect(resolve({ dataDir: ' /srv//pero/ ' }).dataDir).toBe('/srv/pero');
+    expect(resolve({ workspace: ' /srv//ws/ ' }).stateDir).toBe(
+      '/srv/ws/.pero',
+    );
   });
 
   it('reads the log level from the environment', () => {
-    const config = resolve({ env: { PERO_LOG_LEVEL: 'debug' } });
-    expect(config.logLevel).toBe('debug');
+    expect(resolve({ env: { PERO_LOG_LEVEL: 'debug' } })).toEqual({
+      workspace: '/work',
+      stateDir: '/work/.pero',
+      logLevel: 'debug',
+    });
   });
 
   it.each([
-    [{ dataDir: '' }, '--data-dir: must not be empty'],
-    [{ dataDir: '   ' }, '--data-dir: must not be empty'],
-    [{ env: { PERO_HOME: '' } }, 'PERO_HOME: must not be empty'],
+    [{ workspace: '' }, '--workspace: must not be empty'],
     [{ workspace: ' ' }, '--workspace: must not be empty'],
     [{ env: { PERO_WORKSPACE: '' } }, 'PERO_WORKSPACE: must not be empty'],
-    [{ env: { PERO_HOME: 'a\0b' } }, 'PERO_HOME: must not contain a NUL byte'],
+    [
+      { env: { PERO_WORKSPACE: 'a\0b' } },
+      'PERO_WORKSPACE: must not contain a NUL byte',
+    ],
     [
       { env: { PERO_LOG_LEVEL: 'loud' } },
       'PERO_LOG_LEVEL: must be one of fatal, error, warn, info, debug, trace',
@@ -175,16 +150,16 @@ describe('resolveBootstrapConfig', () => {
 
   it('rejects an invalid option even when a valid fallback exists', () => {
     expect(() =>
-      resolve({ dataDir: '', env: { PERO_HOME: '/srv/pero' } }),
-    ).toThrow('--data-dir: must not be empty');
+      resolve({ workspace: '', env: { PERO_WORKSPACE: '/ws' } }),
+    ).toThrow('--workspace: must not be empty');
   });
 
   it('reports every invalid value at once', () => {
     expect(() =>
-      resolve({ env: { PERO_HOME: '', PERO_LOG_LEVEL: 'loud' } }),
+      resolve({ env: { PERO_WORKSPACE: '', PERO_LOG_LEVEL: 'loud' } }),
     ).toThrow(
       'Invalid configuration:\n' +
-        '  PERO_HOME: must not be empty\n' +
+        '  PERO_WORKSPACE: must not be empty\n' +
         '  PERO_LOG_LEVEL: must be one of fatal, error, warn, info, debug, trace',
     );
   });
@@ -211,8 +186,8 @@ describe('workspace discovery on disk', () => {
     mkdirSync(join(repo, 'pero', 'data', 'Notes'), { recursive: true });
 
     expect(resolveIn({ cwd: join(repo, 'pero', 'data', 'Notes') })).toEqual({
-      dataDir: join(repo, 'pero', '.pero'),
       workspace: join(repo, 'pero'),
+      stateDir: join(repo, 'pero', '.pero'),
       logLevel: 'info',
     });
   });
@@ -245,9 +220,8 @@ describe('workspace discovery on disk', () => {
     mkdirSync(join(tmp, 'var-home', 'notes'));
     symlinkSync(join(tmp, 'var-home'), join(tmp, 'home'));
 
-    expect(resolveIn({ cwd: join(tmp, 'var-home', 'notes') })).toMatchObject({
-      dataDir: join(tmp, 'home', '.pero'),
-      workspace: null,
-    });
+    expect(() => resolveIn({ cwd: join(tmp, 'var-home', 'notes') })).toThrow(
+      NoWorkspaceError,
+    );
   });
 });

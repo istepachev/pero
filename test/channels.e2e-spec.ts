@@ -20,8 +20,6 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
-import { unansweredText } from '../src/channels/channel-stages.js';
-import { LegacyChannelAgent } from '../src/persistence/entities/legacy-channel-agent.entity.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import { SettingsNotes } from '../src/settings-notes/settings-notes.service.js';
 import {
@@ -319,45 +317,5 @@ describe('Channels (e2e)', () => {
     await expect(client.call('channels.history', { id: 99 })).rejects.toThrow(
       NotFoundError,
     );
-  });
-
-  describe('in a legacy data directory', () => {
-    it('records its Channels, and says once in each that Pero needs a workspace', async () => {
-      const dataDir = join(tmp, 'pero');
-      const legacy = createControlClient(join(dataDir, 'run', 'pero.sock'));
-      daemon = await startDaemon({
-        config: resolveBootstrapConfig({ dataDir, env: {} }),
-        foreground: false,
-        env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
-      });
-      await legacy.call('settings.update', { telegramBotToken: TOKEN });
-      await vi.waitFor(async () =>
-        expect((await legacy.call('telegram.chats')).bot).toBe('pero_test_bot'),
-      );
-      await legacy.call('telegram.allow', { chatId: String(FORUM.id) });
-
-      createTopic(GROCERIES, 'Groceries');
-      await handled(inTopic(GROCERIES, { text: 'Milk' }));
-
-      expect(api.sent().map((payload) => payload.text)).toEqual([
-        unansweredText({ kind: 'legacy' }),
-      ]);
-      const { channels } = await legacy.call('channels.list');
-      expect(channels).toEqual([
-        expect.objectContaining({
-          key: `${FORUM.id}:${GROCERIES}`,
-          agent: null,
-          unanswered:
-            'a legacy data directory has no Agents; make a workspace with pero init <folder>',
-        }),
-      ]);
-      expect((await legacy.call('agents.list')).agents).toEqual([]);
-      expect(
-        await daemon.app
-          .get<DataSource>(getDataSourceToken())
-          .getRepository(LegacyChannelAgent)
-          .count(),
-      ).toBe(0);
-    });
   });
 });

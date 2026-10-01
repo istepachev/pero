@@ -10,7 +10,7 @@ prefix="$work/prefix"
 export HOME="$work/home"
 export npm_config_prefix="$prefix"
 export PATH="$prefix/bin:$PATH"
-unset PERO_HOME PERO_WORKSPACE PERO_TELEGRAM_BOT_TOKEN
+unset PERO_WORKSPACE PERO_TELEGRAM_BOT_TOKEN
 mkdir -p "$HOME" "$prefix"
 
 cleanup() {

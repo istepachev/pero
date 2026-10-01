@@ -26,9 +26,7 @@ const KEY_LIST = KEYS.join(', ');
 export class SettingsShowCommand extends PeroCommand {
   async run(): Promise<void> {
     const { client } = await this.requireDaemon();
-    console.log(
-      formatSettings(await client.call('settings.get'), this.config().dataDir),
-    );
+    console.log(formatSettings(await client.call('settings.get')));
   }
 }
 

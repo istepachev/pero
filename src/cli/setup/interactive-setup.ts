@@ -231,7 +231,7 @@ async function checkProviders(
   const other = PROVIDERS.find((p) => p !== settings.defaultProvider);
   print(
     `Default provider: ${settings.defaultProvider}` +
-      (other && settings.files !== null
+      (other
         ? ` (change with provider: ${other} in ${settings.files.pero})`
         : ''),
   );

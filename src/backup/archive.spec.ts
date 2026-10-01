@@ -200,9 +200,9 @@ describe('backup archive', () => {
   });
 
   it('rejects entries a backup never has', async () => {
-    for (const entry of ['extra.txt', 'secrets/telegram-bot-token']) {
+    for (const entry of ['extra.txt', 'logs/pero.log']) {
       stage();
-      mkdirSync(join(staging, 'secrets'), { recursive: true });
+      mkdirSync(join(staging, 'logs'), { recursive: true });
       writeFileSync(join(staging, entry), 'x');
 
       const file = await rawArchive([MANIFEST_ENTRY, DATABASE_ENTRY, entry]);

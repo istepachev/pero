@@ -20,23 +20,17 @@ const notes: AgentView = {
   codexSkipGitRepoCheck: false,
   enabled: true,
   main: true,
-  file: null,
+  file: 'data/Settings/Agents/Notes.md',
   topics: [],
-  origins: null,
-  errors: [],
-};
-
-const fromNote = {
-  model: 'opus',
-  file: 'data/Settings/Agents/Main.md',
   origins: {
     provider: 'default',
-    model: 'pero',
+    model: 'default',
     effort: 'default',
     permissions: 'default',
     workingDirectory: 'data',
   },
-} satisfies Partial<AgentView>;
+  errors: [],
+};
 
 const health: AgentView = {
   ...notes,
@@ -80,6 +74,15 @@ const coder: AgentView = {
   codexSkipGitRepoCheck: true,
   enabled: false,
   main: false,
+  file: 'data/Settings/Agents/Coder.md',
+  topics: ['Code'],
+  origins: {
+    provider: 'note',
+    model: 'note',
+    effort: 'note',
+    permissions: 'note',
+    workingDirectory: 'note',
+  },
 };
 
 const resume = {
@@ -91,12 +94,12 @@ const resume = {
 };
 
 describe('formatAgentList', () => {
-  it('lists each Agent with the main one marked', () => {
+  it('lists each Agent with its topics and note, the main one marked', () => {
     expect(formatAgentList([coder, notes])).toBe(
       [
-        'NAME     PROVIDER  MODEL    EFFORT   FOLDER            PERMISSIONS  STATE',
-        'coder    codex     gpt-5.5  high     /srv/code         bypass       disabled',
-        'notes *  claude    default  default  /vault (default)  ask          enabled',
+        'NAME     PROVIDER  MODEL    EFFORT   FOLDER                PERMISSIONS  STATE     TOPICS  NOTE',
+        'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code    data/Settings/Agents/Coder.md',
+        'notes *  claude    default  default  /vault (data folder)  ask          enabled   —       data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
       ].join('\n'),
@@ -109,12 +112,12 @@ describe('formatAgentList', () => {
     );
   });
 
-  it('shows the topics and note of each, and marks notes with errors', () => {
-    expect(formatAgentList([health, { ...notes, ...fromNote }])).toBe(
+  it('marks notes with errors', () => {
+    expect(formatAgentList([health, { ...notes, model: 'opus' }])).toBe(
       [
         'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPICS           NOTE',
         'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health, Running  data/Settings/Agents/Health.md',
-        'notes *   claude    opus    default  /vault (data folder)  ask          enabled  —                data/Settings/Agents/Main.md',
+        'notes *   claude    opus    default  /vault (data folder)  ask          enabled  —                data/Settings/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
         '! its note has errors, so its last good version is in use; pero check lists them',
@@ -123,7 +126,7 @@ describe('formatAgentList', () => {
   });
 });
 
-describe('formatAgentDetails in a workspace', () => {
+describe('formatAgentDetails', () => {
   it('shows the note, its topics, where each value comes from, and its errors', () => {
     expect(
       formatAgentDetails({
@@ -154,9 +157,7 @@ describe('formatAgentDetails in a workspace', () => {
       ].join('\n'),
     );
   });
-});
 
-describe('formatAgentDetails', () => {
   it("shows the settings and each Channel's next turn", () => {
     const details: AgentDetails = {
       ...coder,
@@ -187,6 +188,8 @@ describe('formatAgentDetails', () => {
     expect(formatAgentDetails(details)).toBe(
       [
         'Agent coder "Coder"',
+        '  note                 data/Settings/Agents/Coder.md',
+        '  topics               Code',
         '  provider             codex',
         '  model                gpt-5.5',
         '  effort               high',

@@ -69,7 +69,8 @@ describe('daemon metadata', () => {
     metadata = {
       pid: 4321,
       version: '1.2.3',
-      dataDir: '/srv/pero',
+      workspace: '/srv/ws',
+      stateDir: '/srv/ws/.pero',
       socket: join(tmp, 'pero.sock'),
       startedAt: '2026-09-28T00:00:00.000Z',
     };
@@ -85,7 +86,8 @@ describe('daemon metadata', () => {
     const status: StatusResult = {
       pid,
       version: metadata.version,
-      dataDir: metadata.dataDir,
+      workspace: metadata.workspace,
+      stateDir: metadata.stateDir,
       startedAt: metadata.startedAt,
       uptimeMs: 1,
       health: 'ok',

@@ -3,7 +3,6 @@ import {
   Injectable,
   Logger,
   type OnModuleInit,
-  Optional,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { createHash } from 'node:crypto';
@@ -65,13 +64,11 @@ export class BrokenNoteReports
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notes: SettingsNotes,
     private readonly sender: ChannelSender,
-    // Absent only in tests that need no notes: as in a legacy data directory.
-    @Optional() private readonly hostConfig?: HostConfigService,
+    private readonly hostConfig: HostConfigService,
   ) {}
 
   /** Takes the notes broken at startup as known, then follows each change. */
   async onModuleInit(): Promise<void> {
-    if (!this.notes.inWorkspace()) return;
     await this.notes.ready();
     this.known = new Set(this.notes.broken().map(versionKey));
     this.stopListening = this.notes.onChange(({ snapshot }) =>
@@ -110,7 +107,6 @@ export class BrokenNoteReports
     snapshot: SettingsSnapshot,
   ): Promise<void> {
     const folders = this.notes.folders();
-    if (folders === null || this.hostConfig === undefined) return;
     const allowed = this.hostConfig.allowedChats();
     const channels = await allowedChannels(this.dataSource, allowed);
     const lookup = channelTopicLookup(channels);

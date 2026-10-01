@@ -54,7 +54,7 @@ describe('configOrNewWorkspace', () => {
 
     await expect(result).resolves.toMatchObject({
       workspace: join(home, 'workspace'),
-      dataDir: join(home, 'workspace', '.pero'),
+      stateDir: join(home, 'workspace', '.pero'),
     });
     expect(confirm).toHaveBeenCalledWith({
       message: `No Pero workspace found. Create one in ${join(home, 'workspace')}?`,

@@ -17,9 +17,8 @@ export interface PendingSetup {
 }
 
 /**
- * What stands between the daemon and a working installation: a workspace,
- * since a legacy data directory has no Agents, the Telegram bot token, a
- * Telegram chat to serve, and sign-in for each provider in use. Providers
+ * What stands between the daemon and a working installation: the Telegram
+ * bot token, a Telegram chat to serve, and sign-in for each provider in use. Providers
  * no Agent uses are left out. Without `chats`, as from a daemon too old
  * to list them, the chat is too.
  */
@@ -29,14 +28,6 @@ export function pendingSetup(
   chats: TelegramChats | null = null,
 ): PendingSetup[] {
   const pending: PendingSetup[] = [];
-  if (settings.files === null) {
-    pending.push({
-      name: 'workspace',
-      message:
-        'This legacy data directory has no Agents — pero init <folder> makes a workspace, whose notes define them',
-    });
-  }
-
   const component = (name: string) =>
     status.components.find((candidate) => candidate.name === name);
   // Only a missing or rejected token needs setup; a connection that is

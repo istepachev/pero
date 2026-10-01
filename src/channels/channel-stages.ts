@@ -66,11 +66,6 @@ export function unansweredText(reason: Unanswered): string {
         `No one answers here: no note defines the main Agent, ` +
         `${reason.agent}. Add ${reason.note}.`
       );
-    case 'legacy':
-      return (
-        `Pero isn't answering yet: its owner needs to make a workspace ` +
-        `on the Pero host, whose notes define its Agents.`
-      );
   }
 }
 
@@ -89,8 +84,6 @@ export function unansweredSummary(reason: Unanswered): string {
       return "the topic's title isn't known yet";
     case 'no-main-agent':
       return `no note defines the main Agent, ${reason.agent}; add ${reason.note}`;
-    case 'legacy':
-      return 'a legacy data directory has no Agents; make a workspace with pero init <folder>';
   }
 }
 

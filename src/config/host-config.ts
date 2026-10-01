@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import {
   type Document,
   isMap,
@@ -20,8 +20,8 @@ import { ConfigError, resolvePath } from './bootstrap-config.js';
 /*
  * `config.yaml` holds what describes this installation and that an Agent
  * working in the data folder must not change: where the data folder is, and
- * which chats Pero serves. It lives in the state directory (a workspace's
- * `.pero/`, or a legacy data directory) and is meant to be committed.
+ * which chats Pero serves. It lives in the workspace's `.pero/` and is meant
+ * to be committed.
  */
 
 /** The file's name inside the state directory. */
@@ -221,22 +221,15 @@ export function moveChatId(
   return true;
 }
 
-/**
- * The commented `config.yaml` a new installation starts with. `data` is
- * the data folder to write; null leaves it commented out, as for a legacy
- * data directory without a default working directory.
- */
-export function defaultHostConfig(
-  options: { data?: string | null } = {},
-): string {
-  const data = options.data === undefined ? DEFAULT_DATA_FOLDER : options.data;
+/** The commented `config.yaml` a new workspace starts with. */
+export function defaultHostConfig(): string {
   return [
     "# Pero's host settings: where the data folder is and which chats Pero",
     '# serves. Commit this file; the bot token belongs in .env, never here.',
     '',
     '# Data folder: the vault Agents work in. Relative to the workspace.',
     '# Changing it takes a restart.',
-    data === null ? '# data: data' : `data: ${quoteScalar(data)}`,
+    `data: ${DEFAULT_DATA_FOLDER}`,
     '',
     '# Settings folder. Relative to the workspace. Default: <data>/Settings',
     '# settings: data/Settings',
@@ -255,18 +248,14 @@ export function defaultHostConfig(
 
 /**
  * The data folder `config` names, as an absolute path. A relative path is
- * taken from `base`: the workspace, or a legacy data directory. Without
- * `data`, a workspace uses its `data/` folder and a legacy data directory
- * has none (null).
+ * taken from `workspace`. Without `data`, it is the workspace's `data/`.
  */
 export function resolveDataFolder(
   config: Pick<HostConfig, 'data'>,
-  base: string,
-  workspace: boolean,
+  workspace: string,
   home: string = homedir(),
-): string | null {
-  const data = config.data ?? (workspace ? DEFAULT_DATA_FOLDER : null);
-  return data === null ? null : resolvePath(data, base, home);
+): string {
+  return resolvePath(config.data ?? DEFAULT_DATA_FOLDER, workspace, home);
 }
 
 /**
@@ -281,31 +270,12 @@ export function resolveSettingsFolder(
   if (config.settings !== null) {
     return resolvePath(config.settings, workspace, home);
   }
-  return join(
-    resolveDataFolder(config, workspace, true, home)!,
-    SETTINGS_FOLDER,
-  );
+  return join(resolveDataFolder(config, workspace, home), SETTINGS_FOLDER);
 }
 
-/**
- * How to write data folder `folder` (absolute) in `config.yaml`: relative
- * to the workspace when it is inside it, so a cloned workspace keeps
- * working; absolute otherwise, and always in a legacy data directory.
- */
-export function dataFolderValue(
-  folder: string,
-  workspace: string | null,
-): string {
-  if (workspace === null) return folder;
-  const inside = relative(workspace, folder);
-  if (inside === '') return '.';
-  if (inside.startsWith('..') || isAbsolute(inside)) return folder;
-  return inside;
-}
-
-/** `config.yaml` in state directory `root`. */
-export function hostConfigPath(root: string): string {
-  return join(root, HOST_CONFIG_FILE);
+/** `config.yaml` in state directory `stateDir`. */
+export function hostConfigPath(stateDir: string): string {
+  return join(stateDir, HOST_CONFIG_FILE);
 }
 
 interface Parsed {
@@ -415,10 +385,6 @@ function allowedChatsNode(document: Document): YAMLSeq {
 function idOf(entry: YAMLMap): string | null {
   const id: unknown = entry.get('id');
   return typeof id === 'bigint' || typeof id === 'string' ? String(id) : null;
-}
-
-function quoteScalar(value: string): string {
-  return /^[\w./~-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 function readText(path: string): string | null {

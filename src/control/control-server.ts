@@ -1,7 +1,7 @@
 import { chmodSync, rmSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import type { LoggerService } from '@nestjs/common';
-import { MAX_SOCKET_PATH_BYTES } from '../config/data-dir.js';
+import { MAX_SOCKET_PATH_BYTES } from '../config/workspace-layout.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -63,10 +63,10 @@ export class ControlServer {
     const length = Buffer.byteLength(socketPath);
     if (length > MAX_SOCKET_PATH_BYTES) {
       throw new ControlSocketError(
-        `Control socket path is too long (${length} bytes, at most ${MAX_SOCKET_PATH_BYTES}): ${socketPath}. Choose a shorter data directory.`,
+        `Control socket path is too long (${length} bytes, at most ${MAX_SOCKET_PATH_BYTES}): ${socketPath}. Choose a workspace with a shorter path.`,
       );
     }
-    // The daemon holds the data directory's lock, so a socket already here
+    // The daemon holds the workspace's lock, so a socket already here
     // is left over from a crash.
     rmSync(socketPath, { force: true });
 

@@ -24,7 +24,7 @@ export class BackupCommand extends PeroCommand {
       ...(options.includeData ? { includeData: true } : {}),
     });
     console.log(
-      `Backed up ${this.layout().root}${result.includesData ? ' and the data folder' : ''} to ${result.file} (${formatBytes(result.bytes)})`,
+      `Backed up ${this.layout().stateDir}${result.includesData ? ' and the data folder' : ''} to ${result.file} (${formatBytes(result.bytes)})`,
     );
   }
 

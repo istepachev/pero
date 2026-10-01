@@ -253,11 +253,3 @@ export function channelHint(
       return `${prefix}, so a Channel isn't disabled on its own: set enabled: false in the note of the Agent that answers there, or take the title out of its topics; ${seen}.`;
   }
 }
-
-/** What a stub says in a legacy data directory, which has no notes. */
-export function legacyHint(dataDir: string): string {
-  return (
-    `${dataDir} is a legacy data directory, which has no Agents any more. ` +
-    'Make a workspace with pero init <folder>, whose notes define them.'
-  );
-}

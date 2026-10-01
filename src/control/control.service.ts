@@ -10,7 +10,7 @@ import { BackupService } from '../backup/backup.service.js';
 import { ChannelViews } from '../channels/channel-views.service.js';
 import { parseInput } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
-import type { DataDirLayout } from '../config/data-dir.js';
+import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import {
   type SettingsChange,
   settingsChangeSchema,
@@ -47,7 +47,7 @@ export class ControlService implements OnModuleDestroy {
   private shutdownRequested = false;
 
   constructor(
-    @Inject(CONTROL_LAYOUT) private readonly layout: DataDirLayout,
+    @Inject(CONTROL_LAYOUT) private readonly layout: WorkspaceLayout,
     private readonly health: ComponentHealth,
     private readonly telegram: TelegramCredentials,
     private readonly telegramChats: TelegramChats,
@@ -128,8 +128,8 @@ export class ControlService implements OnModuleDestroy {
     return {
       pid: process.pid,
       version: PACKAGE_VERSION,
-      dataDir: this.layout.root,
       workspace: this.layout.workspace,
+      stateDir: this.layout.stateDir,
       startedAt: this.startedAt.toISOString(),
       uptimeMs: Math.max(0, Date.now() - this.startedAt.getTime()),
       health: this.health.overall(),
@@ -137,10 +137,7 @@ export class ControlService implements OnModuleDestroy {
     };
   }
 
-  /**
-   * The settings in effect: a workspace's `Pero.md` and `config.yaml`, or
-   * the defaults a legacy data directory kept, which can't be changed.
-   */
+  /** The settings in effect: the workspace's `Pero.md` and `config.yaml`. */
   async settingsView(): Promise<SettingsView> {
     const defaults = await this.definitions.defaults();
     const snapshot = await this.notes.ready();
@@ -160,16 +157,13 @@ export class ControlService implements OnModuleDestroy {
         set: this.telegram.token() !== null,
         source: this.telegram.source(),
       },
-      files:
-        folders === null
-          ? null
-          : {
-              pero: shownPath(
-                folders.workspace,
-                join(folders.settingsFolder, PERO_NOTE),
-              ),
-              config: shownPath(folders.workspace, this.layout.configFile),
-            },
+      files: {
+        pero: shownPath(
+          folders.workspace,
+          join(folders.settingsFolder, PERO_NOTE),
+        ),
+        config: shownPath(folders.workspace, this.layout.configFile),
+      },
       newTopics: snapshot?.defaults.newTopics ?? null,
       setInPero: snapshot === null ? null : [...snapshot.peroProperties].sort(),
     };
