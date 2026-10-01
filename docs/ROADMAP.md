@@ -6,8 +6,6 @@ What comes next for Pero.
 
 - **Protect `.env` and `.pero/` in the edit policy.** A Claude `ask` Agent edits files in its folder without asking, except the settings folder and tool files such as `.claude/` and `.git/`. An Agent whose folder is the workspace root, such as with `data: .`, can therefore edit the bot token in `.env` and the allowed chats in `.pero/config.yaml` without asking. The edit policy should ask for those too; until it does, [Configuring Pero](./CONFIGURATION.md) advises a data folder of its own.
 
-- **Workflow commands in Telegram.** `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry`, with menus that pick a Workflow or run when none, or an unknown one, is named.
-
 ## Decided against
 
 | Question | Answer |

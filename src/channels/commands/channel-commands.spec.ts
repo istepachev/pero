@@ -390,7 +390,7 @@ describe('ChannelCommands', () => {
     expect(last().message.text).toContain('/status — ');
     expect(labels(last())).toEqual([
       ['Status', 'New session', 'Stop'],
-      ['Model', 'Effort'],
+      ['Model', 'Effort', 'Workflows'],
     ]);
   });
 
