@@ -50,7 +50,7 @@ interface RunOptions {
   name: 'run',
   arguments: '<name>',
   description:
-    "Run a Workflow now, whatever its trigger, and print the Agent's answer",
+    "Run a Workflow now, with a schedule or without, and print the Agent's answer",
   argsDescription: NAME,
 })
 export class WorkflowsRunCommand extends PeroCommand {

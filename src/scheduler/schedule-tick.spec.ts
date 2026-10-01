@@ -80,21 +80,21 @@ describe('ScheduleTick', () => {
   }
 
   /**
-   * Makes the definitions give Workflow `name` the schedules `schedules`
+   * Makes the definitions give Workflow `name` the schedule `schedule`
    * instead of its note's, as no note can.
    */
-  function defineSchedules(name: string, schedules: Schedule[]): void {
+  function defineSchedule(name: string, schedule: Schedule): void {
     const definitions = moduleRef.get(Definitions);
     const workflows = definitions.workflows.bind(definitions);
     const workflow = definitions.workflow.bind(definitions);
     vi.spyOn(definitions, 'workflows').mockImplementation(async () =>
       (await workflows()).map((defined) =>
-        defined.name === name ? { ...defined, schedules } : defined,
+        defined.name === name ? { ...defined, schedule } : defined,
       ),
     );
     vi.spyOn(definitions, 'workflow').mockImplementation(async (wanted) => {
       const defined = await workflow(wanted);
-      return defined?.name === name ? { ...defined, schedules } : defined;
+      return defined?.name === name ? { ...defined, schedule } : defined;
     });
   }
 
@@ -394,9 +394,9 @@ describe('ScheduleTick', () => {
     });
   });
 
-  it('drops the saved times of a schedule turned manual, which starts nothing', async () => {
+  it('drops the saved times of a schedule taken out of its note, which starts nothing', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
-    await ws.editWorkflow('brief', { trigger: 'manual' });
+    await ws.editWorkflow('brief', { cron: null, timezone: null });
 
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
 
@@ -418,7 +418,7 @@ describe('ScheduleTick', () => {
     ]);
     expect((await allRuns()).map((run) => run.workflowName)).toEqual(['kept']);
     expect(log).toHaveBeenCalledWith(
-      'A schedule of Workflow removed is no longer defined; its saved times are dropped',
+      'The schedule Workflow removed had is no longer defined; its saved times are dropped',
     );
   });
 
@@ -465,64 +465,11 @@ describe('ScheduleTick', () => {
     );
   });
 
-  it('keeps the times of each schedule of a Workflow with several', async () => {
-    await scheduled('brief', '2026-09-28T09:00:00Z', '0 9 * * *');
-    defineSchedules('brief', [
-      { cron: '0 9 * * *', timezone: 'UTC' },
-      { cron: '0 18 * * *', timezone: 'UTC' },
-    ]);
-
-    await scheduler.tick(new Date('2026-09-28T09:00:01Z'));
-    await executor.idle();
-
-    expect(
-      (await allStates()).map((row) => [row.fingerprint, row.nextRunAt]),
-    ).toEqual(
-      expect.arrayContaining([
-        [
-          scheduleFingerprint({ cron: '0 9 * * *', timezone: 'UTC' }),
-          new Date('2026-09-29T09:00:00Z'),
-        ],
-        [
-          scheduleFingerprint({ cron: '0 18 * * *', timezone: 'UTC' }),
-          expect.any(Date),
-        ],
-      ]),
-    );
-    expect((await allRuns()).map((run) => run.triggerKey)).toEqual([
-      'schedule:brief:2026-09-28T09:00:00.000Z',
-    ]);
-  });
-
-  it('queues one run for schedules of a Workflow due at the same time', async () => {
-    await scheduled('brief', '2026-09-28T09:00:00Z', '0 9 * * *');
-    defineSchedules('brief', [
-      { cron: '0 9 * * *', timezone: 'UTC' },
-      { cron: '0 9 * * 1', timezone: 'UTC' },
-    ]);
-    await reconcile();
-    await ds
-      .getRepository(ScheduleState)
-      .update(
-        { workflowName: 'brief' },
-        { nextRunAt: new Date('2026-09-28T09:00:00Z') },
-      );
-
-    const now = new Date('2026-09-28T09:00:01Z');
-    await scheduler.tick(now);
-    await executor.idle();
-
-    expect(
-      (await allRuns()).map((run) => [run.triggerKey, run.skippedCount]),
-    ).toEqual([['schedule:brief:2026-09-28T09:00:00.000Z', 0]]);
-    expect((await allStates()).map((row) => row.lastRunAt)).toEqual([now, now]);
-  });
-
   it('keeps starting other schedules when one cannot be computed', async () => {
     const error = vi.spyOn(Logger.prototype, 'error').mockReturnValue();
     await scheduled('broken', '2026-09-28T10:00:00Z');
     await scheduled('fine', '2026-09-28T10:00:00Z');
-    defineSchedules('broken', [{ cron: 'not a cron', timezone: 'UTC' }]);
+    defineSchedule('broken', { cron: 'not a cron', timezone: 'UTC' });
 
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     await scheduler.tick(new Date('2026-09-28T10:00:11Z'));

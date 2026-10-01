@@ -339,7 +339,7 @@ export const notificationTargetSchema = workflowChannelSchema;
 
 export type NotificationTargetView = WorkflowChannelView;
 
-/** A schedule a Workflow runs on by itself, with where it stands. */
+/** The schedule a Workflow runs on by itself, with where it stands. */
 export const workflowScheduleSchema = z.object({
   cron: z.string(),
   /** The IANA time zone it follows. */
@@ -367,8 +367,8 @@ export const workflowViewSchema = z.object({
   enabled: z.boolean(),
   /** How many times a run may start in all. */
   maxAttempts: z.int(),
-  /** When it runs by itself; empty when it runs only by hand. */
-  schedules: z.array(workflowScheduleSchema),
+  /** When it runs by itself; null when it runs only by hand. */
+  schedule: workflowScheduleSchema.nullable(),
   /** Where each run's answer is posted, by ID. */
   channels: z.array(workflowChannelSchema),
   /** The Channel history its runs read; null when they read none. */
@@ -590,7 +590,7 @@ export const CONTROL_OPERATIONS = {
     result: workflowViewSchema,
   },
   /**
-   * Queues a run of a Workflow, whatever its `trigger`; the executor
+   * Queues a run of a Workflow, scheduled or not; the executor
    * starts it once a slot is free.
    */
   'workflows.run': {

@@ -18,8 +18,8 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
     ...workflows.map((workflow) => [
       `${workflow.name}${workflow.errors.length > 0 ? ' !' : ''}`,
       agent(workflow),
-      workflow.schedules.map(schedule).join('; ') || 'by hand',
-      workflow.schedules.map((one) => nextRun(workflow, one)).join('; ') || '—',
+      workflow.schedule === null ? 'by hand' : schedule(workflow.schedule),
+      workflow.schedule === null ? '—' : nextRun(workflow, workflow.schedule),
       workflow.channels.map(channelLabel).join(', ') || '—',
       state(workflow.enabled),
       workflow.file,
@@ -42,18 +42,18 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
       ['note', workflow.file],
       ['agent', agent(workflow)],
       ['input', preview(workflow.inputTemplate)],
-      ...(workflow.schedules.length === 0
+      ...(workflow.schedule === null
         ? [['schedule', 'none: it runs by hand, with pero workflows run']]
-        : workflow.schedules.flatMap((one) => [
-            ['schedule', schedule(one)],
-            ['next run', nextRun(workflow, one)],
+        : [
+            ['schedule', schedule(workflow.schedule)],
+            ['next run', nextRun(workflow, workflow.schedule)],
             [
               'last run',
-              one.lastRunAt === null
+              workflow.schedule.lastRunAt === null
                 ? 'never'
-                : localDateTime(new Date(one.lastRunAt)),
+                : localDateTime(new Date(workflow.schedule.lastRunAt)),
             ],
-          ])),
+          ]),
       ['runs', 'one at a time'],
       ['attempts', attempts(workflow.maxAttempts)],
       ['history', history(workflow.history)],

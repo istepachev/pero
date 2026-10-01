@@ -3,7 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, In } from 'typeorm';
 import { NotFoundError } from '../common/errors.js';
-import type { WorkflowChannelView, WorkflowView } from '../control/protocol.js';
+import type {
+  WorkflowChannelView,
+  WorkflowScheduleView,
+  WorkflowView,
+} from '../control/protocol.js';
 import {
   type AgentDefinition,
   Definitions,
@@ -112,15 +116,7 @@ export class WorkflowViews {
       inputTemplate: workflow.input,
       enabled: workflow.enabled,
       maxAttempts: workflow.maxAttempts,
-      schedules: workflow.schedules.map((schedule) => {
-        const times = stateOf(states, workflow.name, schedule);
-        return {
-          cron: schedule.cron,
-          timezone: schedule.timezone,
-          nextRunAt: times?.nextRunAt?.toISOString() ?? null,
-          lastRunAt: times?.lastRunAt?.toISOString() ?? null,
-        };
-      }),
+      schedule: scheduleView(workflow, states),
       channels: named(workflow.targets),
       history:
         history === null
@@ -187,5 +183,20 @@ function channelView(channel: Channel): WorkflowChannelView {
     integrationKind: channel.integrationKind,
     key: channel.externalKey,
     title: channel.title,
+  };
+}
+
+/** `workflow`'s schedule, with where `states` say it stands; null if none. */
+function scheduleView(
+  { name, schedule }: WorkflowDefinition,
+  states: ReadonlyMap<string, ScheduleTimes>,
+): WorkflowScheduleView | null {
+  if (schedule === null) return null;
+  const times = stateOf(states, name, schedule);
+  return {
+    cron: schedule.cron,
+    timezone: schedule.timezone,
+    nextRunAt: times?.nextRunAt?.toISOString() ?? null,
+    lastRunAt: times?.lastRunAt?.toISOString() ?? null,
   };
 }

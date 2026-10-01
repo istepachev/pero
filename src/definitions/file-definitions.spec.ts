@@ -152,8 +152,7 @@ describe('FileDefinitions', () => {
       'Agents/Health.md': '---\ntopics: Health\n---\nCoach me.',
       'Workflows/Weekly report.md':
         '---\nday: sunday\nhour: 12\nchannel: [Health, Home/General, 4]\nhistory: true\nhistory-channels: [English, Health]\nhistory-hours: 24\nmax-attempts: 2\n---\nWrite the weekly report.',
-      'Workflows/Brief.md':
-        '---\ntrigger: manual\nhour: 9\nenabled: false\n---\nBrief me.',
+      'Workflows/Brief.md': '---\nhour: 9\nenabled: false\n---\nBrief me.',
     });
     expect(await definitions.workflow('WEEKLY-REPORT')).toEqual({
       name: 'weekly-report',
@@ -168,14 +167,14 @@ describe('FileDefinitions', () => {
       },
       targets: [2, 1, 4],
       maxAttempts: 2,
-      schedules: [{ cron: '0 12 * * 0', timezone: 'Europe/Berlin' }],
+      schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       enabled: true,
     });
     expect(await definitions.workflow('brief')).toMatchObject({
       agent: 'main',
       history: null,
       targets: [],
-      schedules: [],
+      schedule: { cron: '0 9 * * *', timezone: 'Europe/Berlin' },
       enabled: false,
     });
     expect(

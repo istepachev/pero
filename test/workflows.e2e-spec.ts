@@ -230,18 +230,17 @@ describe('Workflows from notes (e2e)', () => {
         errors: [],
       }),
     ]);
-    const [schedule] = listed[0]!.schedules;
-    expect(schedule).toMatchObject({
+    expect(listed[0]!.schedule).toMatchObject({
       cron: '0 21 * * *',
       timezone: 'Europe/Berlin',
       lastRunAt: null,
     });
     // 21:00 in Berlin, within the next day, once the scheduler saw it.
     await daemon!.app.get(ScheduleTick).tick();
-    const [shown] = (
-      await client.call('workflows.get', { name: 'evening-review' })
-    ).schedules;
-    const nextRun = new Date(shown!.nextRunAt!);
+    const { schedule } = await client.call('workflows.get', {
+      name: 'evening-review',
+    });
+    const nextRun = new Date(schedule!.nextRunAt!);
     expect(nextRun.getTime()).toBeGreaterThan(Date.now());
     expect(nextRun.getTime() - Date.now()).toBeLessThanOrEqual(
       24 * 60 * 60 * 1000,
@@ -252,7 +251,7 @@ describe('Workflows from notes (e2e)', () => {
 
     await workflow(
       'Evening review',
-      ['trigger: manual', 'hour: 21', 'agent: editor', 'enabled: false'],
+      ['hour: 22', 'agent: editor', 'enabled: false'],
       "Review today's chats, briefly.",
     );
     await restart();
@@ -263,7 +262,8 @@ describe('Workflows from notes (e2e)', () => {
       agent: 'editor',
       inputTemplate: "Review today's chats, briefly.",
       enabled: false,
-      schedules: [],
+      // Kept, but never due while it is disabled.
+      schedule: { cron: '0 22 * * *', nextRunAt: null },
     });
     await expect(
       client.call('workflows.get', { name: 'nothing' }),
@@ -336,7 +336,7 @@ describe('Workflows from notes (e2e)', () => {
     );
   });
 
-  it('runs any Workflow by hand, whatever its trigger, away from every Channel', async () => {
+  it('runs any Workflow by hand, away from every Channel', async () => {
     await start();
     await workflow('Brief', ['agent: coach', 'hour: 9'], 'Summarize the day.');
 
@@ -456,8 +456,8 @@ describe('Workflows from notes (e2e)', () => {
         result: 'echo: Check the inbox.',
       });
     });
-    const [listed] = (await client.call('workflows.get', { name: 'hourly' }))
-      .schedules;
+    const listed = (await client.call('workflows.get', { name: 'hourly' }))
+      .schedule;
     expect(listed!.nextRunAt).toBe(new Date(lastHour + HOUR_MS).toISOString());
     expect(listed!.lastRunAt).not.toBeNull();
 
@@ -482,7 +482,7 @@ describe('Workflows from notes (e2e)', () => {
         'Plan the day.',
       );
     const nextRunAt = async () =>
-      (await client.call('workflows.get', { name: 'daily' })).schedules[0]!
+      (await client.call('workflows.get', { name: 'daily' })).schedule!
         .nextRunAt;
     await daily(['hour: 9']);
     await start();
@@ -631,13 +631,7 @@ describe('Workflows from notes (e2e)', () => {
       );
       await workflow(
         'Weekly health report',
-        [
-          'trigger: schedule',
-          'day: sunday',
-          'hour: 12',
-          'minute: 0',
-          'channel: Health',
-        ],
+        ['day: sunday', 'hour: 12', 'minute: 0', 'channel: Health'],
         '# Workflow Instruction\nCreate a weekly report from Health/Log.md.',
       );
       api.chats.set(String(FORUM.id), FORUM);
@@ -676,7 +670,7 @@ describe('Workflows from notes (e2e)', () => {
       expect(report).toMatchObject({
         agent: 'health',
         channels: [{ key: `${FORUM.id}:9`, title: 'Health' }],
-        schedules: [{ cron: '0 12 * * 0', timezone: 'Europe/Berlin' }],
+        schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       });
       const { id } = await client.call('workflows.run', {
         name: 'weekly-health-report',

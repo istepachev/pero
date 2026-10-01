@@ -1,5 +1,4 @@
 ---
-trigger: schedule
 day: sunday
 hour: 12
 minute: 0

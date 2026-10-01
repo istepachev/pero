@@ -25,7 +25,6 @@ import {
   topicTitles,
   type WorkflowNote,
   type WorkflowNoteHistory,
-  type WorkflowTrigger,
 } from './schemas.js';
 import type { SettingsError } from './settings-error.js';
 
@@ -71,7 +70,7 @@ export interface WorkflowDefinition {
    * Channel ID and no lookup was given to find out which topic that is.
    */
   agent: string | null;
-  trigger: WorkflowTrigger;
+  /** Null: it runs only by hand. */
   schedule: { cron: string; timezone: string } | null;
   channels: readonly ChannelRef[];
   history: WorkflowNoteHistory | null;
@@ -566,7 +565,6 @@ class WorkflowResolver {
       title: read.identity.title,
       file: read.file,
       agent,
-      trigger: note.trigger,
       schedule:
         note.schedule === null
           ? null

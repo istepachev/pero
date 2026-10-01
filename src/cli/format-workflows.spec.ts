@@ -34,14 +34,12 @@ const review: WorkflowView = {
   inputTemplate: "Review today's chats.\nSuggest one improvement.",
   enabled: true,
   maxAttempts: 1,
-  schedules: [
-    {
-      cron: '0 21 * * *',
-      timezone: 'Europe/Berlin',
-      nextRunAt: '2026-09-28T19:00:00.000Z',
-      lastRunAt: null,
-    },
-  ],
+  schedule: {
+    cron: '0 21 * * *',
+    timezone: 'Europe/Berlin',
+    nextRunAt: '2026-09-28T19:00:00.000Z',
+    lastRunAt: null,
+  },
   channels: [english],
   history: null,
   errors: [],
@@ -67,7 +65,7 @@ describe('Workflow formatting', () => {
           name: 'brief',
           file: 'data/Settings/Workflows/Brief.md',
           agentEnabled: false,
-          schedules: [],
+          schedule: null,
           channels: [],
           errors: [{ property: 'channel', message: 'no topic titled "x"' }],
         },
@@ -97,9 +95,10 @@ describe('Workflow formatting', () => {
       formatWorkflowDetails({
         ...review,
         channels: [english, direct],
-        schedules: [
-          { ...review.schedules[0]!, lastRunAt: '2026-09-27T19:00:00.000Z' },
-        ],
+        schedule: {
+          ...review.schedule!,
+          lastRunAt: '2026-09-27T19:00:00.000Z',
+        },
       }),
     ).toBe(
       [
@@ -131,7 +130,7 @@ describe('Workflow formatting', () => {
         agentEnabled: false,
         enabled: false,
         maxAttempts: 3,
-        schedules: [],
+        schedule: null,
         channels: [],
         history: {
           channels: [english, direct],

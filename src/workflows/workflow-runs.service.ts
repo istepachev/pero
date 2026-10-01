@@ -55,7 +55,7 @@ export class WorkflowRuns {
 
   /**
    * Queues a run of the Workflow named `name` and wakes the executor. Any
-   * Workflow runs by hand, whatever its `trigger`, and even while it is
+   * Workflow runs by hand, scheduled or not, and even while it is
    * disabled, which only stops it running by itself; its Agent must be
    * enabled. A run queued while another of the Workflow is running waits
    * for it.
