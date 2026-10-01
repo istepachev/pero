@@ -7,6 +7,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
+import { guideFile } from '../guide/agent-guide.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -416,6 +417,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       ...options,
       // So that an Agent can't change its own configuration unasked.
       settingsFolder: folders.settingsFolder,
+      guideFile: guideFile(folders.workspace),
       signal: controller.signal,
     })) {
       switch (event.type) {

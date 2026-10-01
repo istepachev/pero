@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   utimesSync,
@@ -12,7 +13,7 @@ import { getDataSourceToken } from '@nestjs/typeorm';
 import type { Chat, Message, User } from 'grammy/types';
 import type { DataSource } from 'typeorm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataFolderNote } from '../src/agents/agent-request.js';
+import { agentContext } from '../src/agents/agent-request.js';
 import { resolveBootstrapConfig } from '../src/config/bootstrap-config.js';
 import { initWorkspace } from '../src/config/workspace-skeleton.js';
 import {
@@ -20,6 +21,7 @@ import {
   createControlClient,
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
+import { agentGuide, guideFile } from '../src/guide/agent-guide.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
 import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
@@ -141,6 +143,18 @@ describe('Agents from notes (e2e)', () => {
     return String(api.sent().at(-1)!.text);
   }
 
+  /** What the instructions of the Agent titled `title` start with. */
+  function context(title: string): string {
+    return agentContext(
+      { title, file: `Agents/${title}.md` },
+      {
+        dataFolder: join(workspace, 'data'),
+        settingsFolder: join(workspace, 'data', 'Settings'),
+        guideFile: guideFile(workspace),
+      },
+    );
+  }
+
   /** The Groceries topic, onboarded with the Agent its note defines. */
   async function groceries() {
     await start();
@@ -156,9 +170,11 @@ describe('Agents from notes (e2e)', () => {
 
   it('applies edits to the body, model, effort, and Pero.md from the next turn of the same Session', async () => {
     await groceries();
+    // The guide the instructions point to is written at startup.
+    expect(readFileSync(guideFile(workspace), 'utf8')).toBe(agentGuide());
     expect(await say('Milk')).toBe('echo: Milk');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou shop.`,
+      instructions: `${context('Groceries')}\n\nBe brief.\n\nYou shop.`,
       providerOptions: { model: null, effort: null },
     });
     const [first] = await sessions();
@@ -169,7 +185,7 @@ describe('Agents from notes (e2e)', () => {
     );
     expect(await say('Eggs')).toBe('echo: Eggs');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou shop cheaply.`,
+      instructions: `${context('Groceries')}\n\nBe brief.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
@@ -181,7 +197,7 @@ describe('Agents from notes (e2e)', () => {
     );
     expect(await say('Bread')).toBe('echo: Bread');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe kind.\n\nYou shop cheaply.`,
+      instructions: `${context('Groceries')}\n\nBe kind.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
@@ -285,7 +301,7 @@ describe('Agents from notes (e2e)', () => {
     expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
     expect(carried).toMatch(/\n\nBread$/);
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${dataFolderNote(join(workspace, 'data'))}\n\nBe brief.\n\nYou stock up.`,
+      instructions: `${context('Pantry')}\n\nBe brief.\n\nYou stock up.`,
       providerOptions: { model: 'haiku' },
     });
     expect(await sessions()).toEqual([

@@ -96,6 +96,16 @@ pero agents show coach          # its values and where each comes from, its Chan
 
 An Agent without `working-directory` works in the workspace, where your scripts, Git repository, and other tools are. Pero tells every Agent where the data folder is, and that's where it keeps notes and other files it writes for you. Changing an Agent's provider or folder makes its next turn in each Channel start a fresh Session that carries over the Channel's recent messages; model, effort, and instructions apply from the next turn of the same Session.
 
+### Asking an Agent to change settings
+
+Every Agent knows where its own note, `Pero.md`, and the Workflows are, and reads Pero's guide for Agents (`.pero/guide.md`, which Pero writes on each start) before changing them. So you can manage Pero from Telegram:
+
+- *"Create a Workflow that summarizes my health log every Sunday evening."* The Agent asks what it can't infer, such as the hour, the time zone, and which topic gets the summary, shows the note, and writes `Workflows/<Title>.md`.
+- *"Be less formal"* or *"use opus"* changes that Agent's own note.
+- *"How do Workflows read chat history?"* gets an answer from the guide.
+
+A Claude Agent with `permissions: ask` asks you with Allow and Deny buttons before it writes anything in the settings folder, and a Workflow run never changes settings. A broken note is reported in the chat as when you edit it yourself. The welcome Pero posts in a new topic names the Agent's note, if you'd rather edit it.
+
 ### Claude Agents
 
 Claude Agents run Claude Code through the Claude Agent SDK, signed in with the Claude Code sign-in of the account running Pero (`claude auth login`). Pero never passes `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on, so a key in Pero's environment cannot switch you to API billing. An Agent works in its folder like Claude Code does: Claude Code's own system prompt with the Agent's instructions appended, and your user, project, and local Claude Code settings, so the folder's `CLAUDE.md`, skills, and MCP servers apply. A turn refused as signed out marks the provider `degraded` in `pero status` until a turn succeeds again.
@@ -130,7 +140,7 @@ max-attempts: 2
 Review today's chats.
 ```
 
-`hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./CONFIGURATION.md#workflow-notes) lists every property.
+You can also ask an Agent to write one ([Asking an Agent](#asking-an-agent-to-change-settings)). `hour` (with `day` and `minute`), or `cron`, sets its schedule, in `Pero.md`'s `timezone` unless it sets its own; without one, it runs only by hand. `agent` names the Agent note that runs it; without it, the Agent that answers its first `channel` does, or the main Agent. `enabled: false` stops its schedule. Edits apply from the next run, within about 10 seconds; the [configuration reference](./CONFIGURATION.md#workflow-notes) lists every property.
 
 ```sh
 pero workflows                      # each Workflow's schedule, next run, and Channels

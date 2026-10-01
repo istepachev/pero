@@ -273,6 +273,13 @@ const workflowProperties = z
   })
   .partial();
 
+/** Every property each kind of note takes, by name. */
+export const NOTE_PROPERTIES = {
+  pero: peroProperties.keyof().options,
+  agent: agentProperties.keyof().options,
+  workflow: workflowProperties.keyof().options,
+} as const;
+
 /** `Pero.md`'s settings, with Pero's defaults for those it leaves out. */
 export function readPeroNote(
   file: string,

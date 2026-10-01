@@ -42,7 +42,6 @@ import { finishRun } from './finish-run.js';
 import { CANCELLED, WorkflowExecutor } from './workflow-executor.js';
 import { WorkflowRuns } from './workflow-runs.service.js';
 import { WorkflowsModule } from './workflows.module.js';
-import { dataFolderNote } from '../agents/agent-request.js';
 
 const OWNER = privateChat('1234');
 const HOME = groupChat('-100777', 'Home');
@@ -287,7 +286,7 @@ describe('Workflow Runs and the executor', () => {
 
     const captured = {
       input: 'First input.',
-      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.`,
+      instructions: `${ws.agentContext('Coach')}\n\nBe kind.`,
       providerOptions: { model: null, effort: null },
       workingDirectory: workspace,
     };
@@ -305,7 +304,7 @@ describe('Workflow Runs and the executor', () => {
     expect(codex.requests).toHaveLength(1);
     expect(codex.requests[0]).toMatchObject({
       input: 'Second input.',
-      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.\n\nBe brief.`,
+      instructions: `${ws.agentContext('Coach')}\n\nBe kind.\n\nBe brief.`,
       providerOptions: { model: 'gpt-6', effort: 'high' },
       workingDirectory: own,
     });

@@ -55,7 +55,7 @@ When a test fails:
 To see the Telegram path work end to end before any provider is set up, run Pero with the echo runtime, where every Agent answers `echo: <message>`:
 
 1. `pero init ~/pero-check && cd ~/pero-check`, then `PERO_FAKE_RUNTIME=echo pero run`, and follow the [recommended Telegram setup](./USER_GUIDE.md#set-up-telegram) until the group is allowed.
-2. Create a topic. Pero writes its note, `data/Settings/Agents/<Topic title>.md`, and posts a welcome naming the new Agent; a message there gets its echo.
+2. Create a topic. Pero writes its note, `data/Settings/Agents/<Topic title>.md`, and posts a welcome naming the new Agent and its note; a message there gets its echo.
 3. Create a second topic and write in both; `pero agents` lists an Agent and a note for each, and `pero channels` a Channel for each.
 4. Write in the General topic and in a direct chat with the bot. Both answer as the main Agent, and `pero channels` shows them as separate Channels.
 5. `pero stop`, then `PERO_FAKE_RUNTIME=echo pero run` again, and write in each Channel: every one answers, and `pero channels show <channel>` says its next turn resumes its Session.
@@ -78,7 +78,7 @@ Before merging a PR that bumps the version, walk through the README's [Get start
 
 2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, asks which provider to use when both CLIs are installed and waits until it is signed in, then asks for the bot token. It offers to install Pero as a service: accept, and it ends with `pero status` showing the service's Pero, with Telegram and the provider ready. `systemctl --user status pero` (or `launchctl print gui/$(id -u)/com.perokit.pero` on macOS) shows it running, and after a reboot `pero status` shows it running again.
 3. **Allow a group.** Create a private group with Topics turned on, add the bot as an administrator, and write in it: `pero run` offers to allow that chat.
-4. **Onboard a topic.** Create one: Pero writes `data/Settings/Agents/<Topic title>.md` and posts a welcome naming the new Agent. A message there gets the provider's answer, and a second one continues the conversation.
+4. **Onboard a topic.** Create one: Pero writes `data/Settings/Agents/<Topic title>.md` and posts a welcome naming the new Agent and its note. A message there gets the provider's answer, and a second one continues the conversation. Ask it to create a Workflow: it reads `.pero/guide.md` without asking, asks about the schedule and topic, and asks with Allow and Deny before writing the note, which `pero workflows` then lists.
 5. **Edit a note.** Change that note's instructions, wait 10 seconds, and write in the topic: the answer follows the edit. Break the note, such as with `provider: codx`: the topic gets one message naming the error, and `pero check` lists it. Fix it again.
 6. **Run a Workflow.** Copy [Evening review](../examples/workspace/data/Settings/Workflows/Evening%20review.md) into `data/Settings/Workflows/`, with `channel` set to the topic's title. `pero workflows` shows its next run, and `pero workflows run evening-review` prints the answer and posts it in the topic.
 7. **Back up.** Commit the workspace to Git (`git init && git add -A && git commit -m Workspace`): `git show --stat HEAD` lists `.pero/config.yaml` and the notes, but not `.env`, the database, `logs/`, or `run/`. Then `mkdir -p ~/backups && pero backup ~/backups/pero.tgz`.

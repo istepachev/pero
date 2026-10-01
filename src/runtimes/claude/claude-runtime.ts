@@ -170,15 +170,16 @@ function claudeEffort(effort: string): EffortLevel {
 /**
  * Decides about each tool Claude Code leaves open: an edit in the Agent's
  * folder runs, except under the settings folder, which asks like any other
- * tool. Without an approver, or when asking fails, the tool is refused and
+ * tool, and so does reading Pero's guide. Without an approver, or when asking fails, the tool is refused and
  * Claude is told why.
  */
 function askOwner(request: RuntimeRequest): CanUseTool {
-  const { approve, workingDirectory, settingsFolder } = request;
+  const { approve, workingDirectory, settingsFolder, guideFile } = request;
   return async (tool, input, { signal, title }) => {
     const decision = await editDecision(tool, input, {
       workingDirectory,
       ...(settingsFolder === undefined ? {} : { settingsFolder }),
+      ...(guideFile === undefined ? {} : { guideFile }),
     });
     if (decision === 'allow') return { behavior: 'allow', updatedInput: input };
     const settings = decision === 'settings';

@@ -52,6 +52,12 @@ export interface RuntimeRequest {
    */
   settingsFolder?: string;
   /**
+   * The guide to Pero's settings, which the instructions name; absent
+   * outside a workspace. Claude only: an `ask` Agent reads it without
+   * asking, even when it is outside its folder.
+   */
+  guideFile?: string;
+  /**
    * Answers for tools the policy leaves to the owner; absent when no one
    * can answer, so the adapter denies them.
    */

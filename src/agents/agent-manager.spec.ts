@@ -29,7 +29,6 @@ import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../settings/testing/test-workspace.js';
 import { AgentManager, type IsolatedTurn, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
-import { dataFolderNote } from './agent-request.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
 const OWNER = privateChat('1234');
@@ -202,7 +201,7 @@ describe('AgentManager', () => {
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
     expect(claude.requests[1]).toMatchObject({
       input: 'Again',
-      instructions: `${dataFolderNote(ws.dataFolder)}\n\nBe kind.\n\nBe brief.`,
+      instructions: `${ws.agentContext('Main')}\n\nBe kind.\n\nBe brief.`,
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       workingDirectory: workspace,
       skipGitRepoCheck: false,
@@ -256,7 +255,7 @@ describe('AgentManager', () => {
       const request = claude.requests.at(-1)!;
       expect(request.providerSessionId).toBe('fake-claude-1');
       expect(request.workingDirectory).toBe(workspace);
-      expect(request.instructions).toBe(dataFolderNote(other));
+      expect(request.instructions).toBe(ws.agentContext('Main', other));
     });
 
     it('starts a fresh Session when the Agent gets its own folder', async () => {
@@ -434,8 +433,9 @@ describe('AgentManager', () => {
     expect(claude.requests[1]!.approve).toBe(approve);
   });
 
-  it("passes the workspace's settings folder to the runtime, in Channels and Workflow runs", async () => {
+  it("passes the workspace's settings folder and guide to the runtime, in Channels and Workflow runs", async () => {
     const { settingsFolder } = ws;
+    const guide = join(ws.stateFolder, 'guide.md');
     await say(OWNER, 'Hello');
     await say(OWNER, 'Again');
     await moduleRef.get(AgentManager).runIsolated({
@@ -455,6 +455,11 @@ describe('AgentManager', () => {
     expect(claude.requests[0]!.settingsFolder).toBe(settingsFolder);
     expect(claude.requests[1]!.settingsFolder).toBe(settingsFolder);
     expect(claude.requests[2]!.settingsFolder).toBe(settingsFolder);
+    expect(claude.requests.map((request) => request.guideFile)).toEqual([
+      guide,
+      guide,
+      guide,
+    ]);
     expect(claude.requests[2]).not.toHaveProperty('approve');
   });
 

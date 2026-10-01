@@ -9,8 +9,10 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 import type { DynamicModule } from '@nestjs/common';
+import { agentContext } from '../../agents/agent-request.js';
 import { STATE_DIR_NAME } from '../../config/bootstrap-config.js';
 import { HOST_CONFIG_FILE } from '../../config/host-config.js';
+import { guideFile } from '../../guide/agent-guide.js';
 import { HostConfigModule } from '../../host-config/host-config.module.js';
 import { NOTE_FOLDERS, PERO_NOTE } from '../../settings-files/note-files.js';
 import {
@@ -62,6 +64,21 @@ export class TestWorkspace {
     this.gitignore = join(root, '.gitignore');
     mkdirSync(this.settingsFolder, { recursive: true });
     mkdirSync(this.stateFolder, { recursive: true });
+  }
+
+  /**
+   * What the instructions of the Agent with note `Agents/<title>.md` start
+   * with in this workspace, its data folder `dataFolder`.
+   */
+  agentContext(title: string, dataFolder = this.dataFolder): string {
+    return agentContext(
+      { title, file: `${NOTE_FOLDERS.agent}/${title}.md` },
+      {
+        dataFolder,
+        settingsFolder: this.settingsFolder,
+        guideFile: guideFile(this.root),
+      },
+    );
   }
 
   /** A new, empty workspace; `remove` deletes it. */

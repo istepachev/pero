@@ -1,9 +1,11 @@
+import { join } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { shownPath } from '../settings-files/note-paths.js';
 import { type Agent, topicClaim } from '../settings-files/snapshot.js';
 import { AgentNotes } from '../settings/agent-notes.service.js';
 import {
@@ -26,10 +28,14 @@ import {
   unansweredSummary,
 } from './channel-stages.js';
 
-/** Posted in a new Channel: who answers there and how to change it. */
+/**
+ * Posted in a new Channel: who answers there, and `note`, the file that
+ * holds its settings and instructions, as the owner reads it.
+ */
 export function welcomeText(
   agent: Pick<Agent, 'name' | 'provider' | 'model'>,
   folder: string,
+  note: string,
   where: 'topic' | 'chat',
 ): string {
   const { model } = agent;
@@ -37,7 +43,8 @@ export function welcomeText(
     `This ${where} talks to Agent ${agent.name}: ${agent.provider}, ` +
     `${model === null ? 'default model' : `model ${model}`}, ` +
     `working in ${folder}. ` +
-    `To see where to change it, run on the Pero host: pero agents show ${agent.name}`
+    `Its settings and instructions are in ${note}: edit that note, ` +
+    `or ask here to change them.`
   );
 }
 
@@ -211,9 +218,11 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   private async welcome(channel: Channel, agent: Agent): Promise<void> {
     if (this.welcomed.has(channel.id)) return;
     this.welcomed.add(channel.id);
+    const { workspace, settingsFolder } = this.notes.folders();
     const text = welcomeText(
       agent,
       agent.workingDirectory,
+      shownPath(workspace, join(settingsFolder, agent.file)),
       routeQuery(channel).primary ? 'chat' : 'topic',
     );
     await this.notify(channel.integrationKind, channel.externalKey, () =>
