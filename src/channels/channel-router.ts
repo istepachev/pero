@@ -25,16 +25,26 @@ import {
   type RoutedChannel,
 } from './channel-stages.js';
 import { InboundUpdates } from './inbound-updates.service.js';
-import { PairingRequests } from './pairing-requests.js';
+import { type PairingHint, PairingRequests } from './pairing-requests.js';
 import { ToolApprovals } from './tool-approvals.js';
 import { UnansweredReplies } from './unanswered-replies.js';
 
-/** The reply a chat that is not allowed gets, at most once an hour. */
-export function pairingHint(kind: IntegrationKind, chatKey: string): string {
-  return (
-    `This chat isn't allowed to use Pero yet. Its chat ID is ${chatKey}. ` +
-    `To allow it, run on the Pero host: pero ${kind} allow ${chatKey}`
-  );
+/**
+ * The reply a chat that is not allowed gets, each hint at most once an
+ * hour: how to pair it in a terminal on the host, or, while `pero run`
+ * waits for a chat there, to confirm it in that terminal. Pero's own
+ * text, never an Agent's: no runtime answers a chat that is not allowed.
+ */
+export function pairingHint(
+  kind: IntegrationKind,
+  chatKey: string,
+  hint: PairingHint = 'allow',
+): string {
+  return hint === 'confirm'
+    ? `Pero sees this chat (ID ${chatKey}). To pair it, confirm in the ` +
+        `terminal where pero run asks to allow it.`
+    : `This chat isn't paired with Pero yet (ID ${chatKey}). To pair it, ` +
+        `run in a terminal on the Pero host: pero ${kind} allow ${chatKey}`;
 }
 
 /**
@@ -240,13 +250,13 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     replyTo: ChannelAddress,
   ): Promise<void> {
     const { hint } = this.pairing.record(kind, chat);
-    if (!hint) return;
+    if (hint === null) return;
     this.logger.log(
       `A ${kind} chat that is not allowed asked to pair: ${chat.key}`,
     );
     try {
       await this.sender.send(kind, replyTo, {
-        text: pairingHint(kind, chat.key),
+        text: pairingHint(kind, chat.key, hint),
       });
     } catch (error) {
       this.logger.warn(

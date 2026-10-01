@@ -17,7 +17,10 @@ import type { InboundChat } from './channel-adapter.js';
 import { ChannelRouter, pairingHint } from './channel-router.js';
 import { ChannelOnboarding, ChannelTurns, routeOf } from './channel-stages.js';
 import { ChannelsModule } from './channels.module.js';
-import { PAIRING_HINT_INTERVAL_MS } from './pairing-requests.js';
+import {
+  PAIRING_HINT_INTERVAL_MS,
+  PairingRequests,
+} from './pairing-requests.js';
 import {
   FakeChannelAdapter,
   groupChat,
@@ -175,6 +178,20 @@ describe('ChannelRouter', () => {
       vi.setSystemTime(Date.now() + 1000);
       await adapter.deliver(inboundMessage(STRANGER));
       expect(adapter.sent).toHaveLength(3);
+      expect(reachedNextStage()).toBe(false);
+    });
+
+    it('is told to confirm in the terminal while pero run waits there', async () => {
+      await adapter.deliver(inboundMessage(STRANGER));
+      moduleRef.get(PairingRequests).watch('telegram');
+      await adapter.deliver(inboundMessage(STRANGER));
+      await adapter.deliver(inboundMessage(STRANGER));
+
+      expect(adapter.sent.map((sent) => sent.message.text)).toEqual([
+        pairingHint('telegram', STRANGER.key),
+        pairingHint('telegram', STRANGER.key, 'confirm'),
+      ]);
+      expect(adapter.sent[1]!.message.text).toContain('terminal');
       expect(reachedNextStage()).toBe(false);
     });
 

@@ -63,6 +63,14 @@ export class TelegramChats implements OnModuleInit {
   }
 
   /**
+   * Notes that the owner waits in a terminal to allow a chat, so one that
+   * asks to pair now is told to confirm there.
+   */
+  watchPairing(): void {
+    this.pairing.watch('telegram');
+  }
+
+  /**
    * Allows chat `chatKey`, adding it to `config.yaml`. Its kind and name
    * come from its pairing request, otherwise from Telegram, otherwise from
    * the ID alone: groups have negative IDs. Waits briefly for the bot's

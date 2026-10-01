@@ -28,6 +28,7 @@ const UNUSED_HANDLERS = {
   'providers.check': unused,
   'backup.create': unused,
   'telegram.chats': unused,
+  'telegram.watchPairing': unused,
   'telegram.allow': unused,
   'telegram.deny': unused,
   'telegram.token': unused,
