@@ -170,10 +170,14 @@ permissions: bypass
     );
   });
 
-  it('reports a note outside Agents/ and Workflows/', () => {
-    expect(errorsOf({ 'Agent/Health.md': 'Hi' })).toEqual([
-      'Agent/Health.md -: not an Agent or Workflow note; move it under Agents/ or Workflows/, or start its name with _',
-    ]);
+  it('ignores notes outside Pero.md, Agents/, and Workflows/', () => {
+    expect(
+      errorsOf({
+        'Templates/Daily Journal.md': '---\nmodle: broken\n---',
+        'Agent/Health.md': 'Hi',
+        'Notes.md': 'Stray',
+      }),
+    ).toEqual([]);
   });
 
   it('leaves out both notes of a duplicate name, and what depends on them', () => {
