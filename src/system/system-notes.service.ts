@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
 import type { DataSource } from 'typeorm';
+import { writeSystemSkeleton } from '../config/workspace-skeleton.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import { type BrokenNote, SystemReloader } from '../system-files/reload.js';
@@ -73,16 +75,41 @@ export class SystemNotes implements OnModuleInit, BeforeApplicationShutdown {
    * Loads the notes. The modules that read them import this one, so Nest
    * calls this before their own startup hooks, and nothing reads the
    * snapshot before it is loaded. `config.yaml` has been read by then, its
-   * module being global.
+   * module being global. A system folder that is missing, as when it was
+   * deleted, is written as `pero init` writes it.
    */
   async onModuleInit(): Promise<void> {
     const folders = this.folders();
+    this.createIfMissing(folders.systemFolder);
     this.reloader = new SystemReloader(folders.systemFolder, {
       workspace: folders.workspace,
       homeDir: homedir(),
       hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
     await this.rescan();
+  }
+
+  /**
+   * Writes the skeleton in `folder` when nothing is there; a folder that
+   * can't be written is left to the scan to report.
+   */
+  private createIfMissing(folder: string): void {
+    try {
+      lstatSync(folder);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return;
+    }
+    try {
+      writeSystemSkeleton(folder);
+      this.logger.log(
+        `Created the system folder ${folder} with Pero.md, Agents/Main.md, and Workflows/`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not create the system folder ${folder}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**

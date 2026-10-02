@@ -136,18 +136,37 @@ export function initWorkspace(
     dir,
     home,
   );
-  file(
-    join(system, 'Pero.md'),
-    peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
-  );
-  folder(join(system, 'Agents'));
-  file(join(system, 'Agents', 'Main.md'), MAIN_NOTE);
-  const workflows = join(system, 'Workflows');
-  entries.push({
-    path: `${shown(workflows)}/`,
-    action: folder(workflows) ? 'created' : 'kept',
-  });
+  for (const entry of writeSystemSkeleton(system)) {
+    const path = entry.path.endsWith('/')
+      ? `${shown(entry.path.slice(0, -1))}/`
+      : shown(entry.path);
+    entries.push({ ...entry, path });
+  }
   return { workspace: dir, entries };
+}
+
+/**
+ * Writes what is missing of the system folder's skeleton in `system`,
+ * never overwriting a file: `Pero.md`, with the host's time zone,
+ * `Agents/Main.md`, and `Workflows/`. Paths are absolute, the folder's
+ * ending in `/`.
+ */
+export function writeSystemSkeleton(system: string): SkeletonEntry[] {
+  const file = (path: string, text: string): SkeletonEntry => ({
+    path,
+    action: writeIfMissing(path, text) ? 'created' : 'kept',
+  });
+  const entries = [
+    file(
+      join(system, 'Pero.md'),
+      peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
+    ),
+    file(join(system, 'Agents', 'Main.md'), MAIN_NOTE),
+  ];
+  const workflows = join(system, 'Workflows');
+  const created = mkdirSync(workflows, { recursive: true }) !== undefined;
+  entries.push({ path: `${workflows}/`, action: created ? 'created' : 'kept' });
+  return entries;
 }
 
 /** Writes `text` to `path`, creating its folder; false when it existed. */

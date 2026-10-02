@@ -342,6 +342,28 @@ describe('configOrNewWorkspace', () => {
     );
   });
 
+  it('writes the defaults of a deleted system folder before the provider', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, home);
+    const system = join(ws, 'data', 'System');
+    rmSync(system, { recursive: true });
+
+    const { result } = run({
+      cwd: ws,
+      interactive: true,
+      clis: { claude: 'signed-in', codex: 'missing' },
+    });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(printed).toContain(
+      `Created the system folder ${system} with its defaults`,
+    );
+    expect(existsSync(join(system, 'Agents', 'Main.md'))).toBe(true);
+    expect(existsSync(join(system, 'Workflows'))).toBe(true);
+    const note = readFileSync(join(system, 'Pero.md'), 'utf8');
+    expect(note).toMatch(/^provider: claude /m);
+    expect(note).toMatch(/^timezone: /m);
+  });
+
   it('asks nothing once the workspace has a database, or off a terminal', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, home);

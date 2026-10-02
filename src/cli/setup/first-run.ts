@@ -20,7 +20,10 @@ import {
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
 import { workspaceLayout } from '../../config/workspace-layout.js';
-import { initWorkspace } from '../../config/workspace-skeleton.js';
+import {
+  initWorkspace,
+  writeSystemSkeleton,
+} from '../../config/workspace-skeleton.js';
 import {
   checkProviderAuth,
   cliLabel,
@@ -135,6 +138,12 @@ export async function configOrNewWorkspace(
       workspace: suggested,
       ...(context.home === undefined ? {} : { homeDir: context.home }),
     });
+  }
+  // A deleted system folder gets its defaults first, or Pero.md would be its only note.
+  const system = dirname(note);
+  if (!existsSync(system)) {
+    writeSystemSkeleton(system);
+    context.print(`Created the system folder ${system} with its defaults`);
   }
   if (provider !== null) writeProvider(note, provider, context.print);
   return { config, firstRun: true };
