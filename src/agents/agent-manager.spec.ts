@@ -26,7 +26,7 @@ import { ComponentHealth } from '../health/component-health.js';
 import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { AgentManager, type IsolatedTurn, TurnError } from './agent-manager.js';
 import { AgentsModule } from './agents.module.js';
 
@@ -246,7 +246,7 @@ describe('AgentManager', () => {
       mkdirSync(other);
       writeFileSync(
         join(ws.stateFolder, 'config.yaml'),
-        'data: other\nsettings: data/Settings\n',
+        'data: other\nsystem: data/System\n',
       );
       await restart();
 
@@ -433,8 +433,8 @@ describe('AgentManager', () => {
     expect(claude.requests[1]!.approve).toBe(approve);
   });
 
-  it("passes the workspace's settings folder and guide to the runtime, in Channels and Workflow runs", async () => {
-    const { settingsFolder } = ws;
+  it("passes the workspace's system folder and guide to the runtime, in Channels and Workflow runs", async () => {
+    const { systemFolder } = ws;
     const guide = join(ws.stateFolder, 'guide.md');
     await say(OWNER, 'Hello');
     await say(OWNER, 'Again');
@@ -452,9 +452,9 @@ describe('AgentManager', () => {
       label: 'test',
     });
 
-    expect(claude.requests[0]!.settingsFolder).toBe(settingsFolder);
-    expect(claude.requests[1]!.settingsFolder).toBe(settingsFolder);
-    expect(claude.requests[2]!.settingsFolder).toBe(settingsFolder);
+    expect(claude.requests[0]!.systemFolder).toBe(systemFolder);
+    expect(claude.requests[1]!.systemFolder).toBe(systemFolder);
+    expect(claude.requests[2]!.systemFolder).toBe(systemFolder);
     expect(claude.requests.map((request) => request.guideFile)).toEqual([
       guide,
       guide,

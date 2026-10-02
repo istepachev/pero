@@ -29,7 +29,7 @@ pero settings                                   # show everything
 printf '%s' "$TOKEN" | pero telegram token      # set the bot token
 ```
 
-The installation defaults are properties of `Pero.md` in the settings folder; instructions every Agent shares are the main Agent's, in its note. The data folder is `data` in `.pero/config.yaml`. `pero settings` shows them. `pero telegram token` sets the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. Changes apply without a restart.
+The installation defaults are properties of `Pero.md` in the system folder; instructions every Agent shares are the main Agent's, in its note. The data folder is `data` in `.pero/config.yaml`. `pero settings` shows them. `pero telegram token` sets the Telegram bot token, read from a prompt on a terminal, otherwise from stdin, and never accepted as an argument. It goes owner-only into the workspace's `.env` and is never shown or logged. Changes apply without a restart.
 
 Pero rereads the notes every 10 seconds, so an edit applies without a restart. A note with errors doesn't stop Pero: `pero status` counts it, and `pero check` lists each error. Since you may edit on your phone, Pero also posts once per broken version of a note in Telegram, in the topics it relates to (an Agent's `topic`, a Workflow's `channel`), or else in the main Agent's primary Channel. The message names each error and what Pero uses meanwhile: the note's last good version, if Pero read one since it started, or nothing. It isn't part of the topic's history. A fix is only logged, and a note already broken when Pero starts is left to `status` and `check`.
 
@@ -102,7 +102,7 @@ Pero keeps each Channel's message history until you set `history-retention-days`
 
 ## Agents
 
-An Agent is a note in the settings folder's `Agents/` folder: its text is the Agent's instructions, and its properties choose its topic, provider, model, effort, permissions, and folder. Anything it leaves out comes from `Pero.md`. The main Agent's text is placed before every other Agent's instructions, unless the Agent sets `skip-main-instructions: true`. To add an Agent, add a note; to change one, edit it; to silence one, set `enabled: false`. The [configuration reference](./CONFIGURATION.md#agent-notes) lists every property.
+An Agent is a note in the system folder's `Agents/` folder: its text is the Agent's instructions, and its properties choose its topic, provider, model, effort, permissions, and folder. Anything it leaves out comes from `Pero.md`. The main Agent's text is placed before every other Agent's instructions, unless the Agent sets `skip-main-instructions: true`. To add an Agent, add a note; to change one, edit it; to silence one, set `enabled: false`. The [configuration reference](./CONFIGURATION.md#agent-notes) lists every property.
 
 ```markdown
 ---
@@ -128,7 +128,7 @@ Every Agent knows where its own note, `Pero.md`, and the Workflows are, and read
 - *"Be less formal"* or *"use opus"* changes that Agent's own note.
 - *"How do Workflows read chat history?"* gets an answer from the guide.
 
-A Claude Agent with `permissions: ask` asks you with Allow and Deny buttons before it writes anything in the settings folder, and a Workflow run never changes settings. A broken note is reported in the chat as when you edit it yourself. The welcome Pero posts in a new topic names the Agent's note, if you'd rather edit it.
+A Claude Agent with `permissions: ask` asks you with Allow and Deny buttons before it writes anything in the system folder, and a Workflow run never changes settings. A broken note is reported in the chat as when you edit it yourself. The welcome Pero posts in a new topic names the Agent's note, if you'd rather edit it.
 
 ### Claude Agents
 
@@ -136,7 +136,7 @@ Claude Agents run Claude Code through the Claude Agent SDK, signed in with the C
 
 Each Agent's tools run under one of two permission modes, its note's `permissions`, or `Pero.md`'s:
 
-- `ask` (the default): reading and editing files in the Agent's folder runs freely, except editing the settings folder and Claude Code's, Git's, and the shell's own files there, such as `.claude/` and `.git/`, even through a symlink or a `../` path; those edits, and any other tool that needs permission, such as a shell command or a web fetch, ask in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history. A Workflow run has no one to ask, so it is refused such tools and can't change the settings folder. Allow rules in your own Claude Code settings still apply before Pero is asked.
+- `ask` (the default): reading and editing files in the Agent's folder runs freely, except editing the system folder and Claude Code's, Git's, and the shell's own files there, such as `.claude/` and `.git/`, even through a symlink or a `../` path; those edits, and any other tool that needs permission, such as a shell command or a web fetch, ask in the Channel: Pero posts what the Agent wants to run with Allow and Deny buttons, which anyone in the chat may press, and marks the message with who answered. A request not answered within 10 minutes, whose turn ends, or still open when Pero stops is denied. Requests are not part of the Channel's history. A Workflow run has no one to ask, so it is refused such tools and can't change the system folder. Allow rules in your own Claude Code settings still apply before Pero is asked.
 - `bypass`: every tool runs without asking, like `claude --dangerously-skip-permissions`. Claude Code refuses this mode when it runs as root unless `IS_SANDBOX=1` is set.
 
 ### Codex Agents
@@ -147,12 +147,12 @@ Codex works only in a Git repository. For a folder that is not one, such as a no
 
 Codex runs each turn without a way to ask you, so the permission modes map to its sandbox instead:
 
-- `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it). The sandbox can't leave out a subfolder, so unlike a Claude Agent, a Codex `ask` Agent edits the settings folder without asking when its folder contains it; give a Codex Agent that must not change configuration a `working-directory` outside the settings folder.
+- `ask`: Codex's `workspace-write` sandbox. The Agent reads anywhere, and edits files and runs commands only in its own folder, without network access; anything else fails and the Agent says why. It is never asked about, so Telegram approval buttons do not apply to Codex Agents. On Linux the sandbox needs unprivileged user namespaces, which Ubuntu 24.04 and later restrict by default through AppArmor; there `ask` Agents cannot write at all until that is allowed (`codex sandbox -- true` checks it). The sandbox can't leave out a subfolder, so unlike a Claude Agent, a Codex `ask` Agent edits the system folder without asking when its folder contains it; give a Codex Agent that must not change configuration a `working-directory` outside the system folder.
 - `bypass`: no sandbox, like `codex --dangerously-bypass-approvals-and-sandbox`.
 
 ## Workflows
 
-A Workflow is work an Agent does on its own: a note in the settings folder's `Workflows/` folder, whose text is the input each run sends the Agent. Its properties say when it runs and where its answer goes; the note's file name is its title, and its name is that title as a slug (`Evening review.md` is `evening-review`).
+A Workflow is work an Agent does on its own: a note in the system folder's `Workflows/` folder, whose text is the input each run sends the Agent. Its properties say when it runs and where its answer goes; the note's file name is its title, and its name is that title as a slug (`Evening review.md` is `evening-review`).
 
 ```markdown
 ---

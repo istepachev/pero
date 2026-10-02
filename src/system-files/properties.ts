@@ -1,4 +1,4 @@
-import type { SettingsError } from './settings-error.js';
+import type { NoteError } from './note-error.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -21,9 +21,9 @@ export function checkPropertyNames(
   file: string,
   properties: Readonly<Record<string, unknown>>,
   known: readonly string[],
-): { properties: Record<string, unknown>; errors: SettingsError[] } {
+): { properties: Record<string, unknown>; errors: NoteError[] } {
   const kept: Record<string, unknown> = {};
-  const errors: SettingsError[] = [];
+  const errors: NoteError[] = [];
   for (const [property, value] of Object.entries(properties)) {
     if (OBSIDIAN_PROPERTIES.has(property)) continue;
     if (known.includes(property)) {

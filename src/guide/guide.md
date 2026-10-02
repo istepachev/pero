@@ -13,26 +13,26 @@ Read it when the owner asks you to create or change an Agent, a Workflow, or Per
 │   ├── config.yaml             # the data folder, and which chats Pero serves
 │   └── guide.md                # this guide
 └── data/                       # the data folder: the owner's notes, such as an Obsidian vault
-    └── Settings/               # the settings folder
+    └── System/               # the system folder
         ├── Pero.md             # installation defaults, settings only
         ├── Agents/<Title>.md   # one note per Agent; its body is that Agent's instructions
         └── Workflows/<Title>.md  # one note per Workflow; its body is what each run asks
 ```
 
-The data folder and settings folder can be elsewhere: your instructions give their real paths.
+The data folder and system folder can be elsewhere: your instructions give their real paths.
 
 - **Notes are Markdown with YAML frontmatter,** the block between `---` lines at the top. The body is everything after it. Property names are lowercase and hyphenated. An unknown property is an error; `tags`, `aliases`, and `cssclasses` are allowed and ignored.
 - **The file name is the identity.** `Agents/Weekly Health.md` is the Agent titled *Weekly Health*, named `weekly-health`. Renaming a note makes a new Agent or Workflow, so don't rename to "fix" a title unless asked. Subfolders under `Agents/` and `Workflows/` are fine for grouping.
 - **Files starting with `_` or `.` are ignored,** such as `Agents/_Template.md`, the template for Agents of new topics.
 - **Paths in notes** are relative to the workspace, not to the note. `~` is the home folder.
-- **Pero rereads the settings folder every 10 seconds.** An edit applies from the next message or run; no restart is needed.
+- **Pero rereads the system folder every 10 seconds.** An edit applies from the next message or run; no restart is needed.
 
 ## How to change settings
 
 1. **Find out what the owner wants,** and ask about what you can't infer (see the checklists below). Don't invent schedules, topics, or models.
 2. **Read the note first** when changing one, and change only the properties asked for. Keep comments, other properties, and the body.
 3. **Say what you'll write before you write it,** with the file path and the frontmatter, unless the request was already exact.
-4. **Write the note.** A Claude Agent with `permissions: ask` gets the owner's Allow or Deny, in the chat, before any edit in the settings folder; that's expected. A Workflow run has no one to ask, so it can't change settings. A Codex Agent with `ask` can write only inside its own folder.
+4. **Write the note.** A Claude Agent with `permissions: ask` gets the owner's Allow or Deny, in the chat, before any edit in the system folder; that's expected. A Workflow run has no one to ask, so it can't change settings. A Codex Agent with `ask` can write only inside its own folder.
 5. **Check it.** Pero posts an "Errors in …" message in the chat when a note doesn't validate, and keeps the note's last good version meanwhile. You can run `pero check` to validate everything (it may ask the owner first). Tell the owner what changed, and how to see it, such as `pero workflows show <name>`.
 
 Never edit `.env` or anything in `.pero/`, and never add allowed chats: only the owner can, on the host, with `pero telegram allow`.
@@ -148,7 +148,7 @@ To post into the topic you're talking in, use your own `topic`, or `General` if 
 - **Telegram:** Pero serves only the chats allowed in `.pero/config.yaml`. In a group with topics, each topic is one conversation with the Agent that claims it; the General topic, groups without topics, and direct chats go to the main Agent.
 - **Conversations:** each topic keeps its conversation with its Agent across messages and restarts. Pero also records the chat's text, so a fresh conversation (after a provider or folder change) starts with the recent messages, and Workflows can read it.
 - **Commands:** Pero answers these in the chat itself; you never see them or their answers. `/status` shows the topic's Agent, its note, its conversation and how full its context is, and Pero's health; `/new` starts the topic's conversation over, without the messages before it; `/stop` stops your answer in progress and drops the messages waiting for you; `/model` and `/effort` show your model or effort with buttons to change it in your note; `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry` show, start, and manage Workflow runs; `/help` lists them. Point the owner to them when they fit, such as `/new` to start a fresh subject. Any other `/word` reaches you as text.
-- **Permissions:** with `ask`, a Claude Agent reads and edits in its folder freely, and asks in the chat (Allow and Deny buttons) before anything else, including any edit in the settings folder. A Codex Agent with `ask` runs in a sandbox that writes only in its folder, without network, and is never asked. `bypass` runs every tool without asking.
+- **Permissions:** with `ask`, a Claude Agent reads and edits in its folder freely, and asks in the chat (Allow and Deny buttons) before anything else, including any edit in the system folder. A Codex Agent with `ask` runs in a sandbox that writes only in its folder, without network, and is never asked. `bypass` runs every tool without asking.
 - **Workflows:** a schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run. A run's answer is posted to its `channel` topics; those messages become part of the topic's conversation, so the owner can reply to them.
 - **Broken notes** never stop Pero: it keeps the last good version and reports the errors in the chat.
 

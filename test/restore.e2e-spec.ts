@@ -32,7 +32,7 @@ import {
 } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,
@@ -268,13 +268,13 @@ describe('Restore drill (e2e)', () => {
     mkdirSync(join(ws, '.pero'), { recursive: true });
     writeFileSync(join(ws, '.pero', 'config.yaml'), `data: ${vault}\n`);
     initWorkspace(ws, tmp);
-    const settings = join(vault, 'Settings');
+    const system = join(vault, 'System');
     writeFileSync(
-      join(settings, 'Pero.md'),
+      join(system, 'Pero.md'),
       '---\ntimezone: Europe/Lisbon\nhistory-carryover: 20\n---\nBe brief.\n',
     );
     writeFileSync(
-      join(settings, 'Agents', 'Coder.md'),
+      join(system, 'Agents', 'Coder.md'),
       `---\ntopic: Kitchen\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
     );
     writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
@@ -290,10 +290,10 @@ describe('Restore drill (e2e)', () => {
       expect(await say(chat, topic, 'Hello')).toBe('echo: Hello');
     }
     writeFileSync(
-      join(settings, 'Workflows', 'English.md'),
+      join(system, 'Workflows', 'English.md'),
       '---\nhour: 21\nchannel: English\nagent: english\nhistory: true\nmax-attempts: 2\n---\nSuggest better English for: {{history}}\n',
     );
-    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(SystemNotes).refresh();
     // Its schedule gets its saved times, which the backup keeps.
     await daemon!.app.get(ScheduleTick).tick();
     expect(
@@ -453,7 +453,7 @@ describe('Restore drill (e2e)', () => {
     expect(readFileSync(join(ws, 'data', 'Diary.md'), 'utf8')).toBe(
       'Dear diary\n',
     );
-    expect(readdirSync(join(ws, 'data', 'Settings')).sort()).toEqual([
+    expect(readdirSync(join(ws, 'data', 'System')).sort()).toEqual([
       'Agents',
       'Pero.md',
       'Workflows',

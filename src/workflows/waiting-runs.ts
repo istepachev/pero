@@ -2,7 +2,7 @@ import type { EntityManager } from 'typeorm';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { finishRun } from './finish-run.js';
 import { isScheduled } from './run-keys.js';
-import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
+import type { ResolvedWorkflow } from '../system-files/snapshot.js';
 
 /** A run waiting to start that was cancelled, and why. */
 export interface CancelledRun {

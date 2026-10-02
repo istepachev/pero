@@ -166,9 +166,9 @@ describe('backup archive', () => {
 
   it('round-trips the data folder, with its folders and hidden files', async () => {
     stage({ manifest: { ...manifest, includesData: true } });
-    mkdirSync(join(staging, 'data', 'Settings', 'Agents'), { recursive: true });
+    mkdirSync(join(staging, 'data', 'System', 'Agents'), { recursive: true });
     mkdirSync(join(staging, 'data', 'Empty'));
-    writeFileSync(join(staging, 'data', 'Settings', 'Agents', 'Main.md'), 'Hi');
+    writeFileSync(join(staging, 'data', 'System', 'Agents', 'Main.md'), 'Hi');
     writeFileSync(join(staging, 'data', '.obsidian'), '{}');
     const file = join(tmp, 'backup.tgz');
     await writeBackupArchive(staging, file);
@@ -177,15 +177,12 @@ describe('backup archive', () => {
       includesData: true,
     });
     expect(
-      readFileSync(
-        join(target, 'data', 'Settings', 'Agents', 'Main.md'),
-        'utf8',
-      ),
+      readFileSync(join(target, 'data', 'System', 'Agents', 'Main.md'), 'utf8'),
     ).toBe('Hi');
     expect(readdirSync(join(target, 'data')).sort()).toEqual([
       '.obsidian',
       'Empty',
-      'Settings',
+      'System',
     ]);
   });
 

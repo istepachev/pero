@@ -17,7 +17,7 @@ import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { BrokenNoteReports } from './broken-note-reports.js';
 import { NotificationsModule } from './notifications.module.js';
 
@@ -105,7 +105,7 @@ describe('BrokenNoteReports', () => {
       [
         '-1001:7',
         [
-          'Errors in data/Settings/Workflows/Report.md:',
+          'Errors in data/System/Workflows/Report.md:',
           'channel: no topic titled "Helth"; seen topics: Health, Home',
           "It's left out until it's fixed.",
         ].join('\n'),
@@ -143,7 +143,7 @@ describe('BrokenNoteReports', () => {
       [
         '1234',
         [
-          'Errors in data/Settings/Pero.md:',
+          'Errors in data/System/Pero.md:',
           'timezone: must be an IANA time zone such as Europe/Berlin',
           "Pero's own defaults are used until it's fixed.",
         ].join('\n'),
@@ -163,7 +163,7 @@ describe('BrokenNoteReports', () => {
       [
         '-1001:7',
         [
-          'Errors in data/Settings/Agents/Coach.md:',
+          'Errors in data/System/Agents/Coach.md:',
           'effort: must be low, medium, high, xhigh, max, minimal, ultra, or persistent',
           'Its last good version stays in use.',
         ].join('\n'),
@@ -181,11 +181,11 @@ describe('BrokenNoteReports', () => {
     expect(sent[0]![0]).toBe('-1001:7');
     expect(sent[0]![1].split('\n\n')).toEqual([
       [
-        'Errors in data/Settings/Agents/Coach.md:',
+        'Errors in data/System/Agents/Coach.md:',
         'topic: "Health" is also claimed by Agents/Doctor.md, so neither answers there',
       ].join('\n'),
       [
-        'Errors in data/Settings/Agents/Doctor.md:',
+        'Errors in data/System/Agents/Doctor.md:',
         'topic: "Health" is also claimed by Agents/Coach.md, so neither answers there',
       ].join('\n'),
     ]);

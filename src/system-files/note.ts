@@ -1,5 +1,5 @@
 import { LineCounter, parseDocument, type YAMLError } from 'yaml';
-import type { SettingsError } from './settings-error.js';
+import type { NoteError } from './note-error.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -12,7 +12,7 @@ export interface ParsedNote {
 }
 
 export type NoteParse =
-  { ok: true; note: ParsedNote } | { ok: false; errors: SettingsError[] };
+  { ok: true; note: ParsedNote } | { ok: false; errors: NoteError[] };
 
 const DELIMITER = '---';
 

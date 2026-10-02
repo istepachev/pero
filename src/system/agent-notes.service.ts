@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { InvalidInputError } from '../common/errors.js';
 import { writeFileAtomic } from '../config/atomic-file.js';
 import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
-import { noteIdentity } from '../settings-files/note-files.js';
+import { noteIdentity } from '../system-files/note-files.js';
 import {
   AGENT_TEMPLATE,
   agentNoteFor,
@@ -14,10 +14,10 @@ import {
   renameTopicIn,
   replaceNoteProperty,
   topicNoteTitle,
-} from '../settings-files/note-writer.js';
-import { scanSettingsFolder } from '../settings-files/scan.js';
-import { readNote } from '../settings-files/snapshot.js';
-import { SettingsNotes } from './settings-notes.service.js';
+} from '../system-files/note-writer.js';
+import { scanSystemFolder } from '../system-files/scan.js';
+import { readNote } from '../system-files/snapshot.js';
+import { SystemNotes } from './system-notes.service.js';
 
 /** The note Pero writes for a main Agent that has none. */
 const MAIN_NOTE = SKELETON_NOTES['Agents/Main.md']!;
@@ -30,20 +30,20 @@ const MAIN_NOTE = SKELETON_NOTES['Agents/Main.md']!;
  */
 @Injectable()
 export class AgentNotes {
-  private readonly logger = new Logger('Settings');
+  private readonly logger = new Logger('System');
   /** The note written for each topic title, lowercased, while Pero runs. */
   private readonly written = new Map<string, string>();
 
-  constructor(private readonly notes: SettingsNotes) {}
+  constructor(private readonly notes: SystemNotes) {}
 
   /**
    * Writes the Agent note for the topic titled `title` from `_Template.md`,
-   * with `topic` set to the title. Returns its path in the settings
+   * with `topic` set to the title. Returns its path in the system
    * folder, or null when Pero already wrote one for that title and it is
    * still there, since a second would only conflict with it.
    */
   async createForTopic(title: string, topicId: string): Promise<string | null> {
-    const folder = this.settingsFolder();
+    const folder = this.systemFolder();
     const before = this.written.get(title.toLowerCase());
     if (before !== undefined && exists(join(folder, before))) {
       this.logger.warn(
@@ -70,7 +70,7 @@ export class AgentNotes {
         `Left ${AGENT_TEMPLATE} out of the note for topic "${title}": ${problem}`,
       );
     }
-    const files = (await scanSettingsFolder(folder)).map((entry) => entry.file);
+    const files = (await scanSystemFolder(folder)).map((entry) => entry.file);
     // A file that appears meanwhile, as from a sync, is passed over.
     for (;;) {
       const file = freeAgentNote(fileTitle, files);
@@ -91,8 +91,8 @@ export class AgentNotes {
    * clash with.
    */
   async createMain(name: string): Promise<string | null> {
-    const folder = this.settingsFolder();
-    const files = (await scanSettingsFolder(folder)).map((entry) => entry.file);
+    const folder = this.systemFolder();
+    const files = (await scanSystemFolder(folder)).map((entry) => entry.file);
     const existing = files.find((file) => {
       const found = noteIdentity(file);
       return (
@@ -113,12 +113,12 @@ export class AgentNotes {
   }
 
   /**
-   * Sets the `topic` of `file`, a note in the settings folder, from `from`
+   * Sets the `topic` of `file`, a note in the system folder, from `from`
    * to `to`, keeping the note's comments and body. False, after a note in
    * the log, when its topic is no longer `from` or it doesn't parse.
    */
   async renameTopic(file: string, from: string, to: string): Promise<boolean> {
-    const path = join(this.settingsFolder(), file);
+    const path = join(this.systemFolder(), file);
     let text: string;
     let mode: number;
     try {
@@ -146,7 +146,7 @@ export class AgentNotes {
   /**
    * Sets `key` in the note of the Agent named `name` to `value`, or removes
    * it when null, keeping the note's comments and body. Resolves to the
-   * note's path in the settings folder, once the snapshot has the change,
+   * note's path in the system folder, once the snapshot has the change,
    * and whether anything changed. `InvalidInputError` when the note can't
    * take it: it is gone, its properties don't parse, or the value is wrong.
    */
@@ -159,7 +159,7 @@ export class AgentNotes {
     if (file === undefined) {
       throw new InvalidInputError(`Agent ${name} has no note to change`);
     }
-    const path = join(this.settingsFolder(), file);
+    const path = join(this.systemFolder(), file);
     const text = readFileSync(path, 'utf8');
     const mode = statSync(path).mode & 0o777;
     const changed = replaceNoteProperty(text, key, value);
@@ -185,8 +185,8 @@ export class AgentNotes {
     return { file, changed: true };
   }
 
-  private settingsFolder(): string {
-    return this.notes.folders().settingsFolder;
+  private systemFolder(): string {
+    return this.notes.folders().systemFolder;
   }
 }
 

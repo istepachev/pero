@@ -24,7 +24,7 @@ import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { AgentManager } from '../src/agents/agent-manager.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 import {
   NOT_ALLOWED,
@@ -79,9 +79,9 @@ describe('Workflows from notes (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Writes `text` to the note at `file` in the settings folder. */
+  /** Writes `text` to the note at `file` in the system folder. */
   function write(file: string, text: string) {
-    const path = join(workspace, 'data', 'Settings', file);
+    const path = join(workspace, 'data', 'System', file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
     clock += 1_000;
@@ -91,7 +91,7 @@ describe('Workflows from notes (e2e)', () => {
   /** Writes the note at `file`, read at once when Pero runs. */
   async function note(file: string, text: string) {
     write(file, text);
-    await daemon?.app.get(SettingsNotes).refresh();
+    await daemon?.app.get(SystemNotes).refresh();
   }
 
   /** Writes `Pero.md` with `properties`, read at once when Pero runs. */
@@ -226,7 +226,7 @@ describe('Workflows from notes (e2e)', () => {
       expect.objectContaining({
         name: 'evening-review',
         title: 'Evening review',
-        file: 'data/Settings/Workflows/Evening review.md',
+        file: 'data/System/Workflows/Evening review.md',
         agent: 'coach',
         agentEnabled: true,
         inputTemplate: "Review today's chats.",
@@ -283,13 +283,13 @@ describe('Workflows from notes (e2e)', () => {
       client.call('workflows.get', { name: 'report' }),
     ).rejects.toThrow(
       new NotFoundError(
-        "Workflow report isn't loaded: data/Settings/Workflows/Report.md has errors; pero check lists them",
+        "Workflow report isn't loaded: data/System/Workflows/Report.md has errors; pero check lists them",
       ),
     );
     expect((await client.call('workflows.list')).workflows).toEqual([]);
     expect(
       (await client.call('status')).components.find(
-        ({ name }) => name === 'settings',
+        ({ name }) => name === 'system',
       ),
     ).toMatchObject({
       state: 'degraded',
@@ -297,7 +297,7 @@ describe('Workflows from notes (e2e)', () => {
     });
     expect((await client.call('check')).problems).toEqual([
       {
-        file: 'data/Settings/Workflows/Report.md',
+        file: 'data/System/Workflows/Report.md',
         property: 'channel',
         message: 'no topic titled "Helth"; seen topics: none yet',
       },
@@ -314,13 +314,13 @@ describe('Workflows from notes (e2e)', () => {
       chat_id: String(FORUM.id),
       message_thread_id: 7,
       text: [
-        'Errors in data/Settings/Workflows/Brief.md:',
+        'Errors in data/System/Workflows/Brief.md:',
         'channel: no topic titled "Helth"; seen topics: English',
         "It's left out until it's fixed.",
       ].join('\n'),
     });
     // Scanned again, unchanged: not posted again.
-    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(SystemNotes).refresh();
 
     await manualBrief([`channel: [${channel.id}, Hleth]`]);
     await vi.waitFor(() => expect(reports()).toHaveLength(2));
@@ -531,8 +531,8 @@ describe('Workflows from notes (e2e)', () => {
     const second = await client.call('workflows.run', { name: 'daily' });
     await again.started;
     const waiting = await client.call('workflows.run', { name: 'daily' });
-    rmSync(join(workspace, 'data', 'Settings', 'Workflows', 'Daily.md'));
-    await daemon!.app.get(SettingsNotes).refresh();
+    rmSync(join(workspace, 'data', 'System', 'Workflows', 'Daily.md'));
+    await daemon!.app.get(SystemNotes).refresh();
     await daemon!.app.get(ScheduleTick).reconciled();
     expect(await client.call('runs.get', { id: waiting.id })).toMatchObject({
       status: 'cancelled',
@@ -667,7 +667,7 @@ describe('Workflows from notes (e2e)', () => {
           (await client.call('channels.list')).channels.map(({ key }) => key),
         ).toContain(`${FORUM.id}:9`),
       );
-      await daemon!.app.get(SettingsNotes).refresh();
+      await daemon!.app.get(SystemNotes).refresh();
 
       const report = await client.call('workflows.get', {
         name: 'weekly-health-report',

@@ -8,7 +8,7 @@ import {
   type MessageOrigin,
 } from '../persistence/entities/message.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { Definitions } from '../settings/definitions.js';
+import { Definitions } from '../system/definitions.js';
 import {
   type CarriedMessage,
   withEarlierConversation,

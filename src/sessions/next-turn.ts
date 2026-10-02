@@ -1,4 +1,4 @@
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 import type { NextTurn } from '../control/protocol.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { resumes } from './session.service.js';

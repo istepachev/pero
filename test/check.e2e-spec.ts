@@ -67,7 +67,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     expect(result).toEqual({
       code: 0,
       stdout: [
-        'Checked 1 Agent and 0 Workflows in data/Settings: no problems.',
+        'Checked 1 Agent and 0 Workflows in data/System: no problems.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
         '',
       ].join('\n'),
@@ -81,32 +81,32 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
 
   it('lists every problem by file and exits 1', async () => {
     await pero(['init', workspace]);
-    write('data/Settings/Agents/Health.md', '---\ntopic: Health\n---\nHi');
-    write('data/Settings/Agents/Running.md', '---\ntopic: health\n---\nRun');
-    write('data/Settings/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
+    write('data/System/Agents/Health.md', '---\ntopic: Health\n---\nHi');
+    write('data/System/Agents/Running.md', '---\ntopic: health\n---\nRun');
+    write('data/System/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
     write(
-      'data/Settings/Workflows/Weekly health report.md',
+      'data/System/Workflows/Weekly health report.md',
       '---\ntrigger: schedule\nday: sunday\nhour: 25\n---\nReport',
     );
-    write('data/Settings/Workflows/Review.md', '---\nagent: Nobody\n---\nGo');
-    write('data/Settings/Notes.md', 'Stray');
+    write('data/System/Workflows/Review.md', '---\nagent: Nobody\n---\nGo');
+    write('data/System/Notes.md', 'Stray');
 
     const result = await pero(['-w', workspace, 'check']);
     expect(result.code).toBe(1);
     expect(result.stderr).toBe('');
     expect(result.stdout).toBe(
       [
-        'data/Settings/Agents/Coach.md',
+        'data/System/Agents/Coach.md',
         '  modle: unknown property (did you mean model?)',
-        'data/Settings/Agents/Health.md',
+        'data/System/Agents/Health.md',
         '  topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
-        'data/Settings/Agents/Running.md',
+        'data/System/Agents/Running.md',
         '  topic: "health" is also claimed by Agents/Health.md, so neither answers there',
-        'data/Settings/Notes.md',
+        'data/System/Notes.md',
         '  not an Agent or Workflow note; move it under Agents/ or Workflows/, or start its name with _',
-        'data/Settings/Workflows/Review.md',
+        'data/System/Workflows/Review.md',
         '  agent: no Agent note is named nobody',
-        'data/Settings/Workflows/Weekly health report.md',
+        'data/System/Workflows/Weekly health report.md',
         '  trigger: unknown property',
         '  hour: must be a whole number from 0 to 23',
         '',
@@ -125,7 +125,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout)).toEqual({
       ok: false,
-      settingsFolder: null,
+      systemFolder: null,
       agents: 0,
       workflows: 0,
       topicsChecked: false,

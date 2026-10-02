@@ -2,7 +2,7 @@ import type { EntityManager } from 'typeorm';
 import { renderHistoryInput } from '../history/history-input.js';
 import type { MessageHistory } from '../history/message-history.service.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
+import type { ResolvedWorkflow } from '../system-files/snapshot.js';
 import {
   type HistoryRead,
   type HistoryWindowSnapshot,

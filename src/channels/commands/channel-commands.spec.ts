@@ -9,7 +9,7 @@ import { Session } from '../../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../../system/testing/test-workspace.js';
 import type { AgentChannelTurns } from '../agent-channel-turns.js';
 import { AllowedChatsService } from '../allowed-chats.service.js';
 import type { InboundChat } from '../channel-adapter.js';
@@ -120,7 +120,7 @@ describe('ChannelCommands', () => {
         /^State: idle · last answer \d{4}-\d\d-\d\d \d\d:\d\d$/,
       );
       expect(lines.slice(2, 6)).toEqual([
-        'Config: data/Settings/Agents/Main.md',
+        'Config: data/System/Agents/Main.md',
         'Provider: claude (default) · default model · default effort',
         'Permissions: ask (default)',
         'Folder: the workspace',
@@ -161,7 +161,7 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/status');
 
       expect(last().message.text).toMatch(
-        /^Agent main is disabled, so no one answers here\. To turn it back on, set enabled: true in data\/Settings\/Agents\/Main\.md\.\n\nPero: /,
+        /^Agent main is disabled, so no one answers here\. To turn it back on, set enabled: true in data\/System\/Agents\/Main\.md\.\n\nPero: /,
       );
       expect(claude.requests).toEqual([]);
     });
@@ -298,7 +298,7 @@ describe('ChannelCommands', () => {
       expect(result).toEqual({ notice: 'Effort set' });
       expect(adapter.edited.at(-1)!.message.text).toBe(
         'Agent main now uses effort low, from its next answer.\n' +
-          'Config: data/Settings/Agents/Main.md\n— @ada',
+          'Config: data/System/Agents/Main.md\n— @ada',
       );
       expect(ws.read('Agents/Main.md')).toMatch(/^effort: low$/m);
       await say(OWNER, 'Hello');
@@ -320,7 +320,7 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/effort default');
       expect(last().message.text).toBe(
         'Agent main now uses default effort, from its next answer.\n' +
-          'Config: data/Settings/Agents/Main.md',
+          'Config: data/System/Agents/Main.md',
       );
       expect(ws.read('Agents/Main.md')).not.toMatch(/^effort:/m);
 

@@ -12,20 +12,20 @@ import { ChannelSender } from '../channels/channel-sender.js';
 import type { HostAllowedChat } from '../config/host-config.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
-import { shownPath } from '../settings-files/note-paths.js';
-import type { BrokenNote } from '../settings-files/reload.js';
+import { shownPath } from '../system-files/note-paths.js';
+import type { BrokenNote } from '../system-files/reload.js';
 import {
   type NoteRead,
   readNote,
-  type SettingsSnapshot,
+  type SystemSnapshot,
   type TopicLookup,
-} from '../settings-files/snapshot.js';
-import { allowedChannels } from '../settings/allowed-channels.js';
+} from '../system-files/snapshot.js';
+import { allowedChannels } from '../system/allowed-channels.js';
 import {
   channelTopicLookup,
   type KnownChannel,
-} from '../settings/channel-topics.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+} from '../system/channel-topics.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 
 /** A broken note to report, with what the snapshot makes of it. */
 export interface BrokenNoteReport {
@@ -37,7 +37,7 @@ export interface BrokenNoteReport {
 }
 
 /**
- * Posts to Telegram when a settings note becomes broken, since it is
+ * Posts to Telegram when a system note becomes broken, since it is
  * often edited on a phone, far from `pero check` and the log: one message
  * per broken version, keyed by its content, naming the note and each error,
  * and what Pero uses meanwhile. It goes to the Channels the note relates to
@@ -45,7 +45,7 @@ export interface BrokenNoteReport {
  * primary Channel, and isn't recorded in Channel history.
  *
  * Notes broken at startup are only logged, as before: no edit is waiting
- * for an answer. A fixed note is logged by `SettingsNotes` and forgotten
+ * for an answer. A fixed note is logged by `SystemNotes` and forgotten
  * here, so breaking it again the same way posts again. Sending is best
  * effort: a failed send is logged, not retried.
  */
@@ -53,7 +53,7 @@ export interface BrokenNoteReport {
 export class BrokenNoteReports
   implements OnModuleInit, BeforeApplicationShutdown
 {
-  private readonly logger = new Logger('Settings');
+  private readonly logger = new Logger('System');
   /** The broken versions known, reported or not, by `versionKey`. */
   private known = new Set<string>();
   /** The reports under way, one after another. */
@@ -62,7 +62,7 @@ export class BrokenNoteReports
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
     private readonly sender: ChannelSender,
     private readonly hostConfig: HostConfigService,
   ) {}
@@ -86,7 +86,7 @@ export class BrokenNoteReports
     return this.queue;
   }
 
-  private changed(snapshot: SettingsSnapshot): void {
+  private changed(snapshot: SystemSnapshot): void {
     const broken = this.notes.broken();
     const fresh = broken.filter((note) => !this.known.has(versionKey(note)));
     this.known = new Set(broken.map(versionKey));
@@ -103,14 +103,14 @@ export class BrokenNoteReports
   /** Posts about `broken`, one message per Channel. */
   private async report(
     broken: readonly BrokenNote[],
-    snapshot: SettingsSnapshot,
+    snapshot: SystemSnapshot,
   ): Promise<void> {
     const folders = this.notes.folders();
     const allowed = this.hostConfig.allowedChats();
     const channels = await allowedChannels(this.dataSource, allowed);
     const lookup = channelTopicLookup(channels);
     const shown = (file: string) =>
-      shownPath(folders.workspace, join(folders.settingsFolder, file));
+      shownPath(folders.workspace, join(folders.systemFolder, file));
 
     const messages = new Map<number, string[]>();
     for (const note of broken) {
@@ -155,7 +155,7 @@ export class BrokenNoteReports
 /** `note` read, and whether a version of it is in `snapshot`. */
 export function brokenNoteReport(
   note: BrokenNote,
-  snapshot: SettingsSnapshot,
+  snapshot: SystemSnapshot,
 ): BrokenNoteReport {
   const read = readNote(note.file, note.text).note;
   const inUse = (definitions: ReadonlyMap<string, { file: string }>) =>
@@ -204,7 +204,7 @@ export function brokenNoteMessage(
  */
 function relatedChannels(
   { note, read }: BrokenNoteReport,
-  snapshot: SettingsSnapshot,
+  snapshot: SystemSnapshot,
   channels: readonly KnownChannel[],
   lookup: TopicLookup,
 ): number[] {

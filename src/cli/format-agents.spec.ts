@@ -20,7 +20,7 @@ const notes: AgentView = {
   skipGitRepoCheck: false,
   enabled: true,
   main: true,
-  file: 'data/Settings/Agents/Notes.md',
+  file: 'data/System/Agents/Notes.md',
   topic: null,
   origins: {
     provider: 'default',
@@ -42,7 +42,7 @@ const health: AgentView = {
   effectiveWorkingDirectory: '/ws/data/Health',
   instructions: 'Coach me.',
   main: false,
-  file: 'data/Settings/Agents/Health.md',
+  file: 'data/System/Agents/Health.md',
   topic: 'Health',
   useMainInstructions: true,
   origins: {
@@ -75,7 +75,7 @@ const coder: AgentView = {
   skipGitRepoCheck: true,
   enabled: false,
   main: false,
-  file: 'data/Settings/Agents/Coder.md',
+  file: 'data/System/Agents/Coder.md',
   topic: 'Code',
   origins: {
     provider: 'note',
@@ -99,8 +99,8 @@ describe('formatAgentList', () => {
     expect(formatAgentList([coder, notes])).toBe(
       [
         'NAME     PROVIDER  MODEL    EFFORT   FOLDER                PERMISSIONS  STATE     TOPIC  NOTE',
-        'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code   data/Settings/Agents/Coder.md',
-        'notes *  claude    default  default  /home/ws (workspace)  ask          enabled   —      data/Settings/Agents/Notes.md',
+        'coder    codex     gpt-5.5  high     /srv/code             bypass       disabled  Code   data/System/Agents/Coder.md',
+        'notes *  claude    default  default  /home/ws (workspace)  ask          enabled   —      data/System/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
       ].join('\n'),
@@ -109,7 +109,7 @@ describe('formatAgentList', () => {
 
   it('says how to create the first Agent', () => {
     expect(formatAgentList([])).toBe(
-      'No Agents yet. Add a note to the Agents folder in the settings folder.',
+      'No Agents yet. Add a note to the Agents folder in the system folder.',
     );
   });
 
@@ -117,8 +117,8 @@ describe('formatAgentList', () => {
     expect(formatAgentList([health, { ...notes, model: 'opus' }])).toBe(
       [
         'NAME      PROVIDER  MODEL   EFFORT   FOLDER                PERMISSIONS  STATE    TOPIC   NOTE',
-        'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health  data/Settings/Agents/Health.md',
-        'notes *   claude    opus    default  /home/ws (workspace)  ask          enabled  —       data/Settings/Agents/Notes.md',
+        'health !  claude    sonnet  high     /ws/data/Health       ask          enabled  Health  data/System/Agents/Health.md',
+        'notes *   claude    opus    default  /home/ws (workspace)  ask          enabled  —       data/System/Agents/Notes.md',
         '',
         '* the main Agent: General topics and direct chats',
         '! its note has errors, so its last good version is in use; pero check lists them',
@@ -138,7 +138,7 @@ describe('formatAgentDetails', () => {
     ).toBe(
       [
         'Agent health "Health"',
-        '  note               data/Settings/Agents/Health.md',
+        '  note               data/System/Agents/Health.md',
         '  topic              Health',
         '  provider           claude (default)',
         '  model              sonnet',
@@ -189,7 +189,7 @@ describe('formatAgentDetails', () => {
     expect(formatAgentDetails(details)).toBe(
       [
         'Agent coder "Coder"',
-        '  note               data/Settings/Agents/Coder.md',
+        '  note               data/System/Agents/Coder.md',
         '  topic              Code',
         '  provider           codex',
         '  model              gpt-5.5',

@@ -6,7 +6,7 @@ import {
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
 import type { ExecutionSnapshot } from './execution-snapshot.js';
-import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
+import type { ResolvedWorkflow } from '../system-files/snapshot.js';
 
 const logger = new Logger('Notifications');
 

@@ -12,7 +12,7 @@ import type {
 import { ComponentHealth } from '../health/component-health.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { Definitions } from '../settings/definitions.js';
+import { Definitions } from '../system/definitions.js';
 import {
   MAX_DELIVERY_ATTEMPTS,
   NotificationDelivery,

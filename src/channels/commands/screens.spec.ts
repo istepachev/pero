@@ -17,7 +17,7 @@ function agentStatus(overrides: Partial<AgentStatus> = {}): AgentStatus {
   return {
     agent: {
       name: 'coach',
-      file: 'data/Settings/Agents/Coach.md',
+      file: 'data/System/Agents/Coach.md',
       provider: 'codex',
       model: 'gpt-5.5',
       effort: null,
@@ -85,7 +85,7 @@ describe('screens', () => {
       [
         'Agent coach · Running',
         'State: answering for 2m 10s · 1 queued',
-        'Config: data/Settings/Agents/Coach.md',
+        'Config: data/System/Agents/Coach.md',
         'Provider: codex · model gpt-5.5 (Pero.md) · default effort',
         'Permissions: ask',
         'Folder: projects/training',

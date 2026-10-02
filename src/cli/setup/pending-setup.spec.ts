@@ -45,7 +45,7 @@ const settings: SettingsView = {
   timezone: 'UTC',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: false, source: null },
-  files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+  files: { pero: 'data/System/Pero.md', config: '.pero/config.yaml' },
   setInPero: [],
 };
 

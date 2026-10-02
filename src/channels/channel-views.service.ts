@@ -15,7 +15,7 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-import { Definitions, type Route } from '../settings/definitions.js';
+import { Definitions, type Route } from '../system/definitions.js';
 import { routeOf, unansweredSummary } from './channel-stages.js';
 
 /**

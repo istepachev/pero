@@ -5,7 +5,7 @@ import { PersistenceModule } from '../../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../../runtimes/agent-runtimes.js';
 import { RuntimeError } from '../../runtimes/agent-runtime.js';
 import { FakeAgentRuntime } from '../../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../../system/testing/test-workspace.js';
 import { WorkflowExecutor } from '../../workflows/workflow-executor.js';
 import { WorkflowRuns } from '../../workflows/workflow-runs.service.js';
 import { AllowedChatsService } from '../allowed-chats.service.js';
@@ -103,7 +103,7 @@ describe('Workflow commands', () => {
 
     await adapter.press(list, 'Cleanup', OWNER);
     expect(edited().message.text).toMatch(
-      /^Workflow Cleanup\nConfig: data\/Settings\/Workflows\/Cleanup\.md\nAgent: main\nSchedule: none, it runs by hand\nPosts to: no topic\nLatest runs:\n {2}#1 completed /,
+      /^Workflow Cleanup\nConfig: data\/System\/Workflows\/Cleanup\.md\nAgent: main\nSchedule: none, it runs by hand\nPosts to: no topic\nLatest runs:\n {2}#1 completed /,
     );
     expect(labels(edited())).toEqual([['Run now', 'Runs'], ['« Workflows']]);
   });
@@ -148,7 +148,7 @@ describe('Workflow commands', () => {
 
   it('says how to add a Workflow when there is none', async () => {
     expect((await say('/run')).message.text).toBe(
-      'No Workflows yet. Ask an Agent to create one, or add a note to data/Settings/Workflows/.',
+      'No Workflows yet. Ask an Agent to create one, or add a note to data/System/Workflows/.',
     );
   });
 

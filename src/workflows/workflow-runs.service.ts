@@ -20,13 +20,13 @@ import {
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
+import type { ResolvedWorkflow } from '../system-files/snapshot.js';
 import {
   Definitions,
   requireAgent,
   requireWorkflow,
-} from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+} from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 import {
   historyReadSchema,
   historyWindowSchema,
@@ -50,7 +50,7 @@ export class WorkflowRuns {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly executor: WorkflowExecutor,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /**

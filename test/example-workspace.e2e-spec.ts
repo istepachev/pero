@@ -25,7 +25,7 @@ import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { NotificationDelivery } from '../src/notifications/notification-delivery.js';
 import { ScheduleTick } from '../src/scheduler/schedule-tick.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import { FakeBotApi } from '../src/telegram/testing/fake-bot-api.js';
 
 // `npm run test:e2e` builds first.
@@ -139,8 +139,8 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     return runtime.requests.at(-1)!;
   }
 
-  /** The settings folder's note at `file`. */
-  const settings = (file: string) => join(workspace, 'data', 'Settings', file);
+  /** The system folder's note at `file`. */
+  const system = (file: string) => join(workspace, 'data', 'System', file);
 
   it('passes pero check as committed', async () => {
     const result = await new Promise<{ code: number; stdout: string }>(
@@ -157,7 +157,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     expect(result).toEqual({
       code: 0,
       stdout: expect.stringMatching(
-        /^Checked 2 Agents and 2 Workflows in data\/Settings: no problems\./,
+        /^Checked 2 Agents and 2 Workflows in data\/System: no problems\./,
       ),
     });
     // Checking writes nothing into the example.
@@ -187,8 +187,8 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     expect(await createTopic('Finance', FINANCE)).toMatch(
       /^This topic talks to Agent finance: /,
     );
-    const template = readFileSync(settings('Agents/_Template.md'), 'utf8');
-    expect(readFileSync(settings('Agents/Finance.md'), 'utf8')).toBe(
+    const template = readFileSync(system('Agents/_Template.md'), 'utf8');
+    expect(readFileSync(system('Agents/Finance.md'), 'utf8')).toBe(
       template.replace(/\n---\n/, '\n\ntopic: Finance\n---\n'),
     );
     expect(await say('Paid rent', FINANCE)).toBe('echo: Paid rent');
@@ -197,7 +197,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     );
 
     // Editing Health's note changes its next answer.
-    const health = settings('Agents/Health.md');
+    const health = system('Agents/Health.md');
     writeFileSync(
       health,
       readFileSync(health, 'utf8')
@@ -206,7 +206,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     );
     const later = new Date(Date.now() + 60_000);
     utimesSync(health, later, later);
-    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(SystemNotes).refresh();
     expect(await say('Swam 1 km', HEALTH)).toBe('echo: Swam 1 km');
     expect(lastRequest()).toMatchObject({
       instructions: expect.stringMatching(/\n\nYou are my running coach\./),
@@ -215,7 +215,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
 
     // The weekly report, once its Health topic is seen, is due Sunday at
     // 12:00 in Pero.md's time zone.
-    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(SystemNotes).refresh();
     await daemon!.app.get(ScheduleTick).reconciled();
     const report = await client.call('workflows.get', {
       name: 'weekly-health-report',
@@ -268,7 +268,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     expect(lastRequest().instructions).toContain(
       'You help with everyday questions and keep my notes tidy.',
     );
-    await daemon!.app.get(SettingsNotes).refresh();
+    await daemon!.app.get(SystemNotes).refresh();
     await expect(client.call('check')).resolves.toMatchObject({
       agents: 3,
       workflows: 2,

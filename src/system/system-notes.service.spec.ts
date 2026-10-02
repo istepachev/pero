@@ -14,25 +14,22 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
 import { Definitions } from './definitions.js';
-import {
-  type SettingsChange,
-  SettingsNotes,
-} from './settings-notes.service.js';
-import { SettingsModule } from './settings.module.js';
+import { type SystemChange, SystemNotes } from './system-notes.service.js';
+import { SystemModule } from './system.module.js';
 
-describe('SettingsNotes', () => {
+describe('SystemNotes', () => {
   let tmp: string;
-  let settings: string;
+  let system: string;
   let moduleRef: TestingModule;
-  let notes: SettingsNotes;
+  let notes: SystemNotes;
   let health: ComponentHealth;
   /** Each write gets a later modification time, whatever the clock. */
   let clock: number;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-notes-'));
-    settings = join(tmp, 'data', 'Settings');
-    mkdirSync(settings, { recursive: true });
+    system = join(tmp, 'data', 'System');
+    mkdirSync(system, { recursive: true });
     clock = Date.parse('2026-01-01T00:00:00Z');
   });
 
@@ -41,15 +38,15 @@ describe('SettingsNotes', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Boots `module`, by default the settings, in the workspace `tmp`. */
-  async function boot(module: object = SettingsModule) {
+  /** Boots `module`, by default the system notes, in the workspace `tmp`. */
+  async function boot(module: object = SystemModule) {
     const folders = {
       workspace: tmp,
       dataFolder: join(tmp, 'data'),
-      settingsFolder: settings,
+      systemFolder: system,
     };
     moduleRef = await Test.createTestingModule({
-      imports: [module as typeof SettingsModule],
+      imports: [module as typeof SystemModule],
     })
       .useMocker((token) => {
         if (token === HostConfigService) {
@@ -66,12 +63,12 @@ describe('SettingsNotes', () => {
       })
       .compile();
     await moduleRef.init();
-    notes = moduleRef.get(SettingsNotes);
+    notes = moduleRef.get(SystemNotes);
     health = moduleRef.get(ComponentHealth);
   }
 
   function write(file: string, text: string) {
-    const path = join(settings, file);
+    const path = join(system, file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
     clock += 1_000;
@@ -85,7 +82,7 @@ describe('SettingsNotes', () => {
       topic: 'Health',
       workingDirectory: tmp,
     });
-    expect(health.get('settings')).toMatchObject({
+    expect(health.get('system')).toMatchObject({
       state: 'ok',
       detail: null,
       required: true,
@@ -96,7 +93,7 @@ describe('SettingsNotes', () => {
     write('Agents/Coach.md', '---\nmodle: x\nefort: y\n---');
     write('Workflows/Report.md', '---\nhour: 99\n---\nGo');
     await boot();
-    expect(health.get('settings')).toMatchObject({
+    expect(health.get('system')).toMatchObject({
       state: 'degraded',
       detail: '2 notes have errors; run pero check',
     });
@@ -106,7 +103,7 @@ describe('SettingsNotes', () => {
   it('takes in edits on a rescan and tells listeners', async () => {
     write('Agents/Health.md', 'Coach');
     await boot();
-    const changes: SettingsChange[] = [];
+    const changes: SystemChange[] = [];
     notes.onChange((change) => changes.push(change));
 
     write('Agents/Health.md', '---\nmodel: opus\n---\nCoach');
@@ -125,9 +122,9 @@ describe('SettingsNotes', () => {
     await boot();
     write('Agents/Health.md', '---\nmodel: opus\nmodle: x\n---\nCoach');
     await notes.rescan();
-    expect(health.get('settings')!.state).toBe('ok');
+    expect(health.get('system')!.state).toBe('ok');
     await notes.rescan();
-    expect(health.get('settings')).toMatchObject({
+    expect(health.get('system')).toMatchObject({
       state: 'degraded',
       detail: '1 note has errors; run pero check',
     });
@@ -135,7 +132,7 @@ describe('SettingsNotes', () => {
 
     write('Agents/Health.md', '---\nmodel: sonnet\n---\nCoach');
     await notes.rescan();
-    expect(health.get('settings')!.state).toBe('ok');
+    expect(health.get('system')!.state).toBe('ok');
   });
 
   it('loads the notes before the startup of modules that read them', async () => {
@@ -151,7 +148,7 @@ describe('SettingsNotes', () => {
         this.agents = this.definitions.agents().map((agent) => agent.name);
       }
     }
-    @Module({ imports: [SettingsModule], providers: [Reader] })
+    @Module({ imports: [SystemModule], providers: [Reader] })
     class ReaderModule {}
 
     await boot(ReaderModule);

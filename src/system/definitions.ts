@@ -5,18 +5,18 @@ import { NotFoundError } from '../common/errors.js';
 import { guideFile } from '../guide/agent-guide.js';
 import type { Provider, ProviderDefaults } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
-import { shownPath } from '../settings-files/note-paths.js';
-import { agentNoteFor } from '../settings-files/note-writer.js';
-import { NOTE_FOLDERS } from '../settings-files/note-files.js';
+import { shownPath } from '../system-files/note-paths.js';
+import { agentNoteFor } from '../system-files/note-writer.js';
+import { NOTE_FOLDERS } from '../system-files/note-files.js';
 import {
   type Agent,
   buildSnapshot,
   isResolved,
   type ResolvedWorkflow,
-  type SettingsSnapshot,
+  type SystemSnapshot,
   topicClaim,
-} from '../settings-files/snapshot.js';
-import { SettingsNotes } from './settings-notes.service.js';
+} from '../system-files/snapshot.js';
+import { SystemNotes } from './system-notes.service.js';
 
 /** Installation defaults that Agents and Pero's own limits follow. */
 export interface Defaults {
@@ -35,7 +35,7 @@ export interface Defaults {
   /** The owner's notes and files, which every Agent's instructions name. */
   dataFolder: string;
   /** The notes themselves, which every Agent's instructions name. */
-  settingsFolder: string;
+  systemFolder: string;
   /** The guide to the notes in `.pero/`, which every Agent's instructions name. */
   guideFile: string;
   /**
@@ -98,10 +98,10 @@ export type Route =
  */
 @Injectable()
 export class Definitions {
-  constructor(private readonly notes: SettingsNotes) {}
+  constructor(private readonly notes: SystemNotes) {}
 
   defaults(): Defaults {
-    const { snapshot, dataFolder, settingsFolder, workspace } = this.current();
+    const { snapshot, dataFolder, systemFolder, workspace } = this.current();
     return {
       provider: snapshot.defaults.provider,
       providerDefaults: snapshot.defaults.providerDefaults,
@@ -111,7 +111,7 @@ export class Definitions {
       historyRetentionDays: snapshot.defaults.historyRetentionDays,
       maxConcurrentRuns: snapshot.defaults.maxConcurrentRuns,
       dataFolder,
-      settingsFolder,
+      systemFolder,
       guideFile: guideFile(workspace),
       mainInstructions: snapshot.mainInstructions,
     };
@@ -148,9 +148,9 @@ export class Definitions {
    * gets none until Pero writes its note.
    */
   route(channel: RouteQuery): Route {
-    const { snapshot, settingsFolder, workspace } = this.current();
+    const { snapshot, systemFolder, workspace } = this.current();
     const shown = (file: string) =>
-      shownPath(workspace, join(settingsFolder, file));
+      shownPath(workspace, join(systemFolder, file));
     const unanswered = (reason: Unanswered): Route => ({
       kind: 'unanswered',
       reason,
@@ -225,13 +225,13 @@ export class Definitions {
 
   /**
    * The snapshot in use, and the data folder. Before the notes could be
-   * read at all, as when the settings folder is unreadable, there are no
+   * read at all, as when the system folder is unreadable, there are no
    * Agents and every default is Pero's own.
    */
   private current(): {
-    snapshot: SettingsSnapshot;
+    snapshot: SystemSnapshot;
     dataFolder: string;
-    settingsFolder: string;
+    systemFolder: string;
     workspace: string;
   } {
     const snapshot = this.notes.snapshot();
@@ -245,7 +245,7 @@ export class Definitions {
           hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       dataFolder: folders.dataFolder,
-      settingsFolder: folders.settingsFolder,
+      systemFolder: folders.systemFolder,
       workspace: folders.workspace,
     };
   }

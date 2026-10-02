@@ -40,7 +40,7 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
 4. **Allow the group.** Write anything in it. While `pero run` waits for that message, the bot replies that you can confirm the chat in the terminal, and `pero run` offers to allow it. Otherwise the bot replies with the command that allows it: `pero telegram allow <chat-id>`. A group's chat ID is negative, such as `-1001234567890`; keep the minus sign. Once the chat is allowed, the bot posts your first steps there: where to give your main Agent its personality, how topics work, and where the defaults and Workflows live.
 
-5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic: a note Pero writes in `data/Settings/Agents/`, whose text is the Agent's instructions. The General topic talks to your main Agent, `Agents/Main.md`.
+5. **Create a topic and start chatting.** Each new topic gets its own Agent, named after the topic: a note Pero writes in `data/System/Agents/`, whose text is the Agent's instructions. The General topic talks to your main Agent, `Agents/Main.md`.
 
 You can also message the bot directly and allow your user ID the same way. That chat talks to your main Agent, too, in a conversation of its own, apart from the group's General topic. You can use both: `pero run` only offers to allow the first chat, so allow the other with `pero telegram allow <chat-id>`.
 
@@ -70,7 +70,7 @@ pero stop
 
 ### Agents are notes
 
-To change an Agent, edit its note. `data/Settings/Agents/Health.md` answers in the Health topic with its own model:
+To change an Agent, edit its note. `data/System/Agents/Health.md` answers in the Health topic with its own model:
 
 ```markdown
 ---
@@ -83,11 +83,11 @@ You are my health coach. My training log is in Health/Log.md.
 
 Or ask the Agent: *"create a Workflow that…"* or *"be less formal"*. Every Agent knows where its note is and how Pero's settings work, asks what it needs, and writes the note once you allow it. The welcome Pero posts in a new topic names that topic's note.
 
-Each topic has an Agent of its own, and a new topic gets one automatically. The main Agent, `Agents/Main.md`, answers the General topic and direct chats, and its text starts every other Agent's instructions, so a personality written there carries into every topic. Defaults for every Agent, such as the provider, model, and time zone, are properties of `data/Settings/Pero.md`. Pero reads the notes every 10 seconds, so the next message uses your edit. A note with a mistake doesn't stop Pero: it keeps the note's last good version, and tells you in the chat what's wrong. [Configuring Pero](./docs/CONFIGURATION.md) lists every property.
+Each topic has an Agent of its own, and a new topic gets one automatically. The main Agent, `Agents/Main.md`, answers the General topic and direct chats, and its text starts every other Agent's instructions, so a personality written there carries into every topic. Defaults for every Agent, such as the provider, model, and time zone, are properties of `data/System/Pero.md`. Pero reads the notes every 10 seconds, so the next message uses your edit. A note with a mistake doesn't stop Pero: it keeps the note's last good version, and tells you in the chat what's wrong. [Configuring Pero](./docs/CONFIGURATION.md) lists every property.
 
 ### Scheduled workflows
 
-A Workflow is a task an Agent does on its own, on a schedule or on demand: a note in `Workflows/`. For example, `data/Settings/Workflows/English review.md` reviews the day's chats every evening and posts suggestions to the English topic:
+A Workflow is a task an Agent does on its own, on a schedule or on demand: a note in `Workflows/`. For example, `data/System/Workflows/English review.md` reviews the day's chats every evening and posts suggestions to the English topic:
 
 ```markdown
 ---

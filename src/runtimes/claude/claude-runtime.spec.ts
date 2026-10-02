@@ -18,7 +18,7 @@ import {
   ClaudeRuntime,
   type ClaudeQuery,
   NO_APPROVER,
-  NO_SETTINGS_APPROVER,
+  NO_SYSTEM_APPROVER,
   summarize,
 } from './claude-runtime.js';
 import {
@@ -277,16 +277,16 @@ describe('ClaudeRuntime', () => {
     });
   });
 
-  describe('the settings folder', () => {
+  describe('the system folder', () => {
     let vault: string;
-    let settings: string;
+    let system: string;
     let health: string;
 
     beforeEach(() => {
       vault = mkdtempSync(join(tmpdir(), 'pero-claude-runtime-'));
-      settings = join(vault, 'Settings');
-      mkdirSync(join(settings, 'Agents'), { recursive: true });
-      health = join(settings, 'Agents', 'Health.md');
+      system = join(vault, 'System');
+      mkdirSync(join(system, 'Agents'), { recursive: true });
+      health = join(system, 'Agents', 'Health.md');
     });
 
     afterEach(() => {
@@ -296,7 +296,7 @@ describe('ClaudeRuntime', () => {
     function inVault(overrides: Partial<RuntimeRequest> = {}) {
       return request({
         workingDirectory: vault,
-        settingsFolder: settings,
+        systemFolder: system,
         ...overrides,
       });
     }
@@ -316,7 +316,7 @@ describe('ClaudeRuntime', () => {
       expect(approve).not.toHaveBeenCalled();
     });
 
-    it('asks before an edit under the settings folder, and follows the answer', async () => {
+    it('asks before an edit under the system folder, and follows the answer', async () => {
       const approve = vi
         .fn()
         .mockResolvedValueOnce({ allow: true })
@@ -343,15 +343,15 @@ describe('ClaudeRuntime', () => {
       });
     });
 
-    it('asks however the path reaches the settings folder', async () => {
-      symlinkSync(join(settings, 'Agents'), join(vault, 'Agents'));
+    it('asks however the path reaches the system folder', async () => {
+      symlinkSync(join(system, 'Agents'), join(vault, 'Agents'));
       const approve = vi.fn().mockResolvedValue({ allow: false, reason: 'no' });
       const ask = await canUseTool(inVault({ approve }));
 
       for (const file_path of [
         join(vault, 'Agents', 'Health.md'),
-        join('..', basename(vault), 'Settings', 'Agents', 'Health.md'),
-        join(vault, 'Notes', '..', 'Settings', 'Agents', 'Health.md'),
+        join('..', basename(vault), 'System', 'Agents', 'Health.md'),
+        join(vault, 'Notes', '..', 'System', 'Agents', 'Health.md'),
       ]) {
         await ask('Write', { file_path, content: '' }, toolOptions);
       }
@@ -359,14 +359,14 @@ describe('ClaudeRuntime', () => {
       expect(approve).toHaveBeenCalledTimes(3);
     });
 
-    it('refuses an edit under the settings folder when no one can be asked, as in a Workflow run', async () => {
+    it('refuses an edit under the system folder when no one can be asked, as in a Workflow run', async () => {
       const ask = await canUseTool(inVault());
 
       expect(
         await ask('Write', { file_path: health, content: '' }, toolOptions),
       ).toEqual({
         behavior: 'deny',
-        message: `Not allowed: ${NO_SETTINGS_APPROVER}`,
+        message: `Not allowed: ${NO_SYSTEM_APPROVER}`,
       });
       expect(
         await ask(

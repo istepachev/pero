@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildSnapshot,
-  type SettingsSnapshot,
-} from '../settings-files/snapshot.js';
+  type SystemSnapshot,
+} from '../system-files/snapshot.js';
 import { channelTopicLookup } from './channel-topics.js';
 import { Definitions } from './definitions.js';
-import type { SettingsNotes } from './settings-notes.service.js';
+import type { SystemNotes } from './system-notes.service.js';
 
 const FOLDERS = {
   workspace: '/home/me/workspace',
   dataFolder: '/home/me/workspace/data',
-  settingsFolder: '/home/me/workspace/data/Settings',
+  systemFolder: '/home/me/workspace/data/System',
 };
 
 /** The Channels Pero has seen in the allowed chats. */
@@ -21,7 +21,7 @@ const TOPICS = channelTopicLookup([
   { id: 4, key: '1234', title: null },
 ]);
 
-function snapshotOf(files: Record<string, string>): SettingsSnapshot {
+function snapshotOf(files: Record<string, string>): SystemSnapshot {
   return buildSnapshot(
     Object.entries(files).map(([file, text]) => ({ file, text })),
     {
@@ -44,7 +44,7 @@ function definitionsOf(files: Record<string, string> | null) {
       notesListeners.add(listener);
       return () => notesListeners.delete(listener);
     },
-  } as unknown as SettingsNotes;
+  } as unknown as SystemNotes;
   return {
     definitions: new Definitions(notes),
     change: (next: Record<string, string>) => {
@@ -73,7 +73,7 @@ describe('Definitions', () => {
       historyRetentionDays: null,
       maxConcurrentRuns: 3,
       dataFolder: FOLDERS.dataFolder,
-      settingsFolder: FOLDERS.settingsFolder,
+      systemFolder: FOLDERS.systemFolder,
       guideFile: '/home/me/workspace/.pero/guide.md',
       mainInstructions: 'Be brief.',
     });

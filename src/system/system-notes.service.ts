@@ -11,37 +11,37 @@ import { homedir } from 'node:os';
 import type { DataSource } from 'typeorm';
 import { ComponentHealth } from '../health/component-health.js';
 import { HostConfigService } from '../host-config/host-config.service.js';
-import { type BrokenNote, SettingsReloader } from '../settings-files/reload.js';
-import type { SettingsError } from '../settings-files/settings-error.js';
-import type { SettingsSnapshot } from '../settings-files/snapshot.js';
+import { type BrokenNote, SystemReloader } from '../system-files/reload.js';
+import type { NoteError } from '../system-files/note-error.js';
+import type { SystemSnapshot } from '../system-files/snapshot.js';
 import { allowedChannels } from './allowed-channels.js';
 import { channelTopicLookup } from './channel-topics.js';
 
-/** How often the settings folder is scanned for edits. */
-export const SETTINGS_NOTES_TICK_MS = 10_000;
+/** How often the system folder is scanned for edits. */
+export const SYSTEM_NOTES_TICK_MS = 10_000;
 
 /** The health component the notes report as. */
-export const SETTINGS_COMPONENT = 'settings';
+export const SYSTEM_COMPONENT = 'system';
 
 /** Where the notes are, and the folders they are read against. */
-export interface SettingsFolders {
+export interface SystemFolders {
   workspace: string;
   dataFolder: string;
-  settingsFolder: string;
+  systemFolder: string;
 }
 
 /** What changed in a new snapshot. */
-export interface SettingsChange {
-  snapshot: SettingsSnapshot;
+export interface SystemChange {
+  snapshot: SystemSnapshot;
   /** The notes that changed, appeared, or were removed, by path. */
   files: readonly string[];
 }
 
 /**
- * The notes in the settings folder: `Pero.md`, Agents, and Workflows, held
+ * The notes in the system folder: `Pero.md`, Agents, and Workflows, held
  * as one snapshot and rescanned every 10 seconds. Edits made anywhere
  * (Obsidian, Syncthing, `git pull`, an Agent) apply the same way. A broken
- * note is reported in the log and the `settings` component, and its last
+ * note is reported in the log and the `system` component, and its last
  * good version stays in use while Pero runs.
  *
  * Workflow references to topics resolve against the Channels Pero has
@@ -51,10 +51,10 @@ export interface SettingsChange {
  * `Definitions` serves the definitions from the snapshot.
  */
 @Injectable()
-export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
-  private readonly logger = new Logger('Settings');
-  private reloader: SettingsReloader | null = null;
-  private readonly listeners = new Set<(change: SettingsChange) => void>();
+export class SystemNotes implements OnModuleInit, BeforeApplicationShutdown {
+  private readonly logger = new Logger('System');
+  private reloader: SystemReloader | null = null;
+  private readonly listeners = new Set<(change: SystemChange) => void>();
   /** The rescan under way, if any. */
   private current: Promise<void> | null = null;
   private stopping = false;
@@ -77,7 +77,7 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
    */
   async onModuleInit(): Promise<void> {
     const folders = this.folders();
-    this.reloader = new SettingsReloader(folders.settingsFolder, {
+    this.reloader = new SystemReloader(folders.systemFolder, {
       workspace: folders.workspace,
       homeDir: homedir(),
       hostTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -86,10 +86,10 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
   }
 
   /**
-   * The workspace, data folder, and settings folder the notes are read
+   * The workspace, data folder, and system folder the notes are read
    * from, absolute: as they were at startup.
    */
-  folders(): SettingsFolders {
+  folders(): SystemFolders {
     return this.hostConfig.folders();
   }
 
@@ -99,16 +99,16 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
     await this.current;
   }
 
-  @Interval('settings-notes', SETTINGS_NOTES_TICK_MS)
+  @Interval('system-notes', SYSTEM_NOTES_TICK_MS)
   onInterval(): void {
     void this.rescan();
   }
 
   /**
    * The snapshot in use; null while the notes couldn't be read, as when
-   * the settings folder is unreadable.
+   * the system folder is unreadable.
    */
-  snapshot(): SettingsSnapshot | null {
+  snapshot(): SystemSnapshot | null {
     return this.reloader?.current() ?? null;
   }
 
@@ -124,18 +124,18 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
    * Calls `listener` each time the snapshot changes; returns a function
    * that stops the calls.
    */
-  onChange(listener: (change: SettingsChange) => void): () => void {
+  onChange(listener: (change: SystemChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  /** Scans the settings folder once; one scan at a time, and never throws. */
+  /** Scans the system folder once; one scan at a time, and never throws. */
   rescan(): Promise<void> {
     if (this.reloader === null || this.stopping) return Promise.resolve();
     this.current ??= this.reload(this.reloader)
       .catch((error: unknown) => {
         this.logger.error(
-          `Could not read the settings in ${this.folders().settingsFolder}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not read the system folder ${this.folders().systemFolder}: ${error instanceof Error ? error.message : String(error)}`,
         );
       })
       .finally(() => {
@@ -145,7 +145,7 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
   }
 
   /**
-   * Scans the settings folder once more after any scan under way, so a
+   * Scans the system folder once more after any scan under way, so a
    * note Pero just wrote is in the snapshot when this resolves.
    */
   async refresh(): Promise<void> {
@@ -153,7 +153,7 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
     await this.rescan();
   }
 
-  private async reload(reloader: SettingsReloader): Promise<void> {
+  private async reload(reloader: SystemReloader): Promise<void> {
     const first = reloader.current() === null;
     await this.lookUpTopics(reloader);
     const reload = await reloader.rescan();
@@ -161,10 +161,10 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
     const { snapshot, changed, appeared, fixed } = reload;
     if (first) {
       this.logger.log(
-        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.folders().settingsFolder}`,
+        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.folders().systemFolder}`,
       );
     } else if (changed.length > 0) {
-      this.logger.log(`Settings notes changed: ${changed.join(', ')}`);
+      this.logger.log(`System notes changed: ${changed.join(', ')}`);
     }
     for (const error of appeared) this.logger.warn(describe(error));
     for (const error of fixed) this.logger.log(`Fixed: ${describe(error)}`);
@@ -174,7 +174,7 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
         listener({ snapshot, files: changed });
       } catch (error) {
         this.logger.error(
-          `A settings listener failed: ${error instanceof Error ? error.message : String(error)}`,
+          `A system notes listener failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -185,7 +185,7 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
    * references against, when they changed since it last had them. Should
    * they fail to load, the ones it has stay.
    */
-  private async lookUpTopics(reloader: SettingsReloader): Promise<void> {
+  private async lookUpTopics(reloader: SystemReloader): Promise<void> {
     if (this.dataSource === undefined) return;
     let channels;
     try {
@@ -205,22 +205,22 @@ export class SettingsNotes implements OnModuleInit, BeforeApplicationShutdown {
     reloader.setTopics(channelTopicLookup(channels));
   }
 
-  /** `settings`: `ok`, or how many notes have errors. */
-  private reportHealth(snapshot: SettingsSnapshot): void {
+  /** `system`: `ok`, or how many notes have errors. */
+  private reportHealth(snapshot: SystemSnapshot): void {
     const broken = new Set(snapshot.errors.map((error) => error.file)).size;
     if (broken === 0) {
-      this.health.report(SETTINGS_COMPONENT, 'ok');
+      this.health.report(SYSTEM_COMPONENT, 'ok');
       return;
     }
     this.health.report(
-      SETTINGS_COMPONENT,
+      SYSTEM_COMPONENT,
       'degraded',
       `${broken} ${broken === 1 ? 'note has' : 'notes have'} errors; run pero check`,
     );
   }
 }
 
-function describe({ file, property, message }: SettingsError): string {
+function describe({ file, property, message }: NoteError): string {
   return `${file}: ${property === null ? '' : `${property}: `}${message}`;
 }
 

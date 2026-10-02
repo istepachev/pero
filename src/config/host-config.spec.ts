@@ -19,19 +19,19 @@ import {
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
-  resolveSettingsFolder,
+  resolveSystemFolder,
 } from './host-config.js';
 
 /** Beyond 2^53, where a JavaScript number would lose the last digits. */
 const BIG = '-1009007199254740993';
 
 describe('parseHostConfig', () => {
-  it('reads the data folder, settings folder, and allowed chats', () => {
+  it('reads the data folder, system folder, and allowed chats', () => {
     const config = parseHostConfig(
       'config.yaml',
       [
         'data: ~/notes',
-        'settings: notes/Settings',
+        'system: notes/System',
         'telegram:',
         '  allowed-chats:',
         `    - id: ${BIG}`,
@@ -42,7 +42,7 @@ describe('parseHostConfig', () => {
 
     expect(config).toEqual({
       data: '~/notes',
-      settings: 'notes/Settings',
+      system: 'notes/System',
       allowedChats: [
         { chatKey: BIG, title: 'Home' },
         { chatKey: '123456789', title: null },
@@ -53,17 +53,17 @@ describe('parseHostConfig', () => {
   it('takes an empty file, and the template, as nothing set', () => {
     expect(parseHostConfig('config.yaml', '')).toEqual({
       data: null,
-      settings: null,
+      system: null,
       allowedChats: [],
     });
     expect(parseHostConfig('config.yaml', defaultHostConfig())).toEqual({
       data: 'data',
-      settings: null,
+      system: null,
       allowedChats: [],
     });
     expect(parseHostConfig('config.yaml', defaultHostConfig('2024'))).toEqual({
       data: '2024',
-      settings: null,
+      system: null,
       allowedChats: [],
     });
   });
@@ -249,21 +249,17 @@ describe('data folder', () => {
     );
   });
 
-  it('holds the settings folder, unless settings names another', () => {
-    const settings = (config: {
-      data: string | null;
-      settings: string | null;
-    }) => resolveSettingsFolder(config, '/ws', '/home/o');
-    expect(settings({ data: null, settings: null })).toBe('/ws/data/Settings');
-    expect(settings({ data: '~/notes', settings: null })).toBe(
-      '/home/o/notes/Settings',
+  it('holds the system folder, unless system names another', () => {
+    const system = (config: { data: string | null; system: string | null }) =>
+      resolveSystemFolder(config, '/ws', '/home/o');
+    expect(system({ data: null, system: null })).toBe('/ws/data/System');
+    expect(system({ data: '~/notes', system: null })).toBe(
+      '/home/o/notes/System',
     );
-    expect(settings({ data: 'vault', settings: 'config/pero' })).toBe(
+    expect(system({ data: 'vault', system: 'config/pero' })).toBe(
       '/ws/config/pero',
     );
-    expect(settings({ data: null, settings: '/srv/settings' })).toBe(
-      '/srv/settings',
-    );
+    expect(system({ data: null, system: '/srv/system' })).toBe('/srv/system');
   });
 });
 

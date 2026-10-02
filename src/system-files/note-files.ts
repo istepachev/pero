@@ -1,13 +1,13 @@
 import { posix } from 'node:path';
 import { slugify } from '../config/slug.js';
-import type { SettingsError } from './settings-error.js';
+import type { NoteError } from './note-error.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
-/** The installation defaults, at the settings folder's root. */
+/** The installation defaults, at the system folder's root. */
 export const PERO_NOTE = 'Pero.md';
 
-/** Folders of the settings folder that hold notes, by the kind they hold. */
+/** Folders of the system folder that hold notes, by the kind they hold. */
 export const NOTE_FOLDERS = { agent: 'Agents', workflow: 'Workflows' } as const;
 
 export type NoteKind = 'pero' | keyof typeof NOTE_FOLDERS;
@@ -22,12 +22,12 @@ export interface NoteIdentity {
 }
 
 export type NoteIdentityResult =
-  { ok: true; identity: NoteIdentity } | { ok: false; error: SettingsError };
+  { ok: true; identity: NoteIdentity } | { ok: false; error: NoteError };
 
 const NOTE_EXTENSION = '.md';
 
 /**
- * Whether Pero skips `file`, a `/`-separated path inside the settings
+ * Whether Pero skips `file`, a `/`-separated path inside the system
  * folder: anything but a `.md` file, and anything whose name or folder
  * starts with `_` or `.`, such as `Agents/_Template.md` or `.obsidian/`.
  */
@@ -42,7 +42,7 @@ export function isIgnoredPath(file: string): boolean {
 
 /**
  * The identity of the note at `file`, a `/`-separated path inside the
- * settings folder that `isIgnoredPath` keeps. Subfolders of `Agents/` and
+ * system folder that `isIgnoredPath` keeps. Subfolders of `Agents/` and
  * `Workflows/` are for the owner's grouping and don't change the name.
  */
 export function noteIdentity(file: string): NoteIdentityResult {

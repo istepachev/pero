@@ -9,7 +9,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { Message } from '../persistence/entities/message.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { Definitions } from '../settings/definitions.js';
+import { Definitions } from '../system/definitions.js';
 
 /** How often older messages are looked for. */
 export const RETENTION_TICK_MS = 60 * 60_000;

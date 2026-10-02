@@ -85,7 +85,7 @@ describe('Telegram chats and pairing (e2e)', () => {
 
   /** The Agent notes, by file name. */
   function agentNotes(): string[] {
-    return readdirSync(join(workspace, 'data', 'Settings', 'Agents')).sort();
+    return readdirSync(join(workspace, 'data', 'System', 'Agents')).sort();
   }
 
   function db(): DataSource {
@@ -282,7 +282,7 @@ describe('Telegram chats and pairing (e2e)', () => {
     expect((await sentTexts(2)).at(-1)).toBe('echo: One');
     api.push(command(DIRECT, '/status'));
     expect((await sentTexts(3)).at(-1)).toMatch(
-      /^Agent main · Ada\nState: idle · last answer .*\nConfig: data\/Settings\/Agents\/Main\.md\n/,
+      /^Agent main · Ada\nState: idle · last answer .*\nConfig: data\/System\/Agents\/Main\.md\n/,
     );
 
     api.push(command(DIRECT, '/new'));
@@ -358,7 +358,7 @@ describe('Telegram chats and pairing (e2e)', () => {
 
   it('runs a Workflow picked from the /run menu', async () => {
     writeFileSync(
-      join(workspace, 'data', 'Settings', 'Workflows', 'Daily brief.md'),
+      join(workspace, 'data', 'System', 'Workflows', 'Daily brief.md'),
       'Sum up the day.\n',
     );
     await start();

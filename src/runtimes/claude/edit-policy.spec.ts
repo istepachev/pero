@@ -13,14 +13,14 @@ import { editDecision } from './edit-policy.js';
 describe('editDecision', () => {
   let tmp: string;
   let vault: string;
-  let settings: string;
+  let system: string;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'pero-edit-policy-'));
     vault = join(tmp, 'data');
-    settings = join(vault, 'Settings');
-    mkdirSync(join(settings, 'Agents'), { recursive: true });
-    writeFileSync(join(settings, 'Agents', 'Health.md'), 'Be kind.');
+    system = join(vault, 'System');
+    mkdirSync(join(system, 'Agents'), { recursive: true });
+    writeFileSync(join(system, 'Agents', 'Health.md'), 'Be kind.');
     writeFileSync(join(vault, 'Groceries.md'), '- milk');
   });
 
@@ -35,7 +35,7 @@ describe('editDecision', () => {
   ) {
     return editDecision(tool, input, {
       workingDirectory,
-      settingsFolder: settings,
+      systemFolder: system,
     });
   }
 
@@ -52,43 +52,43 @@ describe('editDecision', () => {
     ).toBe('allow');
   });
 
-  it('marks edits under the settings folder, however the path is written', async () => {
-    const health = join(settings, 'Agents', 'Health.md');
+  it('marks edits under the system folder, however the path is written', async () => {
+    const health = join(system, 'Agents', 'Health.md');
 
     for (const file_path of [
       health,
-      'Settings/Agents/Health.md',
-      join(vault, 'Trips', '..', 'Settings', 'Agents', 'Health.md'),
-      '../data/Settings/Agents/Health.md',
-      join(settings, 'Workflows', 'Weekly.md'),
-      settings,
+      'System/Agents/Health.md',
+      join(vault, 'Trips', '..', 'System', 'Agents', 'Health.md'),
+      '../data/System/Agents/Health.md',
+      join(system, 'Workflows', 'Weekly.md'),
+      system,
     ]) {
-      expect(await decide('Edit', { file_path }), file_path).toBe('settings');
+      expect(await decide('Edit', { file_path }), file_path).toBe('system');
     }
     expect(await decide('MultiEdit', { file_path: health, edits: [] })).toBe(
-      'settings',
+      'system',
     );
   });
 
-  it('marks edits through a symlink into the settings folder', async () => {
-    symlinkSync(join(settings, 'Agents'), join(vault, 'Agents'));
+  it('marks edits through a symlink into the system folder', async () => {
+    symlinkSync(join(system, 'Agents'), join(vault, 'Agents'));
     symlinkSync(
-      join(settings, 'Agents', 'Health.md'),
+      join(system, 'Agents', 'Health.md'),
       join(vault, 'Health link.md'),
     );
 
     expect(
       await decide('Edit', { file_path: join(vault, 'Agents', 'Health.md') }),
-    ).toBe('settings');
+    ).toBe('system');
     expect(
       await decide('Write', { file_path: join(vault, 'Agents', 'New.md') }),
-    ).toBe('settings');
+    ).toBe('system');
     expect(
       await decide('Edit', { file_path: join(vault, 'Health link.md') }),
-    ).toBe('settings');
+    ).toBe('system');
   });
 
-  it('follows a working folder or settings folder reached through a symlink', async () => {
+  it('follows a working folder or system folder reached through a symlink', async () => {
     const link = join(tmp, 'vault-link');
     symlinkSync(vault, link);
 
@@ -101,10 +101,10 @@ describe('editDecision', () => {
     expect(
       await decide(
         'Edit',
-        { file_path: join(link, 'Settings', 'Agents', 'Health.md') },
+        { file_path: join(link, 'System', 'Agents', 'Health.md') },
         link,
       ),
-    ).toBe('settings');
+    ).toBe('system');
   });
 
   it('asks about edits outside the folder', async () => {
@@ -149,11 +149,11 @@ describe('editDecision', () => {
     ).toBe('ask');
   });
 
-  it('protects nothing without a settings folder', async () => {
+  it('protects nothing without a system folder', async () => {
     expect(
       await editDecision(
         'Edit',
-        { file_path: join(settings, 'Agents', 'Health.md') },
+        { file_path: join(system, 'Agents', 'Health.md') },
         { workingDirectory: vault },
       ),
     ).toBe('allow');
@@ -172,14 +172,14 @@ describe('editDecision', () => {
       return editDecision(
         'Read',
         { file_path },
-        { workingDirectory, settingsFolder: settings, guideFile: guide },
+        { workingDirectory, systemFolder: system, guideFile: guide },
       );
     }
 
     it('is read without asking, from any folder and however the path is written', async () => {
       expect(await read(guide)).toBe('allow');
       expect(await read('../.pero/guide.md')).toBe('allow');
-      expect(await read(guide, join(settings, 'Agents'))).toBe('allow');
+      expect(await read(guide, join(system, 'Agents'))).toBe('allow');
       symlinkSync(join(tmp, '.pero'), join(vault, 'pero-link'));
       expect(await read(join(vault, 'pero-link', 'guide.md'))).toBe('allow');
     });

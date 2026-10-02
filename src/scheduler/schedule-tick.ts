@@ -10,8 +10,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Like } from 'typeorm';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import type { ResolvedWorkflow } from '../settings-files/snapshot.js';
-import { Definitions } from '../settings/definitions.js';
+import type { ResolvedWorkflow } from '../system-files/snapshot.js';
+import { Definitions } from '../system/definitions.js';
 import {
   countOccurrences,
   nextOccurrence,

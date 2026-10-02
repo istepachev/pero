@@ -75,7 +75,7 @@ describe('HostConfigService', () => {
     expect(service.folders()).toEqual({
       workspace,
       dataFolder: join(tmp, 'notes'),
-      settingsFolder: join(tmp, 'notes', 'Settings'),
+      systemFolder: join(tmp, 'notes', 'System'),
     });
   });
 

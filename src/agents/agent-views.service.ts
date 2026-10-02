@@ -14,15 +14,15 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
-import { findAgentNote, shownPath } from '../settings-files/note-paths.js';
-import { agentOrigins } from '../settings-files/origins.js';
+import { findAgentNote, shownPath } from '../system-files/note-paths.js';
+import { agentOrigins } from '../system-files/origins.js';
 import {
   type Defaults,
   Definitions,
   routeQuery,
-} from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
-import type { Agent } from '../settings-files/snapshot.js';
+} from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
+import type { Agent } from '../system-files/snapshot.js';
 
 /**
  * Agents as the CLI shows them: their settings with defaults resolved, and
@@ -34,7 +34,7 @@ export class AgentViews {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly history: MessageHistory,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /** Every Agent, by name. */
@@ -72,10 +72,7 @@ export class AgentViews {
     if (snapshot === null || note === undefined) return null;
     return {
       ...agentView(agent, main),
-      file: shownPath(
-        folders.workspace,
-        join(folders.settingsFolder, note.file),
-      ),
+      file: shownPath(folders.workspace, join(folders.systemFolder, note.file)),
       topic: note.topic,
       origins: agentOrigins(note, snapshot.peroProperties),
       errors: snapshot.errors
@@ -99,7 +96,7 @@ export class AgentViews {
       if (broken !== null) {
         const file = shownPath(
           folders.workspace,
-          join(folders.settingsFolder, broken),
+          join(folders.systemFolder, broken),
         );
         return new NotFoundError(
           `Agent ${name} isn't loaded: ${file} has errors; pero check lists them`,

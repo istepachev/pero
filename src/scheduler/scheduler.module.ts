@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { SettingsModule } from '../settings/settings.module.js';
+import { SystemModule } from '../system/system.module.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { ScheduleTick } from './schedule-tick.js';
 
@@ -8,7 +8,7 @@ import { ScheduleTick } from './schedule-tick.js';
  * `ScheduleModule.forRoot()` is imported, which is the daemon's AppModule.
  */
 @Module({
-  imports: [SettingsModule, WorkflowsModule],
+  imports: [SystemModule, WorkflowsModule],
   providers: [ScheduleTick],
   exports: [ScheduleTick],
 })

@@ -2,22 +2,22 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { channelTopicLookup } from '../settings/channel-topics.js';
-import { SettingsReloader } from './reload.js';
+import { channelTopicLookup } from '../system/channel-topics.js';
+import { SystemReloader } from './reload.js';
 
-describe('SettingsReloader', () => {
+describe('SystemReloader', () => {
   let root: string;
-  let settings: string;
-  let reloader: SettingsReloader;
+  let system: string;
+  let reloader: SystemReloader;
   /** Each write gets a later modification time, whatever the clock. */
   let clock: number;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'pero-reload-'));
-    settings = join(root, 'Settings');
-    await mkdir(settings);
+    system = join(root, 'System');
+    await mkdir(system);
     clock = Date.parse('2026-01-01T00:00:00Z');
-    reloader = new SettingsReloader(settings, {
+    reloader = new SystemReloader(system, {
       workspace: root,
       homeDir: root,
       hostTimeZone: 'UTC',
@@ -29,7 +29,7 @@ describe('SettingsReloader', () => {
   });
 
   async function write(file: string, text: string) {
-    const path = join(settings, file);
+    const path = join(system, file);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, text);
     clock += 1_000;
@@ -183,7 +183,7 @@ describe('SettingsReloader', () => {
     });
     expect(agent('running')).toBeDefined();
 
-    await rm(join(settings, 'Agents/Health.md'));
+    await rm(join(system, 'Agents/Health.md'));
     expect(await reloader.rescan()).toMatchObject({
       changed: ['Agents/Health.md'],
     });
@@ -194,7 +194,7 @@ describe('SettingsReloader', () => {
     await reloader.rescan();
     await write('Agents/Draft.md', '---\nmodle: x\n');
     expect(await reloader.rescan()).toBeNull();
-    await rm(join(settings, 'Agents/Draft.md'));
+    await rm(join(system, 'Agents/Draft.md'));
     expect(await reloader.rescan()).toBeNull();
   });
 
@@ -204,7 +204,7 @@ describe('SettingsReloader', () => {
     await reloader.rescan();
     expect(reloader.current()!.workflows.has('report')).toBe(true);
 
-    await rm(join(settings, 'Agents/Health.md'));
+    await rm(join(system, 'Agents/Health.md'));
     expect(await reloader.rescan()).toMatchObject({
       appeared: [
         {

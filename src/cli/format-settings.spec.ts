@@ -17,7 +17,7 @@ const workspace: SettingsView = {
   timezone: 'Europe/Berlin',
   maxConcurrentRuns: 2,
   telegramBotToken: { set: true, source: 'env-file' },
-  files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+  files: { pero: 'data/System/Pero.md', config: '.pero/config.yaml' },
   setInPero: ['claude-model', 'history-retention-days', 'timezone'],
 };
 
@@ -25,7 +25,7 @@ describe('formatSettings', () => {
   it("shows Pero.md, marking Pero's own defaults, then config.yaml and the token", () => {
     expect(formatSettings(workspace)).toBe(
       [
-        'data/Settings/Pero.md',
+        'data/System/Pero.md',
         '  provider                claude (default)',
         '  claude-model            opus',
         '  claude-effort           (provider default)',

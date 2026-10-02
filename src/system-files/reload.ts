@@ -1,9 +1,9 @@
-import { readNotes, scanSettingsFolder } from './scan.js';
-import type { SettingsError } from './settings-error.js';
+import { readNotes, scanSystemFolder } from './scan.js';
+import type { NoteError } from './note-error.js';
 import {
   buildSnapshot,
   readNote,
-  type SettingsSnapshot,
+  type SystemSnapshot,
   type SnapshotContext,
   type SnapshotNote,
   type TopicLookup,
@@ -12,17 +12,17 @@ import {
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /** What one rescan changed. */
-export interface SettingsReload {
-  snapshot: SettingsSnapshot;
+export interface SystemReload {
+  snapshot: SystemSnapshot;
   /**
    * Notes that changed, appeared, or were removed, by path; none when only
    * the topics references resolve against did.
    */
   changed: string[];
   /** Errors the previous snapshot didn't have. */
-  appeared: SettingsError[];
+  appeared: NoteError[];
   /** Errors of the previous snapshot this one no longer has. */
-  fixed: SettingsError[];
+  fixed: NoteError[];
 }
 
 /** A note the snapshot in use reports errors for. */
@@ -32,7 +32,7 @@ export interface BrokenNote {
   text: string;
   /** Whether its last good version is used in place of `text`. */
   fallback: boolean;
-  errors: SettingsError[];
+  errors: NoteError[];
 }
 
 interface Stat {
@@ -53,7 +53,7 @@ interface NoteState {
 }
 
 /**
- * Keeps a snapshot of the settings folder's notes up to date by rescanning
+ * Keeps a snapshot of the system folder's notes up to date by rescanning
  * it. A rescan stats every note and reads only those whose size or
  * modification time changed.
  *
@@ -62,14 +62,14 @@ interface NoteState {
  * version stays. Once used, a note with errors is reported, and its last
  * good version, if Pero read one since it started, stays in use.
  */
-export class SettingsReloader {
+export class SystemReloader {
   private readonly notes = new Map<string, NoteState>();
-  private snapshot: SettingsSnapshot | null = null;
+  private snapshot: SystemSnapshot | null = null;
   /** Whether the next rescan rebuilds the snapshot, notes changed or not. */
   private stale = false;
 
   constructor(
-    private readonly settingsFolder: string,
+    private readonly systemFolder: string,
     private context: SnapshotContext,
   ) {}
 
@@ -83,18 +83,18 @@ export class SettingsReloader {
   }
 
   /** The snapshot in use; null before the first rescan. */
-  current(): SettingsSnapshot | null {
+  current(): SystemSnapshot | null {
     return this.snapshot;
   }
 
   /**
-   * Scans the settings folder and returns what changed, or null when the
+   * Scans the system folder and returns what changed, or null when the
    * snapshot stays as it is. The first rescan uses every note as it is,
    * errors and all: there is no previous version to keep.
    */
-  async rescan(): Promise<SettingsReload | null> {
+  async rescan(): Promise<SystemReload | null> {
     const first = this.snapshot === null;
-    const entries = await scanSettingsFolder(this.settingsFolder);
+    const entries = await scanSystemFolder(this.systemFolder);
     const changed = new Set<string>();
     const toRead = new Map<string, Stat>();
     const present = new Set<string>();
@@ -120,7 +120,7 @@ export class SettingsReloader {
     }
 
     const read = await readNotes(
-      this.settingsFolder,
+      this.systemFolder,
       [...toRead].map(([file, stat]) => ({ file, ...stat })),
     );
     for (const { file, text } of read) {
@@ -167,7 +167,7 @@ export class SettingsReloader {
    * the version read; none before the first rescan.
    */
   broken(): BrokenNote[] {
-    const byFile = new Map<string, SettingsError[]>();
+    const byFile = new Map<string, NoteError[]>();
     for (const error of this.snapshot?.errors ?? []) {
       byFile.set(error.file, [...(byFile.get(error.file) ?? []), error]);
     }
@@ -208,13 +208,13 @@ function sameStat(a: Stat, b: Stat): boolean {
 
 /** The errors in `errors` that `other` doesn't have. */
 function without(
-  errors: readonly SettingsError[],
-  other: readonly SettingsError[],
-): SettingsError[] {
+  errors: readonly NoteError[],
+  other: readonly NoteError[],
+): NoteError[] {
   const keys = new Set(other.map(key));
   return errors.filter((error) => !keys.has(key(error)));
 }
 
-function key(error: SettingsError): string {
+function key(error: NoteError): string {
   return JSON.stringify([error.file, error.property, error.message]);
 }

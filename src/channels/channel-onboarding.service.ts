@@ -5,16 +5,16 @@ import type { DataSource, EntityManager } from 'typeorm';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
-import { shownPath } from '../settings-files/note-paths.js';
-import { type Agent, topicClaim } from '../settings-files/snapshot.js';
-import { AgentNotes } from '../settings/agent-notes.service.js';
+import { shownPath } from '../system-files/note-paths.js';
+import { type Agent, topicClaim } from '../system-files/snapshot.js';
+import { AgentNotes } from '../system/agent-notes.service.js';
 import {
   Definitions,
   type Route,
   routeQuery,
   type Unanswered,
-} from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+} from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type {
   ChannelEvent,
@@ -143,7 +143,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     private readonly sender: ChannelSender,
     private readonly allowedChats: AllowedChatsService,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
     private readonly agentNotes: AgentNotes,
   ) {
     super();
@@ -323,9 +323,9 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   ): Promise<void> {
     if (this.welcomed.has(channel.id)) return;
     this.welcomed.add(channel.id);
-    const { workspace, settingsFolder } = this.notes.folders();
+    const { workspace, systemFolder } = this.notes.folders();
     const shown = (path: string) =>
-      shownPath(workspace, join(settingsFolder, path));
+      shownPath(workspace, join(systemFolder, path));
     const note = shown(agent.file);
     const text = routeQuery(channel).primary
       ? firstStepsText(

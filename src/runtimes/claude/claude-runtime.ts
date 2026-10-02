@@ -44,13 +44,13 @@ export const NO_APPROVER =
   "no one can approve tools here yet; the owner can let this Agent's tools " +
   'run without asking with permissions set to bypass';
 
-/** Why an edit of the settings folder was refused when no one can be asked. */
-export const NO_SETTINGS_APPROVER =
-  "Pero's settings folder changes only with the owner's approval, and no " +
+/** Why an edit of the system folder was refused when no one can be asked. */
+export const NO_SYSTEM_APPROVER =
+  "Pero's system folder changes only with the owner's approval, and no " +
   'one can approve here';
 
-/** Starts the summary of an edit of the settings folder, for the owner. */
-const SETTINGS_EDIT = "Change Pero's settings";
+/** Starts the summary of an edit of the system folder, for the owner. */
+const SYSTEM_EDIT = "Change Pero's settings";
 
 /**
  * Runs Agents on Claude Code through the Claude Agent SDK, signed in with
@@ -169,28 +169,28 @@ function claudeEffort(effort: string): EffortLevel {
 
 /**
  * Decides about each tool Claude Code leaves open: an edit in the Agent's
- * folder runs, except under the settings folder, which asks like any other
+ * folder runs, except under the system folder, which asks like any other
  * tool, and so does reading Pero's guide. Without an approver, or when asking fails, the tool is refused and
  * Claude is told why.
  */
 function askOwner(request: RuntimeRequest): CanUseTool {
-  const { approve, workingDirectory, settingsFolder, guideFile } = request;
+  const { approve, workingDirectory, systemFolder, guideFile } = request;
   return async (tool, input, { signal, title }) => {
     const decision = await editDecision(tool, input, {
       workingDirectory,
-      ...(settingsFolder === undefined ? {} : { settingsFolder }),
+      ...(systemFolder === undefined ? {} : { systemFolder }),
       ...(guideFile === undefined ? {} : { guideFile }),
     });
     if (decision === 'allow') return { behavior: 'allow', updatedInput: input };
-    const settings = decision === 'settings';
+    const system = decision === 'system';
     if (approve === undefined) {
-      return deny(settings ? NO_SETTINGS_APPROVER : NO_APPROVER);
+      return deny(system ? NO_SYSTEM_APPROVER : NO_APPROVER);
     }
     const summary = title ?? summarize(tool, input);
     try {
       const answer = await approve({
         tool,
-        summary: settings ? `${SETTINGS_EDIT}: ${summary}` : summary,
+        summary: system ? `${SYSTEM_EDIT}: ${summary}` : summary,
         signal,
       });
       return answer.allow

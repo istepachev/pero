@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { type DataSource, type EntityManager, Not } from 'typeorm';
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 

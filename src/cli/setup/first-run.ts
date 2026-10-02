@@ -16,7 +16,7 @@ import {
   DEFAULT_DATA_FOLDER,
   hostConfigPath,
   readHostConfig,
-  resolveSettingsFolder,
+  resolveSystemFolder,
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
 import { workspaceLayout } from '../../config/workspace-layout.js';
@@ -29,9 +29,9 @@ import {
   type ProviderAuthResult,
   signInHint,
 } from '../../providers/provider-auth.js';
-import { PERO_NOTE } from '../../settings-files/note-files.js';
-import { parseNote } from '../../settings-files/note.js';
-import { setNoteProperty } from '../../settings-files/note-writer.js';
+import { PERO_NOTE } from '../../system-files/note-files.js';
+import { parseNote } from '../../system-files/note.js';
+import { setNoteProperty } from '../../system-files/note-writer.js';
 import { CliError } from '../errors.js';
 import { formatInit } from '../format-init.js';
 import { isPromptExit, type Prompts } from '../prompts.js';
@@ -224,16 +224,16 @@ function foldersIn(dir: string): string[] {
 }
 
 /**
- * `Pero.md` of `workspace`, where its `config.yaml` puts the settings; in a
+ * `Pero.md` of `workspace`, where its `config.yaml` puts the system folder; in a
  * workspace without one, in data folder `data`.
  */
 function peroNotePath(workspace: string, home?: string, data?: string): string {
   const stateDir = workspaceLayout(workspace).stateDir;
   const config = readHostConfig(hostConfigPath(stateDir)) ?? {
     data: data ?? null,
-    settings: null,
+    system: null,
   };
-  return join(resolveSettingsFolder(config, workspace, home), PERO_NOTE);
+  return join(resolveSystemFolder(config, workspace, home), PERO_NOTE);
 }
 
 /** The provider the note at `path` sets; null when it sets none. */

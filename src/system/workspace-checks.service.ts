@@ -3,10 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { HostConfigService } from '../host-config/host-config.service.js';
-import {
-  checkWorkspace,
-  type WorkspaceCheck,
-} from '../settings-files/check.js';
+import { checkWorkspace, type WorkspaceCheck } from '../system-files/check.js';
 import { allowedChannels } from './allowed-channels.js';
 import { channelTopicLookup } from './channel-topics.js';
 

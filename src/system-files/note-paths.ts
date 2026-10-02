@@ -12,7 +12,7 @@ export function shownPath(workspace: string, path: string): string {
 
 /**
  * The note that defines the Agent named `name`, in any case or as its
- * title, among `files`, the paths in the settings folder; null if none.
+ * title, among `files`, the paths in the system folder; null if none.
  */
 export function findAgentNote(
   files: readonly string[],
@@ -23,7 +23,7 @@ export function findAgentNote(
 
 /**
  * The note that defines the Workflow named `name`, in any case or as its
- * title, among `files`, the paths in the settings folder; null if none.
+ * title, among `files`, the paths in the system folder; null if none.
  */
 export function findWorkflowNote(
   files: readonly string[],

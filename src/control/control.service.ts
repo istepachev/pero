@@ -14,11 +14,11 @@ import { ComponentHealth } from '../health/component-health.js';
 import { NotificationDelivery } from '../notifications/notification-delivery.js';
 import { NotificationViews } from '../notifications/notification-views.service.js';
 import { ProviderAuthService } from '../providers/provider-auth.service.js';
-import { PERO_NOTE } from '../settings-files/note-files.js';
-import { shownPath } from '../settings-files/note-paths.js';
-import { Definitions } from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
-import { WorkspaceChecks } from '../settings/workspace-checks.service.js';
+import { PERO_NOTE } from '../system-files/note-files.js';
+import { shownPath } from '../system-files/note-paths.js';
+import { Definitions } from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
+import { WorkspaceChecks } from '../system/workspace-checks.service.js';
 import { TelegramChats } from '../telegram/telegram-chats.service.js';
 import { TelegramCredentials } from '../telegram/telegram-credentials.service.js';
 import { WorkflowRuns } from '../workflows/workflow-runs.service.js';
@@ -56,7 +56,7 @@ export class ControlService implements OnModuleDestroy {
     private readonly notificationViews: NotificationViews,
     private readonly workspaceChecks: WorkspaceChecks,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /**
@@ -158,7 +158,7 @@ export class ControlService implements OnModuleDestroy {
       files: {
         pero: shownPath(
           folders.workspace,
-          join(folders.settingsFolder, PERO_NOTE),
+          join(folders.systemFolder, PERO_NOTE),
         ),
         config: shownPath(folders.workspace, this.layout.configFile),
       },

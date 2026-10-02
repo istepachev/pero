@@ -28,7 +28,7 @@ import {
   type WorkflowNote,
   type WorkflowNoteHistory,
 } from './schemas.js';
-import type { SettingsError } from './settings-error.js';
+import type { NoteError } from './note-error.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -42,7 +42,7 @@ export interface Agent {
   name: string;
   /** Its note's title, such as `Weekly health`. */
   title: string;
-  /** Its note's path inside the settings folder. */
+  /** Its note's path inside the system folder. */
   file: string;
   /** The title of the topic it answers in; null for none. */
   topic: string | null;
@@ -121,7 +121,7 @@ export interface ResolvedChannels {
 }
 
 /** Every setting from the notes, with references between them resolved. */
-export interface SettingsSnapshot {
+export interface SystemSnapshot {
   defaults: Defaults;
   /**
    * The main Agent's instructions, which every other Agent's start with;
@@ -147,7 +147,7 @@ export interface SettingsSnapshot {
    */
   unloadedTopics: ReadonlyMap<string, readonly string[]>;
   /** Sorted by file. */
-  errors: readonly SettingsError[];
+  errors: readonly NoteError[];
 }
 
 /** A Channel a reference in a Workflow names. */
@@ -223,7 +223,7 @@ export interface SnapshotNote extends NoteFile {
 export function readNote(
   file: string,
   text: string,
-): { note: NoteRead | null; errors: SettingsError[] } {
+): { note: NoteRead | null; errors: NoteError[] } {
   const identified = noteIdentity(file);
   if (!identified.ok) return { note: null, errors: [identified.error] };
   const { identity } = identified;
@@ -256,7 +256,7 @@ export function readNote(
 }
 
 /**
- * The snapshot `notes`, the settings folder's notes, describe. A note that
+ * The snapshot `notes`, the system folder's notes, describe. A note that
  * doesn't parse or validate is left out along with only the notes that
  * depend on it, and every problem is listed in `errors` with its file and
  * property. A broken `Pero.md` leaves the defaults, not the Agents, out.
@@ -264,8 +264,8 @@ export function readNote(
 export function buildSnapshot(
   notes: readonly SnapshotNote[],
   context: SnapshotContext,
-): SettingsSnapshot {
-  const errors: SettingsError[] = [];
+): SystemSnapshot {
+  const errors: NoteError[] = [];
   const agentNotes: Read<AgentNote>[] = [];
   const workflowNotes: Read<WorkflowNote>[] = [];
   let pero: Read<PeroNote> | null = null;
@@ -429,7 +429,7 @@ function defaultPeroNote(): PeroNote {
  */
 function withUniqueNames<T>(
   reads: readonly Read<T>[],
-  errors: SettingsError[],
+  errors: NoteError[],
   duplicated: Set<string>,
 ): Read<T>[] {
   const byName = new Map<string, Read<T>[]>();
@@ -470,7 +470,7 @@ function defineAgent(
   defaults: Defaults,
   mainAgent: string,
   context: SnapshotContext,
-): Agent | { error: Omit<SettingsError, 'file'> } {
+): Agent | { error: Omit<NoteError, 'file'> } {
   const main = read.identity.name === mainAgent;
   if (main && note.topic !== null) {
     return {
@@ -530,7 +530,7 @@ export type TopicClaim =
 /** Who answers the topic titled `title`, in any case, in `snapshot`. */
 export function topicClaim(
   snapshot: Pick<
-    SettingsSnapshot,
+    SystemSnapshot,
     'agents' | 'topicClaims' | 'conflictedTopics' | 'unloadedTopics'
   >,
   title: string,
@@ -566,8 +566,8 @@ class WorkflowResolver {
     read: Read<WorkflowNote>,
     note: WorkflowNote,
     defaults: Defaults,
-  ): Workflow | SettingsError[] {
-    const errors: SettingsError[] = [];
+  ): Workflow | NoteError[] {
+    const errors: NoteError[] = [];
     const error = (property: string, message: string) =>
       errors.push({ file: read.file, property, message });
 

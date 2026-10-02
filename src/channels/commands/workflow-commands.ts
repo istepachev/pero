@@ -4,10 +4,10 @@ import { ConflictError, NotFoundError } from '../../common/errors.js';
 import { slugify } from '../../config/slug.js';
 import type { RunView, WorkflowView } from '../../control/protocol.js';
 import type { RunStatus } from '../../persistence/entities/sql.js';
-import { NOTE_FOLDERS } from '../../settings-files/note-files.js';
-import { shownPath } from '../../settings-files/note-paths.js';
-import { Definitions } from '../../settings/definitions.js';
-import { SettingsNotes } from '../../settings/settings-notes.service.js';
+import { NOTE_FOLDERS } from '../../system-files/note-files.js';
+import { shownPath } from '../../system-files/note-paths.js';
+import { Definitions } from '../../system/definitions.js';
+import { SystemNotes } from '../../system/system-notes.service.js';
 import { WorkflowRuns } from '../../workflows/workflow-runs.service.js';
 import { WorkflowViews } from '../../workflows/workflow-views.service.js';
 import type { Answer } from './screens.js';
@@ -44,7 +44,7 @@ export class WorkflowCommands {
     private readonly views: WorkflowViews,
     private readonly workflowRuns: WorkflowRuns,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /** `/workflows`: the list; `/workflows <name>`: one Workflow. */
@@ -248,8 +248,8 @@ export class WorkflowCommands {
   }
 
   private workflowsFolder(): string {
-    const { workspace, settingsFolder } = this.notes.folders();
-    return `${shownPath(workspace, join(settingsFolder, NOTE_FOLDERS.workflow))}/`;
+    const { workspace, systemFolder } = this.notes.folders();
+    return `${shownPath(workspace, join(systemFolder, NOTE_FOLDERS.workflow))}/`;
   }
 }
 

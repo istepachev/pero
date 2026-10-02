@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { HealthModule } from '../health/health.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
+import { SystemModule } from '../system/system.module.js';
 import { execCommand } from './provider-auth.js';
 import {
   PROVIDER_AUTH_EXEC,
@@ -9,7 +9,7 @@ import {
 
 /** Provider sign-in state; the Agent runtimes join it later. */
 @Module({
-  imports: [SettingsModule, HealthModule],
+  imports: [SystemModule, HealthModule],
   providers: [
     { provide: PROVIDER_AUTH_EXEC, useValue: execCommand },
     ProviderAuthService,

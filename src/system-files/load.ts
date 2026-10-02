@@ -1,22 +1,22 @@
 import type { HostConfig } from '../config/host-config.js';
 import {
   resolveDataFolder,
-  resolveSettingsFolder,
+  resolveSystemFolder,
 } from '../config/host-config.js';
-import { readNotes, scanSettingsFolder } from './scan.js';
+import { readNotes, scanSystemFolder } from './scan.js';
 import {
   buildSnapshot,
-  type SettingsSnapshot,
+  type SystemSnapshot,
   type TopicLookup,
 } from './snapshot.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
-export interface LoadSettingsInput {
+export interface LoadSystemFolderInput {
   /** Absolute path of the workspace. */
   workspace: string;
-  /** Its `config.yaml`, which says where the data and settings folders are. */
-  config: Pick<HostConfig, 'data' | 'settings'>;
+  /** Its `config.yaml`, which says where the data and system folders are. */
+  config: Pick<HostConfig, 'data' | 'system'>;
   homeDir: string;
   /** For `Pero.md` without a `timezone`. */
   hostTimeZone: string;
@@ -24,24 +24,24 @@ export interface LoadSettingsInput {
   topics?: TopicLookup;
 }
 
-export interface LoadedSettings {
+export interface LoadedSystemFolder {
   /** Absolute. */
   dataFolder: string;
   /** Absolute. */
-  settingsFolder: string;
-  snapshot: SettingsSnapshot;
+  systemFolder: string;
+  snapshot: SystemSnapshot;
 }
 
-/** Reads every note in `workspace`'s settings folder into a snapshot. */
-export async function loadSettings(
-  input: LoadSettingsInput,
-): Promise<LoadedSettings> {
+/** Reads every note in `workspace`'s system folder into a snapshot. */
+export async function loadSystemFolder(
+  input: LoadSystemFolderInput,
+): Promise<LoadedSystemFolder> {
   const { workspace, config, homeDir } = input;
   const dataFolder = resolveDataFolder(config, workspace, homeDir);
-  const settingsFolder = resolveSettingsFolder(config, workspace, homeDir);
+  const systemFolder = resolveSystemFolder(config, workspace, homeDir);
   const notes = await readNotes(
-    settingsFolder,
-    await scanSettingsFolder(settingsFolder),
+    systemFolder,
+    await scanSystemFolder(systemFolder),
   );
   const snapshot = buildSnapshot(notes, {
     workspace,
@@ -49,5 +49,5 @@ export async function loadSettings(
     hostTimeZone: input.hostTimeZone,
     ...(input.topics === undefined ? {} : { topics: input.topics }),
   });
-  return { dataFolder, settingsFolder, snapshot };
+  return { dataFolder, systemFolder, snapshot };
 }

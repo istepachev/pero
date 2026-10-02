@@ -7,7 +7,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { firstStepsText, welcomeText } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';
@@ -123,7 +123,7 @@ describe('Channel onboarding', () => {
       const welcome =
         `This topic talks to Agent groceries-errands: codex, model ` +
         `gpt-5.5-codex, working in ${ws.root}. Its settings and ` +
-        `instructions are in data/Settings/Agents/Groceries & Errands.md: ` +
+        `instructions are in data/System/Agents/Groceries & Errands.md: ` +
         `edit that note, or ask here to change them.`;
       expect(
         welcomeText(
@@ -133,7 +133,7 @@ describe('Channel onboarding', () => {
             model: 'gpt-5.5-codex',
           },
           ws.root,
-          'data/Settings/Agents/Groceries & Errands.md',
+          'data/System/Agents/Groceries & Errands.md',
           'topic',
         ),
       ).toBe(welcome);
@@ -177,24 +177,22 @@ describe('Channel onboarding', () => {
         { name: 'main', provider: 'codex', model: 'gpt-5.5-codex' },
         ws.root,
         {
-          note: 'data/Settings/Agents/Main.md',
-          pero: 'data/Settings/Pero.md',
-          agents: 'data/Settings/Agents/',
-          workflows: 'data/Settings/Workflows/',
+          note: 'data/System/Agents/Main.md',
+          pero: 'data/System/Pero.md',
+          agents: 'data/System/Agents/',
+          workflows: 'data/System/Workflows/',
           timezone: 'Asia/Tokyo',
         },
         'group',
       );
       expect(steps).toMatch(
-        /^This chat talks to Agent main: codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: this Agent's personality and instructions are in data\/Settings\/Agents\/Main\.md\./,
+        /^This chat talks to Agent main: codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: this Agent's personality and instructions are in data\/System\/Agents\/Main\.md\./,
       );
       expect(steps).toContain('2. Create a topic for each subject');
       expect(steps).toContain(
-        '3. Schedules use the time zone Asia/Tokyo. Set yours, and defaults for every Agent such as the provider and model, in data/Settings/Pero.md.',
+        '3. Schedules use the time zone Asia/Tokyo. Set yours, and defaults for every Agent such as the provider and model, in data/System/Pero.md.',
       );
-      expect(steps).toContain(
-        'Workflows are notes in data/Settings/Workflows/.',
-      );
+      expect(steps).toContain('Workflows are notes in data/System/Workflows/.');
       expect(adapter.sent).toEqual([
         { address: GROUP.address, message: { text: steps } },
       ]);

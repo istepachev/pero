@@ -21,7 +21,7 @@ import {
 } from '../src/control/client.js';
 import { type Daemon, startDaemon } from '../src/daemon/daemon.js';
 import { Session } from '../src/persistence/entities/session.entity.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,
@@ -71,9 +71,9 @@ describe('Channels (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Writes `text` to the note at `file` in the settings folder. */
+  /** Writes `text` to the note at `file` in the system folder. */
   function write(file: string, text: string) {
-    const path = join(workspace, 'data', 'Settings', file);
+    const path = join(workspace, 'data', 'System', file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
     clock += 1_000;
@@ -83,7 +83,7 @@ describe('Channels (e2e)', () => {
   /** Writes a note and has Pero read it, as its next scan would. */
   async function edit(file: string, text: string) {
     write(file, text);
-    await daemon!.app.get(SettingsNotes).rescan();
+    await daemon!.app.get(SystemNotes).rescan();
   }
 
   /**

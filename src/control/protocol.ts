@@ -7,7 +7,7 @@ import {
 import { telegramChatIdSchema } from '../config/host-config.js';
 import { telegramBotTokenSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
-import { VALUE_ORIGINS } from '../settings-files/origins.js';
+import { VALUE_ORIGINS } from '../system-files/origins.js';
 import {
   HISTORY_MESSAGES,
   workflowReferenceSchema,
@@ -506,7 +506,7 @@ const notificationIdSchema = z.int().positive();
 
 /** What `pero check` found in the workspace; see `WorkspaceCheck`. */
 export const workspaceCheckSchema = z.object({
-  settingsFolder: z.string().nullable(),
+  systemFolder: z.string().nullable(),
   agents: z.int().nonnegative(),
   workflows: z.int().nonnegative(),
   topicsChecked: z.boolean(),

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceCheck } from '../settings-files/check.js';
+import type { WorkspaceCheck } from '../system-files/check.js';
 import { formatCheck } from './format-check.js';
 
 const CLEAN: WorkspaceCheck = {
-  settingsFolder: 'data/Settings',
+  systemFolder: 'data/System',
   agents: 2,
   workflows: 1,
   topicsChecked: false,
@@ -14,7 +14,7 @@ describe('formatCheck', () => {
   it('says what it checked when there are no problems', () => {
     expect(formatCheck(CLEAN)).toBe(
       [
-        'Checked 2 Agents and 1 Workflow in data/Settings: no problems.',
+        'Checked 2 Agents and 1 Workflow in data/System: no problems.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
       ].join('\n'),
     );
@@ -23,7 +23,7 @@ describe('formatCheck', () => {
   it('leaves out the topic note once topics were checked', () => {
     expect(
       formatCheck({ ...CLEAN, agents: 1, workflows: 0, topicsChecked: true }),
-    ).toBe('Checked 1 Agent and 0 Workflows in data/Settings: no problems.');
+    ).toBe('Checked 1 Agent and 0 Workflows in data/System: no problems.');
   });
 
   it('groups problems under their file', () => {
@@ -32,17 +32,17 @@ describe('formatCheck', () => {
         ...CLEAN,
         problems: [
           {
-            file: 'data/Settings/Workflows/Weekly health report.md',
+            file: 'data/System/Workflows/Weekly health report.md',
             property: 'channel',
             message: 'no topic titled "Helth"; seen topics: General, Health',
           },
           {
-            file: 'data/Settings/Agents/Coach.md',
+            file: 'data/System/Agents/Coach.md',
             property: 'modle',
             message: 'unknown property (did you mean model?)',
           },
           {
-            file: 'data/Settings/Agents/Coach.md',
+            file: 'data/System/Agents/Coach.md',
             property: null,
             message: 'line 4: Map keys must be unique',
           },
@@ -50,9 +50,9 @@ describe('formatCheck', () => {
       }),
     ).toBe(
       [
-        'data/Settings/Workflows/Weekly health report.md',
+        'data/System/Workflows/Weekly health report.md',
         '  channel: no topic titled "Helth"; seen topics: General, Health',
-        'data/Settings/Agents/Coach.md',
+        'data/System/Agents/Coach.md',
         '  modle: unknown property (did you mean model?)',
         '  line 4: Map keys must be unique',
         '',
@@ -66,7 +66,7 @@ describe('formatCheck', () => {
     expect(
       formatCheck({
         ...CLEAN,
-        settingsFolder: null,
+        systemFolder: null,
         problems: [
           {
             file: '.pero/config.yaml',

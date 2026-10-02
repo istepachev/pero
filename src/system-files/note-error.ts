@@ -3,11 +3,11 @@ import type { z } from 'zod';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /**
- * One problem with a settings note, as `pero check`, `pero status`, and the
+ * One problem with a system note, as `pero check`, `pero status`, and the
  * log report it.
  */
-export interface SettingsError {
-  /** The note's path inside the settings folder, such as `Agents/Coach.md`. */
+export interface NoteError {
+  /** The note's path inside the system folder, such as `Agents/Coach.md`. */
   file: string;
   /** The property at fault, as written in the note; null for the whole note. */
   property: string | null;
@@ -23,7 +23,7 @@ export function fromZodIssues(
   file: string,
   issues: readonly z.core.$ZodIssue[],
   properties: Readonly<Record<string, unknown>>,
-): SettingsError[] {
+): NoteError[] {
   return issues.map((issue) => {
     const [property, index] = issue.path;
     if (property === undefined) {

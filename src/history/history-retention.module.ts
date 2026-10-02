@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { SettingsModule } from '../settings/settings.module.js';
+import { SystemModule } from '../system/system.module.js';
 import { HistoryRetention } from './history-retention.js';
 
 /**
@@ -8,7 +8,7 @@ import { HistoryRetention } from './history-retention.js';
  * imported, which is the daemon's AppModule.
  */
 @Module({
-  imports: [SettingsModule],
+  imports: [SystemModule],
   providers: [HistoryRetention],
   exports: [HistoryRetention],
 })
