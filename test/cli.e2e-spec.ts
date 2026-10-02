@@ -845,7 +845,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
 
     expect((await workflows('show', 'brief')).stdout).toContain(
-      '  attempts  up to 3 (a run Pero stops starts again when Pero does)\n',
+      '  attempts      up to 3 (a run Pero stops starts again when Pero does)\n',
     );
   });
 
@@ -989,7 +989,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     english('history: true\n');
     await restart(ws);
     expect((await workflows('show', 'english')).stdout).toContain(
-      "  history   people's messages in all Channels since the previous run; skipped when there are none\n",
+      "  history       people's messages in all Channels since the previous run; skipped when there are none\n",
     );
     expect(await workflows('run', 'english')).toMatchObject({
       code: 0,
@@ -1002,7 +1002,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
     await restart(ws);
     expect((await workflows('show', 'english')).stdout).toContain(
-      '  history   all messages in all Channels from the last 24 hours; runs even when there are none\n',
+      '  history       all messages in all Channels from the last 24 hours; runs even when there are none\n',
     );
   });
 
