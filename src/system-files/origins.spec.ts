@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { agentOrigins } from './origins.js';
+import { channelOrigins } from './origins.js';
 import { buildSnapshot } from './snapshot.js';
 
-describe('agentOrigins', () => {
+describe('channelOrigins', () => {
   it("tells the note's values from Pero.md's and Pero's own", () => {
     const snapshot = buildSnapshot(
       [
@@ -10,9 +10,9 @@ describe('agentOrigins', () => {
           file: 'Pero.md',
           text: '---\nprovider: codex\ncodex-effort: high\nclaude-model: opus\n---',
         },
-        { file: 'Agents/Coder.md', text: '---\nmodel: gpt-5.5\n---' },
+        { file: 'Channels/Coder.md', text: '---\nmodel: gpt-5.5\n---' },
         {
-          file: 'Agents/Writer.md',
+          file: 'Channels/Writer.md',
           text: '---\nprovider: claude\npermissions: bypass\nworking-directory: writing\n---',
         },
       ],
@@ -23,7 +23,10 @@ describe('agentOrigins', () => {
       },
     );
     expect(
-      agentOrigins(snapshot.agents.get('coder')!, snapshot.peroProperties),
+      channelOrigins(
+        snapshot.channelNotes.get('coder')!,
+        snapshot.peroProperties,
+      ),
     ).toEqual({
       provider: 'pero',
       model: 'note',
@@ -32,7 +35,10 @@ describe('agentOrigins', () => {
       workingDirectory: 'workspace',
     });
     expect(
-      agentOrigins(snapshot.agents.get('writer')!, snapshot.peroProperties),
+      channelOrigins(
+        snapshot.channelNotes.get('writer')!,
+        snapshot.peroProperties,
+      ),
     ).toEqual({
       provider: 'note',
       model: 'pero',

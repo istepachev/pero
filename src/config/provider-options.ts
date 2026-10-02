@@ -42,7 +42,7 @@ export const codexOptionsSchema = z.strictObject({
 });
 
 /**
- * Per-provider options Agents follow unless they set their own. A missing
+ * Per-provider options Channel notes follow unless they set their own. A missing
  * provider or option takes the provider's own default.
  */
 export const providerDefaultsSchema = z.strictObject({
@@ -50,7 +50,7 @@ export const providerDefaultsSchema = z.strictObject({
   codex: codexOptionsSchema.default({ model: null, effort: null }),
 });
 
-/** One Agent's options, valid for at least one provider. */
+/** One Channel note's options, valid for at least one provider. */
 export const providerOptionsSchema = z.union([
   claudeOptionsSchema,
   codexOptionsSchema,

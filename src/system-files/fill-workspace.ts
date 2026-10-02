@@ -10,7 +10,6 @@ import {
   resolveDataFolder,
   resolveSystemFolder,
 } from '../config/host-config.js';
-import { slugify } from '../config/slug.js';
 import { ensureWorkspaceLayout } from '../config/workspace-layout.js';
 import {
   peroNote,
@@ -18,11 +17,10 @@ import {
   type SkeletonEntry,
   writeIfMissing,
 } from '../config/workspace-skeleton.js';
-import { noteIdentity, PERO_NOTE } from './note-files.js';
-import { parseNote } from './note.js';
-import { agentNoteFor, createFileExclusive } from './note-writer.js';
+import { NOTE_FOLDERS, noteIdentity, PERO_NOTE } from './note-files.js';
+import { createFileExclusive } from './note-writer.js';
 import { scanSystemFolder } from './scan.js';
-import { DEFAULT_MAIN_AGENT } from './schemas.js';
+import { DEFAULT_NOTE, DEFAULT_NOTE_FILE } from './snapshot.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -30,14 +28,14 @@ import { DEFAULT_MAIN_AGENT } from './schemas.js';
  * Fills in what `workspace` is missing of what Pero needs, never changing
  * a file that is there: `.env` in its `.gitignore`, `.pero/` with its
  * `.gitignore` and `config.yaml`, the default data folder `data/`, and in
- * the system folder `Pero.md`, `Workflows/`, and the note of the main
- * Agent `Pero.md` names, found anywhere under `Agents/`. Returns what it
- * created or updated, relative to the workspace.
+ * the system folder `Pero.md`, `Persona.md`, `Instructions.md`,
+ * `Workflows/`, and `Channels/Default.md`, unless a note of that name is
+ * anywhere under `Channels/`. Returns what it created or updated,
+ * relative to the workspace.
  *
  * A data folder `config.yaml` names other than `data/` is not created, as
  * it may be a vault not mounted yet, and while it is missing neither is the
- * system folder; startup reports it. With an invalid
- * `config.yaml`, or a `Pero.md` whose `main-agent` can't be read, the
+ * system folder; startup reports it. With an invalid `config.yaml`, the
  * parts that depend on it are left to `pero check` to report.
  */
 export async function fillWorkspace(
@@ -87,34 +85,28 @@ export async function fillWorkspace(
     join(system, PERO_NOTE),
     peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
-  folder(join(system, 'Workflows'));
-  const main = mainAgentIn(readText(join(system, PERO_NOTE)) ?? '');
-  if (main !== null && !(await hasAgentNote(system, main))) {
-    const path = join(system, agentNoteFor(main));
-    if (createFileExclusive(path, SKELETON_NOTES['Agents/Main.md']!)) {
+  folder(join(system, NOTE_FOLDERS.workflow));
+  for (const [path, text] of Object.entries(SKELETON_NOTES)) {
+    if (path.startsWith(`${NOTE_FOLDERS.channel}/`)) continue;
+    file(join(system, path), text);
+  }
+  if (!(await hasDefaultNote(system))) {
+    const path = join(system, DEFAULT_NOTE_FILE);
+    if (createFileExclusive(path, SKELETON_NOTES[DEFAULT_NOTE_FILE]!)) {
       entries.push({ path: shown(path), action: 'created' });
     }
   }
   return entries;
 }
 
-/** The main Agent's name `Pero.md` gives; null when it can't be read. */
-function mainAgentIn(text: string): string | null {
-  const parsed = parseNote(PERO_NOTE, text);
-  if (!parsed.ok) return null;
-  const value = parsed.note.properties['main-agent'];
-  if (value === undefined || value === null) return DEFAULT_MAIN_AGENT;
-  return typeof value === 'string' ? slugify(value) : null;
-}
-
-/** Whether any note under `Agents/` in `system` defines the Agent `name`. */
-async function hasAgentNote(system: string, name: string): Promise<boolean> {
+/** Whether any note under `Channels/` in `system` is named `default`. */
+async function hasDefaultNote(system: string): Promise<boolean> {
   return (await scanSystemFolder(system)).some(({ file }) => {
     const found = noteIdentity(file);
     return (
       found.ok &&
-      found.identity.kind === 'agent' &&
-      found.identity.name === name
+      found.identity.kind === 'channel' &&
+      found.identity.name === DEFAULT_NOTE
     );
   });
 }

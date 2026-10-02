@@ -40,7 +40,7 @@ export interface RestoreResult {
   manifest: BackupManifest;
   /**
    * Folders the restored workspace uses that do not exist here: the data
-   * folder (`agent` null) and each Agent's own folder.
+   * folder (`agent` null) and each Channel note's own folder.
    */
   missing: WorkingDirectoryRef[];
   /**
@@ -217,7 +217,7 @@ function chatsOnlyIn(a: string, b: string): string[] {
 }
 
 /**
- * The folders the restored workspace uses that do not exist: each Agent's
+ * The folders the restored workspace uses that do not exist: each Channel note's
  * own, and the data folder, which is `dataFolder` when the workspace has a
  * `config.yaml` and otherwise the one the backup recorded.
  */

@@ -70,8 +70,8 @@ pero run </dev/null
 step 'pero status'
 pero status
 
-step 'The guide for Agents is in .pero/'
-grep -q '^# Pero guide for Agents' .pero/guide.md || fail 'Pero did not write .pero/guide.md'
+step 'The guide is in .pero/'
+grep -q '^# Pero guide$' .pero/guide.md || fail 'Pero did not write .pero/guide.md'
 
 step 'Committing the workspace commits config.yaml and nothing secret'
 printf 'PERO_TELEGRAM_BOT_TOKEN=123456789:not-a-real-token\n' >.env
@@ -104,7 +104,7 @@ cd "$HOME"
 git clone --quiet "$HOME/workspace" "$HOME/clone"
 rm -rf "$HOME/clone/data"
 pero restore "$work/backup.tgz" -w "$HOME/clone"
-[ -f "$HOME/clone/data/System/Agents/Main.md" ] || fail 'The data folder was not restored'
+[ -f "$HOME/clone/data/System/Persona.md" ] || fail 'The data folder was not restored'
 pero run -w "$HOME/clone" </dev/null
 pero status -w "$HOME/clone"
 pero stop -w "$HOME/clone"

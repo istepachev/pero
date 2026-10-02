@@ -11,17 +11,6 @@ export function shownPath(workspace: string, path: string): string {
 }
 
 /**
- * The note that defines the Agent named `name`, in any case or as its
- * title, among `files`, the paths in the system folder; null if none.
- */
-export function findAgentNote(
-  files: readonly string[],
-  name: string,
-): string | null {
-  return findNote(files, 'agent', name);
-}
-
-/**
  * The note that defines the Workflow named `name`, in any case or as its
  * title, among `files`, the paths in the system folder; null if none.
  */

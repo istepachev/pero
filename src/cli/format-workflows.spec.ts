@@ -5,7 +5,7 @@ import type {
   WorkflowView,
 } from '../control/protocol.js';
 import {
-  agentWarning,
+  noteWarning,
   formatWorkflowDetails,
   formatWorkflowList,
   runOutcome,
@@ -29,8 +29,8 @@ const review: WorkflowView = {
   name: 'evening-review',
   title: 'Evening review',
   file: 'data/System/Workflows/Evening review.md',
-  agent: 'coach',
-  agentEnabled: true,
+  note: 'coach',
+  noteEnabled: true,
   inputTemplate: "Review today's chats.\nSuggest one improvement.",
   enabled: true,
   maxAttempts: 1,
@@ -57,14 +57,14 @@ describe('Workflow formatting', () => {
     process.env.TZ = zone;
   });
 
-  it('lists Workflows with their Agent, schedule, next run, Channels, and note', () => {
+  it('lists Workflows with their Channel note, schedule, next run, Channels, and note', () => {
     expect(
       formatWorkflowList([
         {
           ...review,
           name: 'brief',
           file: 'data/System/Workflows/Brief.md',
-          agentEnabled: false,
+          noteEnabled: false,
           schedule: null,
           channels: [],
           errors: [{ property: 'channel', message: 'no topic titled "x"' }],
@@ -74,7 +74,7 @@ describe('Workflow formatting', () => {
       ]),
     ).toBe(
       [
-        'NAME            AGENT             SCHEDULE                    NEXT RUN          CHANNELS            STATE     NOTE',
+        'NAME            CHANNEL NOTE      SCHEDULE                    NEXT RUN          CHANNELS            STATE     NOTE',
         'brief !         coach (disabled)  by hand                     —                 —                   enabled   data/System/Workflows/Brief.md',
         'evening-review  coach             0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English, Channel 9  enabled   data/System/Workflows/Evening review.md',
         'paused          coach             0 21 * * * (Europe/Berlin)  —                 English             disabled  data/System/Workflows/Evening review.md',
@@ -103,16 +103,16 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'Workflow evening-review "Evening review"',
-        '  note      data/System/Workflows/Evening review.md',
-        '  agent     coach',
-        "  input     Review today's chats. (2 lines)",
-        '  schedule  0 21 * * * (Europe/Berlin)',
-        '  next run  2026-09-29 00:00',
-        '  last run  2026-09-28 00:00',
-        '  runs      one at a time',
-        '  attempts  1 (a run Pero stops is not started again)',
-        '  history   none',
-        '  state     enabled',
+        '  note          data/System/Workflows/Evening review.md',
+        '  channel note  coach',
+        "  input         Review today's chats. (2 lines)",
+        '  schedule      0 21 * * * (Europe/Berlin)',
+        '  next run      2026-09-29 00:00',
+        '  last run      2026-09-28 00:00',
+        '  runs          one at a time',
+        '  attempts      1 (a run Pero stops is not started again)',
+        '  history       none',
+        '  state         enabled',
         '',
         'Posts to',
         '  ID  CHANNEL             TITLE',
@@ -122,11 +122,11 @@ describe('Workflow formatting', () => {
     );
   });
 
-  it("shows a Workflow's errors, and warns about a disabled Agent", () => {
+  it("shows a Workflow's errors, and warns about a disabled Channel note", () => {
     expect(
       formatWorkflowDetails({
         ...review,
-        agentEnabled: false,
+        noteEnabled: false,
         enabled: false,
         maxAttempts: 3,
         schedule: null,
@@ -145,25 +145,25 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'Workflow evening-review "Evening review"',
-        '  note      data/System/Workflows/Evening review.md',
-        '  agent     coach (disabled)',
-        "  input     Review today's chats. (2 lines)",
-        '  schedule  none: it runs by hand, with pero workflows run',
-        '  runs      one at a time',
-        '  attempts  up to 3 (a run Pero stops starts again when Pero does)',
-        '  history   all messages in English, Channel 9 from the last 12 hours; runs even when there are none',
-        '  state     disabled: it runs only by hand, with pero workflows run',
+        '  note          data/System/Workflows/Evening review.md',
+        '  channel note  coach (disabled)',
+        "  input         Review today's chats. (2 lines)",
+        '  schedule      none: it runs by hand, with pero workflows run',
+        '  runs          one at a time',
+        '  attempts      up to 3 (a run Pero stops starts again when Pero does)',
+        '  history       all messages in English, Channel 9 from the last 12 hours; runs even when there are none',
+        '  state         disabled: it runs only by hand, with pero workflows run',
         '',
         'Its note has errors, so its last good version is in use:',
         '  channel: no topic titled "Helth"',
         '  the note has no text',
         '',
-        'Warning: Agent coach is disabled or has no note, so this Workflow cannot run until it is enabled again (enabled: true in its note).',
+        'Warning: Channel note coach is disabled, so this Workflow cannot run until it is enabled again (enabled: true in that note).',
         '',
-        'Posts to no Channel: name a topic in channel in its note to post its answers there.',
+        'Posts to no Channel: name a Channel note in channel in its note to post its answers there.',
       ].join('\n'),
     );
-    expect(agentWarning(review)).toBeNull();
+    expect(noteWarning(review)).toBeNull();
   });
 
   it("gives a finished run's answer, or why there is none", () => {

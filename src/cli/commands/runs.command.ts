@@ -96,7 +96,7 @@ interface RetryOptions {
   name: 'retry',
   arguments: '<run>',
   description:
-    "Run a failed, interrupted, or cancelled Workflow Run again and print the Agent's answer",
+    "Run a failed, interrupted, or cancelled Workflow Run again and print Pero's answer",
   argsDescription: RUN,
 })
 export class RunsRetryCommand extends PeroCommand {
@@ -136,14 +136,14 @@ export class RunsRetryCommand extends PeroCommand {
   name: 'cancel',
   arguments: '<run>',
   description:
-    'Cancel a Workflow Run: one waiting to start never does, and a running one has its Agent stopped',
+    'Cancel a Workflow Run: one waiting to start never does, and a running one has its turn stopped',
   argsDescription: RUN,
 })
 export class RunsCancelCommand extends PeroCommand {
   async run([run]: string[]): Promise<void> {
     const id = runId(run!);
     const { client } = await this.requireDaemon();
-    // A running run is recorded once its Agent's turn stops.
+    // A running run is recorded once its turn stops.
     const view = await waitForRun(
       client,
       await client.call('runs.cancel', { id }),

@@ -14,7 +14,10 @@ import {
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import type { Agent, ResolvedWorkflow } from '../system-files/snapshot.js';
+import type {
+  ChannelNote,
+  ResolvedWorkflow,
+} from '../system-files/snapshot.js';
 import { Definitions } from '../system/definitions.js';
 import {
   type ExecutionSnapshot,
@@ -49,7 +52,7 @@ export const INTERRUPTED = 'Pero stopped before the run finished';
 /** Why a run the owner cancelled did not finish. */
 export const CANCELLED = 'Cancelled with pero runs cancel';
 
-/** Why a run completed without its Agent. */
+/** Why a run completed without a turn. */
 export const SKIPPED = 'no messages in its history window';
 
 /**
@@ -57,7 +60,7 @@ export const SKIPPED = 'no messages in its history window';
  * the executor claims the oldest `pending` run while fewer than the
  * `max-concurrent-runs` setting are running, at most one per Workflow, and
  * runs it through `AgentManager` in a context of its own, away from every
- * Channel's Session. It never holds a transaction while an Agent works.
+ * Channel's Session. It never holds a transaction while a turn runs.
  *
  * A run Pero stops, by crashing or by aborting it on shutdown, stays
  * `running` until the next startup records it `interrupted` and, when its
@@ -104,7 +107,7 @@ export class WorkflowExecutor
   }
 
   /**
-   * Cancels a run this executor is running: aborts its Agent's turn, and
+   * Cancels a run this executor is running: aborts its turn, and
    * records it `cancelled` once the turn stops. False when the run is not
    * executing here, such as one that has just finished.
    */
@@ -119,7 +122,7 @@ export class WorkflowExecutor
   /**
    * Marks each run left `running` `interrupted`, since nothing runs it any
    * more, and queues a retry when its Workflow allows another attempt and
-   * it and its Agent are enabled. Each retry is a new run keyed by the one
+   * it and its Channel note are enabled. Each retry is a new run keyed by the one
    * it retries, so recovering twice queues it once, and it reads the same
    * history window.
    */
@@ -158,10 +161,8 @@ export class WorkflowExecutor
       outcome = `not retried: Workflow ${workflow.name} allows ${attempts}`;
     } else if (!workflow.enabled) {
       outcome = `not retried: Workflow ${workflow.name} is disabled`;
-    } else if (agent === null) {
-      outcome = `not retried: Agent ${workflow.agent} no longer exists`;
-    } else if (!agent.enabled) {
-      outcome = `not retried: Agent ${agent.name} is disabled`;
+    } else if (!agent!.enabled) {
+      outcome = `not retried: Channel note ${agent!.name} is disabled`;
     } else {
       const retryId = await queueRetryWithin(manager, run);
       outcome = `run ${retryId} retries it (attempt ${run.attempt + 1} of ${workflow.maxAttempts})`;
@@ -179,14 +180,17 @@ export class WorkflowExecutor
     );
   }
 
-  /** The Workflow named `name` and its Agent, each null if gone. */
+  /**
+   * The Workflow named `name` and the Channel note its runs use; null
+   * while the Workflow is gone.
+   */
   private definitionsOf(name: string): {
     workflow: ResolvedWorkflow | null;
-    agent: Agent | null;
+    agent: ChannelNote | null;
   } {
     const workflow = this.definitions.workflow(name);
     const agent =
-      workflow === null ? null : this.definitions.agent(workflow.agent);
+      workflow === null ? null : this.definitions.channelNote(workflow.note);
     return { workflow, agent };
   }
 
@@ -251,10 +255,10 @@ export class WorkflowExecutor
    * Claims the oldest pending run of a Workflow with none running, if a
    * slot is free, and snapshots what it executes with, fixing its history
    * window. Retries go first, so a run queued before one reads after its
-   * window. A run whose Workflow is gone, or whose Agent was disabled or
-   * is gone, since it was queued fails instead, as does one its schedule
+   * window. A run whose Workflow is gone, or whose Channel note was
+   * disabled, since it was queued fails instead, as does one its schedule
    * queued once the Workflow is disabled; one whose window has no messages
-   * completes without its Agent unless the Workflow asks to run anyway.
+   * completes without a turn unless the Workflow asks to run anyway.
    */
   private async claimWithin(
     manager: EntityManager,
@@ -291,9 +295,7 @@ export class WorkflowExecutor
             ? `Workflow ${name} no longer exists`
             : paused
               ? `Workflow ${name} was disabled before the run started`
-              : agent === null
-                ? `Agent ${workflow.agent} no longer exists`
-                : `Agent ${agent.name} was disabled before the run started`;
+              : `Channel note ${agent!.name} was disabled before the run started`;
         await finishRun(manager, run.id, workflow, {
           status: 'failed',
           errorText: refused,
@@ -375,7 +377,7 @@ export class WorkflowExecutor
     let outcome: Outcome;
     try {
       const { text, providerSessionId } = await this.agentManager.runIsolated({
-        agent: snapshot.agentName,
+        note: snapshot.agentName,
         provider: snapshot.provider,
         request: snapshotRequest(snapshot),
         input: snapshot.input,

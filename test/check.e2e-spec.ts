@@ -67,8 +67,8 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     expect(result).toEqual({
       code: 0,
       stdout: [
-        'Checked 1 Agent and 0 Workflows in data/System: no problems.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        'Checked 1 Channel note and 0 Workflows in data/System: no problems.',
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
       stderr: '',
@@ -81,14 +81,23 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
 
   it('lists every problem by file and exits 1', async () => {
     await pero(['init', workspace]);
-    write('data/System/Agents/Health.md', '---\ntopic: Health\n---\nHi');
-    write('data/System/Agents/Running.md', '---\ntopic: health\n---\nRun');
-    write('data/System/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
+    const health = 'telegram:-1001234567890:5';
+    write(
+      'data/System/Channels/Health.md',
+      `---\nchannel-id: ${health}\n---\nHi`,
+    );
+    write(
+      'data/System/Channels/Running.md',
+      `---\nchannel-id: ${health}\n---\nRun`,
+    );
+    write('data/System/Channels/Coach.md', '---\nmodle: sonnet\n---\nCoach');
+    write('data/System/Channels/Fitness.md', 'Train');
+    write('data/System/Persona.md', '---\nmodel: sonnet\n---\nBe calm.');
     write(
       'data/System/Workflows/Weekly health report.md',
       '---\ntrigger: schedule\nday: sunday\nhour: 25\n---\nReport',
     );
-    write('data/System/Workflows/Review.md', '---\nagent: Nobody\n---\nGo');
+    write('data/System/Workflows/Review.md', '---\nchannel: Nobody\n---\nGo');
     write('data/System/Notes.md', 'Stray');
     write('data/System/Templates/Daily Journal.md', '---\nmodle: x\n---');
 
@@ -97,20 +106,22 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     expect(result.stderr).toBe('');
     expect(result.stdout).toBe(
       [
-        'data/System/Agents/Coach.md',
+        'data/System/Channels/Coach.md',
         '  modle: unknown property (did you mean model?)',
-        'data/System/Agents/Health.md',
-        '  topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
-        'data/System/Agents/Running.md',
-        '  topic: "health" is also claimed by Agents/Health.md, so neither answers there',
+        'data/System/Channels/Health.md',
+        `  channel-id: ${health} is also the channel-id of Channels/Running.md; keep it in only one of them`,
+        'data/System/Channels/Running.md',
+        `  channel-id: ${health} is also the channel-id of Channels/Health.md; keep it in only one of them`,
+        'data/System/Persona.md',
+        '  model: unknown property',
         'data/System/Workflows/Review.md',
-        '  agent: no Agent note is named nobody',
+        '  channel: no Channel note named "Nobody"; Channel notes: Fitness',
         'data/System/Workflows/Weekly health report.md',
         '  trigger: unknown property',
         '  hour: must be a whole number from 0 to 23',
         '',
-        '6 problems in 5 files.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        '7 problems in 6 files.',
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
     );
@@ -125,7 +136,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     expect(JSON.parse(result.stdout)).toEqual({
       ok: false,
       systemFolder: null,
-      agents: 0,
+      channels: 0,
       workflows: 0,
       topicsChecked: false,
       problems: [

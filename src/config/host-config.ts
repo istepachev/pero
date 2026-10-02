@@ -19,9 +19,9 @@ import { ConfigError, resolvePath } from './bootstrap-config.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /*
- * `config.yaml` holds what describes this installation and that an Agent
+ * `config.yaml` holds what describes this installation and that a turn
  * must not change: where the data folder is, and which chats Pero serves.
- * It lives in the workspace's `.pero/`, where an `ask` Claude Agent's edits
+ * It lives in the workspace's `.pero/`, where Claude's edits with `ask`
  * always ask, and is meant to be committed.
  */
 
@@ -231,7 +231,7 @@ export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
     "# Pero's host settings: where the data folder is and which chats Pero",
     '# serves. Commit this file; the bot token belongs in .env, never here.',
     '',
-    '# Data folder: the vault Agents keep notes in. Relative to the workspace.',
+    '# Data folder: the vault Pero keeps notes in. Relative to the workspace.',
     '# Changing it takes a restart.',
     `data: ${yamlScalar(data)}`,
     '',
@@ -240,7 +240,7 @@ export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
     '',
     'telegram:',
     '  # The chats Pero serves. Anyone who can post in an allowed group',
-    '  # reaches its Agents. Add one with pero telegram allow <chat-id>,',
+    '  # reaches Pero. Add one with pero telegram allow <chat-id>,',
     '  # or here:',
     '  #   - id: -1001234567890   # a group; negative',
     "  #     title: Home          # for you; Pero doesn't use it",

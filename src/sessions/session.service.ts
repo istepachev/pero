@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { type DataSource, type EntityManager, Not } from 'typeorm';
-import type { Agent } from '../system-files/snapshot.js';
+import type { DataSource, EntityManager } from 'typeorm';
+import type { ChannelNote } from '../system-files/snapshot.js';
 import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 
@@ -13,94 +13,78 @@ export interface ContextUsage {
 }
 
 /**
- * Whether a turn of `agent` continues `session`: only while the Agent keeps
- * the provider and effective working directory the Session began with.
+ * Whether a turn with `note` continues `session`: only while the Channel's
+ * note keeps the provider and effective working directory the Session
+ * began with.
  */
 export function resumes(
   session: Pick<Session, 'provider' | 'workingDirectory'>,
-  agent: Pick<Agent, 'provider' | 'workingDirectory'>,
+  note: Pick<ChannelNote, 'provider' | 'workingDirectory'>,
 ): boolean {
   return (
-    session.provider === agent.provider &&
-    session.workingDirectory === agent.workingDirectory
+    session.provider === note.provider &&
+    session.workingDirectory === note.workingDirectory
   );
 }
 
 /**
- * The conversational context of each Channel with its Agent: one active
- * Session per Channel and Agent, resumed only while the Agent keeps the
- * provider and effective working directory the Session began with.
+ * The conversational context of each Channel: one active Session per
+ * Channel, resumed only while its note keeps the provider and effective
+ * working directory the Session began with. A Session records the name of
+ * the note it began with.
  */
 @Injectable()
 export class SessionService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * The Session a turn of `agent` in Channel `channelId` runs in, inside
+   * The Session a turn with `note` in Channel `channelId` runs in, inside
    * the caller's transaction. The active one resumes while its provider
-   * and folder match the Agent's; otherwise it is closed and a fresh one,
+   * and folder match the note's; otherwise it is closed and a fresh one,
    * with no provider session yet, takes its place. Model, effort, and
    * instructions may change within a Session.
    */
   async beginWithin(
     manager: EntityManager,
     channelId: number,
-    agent: Pick<Agent, 'name' | 'provider' | 'workingDirectory'>,
+    note: Pick<ChannelNote, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     const sessions = manager.getRepository(Session);
-    const active = await sessions.findOneBy({
-      channelId,
-      agentName: agent.name,
-      status: 'active',
+    const active = await sessions.find({
+      where: { channelId, status: 'active' },
+      order: { id: 'DESC' },
     });
-    if (active !== null && resumes(active, agent)) return active;
-    // Closed first: at most one Session per Channel and Agent is active.
-    if (active !== null) {
-      await sessions.update(active.id, { status: 'closed' });
+    const [latest] = active;
+    if (active.length === 1 && resumes(latest!, note)) return latest!;
+    // Closed first: at most one Session per Channel is active.
+    for (const session of active) {
+      await sessions.update(session.id, { status: 'closed' });
     }
     return sessions.save(
       sessions.create({
         channelId,
-        agentName: agent.name,
-        provider: agent.provider,
-        workingDirectory: agent.workingDirectory,
+        agentName: note.name,
+        provider: note.provider,
+        workingDirectory: note.workingDirectory,
         providerSessionId: null,
       }),
     );
   }
 
   /**
-   * Closes `session` and begins a fresh one in its place for `agent`,
+   * Closes `session` and begins a fresh one in its place for `note`,
    * inside the caller's transaction, as when the provider no longer has
    * the conversation `session` would resume.
    */
   async replaceWithin(
     manager: EntityManager,
     session: Pick<Session, 'id' | 'channelId'>,
-    agent: Pick<Agent, 'name' | 'provider' | 'workingDirectory'>,
+    note: Pick<ChannelNote, 'name' | 'provider' | 'workingDirectory'>,
   ): Promise<Session> {
     await manager
       .getRepository(Session)
       .update({ id: session.id, status: 'active' }, { status: 'closed' });
-    return this.beginWithin(manager, session.channelId, agent);
-  }
-
-  /**
-   * Closes the Channel's active Sessions of Agents other than `agentName`
-   * inside the caller's transaction, as when the Channel goes to that
-   * Agent now: going back to one of them later starts a fresh Session.
-   */
-  async closeOthersWithin(
-    manager: EntityManager,
-    channelId: number,
-    agentName: string,
-  ): Promise<void> {
-    await manager
-      .getRepository(Session)
-      .update(
-        { channelId, status: 'active', agentName: Not(agentName) },
-        { status: 'closed' },
-      );
+    return this.beginWithin(manager, session.channelId, note);
   }
 
   /**

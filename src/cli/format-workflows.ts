@@ -14,10 +14,18 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
     return 'No Workflows yet. Add a note to the Workflows folder in the system folder.';
   }
   const lines = table([
-    ['NAME', 'AGENT', 'SCHEDULE', 'NEXT RUN', 'CHANNELS', 'STATE', 'NOTE'],
+    [
+      'NAME',
+      'CHANNEL NOTE',
+      'SCHEDULE',
+      'NEXT RUN',
+      'CHANNELS',
+      'STATE',
+      'NOTE',
+    ],
     ...workflows.map((workflow) => [
       `${workflow.name}${workflow.errors.length > 0 ? ' !' : ''}`,
-      agent(workflow),
+      channelNote(workflow),
       workflow.schedule === null ? 'by hand' : schedule(workflow.schedule),
       workflow.schedule === null ? '—' : nextRun(workflow, workflow.schedule),
       workflow.channels.map(channelLabel).join(', ') || '—',
@@ -40,7 +48,7 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
     `Workflow ${workflow.name} "${workflow.title}"`,
     ...table([
       ['note', workflow.file],
-      ['agent', agent(workflow)],
+      ['channel note', channelNote(workflow)],
       ['input', preview(workflow.inputTemplate)],
       ...(workflow.schedule === null
         ? [['schedule', 'none: it runs by hand, with pero workflows run']]
@@ -75,12 +83,12 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
       ),
     );
   }
-  const warning = agentWarning(workflow);
+  const warning = noteWarning(workflow);
   if (warning !== null) lines.push('', warning);
   lines.push('');
   if (workflow.channels.length === 0) {
     lines.push(
-      'Posts to no Channel: name a topic in channel in its note to post its answers there.',
+      'Posts to no Channel: name a Channel note in channel in its note to post its answers there.',
     );
   } else {
     lines.push(
@@ -99,7 +107,7 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
 }
 
 /**
- * What a finished run leaves the owner: the Agent's answer, or why there
+ * What a finished run leaves the owner: its answer, or why there
  * is none.
  */
 export function runOutcome(run: RunView): { ok: boolean; text: string } {
@@ -149,11 +157,11 @@ function history(config: WorkflowView['history']): string {
 }
 
 /** Why the Workflow cannot run; null when it can. */
-export function agentWarning(workflow: WorkflowView): string | null {
-  if (workflow.agentEnabled) return null;
+export function noteWarning(workflow: WorkflowView): string | null {
+  if (workflow.noteEnabled) return null;
   return (
-    `Warning: Agent ${workflow.agent} is disabled or has no note, so this ` +
-    'Workflow cannot run until it is enabled again (enabled: true in its note).'
+    `Warning: Channel note ${workflow.note} is disabled, so this Workflow ` +
+    'cannot run until it is enabled again (enabled: true in that note).'
   );
 }
 
@@ -174,10 +182,8 @@ function channelLabel(channel: WorkflowChannelView): string {
   return channel.title ?? `Channel ${channel.id}`;
 }
 
-function agent(workflow: WorkflowView): string {
-  return workflow.agentEnabled
-    ? workflow.agent
-    : `${workflow.agent} (disabled)`;
+function channelNote(workflow: WorkflowView): string {
+  return workflow.noteEnabled ? workflow.note : `${workflow.note} (disabled)`;
 }
 
 function state(enabled: boolean): string {

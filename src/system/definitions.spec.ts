@@ -15,11 +15,14 @@ const FOLDERS = {
 
 /** The Channels Pero has seen in the allowed chats. */
 const TOPICS = channelTopicLookup([
-  { id: 1, key: '-100777', title: 'Home' },
-  { id: 2, key: '-100777:5', title: 'Health' },
-  { id: 3, key: '-100777:6', title: 'English' },
-  { id: 4, key: '1234', title: null },
+  { id: 1, kind: 'telegram', key: '-100777', title: 'Home' },
+  { id: 2, kind: 'telegram', key: '-100777:5', title: 'Health' },
+  { id: 3, kind: 'telegram', key: '-100777:6', title: 'English' },
+  { id: 4, kind: 'telegram', key: '1234', title: null },
 ]);
+
+const HEALTH = '---\nchannel-id: telegram:-100777:5\n---\nCoach me.';
+const ENGLISH = '---\nchannel-id: telegram:-100777:6\n---';
 
 function snapshotOf(files: Record<string, string>): SystemSnapshot {
   return buildSnapshot(
@@ -59,7 +62,8 @@ describe('Definitions', () => {
     const { definitions } = definitionsOf({
       'Pero.md':
         '---\nprovider: codex\ncodex-model: gpt-5.5\nhistory-carryover: 10\nmax-concurrent-runs: 3\ntimezone: Europe/Berlin\n---',
-      'Agents/Main.md': 'Be brief.',
+      'Persona.md': 'Be calm.',
+      'Instructions.md': 'Be brief.',
     });
     expect(definitions.defaults()).toEqual({
       provider: 'codex',
@@ -75,7 +79,8 @@ describe('Definitions', () => {
       dataFolder: FOLDERS.dataFolder,
       systemFolder: FOLDERS.systemFolder,
       guideFile: '/home/me/workspace/.pero/guide.md',
-      mainInstructions: 'Be brief.',
+      persona: 'Be calm.',
+      instructions: 'Be brief.',
     });
   });
 
@@ -85,67 +90,130 @@ describe('Definitions', () => {
     });
     expect(definitions.defaults()).toMatchObject({
       provider: 'claude',
-      mainInstructions: null,
+      persona: null,
+      instructions: null,
     });
   });
 
-  it('gives each Agent its note with the defaults applied', () => {
+  it('gives each Channel note with the defaults applied, or the defaults alone', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\nclaude-model: opus\nclaude-effort: high\n---',
-      'Agents/Health.md':
-        '---\ntopic: Health\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
-      'Agents/Home/Main.md': 'Help.',
+      'Channels/Health.md':
+        '---\neffort: low\nworking-directory: projects/health\npermissions: bypass\n---\nCoach me.',
+      'Channels/Home/Default.md': 'Help.',
     });
-    expect(definitions.agent('HEALTH')).toMatchObject({
+    expect(definitions.channelNote('HEALTH')).toMatchObject({
       name: 'health',
       title: 'Health',
-      file: 'Agents/Health.md',
-      topic: 'Health',
+      file: 'Channels/Health.md',
       provider: 'claude',
       model: 'opus',
       effort: 'low',
       permissions: 'bypass',
       workingDirectory: '/home/me/workspace/projects/health',
       instructions: 'Coach me.',
-      mainInstructions: true,
       skipGitRepoCheck: false,
       enabled: true,
     });
-    expect(definitions.agent('main')).toMatchObject({
+    expect(definitions.channelNote('default')).toMatchObject({
+      file: 'Channels/Home/Default.md',
       workingDirectory: FOLDERS.workspace,
       note: { workingDirectory: null },
     });
-    expect(definitions.agent('coach')).toBeNull();
-    expect(definitions.agents().map((agent) => agent.name)).toEqual([
+    expect(definitions.channelNote('Garden')).toMatchObject({
+      name: 'garden',
+      title: 'Garden',
+      file: null,
+      model: 'opus',
+      effort: 'high',
+      instructions: null,
+    });
+    expect(definitions.channelNotes().map((note) => note.name)).toEqual([
+      'default',
       'health',
-      'main',
     ]);
   });
 
-  it('names the main Agent from Pero.md, even before its note exists', () => {
-    const { definitions, change } = definitionsOf({
-      'Pero.md': '---\nmain-agent: Coach\n---',
-      'Agents/Main.md': 'Help.',
-    });
-    expect(definitions.mainAgent()).toBeNull();
-    expect(definitions.mainAgentName()).toBe('coach');
-
-    change({ 'Agents/Main.md': 'Help.' });
-    expect(definitions.mainAgent()!.name).toBe('main');
-    expect(definitions.mainAgentName()).toBe('main');
+  it('has no Channel notes before the notes could be read', () => {
+    const { definitions } = definitionsOf(null);
+    expect(definitions.channelNotes()).toEqual([]);
+    expect(definitions.defaults().dataFolder).toBe(FOLDERS.dataFolder);
   });
 
-  it('has no Agents before the notes could be read', () => {
-    const { definitions } = definitionsOf(null);
-    expect(definitions.agents()).toEqual([]);
-    expect(definitions.mainAgentName()).toBe('main');
-    expect(definitions.defaults().dataFolder).toBe(FOLDERS.dataFolder);
+  describe('route', () => {
+    const query = (key: string, title: string | null) => ({
+      channelId: `telegram:${key}`,
+      primary: !key.includes(':'),
+      title,
+    });
+
+    it('answers primary Channels with Default.md, written or not', () => {
+      expect(
+        definitionsOf({ 'Channels/Default.md': 'Hi.' }).definitions.route(
+          query('-100777', 'Home'),
+        ),
+      ).toMatchObject({
+        kind: 'answered',
+        match: 'note',
+        note: { name: 'default', instructions: 'Hi.' },
+      });
+      expect(
+        definitionsOf({}).definitions.route(query('1234', null)),
+      ).toMatchObject({
+        kind: 'answered',
+        match: 'none',
+        note: { name: 'default', title: 'Default', file: null },
+      });
+    });
+
+    it('answers a topic with its bound note, or one named as its title', () => {
+      const { definitions } = definitionsOf({
+        'Channels/Health.md': HEALTH,
+        'Channels/Sleep.md': 'Sleep.',
+      });
+      expect(definitions.route(query('-100777:5', 'Fitness'))).toMatchObject({
+        kind: 'answered',
+        match: 'note',
+        note: { name: 'health' },
+      });
+      expect(definitions.route(query('-100777:7', 'Sleep'))).toMatchObject({
+        kind: 'answered',
+        match: 'bindable',
+        note: { name: 'sleep' },
+      });
+      expect(definitions.route(query('-100777:8', 'Garden'))).toMatchObject({
+        kind: 'answered',
+        match: 'none',
+        note: { name: 'garden', title: 'Garden', file: null },
+      });
+    });
+
+    it('says why Pero does not answer', () => {
+      const { definitions } = definitionsOf({
+        'Channels/Health.md':
+          '---\nchannel-id: telegram:-100777:5\nenabled: false\n---',
+        'Channels/Sleep.md': '---\nmodle: x\n---',
+      });
+      expect(definitions.route(query('-100777:5', 'Health'))).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'disabled', file: 'data/System/Channels/Health.md' },
+      });
+      expect(definitions.route(query('-100777:7', 'Sleep'))).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'unloaded', files: ['data/System/Channels/Sleep.md'] },
+      });
+      expect(definitions.route(query('-100777:9', null))).toEqual({
+        kind: 'unanswered',
+        reason: { kind: 'untitled' },
+      });
+    });
   });
 
   it('gives each Workflow its note with the Channels it names by ID', () => {
     const { definitions } = definitionsOf({
       'Pero.md': '---\ntimezone: Europe/Berlin\n---',
-      'Agents/Health.md': '---\ntopic: Health\n---\nCoach me.',
+      'Channels/Health.md': HEALTH,
+      'Channels/English.md': ENGLISH,
       'Workflows/Weekly report.md':
         '---\nday: sunday\nhour: 12\nchannel: [Health, Home/General, 4]\nhistory: true\nhistory-channels: [English, Health]\nhistory-hours: 24\nmax-attempts: 2\n---\nWrite the weekly report.',
       'Workflows/Brief.md': '---\nhour: 9\nenabled: false\n---\nBrief me.',
@@ -154,7 +222,7 @@ describe('Definitions', () => {
       name: 'weekly-report',
       title: 'Weekly report',
       file: 'Workflows/Weekly report.md',
-      agent: 'health',
+      note: 'health',
       input: 'Write the weekly report.',
       channels: ['Health', 'Home/General', 4],
       history: {
@@ -169,7 +237,7 @@ describe('Definitions', () => {
       enabled: true,
     });
     expect(definitions.workflow('brief')).toMatchObject({
-      agent: 'main',
+      note: 'default',
       history: null,
       resolved: { targets: [], history: 'all' },
       schedule: { cron: '0 9 * * *', timezone: 'Europe/Berlin' },
@@ -182,7 +250,7 @@ describe('Definitions', () => {
     expect(definitions.workflow('nope')).toBeNull();
   });
 
-  it('leaves out a Workflow whose topic Pero has not seen', () => {
+  it('leaves out a Workflow whose Channel note is unknown', () => {
     const { definitions } = definitionsOf({
       'Workflows/Report.md': '---\nchannel: Helth\n---\nReport.',
     });
@@ -194,7 +262,7 @@ describe('Definitions', () => {
     const { definitions, change } = definitionsOf({});
     const listener = vi.fn();
     const stop = definitions.onChange(listener);
-    change({ 'Agents/Main.md': 'Hi' });
+    change({ 'Channels/Default.md': 'Hi' });
     expect(listener).toHaveBeenCalledTimes(1);
     stop();
     change({});

@@ -24,6 +24,9 @@ import { NotificationsModule } from './notifications.module.js';
 const OWNER = privateChat('1234');
 const FORUM = groupChat('-1001', 'Household');
 
+/** The `channel-id` of the forum's Health topic. */
+const HEALTH = 'telegram:-1001:7';
+
 describe('BrokenNoteReports', () => {
   let ws: TestWorkspace;
   let moduleRef: TestingModule | undefined;
@@ -98,6 +101,7 @@ describe('BrokenNoteReports', () => {
 
   it('posts once per broken version of a Workflow note, to its Channel, and nothing once it is fixed', async () => {
     await ws.pero();
+    await ws.channel('Health', { 'channel-id': HEALTH });
     await start();
 
     await ws.workflow('Report', { channel: ['Health', 'Helth'] }, 'Report.');
@@ -106,7 +110,7 @@ describe('BrokenNoteReports', () => {
         '-1001:7',
         [
           'Errors in data/System/Workflows/Report.md:',
-          'channel: no topic titled "Helth"; seen topics: Health, Home',
+          'channel: no Channel note named "Helth"; Channel notes: Health',
           "It's left out until it's fixed.",
         ].join('\n'),
       ],
@@ -130,12 +134,15 @@ describe('BrokenNoteReports', () => {
     expect(await ds.getRepository(Message).count()).toBe(0);
   });
 
-  it("posts to the main Agent's primary Channel when no Channel the note names is known", async () => {
+  it('posts to a primary Channel when no Channel the note names is known', async () => {
     await start();
 
     await ws.workflow('Report', { channel: 'Helth' }, 'Report.');
     expect(await posted()).toEqual([
-      ['1234', expect.stringContaining('channel: no topic titled "Helth"')],
+      [
+        '1234',
+        expect.stringContaining('channel: no Channel note named "Helth"'),
+      ],
     ]);
     await ws.write('Pero.md', '---\ntimezone: Mars/Base\n---\n');
     await ws.rescan();
@@ -151,11 +158,11 @@ describe('BrokenNoteReports', () => {
     ]);
   });
 
-  it('posts to the topic of an Agent note while its last good version stays in use', async () => {
-    await ws.agent('Coach', { topic: 'Health' }, 'You coach.');
+  it('posts to the Channel of a Channel note while its last good version stays in use', async () => {
+    await ws.channel('Coach', { 'channel-id': HEALTH }, 'You coach.');
     await start();
 
-    await ws.editAgent('Coach', { effort: 'huge' });
+    await ws.editChannel('Coach', { effort: 'huge' });
     // A version with errors is used, and reported, once a second scan finds it.
     expect(await posted()).toEqual([]);
     await ws.rescan();
@@ -163,7 +170,7 @@ describe('BrokenNoteReports', () => {
       [
         '-1001:7',
         [
-          'Errors in data/System/Agents/Coach.md:',
+          'Errors in data/System/Channels/Coach.md:',
           'effort: must be low, medium, high, xhigh, max, minimal, ultra, or persistent',
           'Its last good version stays in use.',
         ].join('\n'),
@@ -172,21 +179,23 @@ describe('BrokenNoteReports', () => {
   });
 
   it('posts one message per Channel for notes broken together', async () => {
-    await ws.agent('Coach', { topic: 'Health' }, 'You coach.');
+    await ws.channel('Coach', { 'channel-id': HEALTH }, 'You coach.');
     await start();
 
-    await ws.agent('Doctor', { topic: 'Health' }, 'You heal.');
+    await ws.channel('Doctor', { 'channel-id': HEALTH }, 'You heal.');
     const sent = await posted();
     expect(sent).toHaveLength(1);
     expect(sent[0]![0]).toBe('-1001:7');
     expect(sent[0]![1].split('\n\n')).toEqual([
       [
-        'Errors in data/System/Agents/Coach.md:',
-        'topic: "Health" is also claimed by Agents/Doctor.md, so neither answers there',
+        'Errors in data/System/Channels/Coach.md:',
+        `channel-id: ${HEALTH} is also the channel-id of Channels/Doctor.md; keep it in only one of them`,
+        "It's left out until it's fixed.",
       ].join('\n'),
       [
-        'Errors in data/System/Agents/Doctor.md:',
-        'topic: "Health" is also claimed by Agents/Coach.md, so neither answers there',
+        'Errors in data/System/Channels/Doctor.md:',
+        `channel-id: ${HEALTH} is also the channel-id of Channels/Coach.md; keep it in only one of them`,
+        "It's left out until it's fixed.",
       ].join('\n'),
     ]);
   });

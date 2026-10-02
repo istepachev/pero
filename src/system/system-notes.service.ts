@@ -161,7 +161,7 @@ export class SystemNotes implements OnModuleInit, BeforeApplicationShutdown {
     const { snapshot, changed, appeared, fixed } = reload;
     if (first) {
       this.logger.log(
-        `Loaded ${count(snapshot.agents.size, 'Agent')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.folders().systemFolder}`,
+        `Loaded ${count(snapshot.channelNotes.size, 'Channel note')} and ${count(snapshot.workflows.size, 'Workflow')} from ${this.folders().systemFolder}`,
       );
     } else if (changed.length > 0) {
       this.logger.log(`System notes changed: ${changed.join(', ')}`);

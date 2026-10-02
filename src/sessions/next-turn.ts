@@ -1,4 +1,4 @@
-import type { Agent } from '../system-files/snapshot.js';
+import type { ChannelNote } from '../system-files/snapshot.js';
 import type { NextTurn } from '../control/protocol.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { resumes } from './session.service.js';
@@ -11,7 +11,7 @@ export interface NextTurnContext {
 }
 
 /**
- * What the next turn of `agent` in a Channel does with its active Session,
+ * What the next turn with `note` in a Channel does with its active Session,
  * `active` (null when there is none), as `SessionService.beginWithin` and
  * `AgentManager` will: resume it, or start a provider session that begins
  * with the Channel's recent messages.
@@ -21,15 +21,15 @@ export function nextTurn(
     Session,
     'id' | 'provider' | 'workingDirectory' | 'providerSessionId'
   > | null,
-  agent: Pick<Agent, 'provider' | 'workingDirectory'>,
+  note: Pick<ChannelNote, 'provider' | 'workingDirectory'>,
   { hasHistory, carryover }: NextTurnContext,
 ): NextTurn {
   const carriesOver = hasHistory && carryover > 0;
   if (active === null) {
     return turn('new', null, null, null, carriesOver);
   }
-  if (!resumes(active, agent)) {
-    return active.provider === agent.provider
+  if (!resumes(active, note)) {
+    return active.provider === note.provider
       ? turn('fresh', 'folder', active.workingDirectory, active.id, carriesOver)
       : turn('fresh', 'provider', active.provider, active.id, carriesOver);
   }

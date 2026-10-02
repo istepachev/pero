@@ -78,10 +78,10 @@ describe('ProviderAuthService', () => {
     await ws.pero({ provider: 'codex' });
     expect(service.inUse()).toEqual(['codex']);
 
-    await ws.agent('Assistant', { provider: 'claude' });
+    await ws.channel('Assistant', { provider: 'claude' });
     expect(service.inUse()).toEqual(['claude', 'codex']);
 
-    await ws.editAgent('Assistant', { enabled: false });
+    await ws.editChannel('Assistant', { enabled: false });
     service.refreshRequirements();
     expect(service.inUse()).toEqual(['codex']);
     expect(component('claude')?.required).toBe(false);
@@ -91,10 +91,10 @@ describe('ProviderAuthService', () => {
     await moduleRef.init();
     expect(component('codex')?.required).toBe(false);
 
-    await ws.agent('Coder', { provider: 'codex' });
+    await ws.channel('Coder', { provider: 'codex' });
     await vi.waitFor(() => expect(component('codex')?.required).toBe(true));
 
-    await ws.editAgent('Coder', { enabled: false });
+    await ws.editChannel('Coder', { enabled: false });
     await vi.waitFor(() => expect(component('codex')?.required).toBe(false));
   });
 

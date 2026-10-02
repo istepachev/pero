@@ -38,7 +38,7 @@ describe('ChannelCommands', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-commands-');
     await ws.pero({ timezone: 'UTC' });
-    await ws.agent('Main');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -78,7 +78,7 @@ describe('ChannelCommands', () => {
 
   /**
    * Sends `text` in `chat`, as a command when it starts with `/`, which
-   * is answered by the time it resolves; waits for the Agent otherwise.
+   * is answered by the time it resolves; waits for the turn otherwise.
    */
   async function say(chat: InboundChat, text: string, topic?: string) {
     const message = inboundMessage(chat, { text, topic });
@@ -106,7 +106,7 @@ describe('ChannelCommands', () => {
   }
 
   describe('/status', () => {
-    it('shows the Agent, its config, Session, context, and Pero, with no Agent turn and no history', async () => {
+    it('shows the Channel, its config, Session, context, and Pero, with no turn and no history', async () => {
       await say(OWNER, 'Hello');
       claude.usage = { contextTokens: 84_000, contextWindow: 200_000 };
       await say(OWNER, 'Again');
@@ -115,12 +115,12 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/status');
 
       const lines = last().message.text.split('\n');
-      expect(lines[0]).toBe('Agent main');
+      expect(lines[0]).toBe('Channel Default');
       expect(lines[1]).toMatch(
         /^State: idle · last answer \d{4}-\d\d-\d\d \d\d:\d\d$/,
       );
       expect(lines.slice(2, 6)).toEqual([
-        'Config: data/System/Agents/Main.md',
+        'Config: data/System/Channels/Default.md',
         'Provider: claude (default) · default model · default effort',
         'Permissions: ask (default)',
         'Folder: the workspace',
@@ -138,7 +138,7 @@ describe('ChannelCommands', () => {
       expect(await ds.getRepository(Message).count()).toBe(messages);
     });
 
-    it('says the Agent is answering, and offers to stop it', async () => {
+    it('says Pero is answering, and offers to stop it', async () => {
       await say(OWNER, 'Hello');
       const held = claude.hold();
       await adapter.deliver(inboundMessage(OWNER, { text: 'Think hard' }));
@@ -156,12 +156,12 @@ describe('ChannelCommands', () => {
     });
 
     it('says why no one answers, and what to edit', async () => {
-      await ws.editAgent('Main', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
 
       await say(OWNER, '/status');
 
       expect(last().message.text).toMatch(
-        /^Agent main is disabled, so no one answers here\. To turn it back on, set enabled: true in data\/System\/Agents\/Main\.md\.\n\nPero: /,
+        /^Pero doesn't answer here: data\/System\/Channels\/Default\.md sets enabled: false\. To turn it back on, set enabled: true there\.\n\nPero: /,
       );
       expect(claude.requests).toEqual([]);
     });
@@ -174,7 +174,7 @@ describe('ChannelCommands', () => {
 
       await say(OWNER, '/new');
       expect(last().message.text).toBe(
-        "Started over: Agent main's next answer here begins a new conversation.",
+        "Started over: Pero's next answer here begins a new conversation.",
       );
       await say(OWNER, '/status');
       expect(last().message.text).toContain(
@@ -203,7 +203,7 @@ describe('ChannelCommands', () => {
 
       expect(request.signal.aborted).toBe(true);
       expect(last().message.text).toBe(
-        "Started over: Agent main's next answer here begins a new conversation. " +
+        "Started over: Pero's next answer here begins a new conversation. " +
           'Its answer in progress was stopped.',
       );
     });
@@ -215,9 +215,7 @@ describe('ChannelCommands', () => {
 
       await adapter.press(status, 'New session', OWNER);
       const confirm = adapter.edited.at(-1)!;
-      expect(confirm.message.text).toMatch(
-        /^Start over with Agent main here\?/,
-      );
+      expect(confirm.message.text).toMatch(/^Start over here\?/);
       expect(labels(confirm)).toEqual([['Yes, start over', 'Cancel']]);
       expect(
         await ds.getRepository(Session).countBy({ status: 'active' }),
@@ -233,7 +231,7 @@ describe('ChannelCommands', () => {
 
       expect(result).toEqual({ notice: 'Started over' });
       expect(adapter.edited.at(-1)!.message).toEqual({
-        text: "Started over: Agent main's next answer here begins a new conversation.\n— @ada",
+        text: "Started over: Pero's next answer here begins a new conversation.\n— @ada",
         buttons: [[{ id: '/status', label: '« Back' }]],
       });
       expect(
@@ -241,17 +239,17 @@ describe('ChannelCommands', () => {
       ).toBe(0);
     });
 
-    it('refuses where no Agent answers, saying why', async () => {
-      await ws.editAgent('Main', { enabled: false });
+    it("refuses where Pero doesn't answer, saying why", async () => {
+      await ws.editChannel('Default', { enabled: false });
 
       await say(OWNER, '/new');
 
-      expect(last().message.text).toMatch(/^Agent main is disabled/);
+      expect(last().message.text).toMatch(/^Pero doesn't answer here/);
     });
   });
 
   describe('/stop', () => {
-    it("stops the Agent's answer and the waiting ones, without a failure notice", async () => {
+    it("stops Pero's answer and the waiting ones, without a failure notice", async () => {
       await say(OWNER, 'Hello');
       const held = claude.hold();
       await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
@@ -263,7 +261,7 @@ describe('ChannelCommands', () => {
       expect(request.signal.aborted).toBe(true);
       expect(adapter.sent.map((sent) => sent.message.text).slice(-2)).toEqual([
         'echo: Hello',
-        "Stopped Agent main's answer. 1 waiting message won't be answered.",
+        "Stopped Pero's answer. 1 waiting message won't be answered.",
       ]);
       expect(claude.requests.map((r) => r.input)).toEqual(['Hello', 'one']);
     });
@@ -271,9 +269,7 @@ describe('ChannelCommands', () => {
     it('says when there is nothing to stop', async () => {
       await say(OWNER, '/stop');
 
-      expect(last().message.text).toBe(
-        "Agent main isn't answering anything here.",
-      );
+      expect(last().message.text).toBe("Pero isn't answering anything here.");
     });
   });
 
@@ -283,7 +279,7 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/effort');
       const picker = last();
       expect(picker.message.text).toBe(
-        'Agent main uses effort medium (Pero.md).\n' +
+        'This Channel uses effort medium (Pero.md).\n' +
           'Pick one. It applies from the next answer.',
       );
       expect(labels(picker)).toEqual([
@@ -297,10 +293,10 @@ describe('ChannelCommands', () => {
 
       expect(result).toEqual({ notice: 'Effort set' });
       expect(adapter.edited.at(-1)!.message.text).toBe(
-        'Agent main now uses effort low, from its next answer.\n' +
-          'Config: data/System/Agents/Main.md\n— @ada',
+        'This Channel now uses effort low, from the next answer.\n' +
+          'Config: data/System/Channels/Default.md\n— @ada',
       );
-      expect(ws.read('Agents/Main.md')).toMatch(/^effort: low$/m);
+      expect(ws.read('Channels/Default.md')).toMatch(/^effort: low$/m);
       await say(OWNER, 'Hello');
       expect(claude.requests.at(-1)!.providerOptions).toMatchObject({
         effort: 'low',
@@ -315,18 +311,18 @@ describe('ChannelCommands', () => {
     });
 
     it('goes back to the default, and says when nothing changes', async () => {
-      await ws.editAgent('Main', { effort: 'high' });
+      await ws.editChannel('Default', { effort: 'high' });
 
       await say(OWNER, '/effort default');
       expect(last().message.text).toBe(
-        'Agent main now uses default effort, from its next answer.\n' +
-          'Config: data/System/Agents/Main.md',
+        'This Channel now uses default effort, from the next answer.\n' +
+          'Config: data/System/Channels/Default.md',
       );
-      expect(ws.read('Agents/Main.md')).not.toMatch(/^effort:/m);
+      expect(ws.read('Channels/Default.md')).not.toMatch(/^effort:/m);
 
       await say(OWNER, '/effort default');
       expect(last().message.text).toMatch(
-        /^Agent main already uses default effort\./,
+        /^This Channel already uses default effort\./,
       );
     });
 
@@ -334,17 +330,17 @@ describe('ChannelCommands', () => {
       await say(OWNER, '/effort ultra');
 
       expect(last().message.text).toMatch(
-        /^There is no effort ultra for claude\.\nAgent main uses default effort\./,
+        /^There is no effort ultra for claude\.\nThis Channel uses default effort\./,
       );
-      expect(ws.read('Agents/Main.md')).not.toMatch(/^effort:/m);
+      expect(ws.read('Channels/Default.md')).not.toMatch(/^effort:/m);
     });
 
     it('sets a typed model, and offers the ones the workspace uses', async () => {
-      await ws.agent('Coach', { topic: 'Running', model: 'claude-opus-4-8' });
+      await ws.channel('Running', { model: 'claude-opus-4-8' });
 
       await say(OWNER, '/model sonnet');
       expect(last().message.text).toMatch(
-        /^Agent main now uses model sonnet, from its next answer\./,
+        /^This Channel now uses model sonnet, from the next answer\./,
       );
       await say(OWNER, '/model');
 
@@ -362,25 +358,27 @@ describe('ChannelCommands', () => {
 
     it("leaves a note whose properties don't parse as it is", async () => {
       await say(OWNER, 'Hello');
-      await ws.write('Agents/Main.md', '---\neffort: [\n---\nBe kind.\n');
+      await ws.write('Channels/Default.md', '---\neffort: [\n---\nBe kind.\n');
 
       await say(OWNER, '/effort low');
 
       expect(last().message.text).toBe(
-        "Agents/Main.md's properties don't parse; pero check lists the errors",
+        "Channels/Default.md's properties don't parse; pero check lists the errors",
       );
-      expect(ws.read('Agents/Main.md')).toBe('---\neffort: [\n---\nBe kind.\n');
+      expect(ws.read('Channels/Default.md')).toBe(
+        '---\neffort: [\n---\nBe kind.\n',
+      );
     });
 
-    it("refuses a model name with spaces, and an Agent that isn't there", async () => {
+    it("refuses a model name with spaces, and a Channel Pero doesn't answer", async () => {
       await say(OWNER, '/model big one');
       expect(last().message.text).toMatch(
         /^A model's name has no spaces: big one\n/,
       );
 
-      await ws.editAgent('Main', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
       await say(OWNER, '/effort low');
-      expect(last().message.text).toMatch(/^Agent main is disabled/);
+      expect(last().message.text).toMatch(/^Pero doesn't answer here/);
     });
   });
 

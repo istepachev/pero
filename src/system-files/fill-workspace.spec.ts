@@ -46,10 +46,12 @@ describe('fillWorkspace', () => {
     await expect(fillWorkspace(ws, home)).resolves.toEqual([
       { path: 'data/System/Pero.md', action: 'created' },
       { path: 'data/System/Workflows/', action: 'created' },
-      { path: 'data/System/Agents/Main.md', action: 'created' },
+      { path: 'data/System/Persona.md', action: 'created' },
+      { path: 'data/System/Instructions.md', action: 'created' },
+      { path: 'data/System/Channels/Default.md', action: 'created' },
     ]);
-    expect(read('data/System/Agents/Main.md')).toBe(
-      SKELETON_NOTES['Agents/Main.md'],
+    expect(read('data/System/Channels/Default.md')).toBe(
+      SKELETON_NOTES['Channels/Default.md'],
     );
     expect(read('data/System/Pero.md')).toMatch(/^timezone: /m);
   });
@@ -58,7 +60,8 @@ describe('fillWorkspace', () => {
     initWorkspace(ws, home);
     writeFileSync(join(system, 'Pero.md'), '---\nprovider: codex\n---\n');
     rmSync(join(system, 'Workflows'), { recursive: true });
-    rmSync(join(system, 'Agents', 'Main.md'));
+    rmSync(join(system, 'Channels', 'Default.md'));
+    rmSync(join(system, 'Instructions.md'));
     rmSync(join(ws, '.pero', 'config.yaml'));
     writeFileSync(join(ws, '.gitignore'), 'node_modules/\n');
 
@@ -66,7 +69,8 @@ describe('fillWorkspace', () => {
       { path: '.gitignore', action: 'updated' },
       { path: '.pero/config.yaml', action: 'created' },
       { path: 'data/System/Workflows/', action: 'created' },
-      { path: 'data/System/Agents/Main.md', action: 'created' },
+      { path: 'data/System/Instructions.md', action: 'created' },
+      { path: 'data/System/Channels/Default.md', action: 'created' },
     ]);
     expect(read('data/System/Pero.md')).toBe('---\nprovider: codex\n---\n');
     expect(read('.gitignore')).toBe('node_modules/\n.env\n');
@@ -82,29 +86,18 @@ describe('fillWorkspace', () => {
       'data/',
       'data/System/Pero.md',
       'data/System/Workflows/',
-      'data/System/Agents/Main.md',
+      'data/System/Persona.md',
+      'data/System/Instructions.md',
+      'data/System/Channels/Default.md',
     ]);
     expect(read('.pero/.gitignore')).toContain('!config.yaml');
   });
 
-  it("writes the note of the main Agent Pero.md names, unless it's anywhere", async () => {
+  it('writes Default.md unless a note of its name is anywhere', async () => {
     initWorkspace(ws, home);
-    writeFileSync(join(system, 'Pero.md'), '---\nmain-agent: Assistant\n---\n');
-
-    await expect(fillWorkspace(ws, home)).resolves.toEqual([
-      { path: 'data/System/Agents/Assistant.md', action: 'created' },
-    ]);
-
-    rmSync(join(system, 'Agents', 'Assistant.md'));
-    mkdirSync(join(system, 'Agents', 'Home'));
-    writeFileSync(join(system, 'Agents', 'Home', 'Assistant.md'), 'Hi');
-    await expect(fillWorkspace(ws, home)).resolves.toEqual([]);
-  });
-
-  it("writes no Agent note while Pero.md's main-agent can't be read", async () => {
-    initWorkspace(ws, home);
-    rmSync(join(system, 'Agents', 'Main.md'));
-    writeFileSync(join(system, 'Pero.md'), '---\nmain-agent: [\n---\n');
+    rmSync(join(system, 'Channels', 'Default.md'));
+    mkdirSync(join(system, 'Channels', 'Home'));
+    writeFileSync(join(system, 'Channels', 'Home', 'default.md'), 'Hi');
     await expect(fillWorkspace(ws, home)).resolves.toEqual([]);
   });
 
@@ -126,7 +119,9 @@ describe('fillWorkspace', () => {
     expect(paths).toEqual([
       'Vault/System/Pero.md',
       'Vault/System/Workflows/',
-      'Vault/System/Agents/Main.md',
+      'Vault/System/Persona.md',
+      'Vault/System/Instructions.md',
+      'Vault/System/Channels/Default.md',
     ]);
   });
 });

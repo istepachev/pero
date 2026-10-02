@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { ParsedNote } from './note.js';
 import {
   type NoteResult,
-  readAgentNote,
+  readChannelNote,
   readPeroNote,
+  readTextNote,
   readWorkflowNote,
 } from './schemas.js';
 
 const PERO = 'Pero.md';
-const AGENT = 'Agents/Health.md';
+const CHANNEL = 'Channels/Health.md';
 const WORKFLOW = 'Workflows/Weekly health report.md';
 
 function note(
@@ -55,7 +56,6 @@ describe('readPeroNote', () => {
       },
       permissions: 'ask',
       timezone: null,
-      mainAgent: 'main',
       historyCarryover: 50,
       historyRetentionDays: null,
       maxConcurrentRuns: 2,
@@ -76,7 +76,6 @@ describe('readPeroNote', () => {
               'codex-effort': 'minimal',
               permissions: 'bypass',
               timezone: 'europe/berlin',
-              'main-agent': 'Home Assistant',
               'history-carryover': 0,
               'history-retention-days': 90,
               'max-concurrent-runs': 10,
@@ -93,14 +92,13 @@ describe('readPeroNote', () => {
       },
       permissions: 'bypass',
       timezone: 'Europe/Berlin',
-      mainAgent: 'home-assistant',
       historyCarryover: 0,
       historyRetentionDays: 90,
       maxConcurrentRuns: 10,
     });
   });
 
-  it("refuses a body: instructions belong in the main Agent's note", () => {
+  it('refuses a body: instructions belong in Instructions.md', () => {
     const result = readPeroNote(
       PERO,
       note({ provider: 'gemini' }, 'You are a calm assistant.'),
@@ -111,14 +109,14 @@ describe('readPeroNote', () => {
       null,
     ]);
     expect(!result.ok && result.errors[1]!.message).toMatch(
-      /^holds settings only: move its text to the main Agent's note/,
+      /^holds settings only: move its text to Instructions.md or Persona.md/,
     );
   });
 
   it('treats a property left empty as not set', () => {
     expect(
-      value(readPeroNote(PERO, note({ provider: null, 'main-agent': null }))),
-    ).toMatchObject({ provider: 'claude', mainAgent: 'main' });
+      value(readPeroNote(PERO, note({ provider: null, timezone: null }))),
+    ).toMatchObject({ provider: 'claude', timezone: null });
   });
 
   it('refuses invalid values', () => {
@@ -139,9 +137,7 @@ describe('readPeroNote', () => {
     expect(invalid({ timezone: 1 })).toBe(
       'must be an IANA time zone such as Europe/Berlin',
     );
-    expect(invalid({ 'main-agent': '???' })).toBe(
-      'must name a note, such as Main',
-    );
+    expect(invalid({ 'main-agent': 'Main' })).toBe('unknown property');
     expect(invalid({ 'history-carryover': -1 })).toBe(
       'must be a whole number, 0 or more',
     );
@@ -159,7 +155,7 @@ describe('readPeroNote', () => {
     );
   });
 
-  it('refuses Agent properties, suggesting the right one', () => {
+  it('refuses Channel note properties, suggesting the right one', () => {
     expect(invalid({ model: 'opus' })).toBe('unknown property');
     expect(invalid({ 'claude-modle': 'opus' })).toBe(
       'unknown property (did you mean claude-model?)',
@@ -178,19 +174,18 @@ describe('readPeroNote', () => {
   });
 });
 
-describe('readAgentNote', () => {
+describe('readChannelNote', () => {
   const invalid = (properties: Record<string, unknown>) =>
-    messageFor(readAgentNote, AGENT, properties);
+    messageFor(readChannelNote, CHANNEL, properties);
 
   it('leaves what it omits to Pero.md', () => {
-    expect(value(readAgentNote(AGENT, note({})))).toEqual({
-      topic: null,
+    expect(value(readChannelNote(CHANNEL, note({})))).toEqual({
+      channelId: null,
       provider: null,
       model: null,
       effort: null,
       permissions: null,
       workingDirectory: null,
-      skipMainInstructions: false,
       skipGitRepoCheck: false,
       enabled: true,
       instructions: null,
@@ -200,17 +195,16 @@ describe('readAgentNote', () => {
   it('reads every property, and the body as its instructions', () => {
     expect(
       value(
-        readAgentNote(
-          AGENT,
+        readChannelNote(
+          CHANNEL,
           note(
             {
-              topic: 'Health',
+              'channel-id': 'telegram:-1001234567890:5',
               provider: 'codex',
               model: 'gpt-5.5',
               effort: 'ultra',
               permissions: 'bypass',
               'working-directory': 'projects/site',
-              'skip-main-instructions': true,
               'skip-git-repo-check': true,
               enabled: false,
               tags: ['pero'],
@@ -220,53 +214,51 @@ describe('readAgentNote', () => {
         ),
       ),
     ).toEqual({
-      topic: 'Health',
+      channelId: 'telegram:-1001234567890:5',
       provider: 'codex',
       model: 'gpt-5.5',
       effort: 'ultra',
       permissions: 'bypass',
       workingDirectory: 'projects/site',
-      skipMainInstructions: true,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'You are my health coach.',
     });
   });
 
-  it('reads one topic, trimmed, and a number as its title', () => {
-    const topic = (value_: unknown) =>
-      value(readAgentNote(AGENT, note({ topic: value_ }))).topic;
-    expect(topic(' Health ')).toBe('Health');
-    expect(topic(2026)).toBe('2026');
+  it('reads a channel-id, trimmed', () => {
+    expect(
+      value(
+        readChannelNote(
+          CHANNEL,
+          note({ 'channel-id': ' telegram:123456789 ' }),
+        ),
+      ).channelId,
+    ).toBe('telegram:123456789');
   });
 
   it('accepts any provider’s effort, to check once the provider is known', () => {
     expect(
-      value(readAgentNote(AGENT, note({ effort: 'minimal' }))).effort,
+      value(readChannelNote(CHANNEL, note({ effort: 'minimal' }))).effort,
     ).toBe('minimal');
-    expect(value(readAgentNote(AGENT, note({ effort: 'max' }))).effort).toBe(
-      'max',
-    );
+    expect(
+      value(readChannelNote(CHANNEL, note({ effort: 'max' }))).effort,
+    ).toBe('max');
   });
 
   it('refuses invalid values', () => {
-    expect(invalid({ topic: ['Health', 'Running'] })).toBe(
-      'must be one topic title, not a list: an Agent answers one topic',
+    expect(invalid({ 'channel-id': 'Health' })).toBe(
+      'must be <integration>:<address>, such as telegram:-1001234567890:5',
     );
-    expect(invalid({ topic: ['Health'] })).toBe(
-      'must be one topic title, not a list: an Agent answers one topic',
+    expect(invalid({ 'channel-id': 5 })).toBe(
+      'must be <integration>:<address>, such as telegram:-1001234567890:5',
     );
-    expect(invalid({ topic: '' })).toBe('must not be empty');
-    expect(invalid({ topic: true })).toBe('must be text');
     expect(invalid({ provider: 'openai' })).toBe('must be claude or codex');
     expect(invalid({ model: '  ' })).toBe('must not be empty');
     expect(invalid({ effort: 'huge' })).toMatch(/^must be low, medium, high,/);
     expect(invalid({ permissions: 'always' })).toBe('must be ask or bypass');
     expect(invalid({ 'working-directory': 'a\0b' })).toBe(
       'must not contain a NUL byte',
-    );
-    expect(invalid({ 'skip-main-instructions': 'no' })).toBe(
-      'must be true or false',
     );
     expect(invalid({ 'skip-git-repo-check': 1 })).toBe('must be true or false');
     expect(invalid({ enabled: 'yes' })).toBe('must be true or false');
@@ -276,8 +268,9 @@ describe('readAgentNote', () => {
     expect(invalid({ modle: 'sonnet' })).toBe(
       'unknown property (did you mean model?)',
     );
-    expect(invalid({ topics: ['Health'] })).toBe(
-      'unknown property (did you mean topic?)',
+    expect(invalid({ topic: 'Health' })).toBe('unknown property');
+    expect(invalid({ 'skip-main-instructions': true })).toBe(
+      'unknown property',
     );
     expect(invalid({ 'claude-model': 'opus' })).toBe('unknown property');
   });
@@ -293,7 +286,6 @@ describe('readWorkflowNote', () => {
     expect(read({})).toEqual({
       schedule: null,
       channels: [],
-      agent: null,
       history: null,
       maxAttempts: 1,
       enabled: true,
@@ -315,7 +307,6 @@ describe('readWorkflowNote', () => {
     ).toEqual({
       schedule: { cron: '0 12 * * 0', timezone: null },
       channels: ['Health'],
-      agent: null,
       history: null,
       maxAttempts: 1,
       enabled: true,
@@ -356,17 +347,15 @@ describe('readWorkflowNote', () => {
     });
   });
 
-  it('reads channels, the Agent, and limits', () => {
+  it('reads channels and limits', () => {
     expect(
       read({
-        channel: ['Health', 'Home/Running', 5],
-        agent: 'Health',
+        channel: ['Health', 'Home/General', 5],
         'max-attempts': 3,
         enabled: false,
       }),
     ).toMatchObject({
-      channels: ['Health', 'Home/Running', 5],
-      agent: 'health',
+      channels: ['Health', 'Home/General', 5],
       maxAttempts: 3,
       enabled: false,
     });
@@ -405,7 +394,7 @@ describe('readWorkflowNote', () => {
       {
         file: WORKFLOW,
         property: null,
-        message: 'the note has no text: write what each run asks the Agent',
+        message: 'the note has no text: write what each run asks',
       },
     ]);
     expect(
@@ -462,15 +451,15 @@ describe('readWorkflowNote', () => {
       'must not be empty (item 2)',
     );
     expect(invalid({ channel: ['Health', true] })).toBe(
-      'must be a topic title or a Channel ID (item 2)',
+      'must be a Channel note name or a Channel ID (item 2)',
     );
     expect(invalid({ channel: -5 })).toBe(
-      'must be a topic title or a Channel ID',
+      'must be a Channel note name or a Channel ID',
     );
-    expect(invalid({ agent: '!!!' })).toBe('must name a note, such as Main');
+    expect(invalid({ agent: 'Health' })).toBe('unknown property');
     expect(invalid({ history: 'yes' })).toBe('must be true or false');
     expect(invalid({ 'history-channels': [] })).toBe(
-      'must name at least one topic; leave it out to read them all',
+      'must name at least one Channel; leave it out to read them all',
     );
     expect(invalid({ 'history-messages': 'agents' })).toBe(
       'must be people or all',
@@ -490,5 +479,17 @@ describe('readWorkflowNote', () => {
     expect(invalid({ topics: ['Health'] })).toBe('unknown property');
     // `enabled: false` is what runs it only by hand.
     expect(invalid({ trigger: 'manual', hour: 9 })).toBe('unknown property');
+  });
+});
+
+describe('readTextNote', () => {
+  it('reads the body, allowing only Obsidian’s properties', () => {
+    expect(
+      value(readTextNote('Persona.md', note({ tags: ['pero'] }, 'Be kind.'))),
+    ).toBe('Be kind.');
+    expect(value(readTextNote('Persona.md', note({})))).toBeNull();
+    expect(messageFor(readTextNote, 'Instructions.md', { model: 'opus' })).toBe(
+      'unknown property',
+    );
   });
 });

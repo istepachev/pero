@@ -52,7 +52,7 @@ describe('TelegramAdapter', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-telegram-');
-    await ws.agent('Main');
+    await ws.channel('Default');
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
@@ -288,7 +288,7 @@ describe('TelegramAdapter', () => {
           message_thread_id: 42,
         });
       }
-      expect(welcome?.text).toMatch(/^This topic talks to Agent health/);
+      expect(welcome?.text).toMatch(/^Pero answers in this topic with claude/);
       expect(reply?.text).toBe('echo: Hello');
     });
 
@@ -353,7 +353,10 @@ describe('TelegramAdapter', () => {
           externalKey: '-1001234567890:42',
           title: 'Fitness',
         });
-        expect(ws.read('Agents/Health.md')).toContain('topic: Fitness');
+        // The note keeps its name and stays bound to the topic.
+        expect(ws.read('Channels/Health.md')).toContain(
+          'channel-id: telegram:-1001234567890:42',
+        );
       });
     });
 
@@ -378,7 +381,7 @@ describe('TelegramAdapter', () => {
   });
 
   describe('commands', () => {
-    it('answers a command itself, and one for another bot not at all, without the Agent', async () => {
+    it('answers a command itself, and one for another bot not at all, without a turn', async () => {
       await start({ allow: [FORUM] });
       await connected();
 
@@ -396,7 +399,7 @@ describe('TelegramAdapter', () => {
       );
 
       const sent = await sentCount(2);
-      expect(sent[1]?.text).toMatch(/^Agent main · Household\nState: idle/);
+      expect(sent[1]?.text).toMatch(/^Channel Household\nState: idle/);
       expect(sent[1]?.reply_markup).toMatchObject({
         inline_keyboard: [
           [{ callback_data: '/new ask' }, { callback_data: '/status' }],
@@ -406,7 +409,7 @@ describe('TelegramAdapter', () => {
       expect(runtime.requests).toEqual([]);
     });
 
-    it('passes a command Pero does not know to the Agent', async () => {
+    it('passes a command Pero does not know on as a message', async () => {
       await start({ allow: [FORUM] });
       await connected();
 
@@ -450,7 +453,7 @@ describe('TelegramAdapter', () => {
       await vi.waitFor(() =>
         expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
           message_id: 5555,
-          text: expect.stringMatching(/^Start over with Agent main here\?/),
+          text: expect.stringMatching(/^Start over here\?/),
         }),
       );
       expect(api.sent()).toHaveLength(2);

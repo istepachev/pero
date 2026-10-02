@@ -24,7 +24,6 @@ export function formatSettings(view: SettingsView): string {
     ['codex-effort', option('codex', 'effort')],
     ['permissions', value('permissions', view.defaultPermissions)],
     ['timezone', value('timezone', view.timezone)],
-    ['main-agent', value('main-agent', view.mainAgent)],
     [
       'history-carryover',
       value(
@@ -49,9 +48,9 @@ export function formatSettings(view: SettingsView): string {
   ]);
   return [
     view.files.pero,
-    ...rows.slice(0, 11).map((row) => `  ${row}`),
+    ...rows.slice(0, -1).map((row) => `  ${row}`),
     view.files.config,
-    `  ${rows[11]}`,
+    `  ${rows.at(-1)}`,
     `Telegram bot token: ${formatToken(view.telegramBotToken)}`,
   ].join('\n');
 }

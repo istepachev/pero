@@ -10,7 +10,7 @@ import {
   MAX_HISTORY_RETENTION_DAYS,
   timeZoneSchema,
 } from '../config/settings-input.js';
-import { slugify } from '../config/slug.js';
+import { INTEGRATION_KINDS } from '../persistence/entities/sql.js';
 import {
   PERMISSION_MODES,
   type PermissionMode,
@@ -30,13 +30,10 @@ import { fromZodIssues, type NoteError } from './note-error.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /*
- * The properties of `Pero.md`, Agent notes, and Workflow notes, as the
+ * The properties of `Pero.md`, Channel notes, and Workflow notes, as the
  * configuration reference describes them. A property left empty, as
  * Obsidian leaves one added without a value, counts as not set.
  */
-
-/** The name of the main Agent when `Pero.md` names none: `Main.md`. */
-export const DEFAULT_MAIN_AGENT = 'main';
 
 export const DEFAULT_HISTORY_CARRYOVER = 50;
 
@@ -45,7 +42,7 @@ export const DEFAULT_MAX_CONCURRENT_RUNS = 2;
 /** The most Workflow runs `max-concurrent-runs` allows at once. */
 export const MAX_CONCURRENT_RUNS_LIMIT = 10;
 
-/** Any provider's effort level; an Agent's is checked against its provider. */
+/** Any provider's effort level; a Channel's is checked against its provider. */
 export const EFFORTS = [...new Set([...CLAUDE_EFFORTS, ...CODEX_EFFORTS])] as [
   string,
   ...string[],
@@ -59,34 +56,33 @@ export interface PeroNote {
   permissions: PermissionMode;
   /** Null: the host's time zone. */
   timezone: string | null;
-  /** The name of the main Agent's note. */
-  mainAgent: string;
   historyCarryover: number;
   /** Null keeps all history. */
   historyRetentionDays: number | null;
   maxConcurrentRuns: number;
 }
 
-/** An Agent note's own settings; null takes the value from `Pero.md`. */
-export interface AgentNote {
-  /** The title of the one topic it answers in; null for none. */
-  topic: string | null;
+/** A Channel note's own settings; null takes the value from `Pero.md`. */
+export interface ChannelNoteProperties {
+  /**
+   * The Channel it is for, as `<integration>:<address>`, such as
+   * `telegram:-1001234567890:5`; null until Pero binds it.
+   */
+  channelId: string | null;
   provider: Provider | null;
   model: string | null;
-  /** Any provider's level; not yet checked against the Agent's provider. */
+  /** Any provider's level; not yet checked against the note's provider. */
   effort: string | null;
   permissions: PermissionMode | null;
   /** As written; null works in the workspace. */
   workingDirectory: string | null;
-  /** Leaves the main Agent's instructions out of its own. */
-  skipMainInstructions: boolean;
   skipGitRepoCheck: boolean;
   enabled: boolean;
   /** The body. */
   instructions: string | null;
 }
 
-/** A topic title, `<chat title>/<topic title>`, or a Channel ID. */
+/** A Channel note's name, `General`, `<chat title>/General`, or a Channel ID. */
 export type ChannelRef = string | number;
 
 export interface WorkflowNoteHistory {
@@ -101,15 +97,13 @@ export interface WorkflowNoteHistory {
 export interface WorkflowNote {
   /** Null: it runs only by hand. */
   schedule: { cron: string; timezone: string | null } | null;
-  /** Where each run's answer is posted. */
+  /** Where each run's answer is posted; the first gives its Channel note. */
   channels: ChannelRef[];
-  /** The name of the Agent note that runs it; null: from `channel`. */
-  agent: string | null;
   /** Null: runs read no chat history. */
   history: WorkflowNoteHistory | null;
   maxAttempts: number;
   enabled: boolean;
-  /** The body: what each run sends to the Agent. */
+  /** The body: what each run sends. */
   input: string;
 }
 
@@ -146,50 +140,38 @@ function oneOrMore<T extends z.ZodType>(item: T, min = 0, message?: string) {
   );
 }
 
-/** Names a note, such as `Main`: its name is the slug of what is written. */
-const noteName = text.transform((value, ctx) => {
-  const name = slugify(value);
-  if (name === null) {
-    ctx.addIssue({ code: 'custom', message: 'must name a note, such as Main' });
-    return z.NEVER;
-  }
-  return name;
-});
-
 const timeZone = z
   .string({ error: 'must be an IANA time zone such as Europe/Berlin' })
   .pipe(timeZoneSchema);
 
-/** A topic title; one Obsidian reads as a number, such as `2026`, too. */
-const topicTitle = z.preprocess(
-  (value) => (typeof value === 'number' ? String(value) : value),
-  text,
-);
+const CHANNEL_ID_EXPECTED = `must be <integration>:<address>, such as telegram:-1001234567890:5`;
 
-/** One topic title: an Agent answers one topic, which no other claims. */
-const oneTopic = z
-  .unknown()
-  .superRefine((value, ctx) => {
-    if (Array.isArray(value)) {
-      ctx.addIssue({
-        code: 'custom',
-        message:
-          'must be one topic title, not a list: an Agent answers one topic',
-      });
-    }
-  })
-  .pipe(topicTitle);
+/** A Channel's unique ID, `<integration>:<address>`. */
+const channelId = z
+  .string({ error: CHANNEL_ID_EXPECTED })
+  .trim()
+  .refine((value) => {
+    const colon = value.indexOf(':');
+    return (
+      colon > 0 &&
+      (INTEGRATION_KINDS as readonly string[]).includes(
+        value.slice(0, colon),
+      ) &&
+      value.length > colon + 1 &&
+      !/\s/.test(value)
+    );
+  }, CHANNEL_ID_EXPECTED);
 
 /**
- * The topic title `value`, a `topic` property as YAML gives it, names;
+ * The Channel ID `value`, a `channel-id` property as YAML gives it, names;
  * null when it names none, as for a value of the wrong type.
  */
-export function topicTitleOf(value: unknown): string | null {
-  const read = oneTopic.safeParse(value);
+export function channelIdOf(value: unknown): string | null {
+  const read = channelId.safeParse(value);
   return read.success ? read.data : null;
 }
 
-const CHANNEL_EXPECTED = 'must be a topic title or a Channel ID';
+const CHANNEL_EXPECTED = 'must be a Channel note name or a Channel ID';
 
 const channelRef = z.union([z.int().positive(CHANNEL_EXPECTED), text], {
   error: CHANNEL_EXPECTED,
@@ -222,16 +204,15 @@ const peroProperties = z
     'codex-effort': oneOf(CODEX_EFFORTS),
     permissions: oneOf(PERMISSION_MODES),
     timezone: timeZone,
-    'main-agent': noteName,
     'history-carryover': wholeNumber(0),
     'history-retention-days': wholeNumber(1, MAX_HISTORY_RETENTION_DAYS),
     'max-concurrent-runs': wholeNumber(1, MAX_CONCURRENT_RUNS_LIMIT),
   })
   .partial();
 
-const agentProperties = z
+const channelProperties = z
   .object({
-    topic: oneTopic,
+    'channel-id': channelId,
     provider: oneOf(PROVIDERS),
     model: text,
     effort: oneOf(EFFORTS),
@@ -240,7 +221,6 @@ const agentProperties = z
       (path) => !path.includes('\0'),
       'must not contain a NUL byte',
     ),
-    'skip-main-instructions': bool,
     'skip-git-repo-check': bool,
     enabled: bool,
   })
@@ -254,12 +234,11 @@ const workflowProperties = z
     cron: z.string({ error: 'must be a cron expression' }).pipe(cronSchema),
     timezone: timeZone,
     channel: oneOrMore(channelRef),
-    agent: noteName,
     history: bool,
     'history-channels': oneOrMore(
       channelRef,
       1,
-      'must name at least one topic; leave it out to read them all',
+      'must name at least one Channel; leave it out to read them all',
     ),
     'history-messages': oneOf(HISTORY_MESSAGES),
     'history-hours': wholeNumber(1, MAX_HISTORY_HOURS),
@@ -272,7 +251,7 @@ const workflowProperties = z
 /** Every property each kind of note takes, by name. */
 export const NOTE_PROPERTIES = {
   pero: peroProperties.keyof().options,
-  agent: agentProperties.keyof().options,
+  channel: channelProperties.keyof().options,
   workflow: workflowProperties.keyof().options,
 } as const;
 
@@ -287,8 +266,8 @@ export function readPeroNote(
       file,
       property: null,
       message:
-        "holds settings only: move its text to the main Agent's note, " +
-        'whose instructions every Agent starts with',
+        'holds settings only: move its text to Instructions.md or ' +
+        'Persona.md, which every Channel shares',
     };
     return {
       ok: false,
@@ -313,7 +292,6 @@ export function readPeroNote(
       },
       permissions: p.permissions ?? 'ask',
       timezone: p.timezone ?? null,
-      mainAgent: p['main-agent'] ?? DEFAULT_MAIN_AGENT,
       historyCarryover: p['history-carryover'] ?? DEFAULT_HISTORY_CARRYOVER,
       historyRetentionDays: p['history-retention-days'] ?? null,
       maxConcurrentRuns:
@@ -322,24 +300,23 @@ export function readPeroNote(
   };
 }
 
-/** An Agent note's own settings. */
-export function readAgentNote(
+/** A Channel note's own settings. */
+export function readChannelNote(
   file: string,
   note: ParsedNote,
-): NoteResult<AgentNote> {
-  const result = readProperties(file, note, agentProperties);
+): NoteResult<ChannelNoteProperties> {
+  const result = readProperties(file, note, channelProperties);
   if (!result.ok) return result;
   const p = result.value;
   return {
     ok: true,
     value: {
-      topic: p.topic ?? null,
+      channelId: p['channel-id'] ?? null,
       provider: p.provider ?? null,
       model: p.model ?? null,
       effort: p.effort ?? null,
       permissions: p.permissions ?? null,
       workingDirectory: p['working-directory'] ?? null,
-      skipMainInstructions: p['skip-main-instructions'] ?? false,
       skipGitRepoCheck: p['skip-git-repo-check'] ?? false,
       enabled: p.enabled ?? true,
       instructions: note.body,
@@ -361,7 +338,7 @@ export function readWorkflowNote(
     errors.push({
       file,
       property: null,
-      message: 'the note has no text: write what each run asks the Agent',
+      message: 'the note has no text: write what each run asks',
     });
   }
   if (!result.ok) return { ok: false, errors };
@@ -392,7 +369,6 @@ export function readWorkflowNote(
     value: {
       schedule: cron === null ? null : { cron, timezone: p.timezone ?? null },
       channels: p.channel ?? [],
-      agent: p.agent ?? null,
       history: p.history
         ? {
             channels: p['history-channels'] ?? 'all',
@@ -406,6 +382,18 @@ export function readWorkflowNote(
       input: note.body,
     },
   };
+}
+
+/**
+ * `Persona.md` or `Instructions.md`: text only, so any property but
+ * Obsidian's own is an error. Its body; null for none.
+ */
+export function readTextNote(
+  file: string,
+  note: ParsedNote,
+): NoteResult<string | null> {
+  const result = readProperties(file, note, z.object({}));
+  return result.ok ? { ok: true, value: note.body } : result;
 }
 
 /**

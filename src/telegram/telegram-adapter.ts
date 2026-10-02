@@ -587,7 +587,7 @@ function access(
     username === null
       ? null
       : `${name} is a public group (@${username}): anyone can find it, ` +
-        `join, and talk to its Agents; make it private in the group's ` +
+        `join, and talk to Pero; make it private in the group's ` +
         `settings (Group type)`;
   return {
     chatKey,

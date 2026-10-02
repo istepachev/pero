@@ -5,8 +5,10 @@ describe('isIgnoredPath', () => {
   it('keeps Markdown notes, in subfolders too', () => {
     for (const file of [
       'Pero.md',
-      'Agents/Health.md',
-      'Agents/Coaches/Running.md',
+      'Persona.md',
+      'Instructions.md',
+      'Channels/Health.md',
+      'Channels/Coaches/Running.md',
       'Workflows/Weekly health report.md',
     ]) {
       expect(isIgnoredPath(file)).toBe(false);
@@ -15,26 +17,27 @@ describe('isIgnoredPath', () => {
 
   it('skips names and folders that start with _ or .', () => {
     for (const file of [
-      'Agents/_Template.md',
+      'Channels/_Template.md',
       '_Ideas.md',
       '.obsidian/workspace.md',
-      'Agents/.hidden.md',
-      'Agents/_Drafts/Health.md',
-      '.trash/Agents/Old.md',
+      'Channels/.hidden.md',
+      'Channels/_Drafts/Health.md',
+      '.trash/Channels/Old.md',
     ]) {
       expect(isIgnoredPath(file)).toBe(true);
     }
   });
 
-  it("skips the owner's files outside Pero.md, Agents/, and Workflows/", () => {
+  it("skips the owner's files outside Pero.md, Channels/, and Workflows/", () => {
     for (const file of [
       'Templates/Daily Journal.md',
       'Notes.md',
       'pero.md',
-      'Agent/Health.md',
-      'agents/Health.md',
-      'Archive/Agents/Health.md',
-      'Agents.md',
+      'Channel/Health.md',
+      'channels/Health.md',
+      'Archive/Channels/Health.md',
+      'Channels.md',
+      'Agents/Health.md',
     ]) {
       expect(isIgnoredPath(file)).toBe(true);
     }
@@ -42,10 +45,10 @@ describe('isIgnoredPath', () => {
 
   it('skips anything that is not a .md file', () => {
     for (const file of [
-      'Agents/Health.txt',
-      'Agents/Health.md.bak',
-      'Agents/avatar.png',
-      'Agents/Health',
+      'Channels/Health.txt',
+      'Channels/Health.md.bak',
+      'Channels/avatar.png',
+      'Channels/Health',
     ]) {
       expect(isIgnoredPath(file)).toBe(true);
     }
@@ -53,18 +56,24 @@ describe('isIgnoredPath', () => {
 });
 
 describe('noteIdentity', () => {
-  it('names Pero.md at the root', () => {
+  it('names Pero.md, Persona.md, and Instructions.md at the root', () => {
     expect(noteIdentity('Pero.md')).toEqual({
       ok: true,
       identity: { kind: 'pero', title: 'Pero', name: 'pero' },
     });
+    expect(noteIdentity('Persona.md')).toMatchObject({
+      identity: { kind: 'persona' },
+    });
+    expect(noteIdentity('Instructions.md')).toMatchObject({
+      identity: { kind: 'instructions' },
+    });
   });
 
-  it('names Agents and Workflows by their file name', () => {
-    expect(noteIdentity('Agents/Weekly Health.md')).toEqual({
+  it('names Channel notes and Workflows by their file name', () => {
+    expect(noteIdentity('Channels/Weekly Health.md')).toEqual({
       ok: true,
       identity: {
-        kind: 'agent',
+        kind: 'channel',
         title: 'Weekly Health',
         name: 'weekly-health',
       },
@@ -80,9 +89,9 @@ describe('noteIdentity', () => {
   });
 
   it('ignores subfolders for the name', () => {
-    expect(noteIdentity('Agents/Coaches/Running.md')).toEqual({
+    expect(noteIdentity('Channels/Coaches/Running.md')).toEqual({
       ok: true,
-      identity: { kind: 'agent', title: 'Running', name: 'running' },
+      identity: { kind: 'channel', title: 'Running', name: 'running' },
     });
   });
 
@@ -91,30 +100,31 @@ describe('noteIdentity', () => {
       const result = noteIdentity(file);
       return result.ok ? result.identity.name : null;
     };
-    expect(name('Agents/Café.md')).toBe('cafe');
-    expect(name('Agents/Здоровье.md')).toBe('zdorove');
-    expect(name('Agents/Q3 — Review!.md')).toBe('q3-review');
+    expect(name('Channels/Café.md')).toBe('cafe');
+    expect(name('Channels/Здоровье.md')).toBe('zdorove');
+    expect(name('Channels/Q3 — Review!.md')).toBe('q3-review');
   });
 
   it('refuses a file name without letters or digits', () => {
-    expect(noteIdentity('Agents/!!!.md')).toEqual({
+    expect(noteIdentity('Channels/!!!.md')).toEqual({
       ok: false,
       error: {
-        file: 'Agents/!!!.md',
+        file: 'Channels/!!!.md',
         property: null,
         message: 'the file name needs a letter or digit to make a name from',
       },
     });
   });
 
-  it('refuses notes outside Pero.md, Agents/, and Workflows/', () => {
+  it('refuses notes outside Pero.md, Channels/, and Workflows/', () => {
     for (const file of [
       'Notes.md',
       'pero.md',
-      'Agent/Health.md',
-      'agents/Health.md',
-      'Archive/Agents/Health.md',
-      'Agents.md',
+      'Channel/Health.md',
+      'channels/Health.md',
+      'Archive/Channels/Health.md',
+      'Channels.md',
+      'Agents/Health.md',
     ]) {
       expect(noteIdentity(file)).toEqual({
         ok: false,
@@ -122,7 +132,7 @@ describe('noteIdentity', () => {
           file,
           property: null,
           message:
-            'not a note Pero reads; Pero reads only Pero.md and notes under Agents/ and Workflows/',
+            'not a note Pero reads; Pero reads only Pero.md, Persona.md, Instructions.md, and notes under Channels/ and Workflows/',
         },
       });
     }

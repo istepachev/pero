@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_BUTTON_ID_BYTES } from '../channel-adapter.js';
 import { buttonCommand, COMMANDS, isCommand } from './command-list.js';
 import {
-  type AgentStatus,
+  type ChannelStatus,
   context,
   helpScreen,
   newConfirmScreen,
@@ -13,11 +13,11 @@ import {
 
 const NOW = new Date('2026-10-01T12:00:00Z');
 
-function agentStatus(overrides: Partial<AgentStatus> = {}): AgentStatus {
+function channelStatus(overrides: Partial<ChannelStatus> = {}): ChannelStatus {
   return {
-    agent: {
-      name: 'coach',
-      file: 'data/System/Agents/Coach.md',
+    note: {
+      title: 'Running',
+      file: 'data/System/Channels/Running.md',
       provider: 'codex',
       model: 'gpt-5.5',
       effort: null,
@@ -42,10 +42,13 @@ function agentStatus(overrides: Partial<AgentStatus> = {}): AgentStatus {
   };
 }
 
-function status(agent: AgentStatus | null, unanswered: string | null = null) {
+function status(
+  channel: ChannelStatus | null,
+  unanswered: string | null = null,
+) {
   return statusScreen({
     where: 'Running',
-    agent,
+    channel,
     unanswered,
     components: [
       {
@@ -66,9 +69,9 @@ function buttonIds(screen: Screen): string[] {
 }
 
 describe('screens', () => {
-  it('shows a Codex Agent without a context window', () => {
+  it('shows a Codex Channel without a context window', () => {
     const screen = status(
-      agentStatus({
+      channelStatus({
         runningSince: new Date(NOW.getTime() - 130_000),
         queued: 1,
         session: {
@@ -83,9 +86,9 @@ describe('screens', () => {
 
     expect(screen.text).toBe(
       [
-        'Agent coach · Running',
+        'Channel Running',
         'State: answering for 2m 10s · 1 queued',
-        'Config: data/System/Agents/Coach.md',
+        'Config: data/System/Channels/Running.md',
         'Provider: codex · model gpt-5.5 (Pero.md) · default effort',
         'Permissions: ask',
         'Folder: projects/training',
@@ -106,9 +109,9 @@ describe('screens', () => {
 
   it("leaves out the context before a first turn, and shows the note's errors and folder problem", () => {
     const screen = status(
-      agentStatus({
-        agent: {
-          ...agentStatus().agent,
+      channelStatus({
+        note: {
+          ...channelStatus().note,
           errors: [{ property: 'effort', message: 'must be one of low, high' }],
         },
         folderProblem: 'projects/training does not exist',
@@ -125,14 +128,9 @@ describe('screens', () => {
   });
 
   it('shows why no one answers, with only a way to look again', () => {
-    const screen = status(
-      null,
-      'Agent coach is disabled, so no one answers here.',
-    );
+    const screen = status(null, "Pero doesn't answer here.");
 
-    expect(screen.text).toBe(
-      'Agent coach is disabled, so no one answers here.\n\nPero: telegram ok',
-    );
+    expect(screen.text).toBe("Pero doesn't answer here.\n\nPero: telegram ok");
     expect(buttonIds(screen)).toEqual(['/status']);
   });
 
@@ -143,11 +141,11 @@ describe('screens', () => {
   });
 
   it('says what /stop ended', () => {
-    expect(stopScreen('main', { stopped: false, dropped: 2 }, null).text).toBe(
-      "Agent main hadn't started answering. 2 waiting messages won't be answered.",
+    expect(stopScreen({ stopped: false, dropped: 2 }, null).text).toBe(
+      "Pero hadn't started answering. 2 waiting messages won't be answered.",
     );
-    expect(stopScreen(null, { stopped: false, dropped: 0 }, '@ada')).toEqual({
-      text: "The Agent isn't answering anything here.\n— @ada",
+    expect(stopScreen({ stopped: false, dropped: 0 }, '@ada')).toEqual({
+      text: "Pero isn't answering anything here.\n— @ada",
       buttons: [[{ id: '/status', label: '« Back' }]],
     });
   });
@@ -155,8 +153,8 @@ describe('screens', () => {
   it('gives every button a command Pero answers, within the ID limit', () => {
     for (const screen of [
       helpScreen(),
-      status(agentStatus({ queued: 1 })),
-      newConfirmScreen('main'),
+      status(channelStatus({ queued: 1 })),
+      newConfirmScreen(),
     ]) {
       for (const id of buttonIds(screen)) {
         expect(Buffer.byteLength(id)).toBeLessThanOrEqual(MAX_BUTTON_ID_BYTES);

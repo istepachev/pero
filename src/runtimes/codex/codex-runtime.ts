@@ -52,7 +52,7 @@ export class CodexRuntime implements AgentRuntime {
     const dropped = API_BILLING_ENV.filter((name) => env[name] !== undefined);
     if (dropped.length > 0) {
       this.logger.warn(
-        `Ignoring ${dropped.join(' and ')}: Codex Agents use the ChatGPT ` +
+        `Ignoring ${dropped.join(' and ')}: Pero uses Codex with the ChatGPT ` +
           `sign-in of the account running Pero`,
       );
     }

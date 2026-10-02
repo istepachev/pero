@@ -1,42 +1,45 @@
 # Configuring Pero
 
-Pero is configured by files in its workspace. Agents, Workflows, and the installation defaults are Markdown notes, which you can edit in Obsidian on your desktop or phone, commit to Git, and copy to another server. Pero's database keeps only state: conversations, message history, runs, and delivery queues.
+Pero is configured by files in its workspace. Its personality, its instructions, each Channel, each Workflow, and the installation defaults are Markdown notes, which you can edit in Obsidian on your desktop or phone, commit to Git, and copy to another server. Pero's database keeps only state: conversations, message history, runs, and delivery queues.
 
 | File | What it configures | Who changes it |
 |---|---|---|
 | [`.env`](#env) | The Telegram bot token | You, on the host |
 | [`.pero/config.yaml`](#peroconfigyaml) | Where the data folder is, and which chats Pero serves | You, on the host, or `pero telegram allow`/`deny` |
 | [`System/Pero.md`](#systemperomd) | Defaults | You, from anywhere the vault syncs to |
-| [`System/Agents/*.md`](#agent-notes), [`System/Workflows/*.md`](#workflow-notes) | Agents and Workflows | You, from anywhere the vault syncs to |
+| [`System/Persona.md`, `System/Instructions.md`](#systempersonamd-and-systeminstructionsmd) | Pero's personality, and the instructions every Channel shares | You, from anywhere the vault syncs to |
+| [`System/Channels/*.md`](#channel-notes), [`System/Workflows/*.md`](#workflow-notes) | Each Channel's instructions and settings, and Workflows | You, from anywhere the vault syncs to |
 
 [`examples/workspace/`](../examples/workspace/) is a complete workspace to start from.
 
 ## The workspace
 
 ```text
-~/workspace/                         # the workspace: where Pero and its Agents run; can be a Git repository
+~/workspace/                         # the workspace: where Pero runs; can be a Git repository
 ├── .env                             # secrets, owner-only, Git-ignored: PERO_TELEGRAM_BOT_TOKEN=…
 ├── .gitignore                       # Pero makes sure it lists .env
 ├── .pero/                           # Pero's own files
 │   ├── config.yaml                  # host settings: data folder, allowed chats (commit it)
 │   ├── .gitignore                   # written by Pero: ignores everything else in .pero/
 │   ├── pero.sqlite                  # state: Sessions, history, runs, Notifications
-│   ├── guide.md                     # written by Pero on each start: how Agents change these settings
+│   ├── guide.md                     # written by Pero on each start: how Pero changes these settings
 │   ├── logs/
 │   └── run/
 ├── data/                            # the data folder, such as an Obsidian vault
-│   ├── System/                    # the system folder
+│   ├── System/                      # the system folder
 │   │   ├── Pero.md                  # installation defaults
-│   │   ├── Agents/
-│   │   │   ├── Main.md              # the main Agent: General topics and direct chats; every other Agent starts with its instructions
-│   │   │   ├── Health.md            # answers in the "Health" topic
-│   │   │   └── _Template.md         # optional: starting point for Agents of new topics (not an Agent itself)
+│   │   ├── Persona.md               # Pero's personality: every turn starts with it
+│   │   ├── Instructions.md          # Pero's general instructions, after the personality
+│   │   ├── Channels/
+│   │   │   ├── Default.md           # General topics, groups without topics, and direct chats
+│   │   │   ├── Health.md            # the "Health" topic's own instructions and settings
+│   │   │   └── _Template.md         # optional: starting point for the notes of new topics
 │   │   └── Workflows/
 │   │       ├── Weekly health report.md
 │   │       └── Evening review.md
-│   ├── Reports/                     # whatever the Agents and you write
+│   ├── Reports/                     # whatever Pero and you write
 │   └── …
-└── projects/                        # optional: scripts, repositories, other folders Agents can work in
+└── projects/                        # optional: scripts, repositories, other folders Pero can work in
     └── site/
 ```
 
@@ -45,10 +48,10 @@ Pero is configured by files in its workspace. Agents, Workflows, and the install
 | `.env` | The Telegram bot token | Never | Never |
 | `.pero/config.yaml` | Where the data folder is, which chats are allowed | Yes | Yes |
 | `.pero/pero.sqlite` | Sessions, message history, runs, Notifications, schedule state | No | Yes |
-| `data/System/` | Defaults, Agents, Workflows | Yes | With `--include-data` |
-| `data/` (the rest) | Your notes and the Agents' work | Your choice | With `--include-data` |
+| `data/System/` | Defaults, personality, instructions, Channel notes, Workflows | Yes | With `--include-data` |
+| `data/` (the rest) | Your notes and Pero's work | Your choice | With `--include-data` |
 
-Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the system folder `Pero.md`, `Agents/Main.md`, and an empty `Workflows/`. `Pero.md` lists every setting as a property, so Obsidian shows each one to change: Pero's defaults are written out, `timezone` is the host's, so you can see the zone schedules use and change it to yours, and `provider`, the models, efforts, and `history-retention-days` are empty, which keeps their defaults; the first `pero run` fills in `provider`. `Main.md` lists the main Agent's `provider`, `model`, `effort`, and `permissions` empty, so it follows `Pero.md` until you set one. It never overwrites a file, so running it in a cloned workspace only fills in what's missing.
+Every `pero` command works on one workspace, found in this order: `--workspace <dir>` (`-w`), then `PERO_WORKSPACE`, then the nearest folder holding `.pero/` from the current folder upward (never the home folder itself), then `~/workspace` when it holds `.pero/`. `pero init [dir]` makes one: a `.gitignore` listing `.env`, `.pero/` with its `.gitignore` and a commented `config.yaml`, and in the system folder `Pero.md`, `Persona.md`, `Instructions.md`, `Channels/Default.md`, and an empty `Workflows/`. `Pero.md` lists every setting as a property, so Obsidian shows each one to change: Pero's defaults are written out, `timezone` is the host's, so you can see the zone schedules use and change it to yours, and `provider`, the models, efforts, and `history-retention-days` are empty, which keeps their defaults; the first `pero run` fills in `provider`. `Default.md` lists its `provider`, `model`, `effort`, and `permissions` empty, so it follows `Pero.md` until you set one. It never overwrites a file, so running it in a cloned workspace only fills in what's missing; `pero run` does the same each time it starts, so `Persona.md`, `Instructions.md`, and `Default.md` are always there.
 
 To set Pero up on another server, clone the workspace and run it:
 
@@ -58,18 +61,18 @@ cd ~/workspace
 pero run     # asks for the bot token and writes it to .env
 ```
 
-The allowed chats are in the committed `config.yaml`, so the same group keeps working. [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine) describes bringing the database along too.
+The allowed chats are in the committed `config.yaml`, and each Channel note keeps the `channel-id` of its topic, so the same group keeps working with the same notes. [Operating Pero](./OPERATIONS.md#moving-to-a-fresh-machine) describes bringing the database along too.
 
 ## Conventions
 
 - **Notes are Markdown with YAML frontmatter,** as Obsidian writes them. The frontmatter is the block between `---` lines at the very top, and everything after it is the body. A note without frontmatter is valid: every property takes its default.
 - **Property names are lowercase words joined by hyphens,** like `claude-model`. Unknown properties are errors, so a typo like `modle:` doesn't pass silently. Obsidian's own properties are allowed and ignored: `tags`, `aliases`, and `cssclasses`.
 - **An empty property is not set.** A property Obsidian shows without a value takes its default.
-- **The file name is the identity.** `System/Agents/Weekly Health.md` is the Agent titled *Weekly Health* and named `weekly-health`. The name is a slug: lowercase, accents dropped, Cyrillic spelled in Latin letters. Two notes with the same name are an error. Renaming a note makes a new Agent or Workflow (see [Renaming notes](#renaming-notes)).
-- **Subfolders are allowed** under `Agents/` and `Workflows/` for your own grouping. They don't change the name.
-- **The rest of the system folder is yours.** Pero reads only `Pero.md` and the notes under `Agents/` and `Workflows/`, so other folders and files there, such as Obsidian's `Templates/`, are left alone. A note in a misspelled folder, such as `Agent/`, is skipped too, so check the folder name when an Agent doesn't appear.
+- **The file name is the name.** `System/Channels/Weekly Health.md` is the Channel note titled *Weekly Health* and named `weekly-health`, and `System/Workflows/Weekly Health.md` the Workflow of that name. The name is a slug: lowercase, accents dropped, Cyrillic spelled in Latin letters. Two notes of one kind with the same name are an error. Renaming a Workflow note makes a new Workflow (see [Renaming notes](#renaming-notes)).
+- **Subfolders are allowed** under `Channels/` and `Workflows/` for your own grouping. They don't change the name.
+- **The rest of the system folder is yours.** Pero reads only `Pero.md`, `Persona.md`, `Instructions.md`, and the notes under `Channels/` and `Workflows/`, so other folders and files there, such as Obsidian's `Templates/`, are left alone. A note in a misspelled folder, such as `Channel/`, is skipped too, so check the folder name when a note doesn't apply.
 - **Ignored files:** names starting with `_` or `.`, and anything that isn't `.md`. That leaves room for templates and drafts, such as `_Template.md` and `_Ideas.md`.
-- **Lists can be written either way:** `channel: Health` and `channel: [Health]` mean the same. Obsidian gives each property name one type across the vault, so it's best to keep `channel` and `day` as the List type everywhere. An Agent's `topic` is one title, never a list.
+- **Lists can be written either way:** `channel: Health` and `channel: [Health]` mean the same. Obsidian gives each property name one type across the vault, so it's best to keep `channel` and `day` as the List type everywhere.
 - **Paths:** `~` is your home directory. A relative path is relative to the **workspace** (the folder containing `.pero/`), not to the note, so a cloned workspace keeps working wherever it's cloned.
 
 ## `.env`
@@ -91,17 +94,17 @@ Each workspace has its own `.env`, so two workspaces on one account can run two 
 
 ## `.pero/config.yaml`
 
-Host settings: what describes this installation, and what an Agent must not be able to change.
+Host settings: what describes this installation, and what Pero itself must not be able to change.
 
 ```yaml
-# Data folder: the vault Agents keep notes in. Relative to the workspace. Default: data
+# Data folder: the vault Pero keeps notes in. Relative to the workspace. Default: data
 data: data
 
 # System folder. Relative to the workspace. Default: <data>/System
 # system: data/System
 
 telegram:
-  # The chats Pero serves. Anyone who can post in an allowed group reaches its Agents.
+  # The chats Pero serves. Anyone who can post in an allowed group reaches Pero.
   allowed-chats:
     - id: -1001234567890   # a group; negative
       title: Home          # for you; Pero doesn't use it
@@ -113,13 +116,13 @@ telegram:
 - **Changing `data` or `system` needs a restart.** Until then, `pero status` shows the `config` component `degraded` saying so. A folder that doesn't exist stops startup with a message naming the key.
 - **An invalid file** stops startup with the file, line, key, and reason. An invalid edit while Pero runs is logged and shown by `pero status`, and the last valid version stays in use.
 
-The data folder can be an existing vault anywhere, such as `data: ~/notes`. Agents work in the workspace, where your scripts, Git repository, and other tools are, unless a note names another folder; Pero tells every Agent, in its instructions, where the data folder is, so that's where they keep notes and other files they write for you.
+The data folder can be an existing vault anywhere, such as `data: ~/notes`. Pero works in the workspace, where your scripts, Git repository, and other tools are, unless a Channel note names another folder; every turn's instructions say where the data folder is, so that's where Pero keeps notes and other files it writes for you.
 
 ## `System/Pero.md`
 
-Installation defaults. Each value applies to every Agent and Workflow that doesn't set its own, and applies **live**: changing `claude-model` here changes every Claude Agent without its own `model` from its next turn.
+Installation defaults. Each value applies to every Channel and Workflow that doesn't set its own, and applies **live**: changing `claude-model` here changes every Claude Channel without its own `model` from its next turn.
 
-`Pero.md` holds settings only. Text after its frontmatter is an error: instructions every Agent shares go in [the main Agent's note](#agent-notes).
+`Pero.md` holds settings only. Text after its frontmatter is an error: instructions every Channel shares go in [`Instructions.md`](#systempersonamd-and-systeminstructionsmd).
 
 ```markdown
 ---
@@ -129,7 +132,6 @@ claude-effort: high
 codex-model: gpt-5.5
 permissions: ask
 timezone: Europe/Berlin
-main-agent: Main
 history-carryover: 50
 history-retention-days: 90
 max-concurrent-runs: 2
@@ -138,25 +140,43 @@ max-concurrent-runs: 2
 
 | Property | Values | Default | Meaning |
 |---|---|---|---|
-| `provider` | `claude`, `codex` | `claude` | Provider of Agents that don't name one |
-| `claude-model`, `codex-model` | provider model name | provider's default | Model for that provider's Agents |
-| `claude-effort`, `codex-effort` | that provider's levels | provider's default | Effort for that provider's Agents |
-| `permissions` | `ask`, `bypass` | `ask` | How Agents' tools are approved ([user guide](./USER_GUIDE.md#claude-agents)) |
+| `provider` | `claude`, `codex` | `claude` | Provider of Channels whose note names none |
+| `claude-model`, `codex-model` | provider model name | provider's default | Model for that provider's Channels |
+| `claude-effort`, `codex-effort` | that provider's levels | provider's default | Effort for that provider's Channels |
+| `permissions` | `ask`, `bypass` | `ask` | How tools are approved ([user guide](./USER_GUIDE.md#with-claude)) |
 | `timezone` | IANA zone | the host's | Time zone for schedules and transcripts |
-| `main-agent` | Agent note name | `Main` | Answers the General topic, groups without topics, and direct chats |
 | `history-carryover` | 0 or more | 50 | Messages a fresh Session starts with, none from before a `/new`; 0 turns it off |
 | `history-retention-days` | whole days, or empty | empty: keep everything | Delete message history older than this |
 | `max-concurrent-runs` | 1–10 | 2 | Workflow runs at once |
 
 A missing `Pero.md` means all defaults, as does a broken one that hasn't loaded since Pero started (see [Broken notes](#broken-notes)).
 
-## Agent notes
+## `System/Persona.md` and `System/Instructions.md`
 
-`System/Agents/<Title>.md`. The body is the Agent's instructions. **One topic, one Agent:** the main Agent answers the General topic and direct chats, and every other Agent answers the one topic its `topic` names.
+What every turn shares, in every Channel: `Persona.md` is Pero's personality, who it is and how it talks, and `Instructions.md` its general instructions, what it knows and does everywhere. Both hold text only: a property other than Obsidian's own is an error.
+
+```markdown
+You are a calm, concise personal assistant. Reply in the language you're written to in.
+```
+
+Every turn's instructions are, in order:
+
+1. Where the data folder is and where Pero's settings are, with the path of the Channel's note and of `.pero/guide.md`, which Pero reads before changing them.
+2. `Persona.md`.
+3. `Instructions.md`.
+4. The body of the Channel's note.
+
+Empty parts are left out. There is no opting out: a topic that needs to differ says so in its own note. Edits apply from the next turn and keep the Session. `pero init` writes both, and `pero run` writes either again when it's missing.
+
+**Pero knows where its settings are,** so you can ask it in Telegram to "create a Workflow that…", "answer me less formally", or "use opus" here, and it asks what it needs, such as when a Workflow should run and where it should post, and writes the note. See [Asking Pero](./USER_GUIDE.md#asking-pero-to-change-settings).
+
+## Channel notes
+
+`System/Channels/<Title>.md`, one per Channel. The body is that Channel's own instructions, after `Persona.md` and `Instructions.md`, and its properties its settings.
 
 ```markdown
 ---
-topic: Health
+channel-id: telegram:-1001234567890:5
 provider: claude
 model: sonnet
 effort: high
@@ -167,30 +187,31 @@ You are my health coach. My training log is in Health/Log.md; append each workou
 
 | Property | Values | Default | Meaning |
 |---|---|---|---|
-| `topic` | one topic title | none | The Telegram topic this Agent answers in, matched by title ignoring case. Not for the main Agent |
-| `provider` | `claude`, `codex` | `Pero.md` `provider` | Which provider runs it |
-| `model` | model name | `Pero.md` `<provider>-model` | Model, for this Agent's provider |
-| `effort` | provider's levels | `Pero.md` `<provider>-effort` | Effort, for this Agent's provider |
+| `channel-id` | `<integration>:<address>`, written by Pero | none | The Channel the note is bound to. Not on `Default.md` |
+| `provider` | `claude`, `codex` | `Pero.md` `provider` | Which provider answers there |
+| `model` | model name | `Pero.md` `<provider>-model` | Model, for this note's provider |
+| `effort` | provider's levels | `Pero.md` `<provider>-effort` | Effort, for this note's provider |
 | `permissions` | `ask`, `bypass` | `Pero.md` `permissions` | How its tools are approved |
-| `working-directory` | path | the workspace | The folder it works in, relative to the workspace (such as `projects/site`) |
-| `skip-main-instructions` | `true`, `false` | `false` | Leave the main Agent's instructions out of its own |
-| `skip-git-repo-check` | `true`, `false` | `false` | Let a Codex Agent work outside a Git repository |
-| `enabled` | `true`, `false` | `true` | `false` silences it where it answers and stops its Workflows' schedules |
+| `working-directory` | path | the workspace | The folder its turns work in, relative to the workspace (such as `projects/site`) |
+| `skip-git-repo-check` | `true`, `false` | `false` | Let Codex work outside a Git repository |
+| `enabled` | `true`, `false` | `true` | `false` silences its Channel and stops the schedules of the Workflows that use it |
 
-**Every Agent knows where its settings are.** Its instructions start with where the data folder is, the path of its own note, `Pero.md`, and `Workflows/`, and `.pero/guide.md`, which it reads before changing them. So you can ask an Agent in Telegram to "create a Workflow that…", "answer me less formally", or "use opus", and it asks what it needs, such as when a Workflow should run and where it should post, and writes the note. See [Asking an Agent](./USER_GUIDE.md#asking-an-agent-to-change-settings).
+**`Default.md`** answers the General topic of every allowed group, groups without topics, and direct chats, each in a Session of its own. It has no `channel-id`: setting one is an error. `pero init` writes it, `pero run` writes it again when it's missing, and so does the first message in a primary Channel that finds none. Its settings are not inherited: every other Channel follows `Pero.md` for what its own note leaves out.
 
-**The main Agent** is the note `main-agent` names (`Main.md` by default). It answers the General topic of every allowed group, groups without topics, and direct chats, each in a Session of its own. It has no `topic`: setting one is an error. When its note is missing, Pero writes it the first time a General topic or direct chat needs it.
+**Which note a topic uses** is worked out on every message:
 
-**The main Agent's instructions are shared.** Every other Agent's instructions start with the main Agent's body, then add the Agent's own, so a personality written once in `Main.md` carries into every topic. An Agent that needs a clean slate sets `skip-main-instructions: true`. Edits to either apply from the next turn and keep the Session.
+1. The note whose `channel-id` is the topic's, such as `telegram:-1001234567890:5`: the chat's ID, then the topic's.
+2. Otherwise, a note without `channel-id` named as the topic's title, ignoring case and accents, such as a `Health.md` you wrote before the topic existed. Pero adds the topic's `channel-id` to it, which binds it to that topic for good.
+3. Otherwise, Pero writes `Channels/<Topic title>.md` for it, with its `channel-id`, and posts a welcome naming the note. The note starts from `Channels/_Template.md` when you've added one, or else from Pero's own: the settings listed empty, so they follow `Pero.md`. Characters file names can't hold are replaced, and when the name is taken, as by a topic of the same title in another group, the file is numbered: `Health 2.md`.
 
-**Which Agent answers a topic:** the Agent whose `topic` is the topic's title. When two Agents claim the same title, neither answers there, and Pero reports the conflict on both notes. A topic no Agent claims gets an Agent of its own: Pero writes `Agents/<Topic title>.md` with `topic: <Topic title>`, starting from `Agents/_Template.md` when you've added one (its properties and body, with `topic` set), and posts a welcome naming the note. That Agent answers from the first message. Without a template, the note holds `topic` alone, so the Agent follows `Pero.md` and the main Agent's instructions.
+Pero answers from the first message either way. A topic whose title Pero hasn't seen yet, such as one it learns of from a reply, gets its note once a message tells its title.
 
-**The template for new topics** is `Agents/_Template.md`. `pero init` doesn't write it; add it when the Agents Pero writes for new topics should start with more than `topic`. Its name starts with `_`, so it's never an Agent itself. Pero copies its properties, comments included, and its body, and sets `topic`:
+**The template for new topics** is `Channels/_Template.md`. `pero init` doesn't write it; add it when the notes Pero writes for new topics should start with more. Its name starts with `_`, so it's never a Channel note itself. Pero copies its properties, comments included, and its body, and sets `channel-id`:
 
 ```markdown
 ---
-# The starting point for the Agent of a new topic: Pero copies these
-# properties and this text, and sets topic to the topic's title.
+# The starting point for the note of a new topic: Pero copies these
+# properties and this text, and sets channel-id to the topic's.
 # provider: claude
 # model: sonnet
 # effort: high
@@ -199,13 +220,13 @@ You are my health coach. My training log is in Health/Log.md; append each workou
 You are my assistant for this topic.
 ```
 
-The route is worked out again for every message, so editing `topic` moves a topic to another Agent from its next message. The new Agent's first turn starts a fresh Session that carries over the topic's recent messages.
+**Renaming a topic** in Telegram changes nothing in its note: the note is bound by `channel-id`, so it stays with the topic, keeps its file name, and Workflows that name it keep working. The same goes for a topic renamed while Pero is stopped. You may rename the note's file yourself; the topic keeps it, but Workflows naming the old name need the new one.
 
-**Renaming a topic** in Telegram makes Pero change the `topic` of the Agent that claimed it, so the topic keeps its Agent. While another topic Pero knows still has the old title, the note keeps it, so that topic keeps the Agent, and the renamed topic gets an Agent of its own. A topic renamed while Pero is stopped keeps its old title in the notes: change `topic` by hand.
+**Don't copy a `channel-id`** into a second note: two notes bound to one Channel are both left out, and Pero reports the conflict on both until one of them loses it.
 
 ## Workflow notes
 
-`System/Workflows/<Title>.md`. The body is the input each run sends to the Agent, as written, headings included, and must not be empty. `{{history}}` in it is replaced by the chat transcript when the Workflow reads history.
+`System/Workflows/<Title>.md`. The body is the input each run sends, as written, headings included, and must not be empty. `{{history}}` in it is replaced by the chat transcript when the Workflow reads history.
 
 ```markdown
 ---
@@ -223,11 +244,10 @@ Create a weekly report in the Reports folder from Health/Log.md…
 | `minute` | 0–59 | 0 | Minute of those hours |
 | `cron` | five-field cron, or `@daily` etc. | none | For anything `day`/`hour`/`minute` can't say; not together with them |
 | `timezone` | IANA zone | `Pero.md` `timezone` | Time zone of the schedule |
-| `channel` | topic title, or a list | none | Where each run's answer is posted |
-| `agent` | Agent note name | the Agent of the first `channel`, else the main Agent | Which Agent runs it |
+| `channel` | Channel note name, or a list | none | Where each run's answer is posted; the first gives the run its note |
 | `history` | `true`, `false` | `false` | Read chat history as input ([user guide](./USER_GUIDE.md#reading-chat-history)) |
-| `history-channels` | topic titles | all | Only these topics' history |
-| `history-messages` | `people`, `all` | `people` | `all` adds the Agents' replies |
+| `history-channels` | Channel note names | all | Only these Channels' history |
+| `history-messages` | `people`, `all` | `people` | `all` adds Pero's replies |
 | `history-hours` | 1–720 | since the last successful run | A fixed window instead |
 | `run-when-empty` | `true`, `false` | `false` | Run even when the window has no messages |
 | `max-attempts` | 1–10 | 1 | Times a run may start, counting restarts after Pero stopped mid-run |
@@ -237,24 +257,27 @@ A Workflow has at most one schedule. Any Workflow can be run by hand with `pero 
 
 **Schedules:** `day: sunday`, `hour: 12`, `minute: 0` is `0 12 * * 0`. `day: weekdays` and `hour: [9, 18]` is `0 9,18 * * 1-5`. Times the clocks skip or repeat follow the daylight-saving rules in [Architecture §8](./ARCHITECTURE.md#8-scheduling-and-recovery).
 
-**Topic titles in `channel` and `history-channels`:**
+**Which note a run uses:** the note of its first `channel`, so a run posted to Health has Health's instructions, model, and folder, after `Persona.md` and `Instructions.md`. Without `channel`, it uses `Default.md`. A run whose note is disabled doesn't start.
 
-- `General` means a group's General topic.
-- A title must match a topic Pero has already seen in an allowed chat. A topic it hasn't seen yet has no known address: write something in it first. Until then, the Workflow is left out, and `pero status` and `pero check` report it.
-- When allowed groups share a title, write `<chat title>/<topic title>`, such as `Home/Health`. A title that matches several topics otherwise is an error.
-- A Channel ID from `pero channels` (such as `5`) also works, for a direct chat or when titles don't help.
+**Channels in `channel` and `history-channels`** are named three ways:
+
+- **A Channel note's name,** such as `Health` for `Channels/Health.md`: the topic it is bound to by `channel-id`. This keeps working when the topic is renamed in Telegram. A note without `channel-id` yet means the topic of its title that no note is bound to, once Pero has seen it.
+- **`General`,** a group's General topic, answered from `Default.md`. When several allowed groups have one, write `<chat title>/General`, such as `Home/General`. `Default` itself is no Channel: it answers several.
+- **A Channel ID** from `pero channels`, such as `5`, for a direct chat.
+
+A Channel Pero hasn't seen yet has no known address: write something in it first. Until then, the Workflow is left out, and `pero status` and `pero check` report it. Without Pero running, `pero check` checks note names against the notes and leaves the rest for when it runs.
 
 ## Validation
 
 `pero check` validates the whole workspace and exits 1 on any error, naming the file and property. It works with or without a running Pero:
 
-- **With Pero running,** it asks the daemon, which also resolves topic titles against the topics it has seen.
-- **Without Pero, or in CI on a workspace repository,** it reads the files itself and checks everything except whether topics exist.
+- **With Pero running,** it asks the daemon, which also resolves the Channels Workflows name against those it has seen.
+- **Without Pero, or in CI on a workspace repository,** it reads the files itself and checks everything except whether those Channels exist.
 
 ```text
 data/System/Workflows/Weekly health report.md
-  channel: no topic titled "Helth"; seen topics: General, Health, English
-data/System/Agents/Coach.md
+  channel: no Channel note named "Helth"; Channel notes: English, Health
+data/System/Channels/Coach.md
   modle: unknown property (did you mean model?)
 
 2 problems in 2 files.
@@ -264,14 +287,14 @@ data/System/Agents/Coach.md
 
 ## How Pero reads the files
 
-Pero holds the whole configuration in memory as one snapshot: `Pero.md`, every Agent, and every Workflow, with references resolved. A turn or run uses the snapshot current when it starts, until it finishes. **Every 10 seconds**, Pero rescans the system folder, rereads only the notes whose size or modification time changed, and swaps in a new snapshot when anything did, logging which files changed. Edits arrive the same way whether you make them in Obsidian, through Syncthing or `git pull`, or an Agent makes them.
+Pero holds the whole configuration in memory as one snapshot: `Pero.md`, `Persona.md`, `Instructions.md`, every Channel note, and every Workflow, with references resolved. A turn or run uses the snapshot current when it starts, until it finishes. **Every 10 seconds**, Pero rescans the system folder, rereads only the notes whose size or modification time changed, and swaps in a new snapshot when anything did, logging which files changed. Edits arrive the same way whether you make them in Obsidian, through Syncthing or `git pull`, or Pero makes them.
 
 | Change | Takes effect |
 |---|---|
-| Agent `provider` or `working-directory` | Its next turn in each topic, in a fresh Session that carries over recent messages |
-| Agent instructions, the main Agent's instructions, `model`, `effort`, `permissions`, `skip-main-instructions`, `Pero.md` defaults, the data folder its instructions name | Its next turn, in the same Session |
-| Agent `topic` | The next message in the topic gained or lost |
-| Agent removed or `enabled: false` | Its topic stops getting answers; its Workflows' schedules pass without a run |
+| A Channel note's `provider` or `working-directory` | Its Channel's next turn, in a fresh Session that carries over recent messages |
+| `Persona.md`, `Instructions.md`, a Channel note's instructions, `model`, `effort`, or `permissions`, `Pero.md` defaults, the data folder the instructions name | The next turn, in the same Session |
+| A Channel note's `channel-id`, or a note added, removed, or renamed | The next message in the Channels it binds or leaves |
+| `enabled: false` | Its Channel stops getting answers; the schedules of Workflows that use it pass without a run |
 | Workflow schedule (`day`, `hour`, `minute`, `cron`, `timezone`) | Its next run is computed from the time of the change; times already passed are not caught up |
 | Workflow body or other properties | Its next run |
 | Workflow removed or `enabled: false` | No more scheduled runs; runs its schedule queued are cancelled (all its waiting runs, when removed), and a running one finishes |
@@ -281,7 +304,7 @@ Pero holds the whole configuration in memory as one snapshot: `Pero.md`, every A
 
 A broken note never takes Pero down:
 
-- **A note that doesn't parse or validate** is left out, along with only the notes that depend on it, such as a Workflow whose `agent` is broken. While Pero runs, its **last good version** stays in use, so a typo in a prompt's properties doesn't stop that Agent. After a restart, a note that is still broken isn't loaded until it's fixed.
+- **A note that doesn't parse or validate** is left out, along with only the notes that depend on it, such as a Workflow whose `channel` names it. While Pero runs, its **last good version** stays in use, so a typo in a note's properties doesn't silence its Channel. After a restart, a note that is still broken isn't loaded until it's fixed, and its Channel isn't answered meanwhile: Pero never falls back to the defaults for a Channel whose note has errors.
 - **A Workflow whose `channel` doesn't resolve,** such as a topic Pero hasn't seen, is left out until it does.
 - **Half-written files** are not errors: Pero reports a note only when it fails twice in a row with the same size and modification time.
 
@@ -290,15 +313,15 @@ Problems are reported in four places:
 - **`pero status`:** the `system` component is `degraded`, counting the notes with errors.
 - **`pero check`:** every error, with its file and property.
 - **The log:** each error once, when it appears, and again when it's fixed.
-- **Telegram:** since you'll often edit on your phone, Pero posts one message per broken version of a note, naming each error and what Pero uses meanwhile: *"Errors in data/System/Workflows/Weekly health report.md: channel: no topic titled "Helth"… It's left out until it's fixed."* It goes to the topics the note relates to (an Agent's `topic`, a Workflow's `channel`), or else to the main Agent's General topic or direct chat, and isn't part of the topic's history. A fix is only logged, and notes already broken when Pero starts are left to `status` and `check`.
+- **Telegram:** since you'll often edit on your phone, Pero posts one message per broken version of a note, naming each error and what Pero uses meanwhile: *"Errors in data/System/Workflows/Weekly health report.md: channel: no Channel note named "Helth"… It's left out until it's fixed."* It goes to the Channels the note relates to (a Channel note's Channel, a Workflow's `channel`), or else to a General topic or direct chat, and isn't part of the Channel's history. A fix is only logged, and notes already broken when Pero starts are left to `status` and `check`.
 
-When a message arrives in a topic no Agent can answer, because its Agent is disabled, two Agents claim it, or its note has never loaded, Pero replies once saying why.
+When a message arrives in a Channel Pero can't answer, because its note is disabled or has never loaded, Pero replies once saying why.
 
 ### Renaming notes
 
-State in the database names an Agent or Workflow by its name, so it outlives the note: Sessions are kept per Channel and Agent name, runs record the Workflow's name and what they ran, and a Workflow's history window starts after its last completed run of that name.
+State in the database names a Workflow by its name, so it outlives the note: runs record the Workflow's name and what they ran, and a Workflow's history window starts after its last completed run of that name. Renaming a Workflow note is therefore a new Workflow: it starts its history window 24 hours back, as a new Workflow does, and its schedule starts from the rename. The old name's runs stay in `pero runs`.
 
-Renaming a note is therefore a new identity. A renamed Agent starts fresh Sessions, which carry over each topic's recent messages, so the conversation continues; it keeps its topic, because it still claims it in `topic`. A renamed Workflow starts its history window 24 hours back, as a new Workflow does, and its schedule starts from the rename. The old name's runs stay in `pero runs`. Moving a note to another subfolder keeps its name, so nothing changes.
+A Channel's Session belongs to the Channel, not to its note's name, so renaming a Channel note keeps the conversation, and its `channel-id` keeps it bound to its topic. Workflows that name the note by its old name need the new one. Moving a note to another subfolder keeps its name, so nothing changes.
 
 ### What Pero writes
 
@@ -307,25 +330,27 @@ Configuration is yours. Pero writes to it only in these cases, and logs each wri
 | When | Writes |
 |---|---|
 | `pero init` | The skeleton files that don't exist yet |
-| Pero starts | `.pero/guide.md`, the guide for Agents, when it differs from this version's. It isn't configuration: don't edit it |
+| `pero run` | `Persona.md`, `Instructions.md`, and `Channels/Default.md`, when one is missing |
+| Pero starts | `.pero/guide.md`, the guide to these settings, when it differs from this version's. It isn't configuration: don't edit it |
 | A token is stored (`pero run` asks for it, or `pero telegram token`) | `.env`, and the `.env` line in `.gitignore` if it's missing |
 | `pero telegram allow`/`deny` | The `allowed-chats` list in `config.yaml` |
-| A group gets a new chat ID (topics turned on) | That entry's `id` in `config.yaml` |
-| A topic no Agent claims | A new `Agents/<Topic title>.md`. Characters file names can't hold are replaced, and an existing file is never overwritten (`Health 2.md`) |
-| A General topic or direct chat whose main Agent has no note | `Agents/Main.md`, or the note `main-agent` names |
-| A claimed topic is renamed in Telegram | The claiming Agent's `topic` |
+| A group gets a new chat ID (topics turned on) | That entry's `id` in `config.yaml`, and the `channel-id` of its Channel notes |
+| A topic without a note | A new `Channels/<Topic title>.md` with its `channel-id`. Characters file names can't hold are replaced, and an existing file is never overwritten (`Health 2.md`) |
+| A topic whose title names a note without `channel-id` | That note's `channel-id` |
+| A General topic or direct chat while `Default.md` is missing | `Channels/Default.md` |
+| `/model` or `/effort` in a Channel | That Channel note's `model` or `effort` |
 
 Edits to existing files change only the one value, keeping comments, ordering, and the body. Every write is atomic, so Obsidian and Syncthing never see half a note.
 
 ## Security
 
-**Agents can edit configuration.** An Agent works in the workspace by default, and the system folder is inside it. That's deliberate, since "change your prompt to be less formal" should work. But an Agent could also change its own `permissions` or add a Workflow. So:
+**Pero can edit configuration.** Pero works in the workspace by default, and the system folder is inside it. That's deliberate, since "be less formal" should work. But a turn could also change its Channel's `permissions` or add a Workflow. So:
 
-- **Claude Agents with `ask`:** an edit under the system folder always asks in the Channel, with Allow and Deny buttons, even though the Agent may otherwise edit its folder freely. So does an edit of `.pero/` or `.env`. Workflow runs have no one to ask, so they can't change configuration.
-- **Codex Agents with `ask`:** the `workspace-write` sandbox allows writes anywhere in the folder and can't leave out a subfolder, so it can edit the system folder, `.pero/config.yaml`, and `.env` too. A Codex Agent that must not touch configuration needs a `working-directory` that holds none of them, such as `data` or `projects/site`.
-- **`bypass` Agents** can change anything.
-- **Every applied change is logged** with the files that changed. When the workspace is a Git repository, `git diff` shows exactly what an Agent changed.
+- **Claude with `ask`:** an edit under the system folder always asks in the Channel, with Allow and Deny buttons, even though Pero may otherwise edit its folder freely. So does an edit of `.pero/` or `.env`. Workflow runs have no one to ask, so they can't change configuration.
+- **Codex with `ask`:** the `workspace-write` sandbox allows writes anywhere in the folder and can't leave out a subfolder, so it can edit the system folder, `.pero/config.yaml`, and `.env` too. A Codex Channel that must not touch configuration needs a `working-directory` that holds none of them, such as `data` or `projects/site`.
+- **`bypass`** can change anything.
+- **Every applied change is logged** with the files that changed. When the workspace is a Git repository, `git diff` shows exactly what Pero changed.
 
-**Access control is in the workspace root.** Allowed chats are in `.pero/config.yaml` and the token is in `.env`, outside the data folder but inside the workspace Agents work in by default. Every Agent can read them, and a Codex `ask` Agent or a `bypass` Agent can edit them. To keep them out of an Agent's reach, give it a `working-directory` that doesn't contain them.
+**Access control is in the workspace root.** Allowed chats are in `.pero/config.yaml` and the token is in `.env`, outside the data folder but inside the workspace Pero works in by default. Every turn can read them, and a Codex `ask` turn or a `bypass` turn can edit them. To keep them out of reach in a Channel, give its note a `working-directory` that doesn't contain them.
 
 **Committed configuration is not secret.** Chat IDs, prompts, and schedules end up in Git, so keep that repository private. The token never goes there: `.env` is Git-ignored, and Pero reports it if Git would commit it.

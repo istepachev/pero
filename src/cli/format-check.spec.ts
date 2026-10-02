@@ -4,7 +4,7 @@ import { formatCheck } from './format-check.js';
 
 const CLEAN: WorkspaceCheck = {
   systemFolder: 'data/System',
-  agents: 2,
+  channels: 2,
   workflows: 1,
   topicsChecked: false,
   problems: [],
@@ -14,16 +14,18 @@ describe('formatCheck', () => {
   it('says what it checked when there are no problems', () => {
     expect(formatCheck(CLEAN)).toBe(
       [
-        'Checked 2 Agents and 1 Workflow in data/System: no problems.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        'Checked 2 Channel notes and 1 Workflow in data/System: no problems.',
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
       ].join('\n'),
     );
   });
 
   it('leaves out the topic note once topics were checked', () => {
     expect(
-      formatCheck({ ...CLEAN, agents: 1, workflows: 0, topicsChecked: true }),
-    ).toBe('Checked 1 Agent and 0 Workflows in data/System: no problems.');
+      formatCheck({ ...CLEAN, channels: 1, workflows: 0, topicsChecked: true }),
+    ).toBe(
+      'Checked 1 Channel note and 0 Workflows in data/System: no problems.',
+    );
   });
 
   it('groups problems under their file', () => {
@@ -37,12 +39,12 @@ describe('formatCheck', () => {
             message: 'no topic titled "Helth"; seen topics: General, Health',
           },
           {
-            file: 'data/System/Agents/Coach.md',
+            file: 'data/System/Channels/Coach.md',
             property: 'modle',
             message: 'unknown property (did you mean model?)',
           },
           {
-            file: 'data/System/Agents/Coach.md',
+            file: 'data/System/Channels/Coach.md',
             property: null,
             message: 'line 4: Map keys must be unique',
           },
@@ -52,12 +54,12 @@ describe('formatCheck', () => {
       [
         'data/System/Workflows/Weekly health report.md',
         '  channel: no topic titled "Helth"; seen topics: General, Health',
-        'data/System/Agents/Coach.md',
+        'data/System/Channels/Coach.md',
         '  modle: unknown property (did you mean model?)',
         '  line 4: Map keys must be unique',
         '',
         '3 problems in 2 files.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
       ].join('\n'),
     );
   });

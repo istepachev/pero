@@ -72,7 +72,7 @@ function describeMissing(folder: WorkingDirectoryRef): string {
   if (folder.agent === null) {
     return `${folder.path}, the data folder, is missing; restore it from your Git repository or your own backup`;
   }
-  return `${folder.path}, the working directory of Agent ${folder.agent}, is missing; restore it from your own backup of the working folders`;
+  return `${folder.path}, the working directory of Channel note ${folder.agent}, is missing; restore it from your own backup of the working folders`;
 }
 
 /** What a restore into a workspace did beyond the database, line by line. */

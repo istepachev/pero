@@ -32,8 +32,6 @@ const UNUSED_HANDLERS = {
   'telegram.allow': unused,
   'telegram.deny': unused,
   'telegram.token': unused,
-  'agents.list': unused,
-  'agents.get': unused,
   'channels.list': unused,
   'channels.get': unused,
   'channels.history': unused,

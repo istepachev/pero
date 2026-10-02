@@ -50,7 +50,7 @@ type Fired =
   | { kind: 'coalesced'; runId: number; skipped: number }
   | {
       kind: 'held';
-      /** What keeps it from running, such as `Agent coach is disabled`. */
+      /** What keeps it from running, such as `Channel note coach is disabled`. */
       problem: string;
     }
   | { kind: 'duplicate'; triggerKey: string }
@@ -233,7 +233,7 @@ export class ScheduleTick
    * Advances schedule row `id` past `now` and queues the run its due time
    * starts, unless it is no longer due. A schedule no longer defined,
    * such as one of a Workflow that is gone or disabled, loses its row. One
-   * whose Agent is disabled or gone gets no run, and the time passes; a
+   * whose Channel note is disabled gets no run, and the time passes; a
    * scheduled run of its Workflow still waiting to start takes the new
    * times into its skipped count instead.
    */
@@ -262,15 +262,12 @@ export class ScheduleTick
 
     const skipped = countOccurrences(schedule, due, now, MAX_SKIPPED_COUNT);
     const nextRunAt = nextOccurrence(schedule, now);
-    const agent = this.definitions.agent(workflow.agent);
-    if (agent === null || !agent.enabled) {
+    const note = this.definitions.channelNote(workflow.note);
+    if (!note.enabled) {
       await advanceScheduleWithin(manager, id, { nextRunAt });
       return fired({
         kind: 'held',
-        problem:
-          agent === null
-            ? `Agent ${workflow.agent} no longer exists`
-            : `Agent ${agent.name} is disabled`,
+        problem: `Channel note ${note.name} is disabled`,
       });
     }
 

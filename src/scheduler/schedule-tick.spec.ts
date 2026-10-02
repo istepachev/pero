@@ -47,7 +47,7 @@ describe('ScheduleTick', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-scheduler-');
-    await ws.agent('Coach');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     await boot();
   });
@@ -69,7 +69,7 @@ describe('ScheduleTick', () => {
     cron = '0 * * * *',
     timezone = 'UTC',
   ): Promise<void> {
-    await ws.workflow(name, { agent: 'coach', cron, timezone });
+    await ws.workflow(name, { cron, timezone });
     await reconcile();
     await setDue(name, due);
   }
@@ -311,21 +311,21 @@ describe('ScheduleTick', () => {
     ]);
   });
 
-  it('passes times with no run while its Agent is disabled', async () => {
+  it('passes times with no run while its Channel note is disabled', async () => {
     await scheduled('brief', '2026-09-28T10:00:00Z');
 
-    await ws.editAgent('Coach', { enabled: false });
+    await ws.editChannel('Default', { enabled: false });
     const warn = vi.spyOn(Logger.prototype, 'warn').mockReturnValue();
     await scheduler.tick(new Date('2026-09-28T10:00:01Z'));
     expect(warn).toHaveBeenCalledWith(
-      `The schedule 0 * * * * (UTC) of Workflow brief came due, but Agent coach is disabled; no run`,
+      `The schedule 0 * * * * (UTC) of Workflow brief came due, but Channel note default is disabled; no run`,
     );
     expect((await state('brief')).nextRunAt).toEqual(
       new Date('2026-09-28T11:00:00Z'),
     );
 
     // Enabled again, it runs from its next time, not the ones it passed.
-    await ws.editAgent('Coach', { enabled: true });
+    await ws.editChannel('Default', { enabled: true });
     await scheduler.tick(new Date('2026-09-28T11:00:01Z'));
     await executor.idle();
     const runs = await allRuns();
@@ -454,7 +454,7 @@ describe('ScheduleTick', () => {
   describe('reconciling with the notes', () => {
     it('moves the next run as soon as an edit changes the hour', async () => {
       at('2026-09-28T08:00:00Z');
-      await ws.workflow('brief', { agent: 'coach', hour: 9, timezone: 'UTC' });
+      await ws.workflow('brief', { hour: 9, timezone: 'UTC' });
       await scheduler.reconciled();
       expect((await state('brief')).nextRunAt).toEqual(
         new Date('2026-09-28T09:00:00Z'),
@@ -572,7 +572,6 @@ describe('ScheduleTick', () => {
       at('2026-09-28T10:30:00Z');
       await ws.removeWorkflow('brief');
       await ws.workflow('daily', {
-        agent: 'coach',
         cron: '0 * * * *',
         timezone: 'UTC',
       });

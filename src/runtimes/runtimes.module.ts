@@ -24,7 +24,7 @@ export interface RuntimeOptions {
           return [new ClaudeRuntime(), new CodexRuntime()];
         }
         new Logger('Runtimes').warn(
-          'PERO_FAKE_RUNTIME=echo: every Agent answers with an echo of its ' +
+          'PERO_FAKE_RUNTIME=echo: every turn answers with an echo of its ' +
             'message instead of running a provider. For testing only.',
         );
         return PROVIDERS.map((provider) => new FakeAgentRuntime(provider));

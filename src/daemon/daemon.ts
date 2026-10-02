@@ -93,16 +93,16 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     logger.warn({ err: error }, 'Could not fill in the workspace');
   }
 
-  // Agents read it before changing settings; a guide that can't be written
+  // Pero reads it before changing settings; a guide that can't be written
   // leaves them without it, not Pero.
   const guide = guideFile(layout.workspace);
   try {
     if (writeAgentGuide(guide))
-      logger.info({ file: guide }, 'Wrote the guide for Agents');
+      logger.info({ file: guide }, "Wrote the guide to Pero's settings");
   } catch (error) {
     logger.warn(
       { err: error, file: guide },
-      'Could not write the guide for Agents',
+      "Could not write the guide to Pero's settings",
     );
   }
 

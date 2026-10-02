@@ -55,7 +55,7 @@ export interface BotIdentity {
 }
 
 /**
- * `update` as a message for an Agent, an event about a chat, or a pressed
+ * `update` as a message for Pero to answer, an event about a chat, or a pressed
  * button, or null when Pero ignores it: another bot's message, a channel
  * post, a service message with no meaning here, or a message without text.
  */
@@ -167,7 +167,7 @@ function fromMessage(
   // Attachments come later; a message without text has nothing to answer.
   if (text === undefined) return null;
   const command = commandOf(message, me);
-  // Another bot's command: neither Pero nor its Agents should answer it.
+  // Another bot's command: Pero shouldn't answer it.
   if (command === 'elsewhere') return null;
   return {
     ...base,
@@ -199,7 +199,7 @@ function commandOf(
 }
 
 /**
- * Whether a person wrote `message`. Other bots never reach an Agent, which
+ * Whether a person wrote `message`. Other bots never reach a turn, which
  * also stops two bots answering each other; an anonymous administrator of
  * the chat itself still counts as a person.
  */

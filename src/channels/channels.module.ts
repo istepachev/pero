@@ -25,7 +25,7 @@ import {
 
 /**
  * The Channel router, the chat allowlist, onboarding, the hand-off to
- * Agents, Pero's own commands, and the Channel views; adapters connect to
+ * turns, Pero's own commands, and the Channel views; adapters connect to
  * it.
  */
 @Module({

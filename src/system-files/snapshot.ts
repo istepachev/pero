@@ -10,21 +10,24 @@ import type { Schedule } from '../scheduler/schedule.js';
 import { parseNote, type ParsedNote } from './note.js';
 import {
   isIgnoredPath,
+  NOTE_FOLDERS,
   type NoteIdentity,
   noteIdentity,
   PERO_NOTE,
 } from './note-files.js';
 import type { NoteFile } from './scan.js';
+import { slugify } from '../config/slug.js';
 import {
-  type AgentNote,
+  channelIdOf,
+  type ChannelNoteProperties,
   type ChannelRef,
   listing,
   type NoteResult,
   type PeroNote,
-  readAgentNote,
+  readChannelNote,
   readPeroNote,
+  readTextNote,
   readWorkflowNote,
-  topicTitleOf,
   type WorkflowNote,
   type WorkflowNoteHistory,
 } from './schemas.js';
@@ -37,35 +40,34 @@ export interface Defaults extends Omit<PeroNote, 'timezone'> {
   timezone: string;
 }
 
-/** An Agent as it runs: its note with `Pero.md`'s defaults applied. */
-export interface Agent {
+/**
+ * The settings a Channel's turns and Workflow runs use: its note with
+ * `Pero.md`'s defaults applied, or the defaults alone while it has none.
+ */
+export interface ChannelNote {
+  /** Its file title as a slug, such as `health`: what Pero calls it. */
   name: string;
-  /** Its note's title, such as `Weekly health`. */
+  /** Its file title, such as `Health`; the Channel's title without a note. */
   title: string;
-  /** Its note's path inside the system folder. */
-  file: string;
-  /** The title of the topic it answers in; null for none. */
-  topic: string | null;
+  /** Its path inside the system folder; null while it has no note. */
+  file: string | null;
+  /** The Channel it is bound to; null until Pero binds it. */
+  channelId: string | null;
   provider: Provider;
   /** Null lets the provider choose. */
   model: string | null;
   /** One of `provider`'s levels; null lets the provider choose. */
   effort: Effort | null;
   permissions: PermissionMode;
-  /** The folder it works in, absolute: its own, or the workspace. */
+  /** The folder its turns work in, absolute: its own, or the workspace. */
   workingDirectory: string;
-  /**
-   * Whether the main Agent's instructions precede its own: unless it is
-   * the main Agent or its note sets `skip-main-instructions`.
-   */
-  mainInstructions: boolean;
-  /** Lets a Codex Agent work in a folder that is not a Git repository. */
+  /** Lets Codex work in a folder that is not a Git repository. */
   skipGitRepoCheck: boolean;
   enabled: boolean;
   /** Its note's body; null for none. */
   instructions: string | null;
   /** What the note itself sets, to tell its values from the defaults. */
-  note: AgentNote;
+  note: ChannelNoteProperties;
 }
 
 /** A Workflow as it runs. */
@@ -75,11 +77,11 @@ export interface Workflow {
   title: string;
   file: string;
   /**
-   * The Agent that runs it: its own `agent`, the one answering its first
-   * `channel`, or the main Agent. Null when the first `channel` is a
-   * Channel ID and no lookup was given to find out which topic that is.
+   * The name of the Channel note whose settings and instructions its runs
+   * use: its first `channel`'s, or `Default.md`'s. Null when the first
+   * `channel` is a Channel ID and no lookup was given to find its note.
    */
-  agent: string | null;
+  note: string | null;
   /** When it runs by itself; null: it runs only by hand. */
   schedule: Schedule | null;
   /** Where each run's answer is posted, as the note names them. */
@@ -94,22 +96,22 @@ export interface Workflow {
   /** How many times a run of it may start in all. */
   maxAttempts: number;
   enabled: boolean;
-  /** What each run sends the Agent. */
+  /** What each run sends. */
   input: string;
 }
 
 /**
- * A Workflow whose Agent and Channels a lookup found, as it is wherever
+ * A Workflow whose note and Channels a lookup found, as it is wherever
  * Pero runs with a database.
  */
 export type ResolvedWorkflow = Workflow & {
-  agent: string;
+  note: string;
   resolved: ResolvedChannels;
 };
 
-/** Whether `workflow`'s Agent and Channels were found. */
+/** Whether `workflow`'s note and Channels were found. */
 export function isResolved(workflow: Workflow): workflow is ResolvedWorkflow {
-  return workflow.agent !== null && workflow.resolved !== null;
+  return workflow.note !== null && workflow.resolved !== null;
 }
 
 /** The Channels a Workflow's references name, by ID. */
@@ -123,29 +125,30 @@ export interface ResolvedChannels {
 /** Every setting from the notes, with references between them resolved. */
 export interface SystemSnapshot {
   defaults: Defaults;
-  /**
-   * The main Agent's instructions, which every other Agent's start with;
-   * null while it has none or no note defines it.
-   */
-  mainInstructions: string | null;
+  /** `Persona.md`'s text, which every turn's instructions start with. */
+  persona: string | null;
+  /** `Instructions.md`'s text, which follows the persona. */
+  instructions: string | null;
   /**
    * The properties the `Pero.md` in use sets, to tell its values from
    * Pero's own defaults.
    */
   peroProperties: ReadonlySet<string>;
-  agents: ReadonlyMap<string, Agent>;
-  /** The name of the main Agent; its note may not exist yet. */
-  mainAgent: string;
-  workflows: ReadonlyMap<string, Workflow>;
-  /** Topic titles, lowercased, and the Agent each is answered by. */
-  topicClaims: ReadonlyMap<string, string>;
-  /** Topic titles, lowercased, that several Agents claim: none answers. */
-  conflictedTopics: ReadonlySet<string>;
+  /** The Channel notes that loaded, by name. */
+  channelNotes: ReadonlyMap<string, ChannelNote>;
+  /** Channel IDs and the name of the note bound to each. */
+  boundChannels: ReadonlyMap<string, string>;
   /**
-   * Topic titles, lowercased, that only Agent notes left out for errors
-   * claim, with those notes' files: none answers until they load.
+   * Names of Channel notes left out, for errors or a name another note
+   * has too, that no `channel-id` binds, with their files.
    */
-  unloadedTopics: ReadonlyMap<string, readonly string[]>;
+  unloadedNames: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Channel IDs that only notes left out are bound to, with their files:
+   * that Channel is answered by none until they load.
+   */
+  unloadedChannels: ReadonlyMap<string, readonly string[]>;
+  workflows: ReadonlyMap<string, Workflow>;
   /** Sorted by file. */
   errors: readonly NoteError[];
 }
@@ -153,27 +156,34 @@ export interface SystemSnapshot {
 /** A Channel a reference in a Workflow names. */
 export interface ResolvedChannel {
   id: number;
+  /** `<integration>:<address>`, as a note's `channel-id` names it. */
+  channelId: string;
   /** A General topic, a group without topics, or a direct chat. */
   primary: boolean;
-  /** The topic title, for choosing the Agent that answers it. */
+  /** Its title; `General` for a primary Channel. */
   title: string;
 }
 
 export type TopicResolution =
   | { kind: 'ok'; channel: ResolvedChannel }
-  /** Nothing matches; `seen` lists the topics that exist, for the message. */
-  | { kind: 'none'; seen: readonly string[] }
-  /** Several match; `matches` names each as `<chat title>/<topic title>`. */
+  /** Nothing matches. */
+  | { kind: 'none' }
+  /** Several match; `matches` names each as `<chat title>/General`. */
   | { kind: 'ambiguous'; matches: readonly string[] };
 
 /** Finds the Channels Workflow references name, among those Pero has seen. */
 export interface TopicLookup {
+  /** A Channel ID, or `General` or `<chat title>/General`. */
   resolve(ref: ChannelRef): TopicResolution;
+  /** The Channel with `channelId`, `<integration>:<address>`; null if unseen. */
+  byChannelId(channelId: string): ResolvedChannel | null;
+  /** The topics whose title, as a slug, is `name`. */
+  topicsNamed(name: string): readonly ResolvedChannel[];
 }
 
 export interface SnapshotContext {
   /**
-   * Absolute; where Agents work unless their note says otherwise, and
+   * Absolute; where turns work unless their note says otherwise, and
    * where relative `working-directory` paths start from.
    */
   workspace: string;
@@ -182,6 +192,17 @@ export interface SnapshotContext {
   hostTimeZone: string;
   /** Without one, as in CI, Channel references are checked for syntax only. */
   topics?: TopicLookup;
+}
+
+/** The name of `Channels/Default.md`, which answers every primary Channel. */
+export const DEFAULT_NOTE = 'default';
+
+/** `Default.md`'s path in the system folder. */
+export const DEFAULT_NOTE_FILE = `${NOTE_FOLDERS.channel}/Default.md`;
+
+/** A Channel's ID as notes name it: `<integration>:<address>`. */
+export function channelIdFor(kind: string, externalKey: string): string {
+  return `${kind}:${externalKey}`;
 }
 
 /** The topic title that means a group's General topic. */
@@ -203,7 +224,9 @@ interface Read<T> {
 /** A note read as its kind, before references to other notes resolve. */
 export type NoteRead =
   | { kind: 'pero'; read: Read<PeroNote> }
-  | { kind: 'agent'; read: Read<AgentNote> }
+  | { kind: 'persona'; read: Read<string | null> }
+  | { kind: 'instructions'; read: Read<string | null> }
+  | { kind: 'channel'; read: Read<ChannelNoteProperties> }
   | { kind: 'workflow'; read: Read<WorkflowNote> };
 
 /** A note for `buildSnapshot`. */
@@ -242,8 +265,31 @@ export function readNote(
     case 'pero':
       read = { kind: 'pero', read: reading(readPeroNote) };
       break;
-    case 'agent':
-      read = { kind: 'agent', read: reading(readAgentNote) };
+    case 'persona':
+      read = { kind: 'persona', read: reading(readTextNote) };
+      break;
+    case 'instructions':
+      read = { kind: 'instructions', read: reading(readTextNote) };
+      break;
+    case 'channel':
+      read = { kind: 'channel', read: reading(readChannelNote) };
+      if (
+        identity.name === DEFAULT_NOTE &&
+        read.read.result.ok &&
+        read.read.result.value.channelId !== null
+      ) {
+        read.read.result = {
+          ok: false,
+          errors: [
+            {
+              file,
+              property: 'channel-id',
+              message:
+                'must not be set: Default.md answers every General topic and direct chat',
+            },
+          ],
+        };
+      }
       break;
     case 'workflow':
       read = { kind: 'workflow', read: reading(readWorkflowNote) };
@@ -259,16 +305,19 @@ export function readNote(
  * The snapshot `notes`, the system folder's notes, describe. A note that
  * doesn't parse or validate is left out along with only the notes that
  * depend on it, and every problem is listed in `errors` with its file and
- * property. A broken `Pero.md` leaves the defaults, not the Agents, out.
+ * property. A broken `Pero.md` leaves the defaults, not the Channel
+ * notes, out.
  */
 export function buildSnapshot(
   notes: readonly SnapshotNote[],
   context: SnapshotContext,
 ): SystemSnapshot {
   const errors: NoteError[] = [];
-  const agentNotes: Read<AgentNote>[] = [];
-  const workflowNotes: Read<WorkflowNote>[] = [];
+  const channelReads: Read<ChannelNoteProperties>[] = [];
+  const workflowReads: Read<WorkflowNote>[] = [];
   let pero: Read<PeroNote> | null = null;
+  let persona: string | null = null;
+  let instructions: string | null = null;
 
   for (const { file, text, fallback } of notes) {
     if (isIgnoredPath(file)) continue;
@@ -282,11 +331,17 @@ export function buildSnapshot(
       case 'pero':
         pero = note.read;
         break;
-      case 'agent':
-        agentNotes.push(note.read);
+      case 'persona':
+        if (note.read.result.ok) persona = note.read.result.value;
+        break;
+      case 'instructions':
+        if (note.read.result.ok) instructions = note.read.result.value;
+        break;
+      case 'channel':
+        channelReads.push(note.read);
         break;
       case 'workflow':
-        workflowNotes.push(note.read);
+        workflowReads.push(note.read);
         break;
     }
   }
@@ -305,93 +360,71 @@ export function buildSnapshot(
     timezone: timezone ?? context.hostTimeZone,
   };
 
-  // The main Agent: the default one is created when a Channel first needs it.
-  const mainAgent = defaults.mainAgent;
-
-  // Names of Agent notes that exist but are left out, for notes naming them.
-  const brokenAgents = new Set<string>();
-  const agents = new Map<string, Agent>();
-  for (const read of withUniqueNames(agentNotes, errors, brokenAgents)) {
-    if (!read.result.ok) {
-      brokenAgents.add(read.identity.name);
+  // Channel notes.
+  const loaded: ChannelNote[] = [];
+  for (const read of withUniqueNames(channelReads, errors, new Set())) {
+    if (!read.result.ok) continue;
+    const note = defineChannelNote(read, read.result.value, defaults, context);
+    if ('error' in note) {
+      errors.push({ file: read.file, ...note.error });
       continue;
     }
-    const agent = defineAgent(
-      read,
-      read.result.value,
-      defaults,
-      mainAgent,
-      context,
-    );
-    if ('error' in agent) {
-      errors.push({ file: read.file, ...agent.error });
-      brokenAgents.add(read.identity.name);
-      continue;
-    }
-    agents.set(agent.name, agent);
+    loaded.push(note);
   }
-
-  // Topic claims.
-  const claimants = new Map<string, Agent[]>();
-  for (const agent of agents.values()) {
-    if (agent.topic === null) continue;
-    const key = agent.topic.toLowerCase();
-    claimants.set(key, [...(claimants.get(key) ?? []), agent]);
-  }
-  const topicClaims = new Map<string, string>();
-  const conflictedTopics = new Set<string>();
-  for (const [key, claiming] of claimants) {
-    if (claiming.length === 1) {
-      topicClaims.set(key, claiming[0]!.name);
+  const channelNotes = new Map<string, ChannelNote>();
+  const boundChannels = new Map<string, string>();
+  for (const [channelId, bound] of groupBy(
+    loaded.filter((note) => note.channelId !== null),
+    (note) => note.channelId!,
+  )) {
+    if (bound.length === 1) {
+      boundChannels.set(channelId, bound[0]!.name);
       continue;
     }
-    conflictedTopics.add(key);
-    for (const agent of claiming) {
-      const others = claiming
-        .filter((other) => other !== agent)
-        .map((other) => other.file);
+    for (const note of bound) {
+      const others = bound
+        .filter((other) => other !== note)
+        .map((other) => other.file!);
       errors.push({
-        file: agent.file,
-        property: 'topic',
-        message: `"${agent.topic}" is also claimed by ${listing(others)}, so neither answers there`,
+        file: note.file!,
+        property: 'channel-id',
+        message: `${channelId} is also the channel-id of ${listing(others)}; keep it in only one of them`,
       });
     }
   }
-
-  // Topics only notes left out claim, as a note broken since Pero started.
-  const unloadedTopics = new Map<string, string[]>();
-  for (const read of agentNotes) {
-    if (agents.get(read.identity.name)?.file === read.file) continue;
-    const title = topicTitleOf(read.note?.properties.topic);
-    if (title === null) continue;
-    const key = title.toLowerCase();
-    if (claimants.has(key)) continue;
-    const files = unloadedTopics.get(key) ?? [];
-    if (!files.includes(read.file)) files.push(read.file);
-    unloadedTopics.set(key, files);
+  for (const note of loaded) {
+    if (note.channelId !== null && !boundChannels.has(note.channelId)) continue;
+    channelNotes.set(note.name, note);
   }
 
-  if (pero?.note?.properties['main-agent'] != null && !agents.has(mainAgent)) {
-    errors.push({
-      file: PERO_NOTE,
-      property: 'main-agent',
-      message: brokenAgents.has(mainAgent)
-        ? `the Agent note named ${mainAgent} has errors`
-        : `no Agent note is named ${mainAgent}`,
-    });
+  // Notes left out: whom a Channel would have been answered by.
+  const unloadedNames = new Map<string, string[]>();
+  const unloadedChannels = new Map<string, string[]>();
+  for (const read of channelReads) {
+    if (channelNotes.get(read.identity.name)?.file === read.file) continue;
+    const channelId = channelIdOf(read.note?.properties['channel-id']);
+    if (channelId !== null && boundChannels.has(channelId)) continue;
+    const add = (map: Map<string, string[]>, key: string) => {
+      const files = map.get(key) ?? [];
+      if (!files.includes(read.file)) files.push(read.file);
+      map.set(key, files);
+    };
+    if (channelId !== null) add(unloadedChannels, channelId);
+    else if (!channelNotes.has(read.identity.name)) {
+      add(unloadedNames, read.identity.name);
+    }
   }
 
   // Workflows.
   const resolver = new WorkflowResolver(
-    agents,
-    brokenAgents,
-    topicClaims,
-    conflictedTopics,
-    mainAgent,
+    channelNotes,
+    boundChannels,
+    unloadedNames,
+    unloadedChannels,
     context.topics,
   );
   const workflows = new Map<string, Workflow>();
-  for (const read of withUniqueNames(workflowNotes, errors, new Set())) {
+  for (const read of withUniqueNames(workflowReads, errors, new Set())) {
     if (!read.result.ok) continue;
     const workflow = resolver.define(read, read.result.value, defaults);
     if (Array.isArray(workflow)) {
@@ -403,14 +436,14 @@ export function buildSnapshot(
 
   return Object.freeze({
     defaults: Object.freeze(defaults),
-    mainInstructions: agents.get(mainAgent)?.instructions ?? null,
+    persona,
+    instructions,
     peroProperties,
-    agents,
-    mainAgent,
+    channelNotes,
+    boundChannels,
+    unloadedNames,
+    unloadedChannels,
     workflows,
-    topicClaims,
-    conflictedTopics,
-    unloadedTopics,
     // Stable, so each file's errors keep the order they were found in.
     errors: Object.freeze(errors.sort((a, b) => compare(a.file, b.file))),
   });
@@ -432,15 +465,8 @@ function withUniqueNames<T>(
   errors: NoteError[],
   duplicated: Set<string>,
 ): Read<T>[] {
-  const byName = new Map<string, Read<T>[]>();
-  for (const read of reads) {
-    byName.set(read.identity.name, [
-      ...(byName.get(read.identity.name) ?? []),
-      read,
-    ]);
-  }
   const unique: Read<T>[] = [];
-  for (const [name, named] of byName) {
+  for (const [name, named] of groupBy(reads, (read) => read.identity.name)) {
     if (named.length === 1) {
       unique.push(named[0]!);
       continue;
@@ -460,27 +486,22 @@ function withUniqueNames<T>(
   return unique;
 }
 
-/**
- * The Agent `read` describes, or why it can't run: its effort doesn't fit
- * its provider, or it is the main Agent and names a topic.
- */
-function defineAgent(
-  read: Read<AgentNote>,
-  note: AgentNote,
-  defaults: Defaults,
-  mainAgent: string,
-  context: SnapshotContext,
-): Agent | { error: Omit<NoteError, 'file'> } {
-  const main = read.identity.name === mainAgent;
-  if (main && note.topic !== null) {
-    return {
-      error: {
-        property: 'topic',
-        message:
-          'must not be set: the main Agent answers General topics and direct chats; give the topic a note of its own',
-      },
-    };
+function groupBy<T>(items: readonly T[], key: (item: T) => string) {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const k = key(item);
+    groups.set(k, [...(groups.get(k) ?? []), item]);
   }
+  return groups;
+}
+
+/** The Channel note `read` describes, or why it can't be used. */
+function defineChannelNote(
+  read: Read<ChannelNoteProperties>,
+  note: ChannelNoteProperties,
+  defaults: Defaults,
+  context: Pick<SnapshotContext, 'workspace' | 'homeDir'>,
+): ChannelNote | { error: Omit<NoteError, 'file'> } {
   const provider = note.provider ?? defaults.provider;
   const efforts = EFFORTS_BY_PROVIDER[provider];
   if (note.effort !== null && !efforts.includes(note.effort)) {
@@ -496,7 +517,7 @@ function defineAgent(
     name: read.identity.name,
     title: read.identity.title,
     file: read.file,
-    topic: note.topic,
+    channelId: note.channelId,
     provider,
     model: note.model ?? own.model,
     // Checked above against the provider.
@@ -510,7 +531,6 @@ function defineAgent(
             context.workspace,
             context.homeDir,
           ),
-    mainInstructions: !main && !note.skipMainInstructions,
     skipGitRepoCheck: note.skipGitRepoCheck,
     enabled: note.enabled,
     instructions: note.instructions,
@@ -518,46 +538,118 @@ function defineAgent(
   };
 }
 
-/** Who answers the topic a title names, by the Agents' `topic`. */
-export type TopicClaim =
-  | { kind: 'agent'; agent: string }
-  /** Several Agents claim it, in `files`: none answers. */
-  | { kind: 'conflict'; files: readonly string[] }
-  /** Only notes left out for errors, in `files`, claim it. */
-  | { kind: 'unloaded'; files: readonly string[] }
-  | { kind: 'unclaimed' };
+/** What a note without properties sets: nothing. */
+const UNSET: ChannelNoteProperties = Object.freeze({
+  channelId: null,
+  provider: null,
+  model: null,
+  effort: null,
+  permissions: null,
+  workingDirectory: null,
+  skipGitRepoCheck: false,
+  enabled: true,
+  instructions: null,
+});
 
-/** Who answers the topic titled `title`, in any case, in `snapshot`. */
-export function topicClaim(
-  snapshot: Pick<
-    SystemSnapshot,
-    'agents' | 'topicClaims' | 'conflictedTopics' | 'unloadedTopics'
-  >,
+/**
+ * The settings of a Channel titled `title` that has no note yet, named
+ * `name`: `Pero.md`'s defaults, working in the workspace, with no
+ * instructions of its own.
+ */
+export function defaultsNote(
+  name: string,
   title: string,
-): TopicClaim {
-  const key = title.trim().toLowerCase();
-  const agent = snapshot.topicClaims.get(key);
-  if (agent !== undefined) return { kind: 'agent', agent };
-  if (snapshot.conflictedTopics.has(key)) {
-    const files = [...snapshot.agents.values()]
-      .filter((claiming) => claiming.topic?.toLowerCase() === key)
-      .map((claiming) => claiming.file)
-      .sort(compare);
-    return { kind: 'conflict', files };
-  }
-  const files = snapshot.unloadedTopics.get(key);
-  if (files !== undefined) return { kind: 'unloaded', files };
-  return { kind: 'unclaimed' };
+  defaults: Defaults,
+  workspace: string,
+): ChannelNote {
+  const own = defaults.providerDefaults[defaults.provider];
+  return {
+    name,
+    title,
+    file: null,
+    channelId: null,
+    provider: defaults.provider,
+    model: own.model,
+    effort: own.effort,
+    permissions: defaults.permissions,
+    workingDirectory: workspace,
+    skipGitRepoCheck: false,
+    enabled: true,
+    instructions: null,
+    note: UNSET,
+  };
 }
 
-/** Resolves what Workflow notes refer to: Agents and Channels. */
+/** A Channel, as matching it to its note sees it. */
+export interface NoteQuery {
+  /** `<integration>:<address>`. */
+  channelId: string;
+  /** A General topic, a group without topics, or a direct chat. */
+  primary: boolean;
+  /** The topic's title; null while Pero hasn't seen it. */
+  title: string | null;
+}
+
+/** Which note a Channel uses. */
+export type NoteMatch =
+  /** Its own note, or `Default.md` for a primary Channel. */
+  | { kind: 'note'; note: ChannelNote }
+  /** A note with its title and no `channel-id` yet: Pero binds it. */
+  | { kind: 'bindable'; note: ChannelNote }
+  /** Only notes left out for errors, in `files`, are for it. */
+  | { kind: 'unloaded'; files: readonly string[] }
+  /** A topic whose title Pero hasn't seen, so no note can match it yet. */
+  | { kind: 'untitled' }
+  /** No note: Pero writes one; `name` is the note's or the title's name. */
+  | { kind: 'none'; name: string | null };
+
+/**
+ * The note Channel `query` uses in `snapshot`: `Default.md` for a primary
+ * Channel; otherwise the note bound to it by `channel-id`, or else an
+ * unbound note whose name is its title's.
+ */
+export function noteFor(
+  snapshot: Pick<
+    SystemSnapshot,
+    'channelNotes' | 'boundChannels' | 'unloadedNames' | 'unloadedChannels'
+  >,
+  query: NoteQuery,
+): NoteMatch {
+  if (query.primary) {
+    const note = snapshot.channelNotes.get(DEFAULT_NOTE);
+    if (note !== undefined) return { kind: 'note', note };
+    const files = snapshot.unloadedNames.get(DEFAULT_NOTE);
+    if (files !== undefined) return { kind: 'unloaded', files };
+    return { kind: 'none', name: DEFAULT_NOTE };
+  }
+  const bound = snapshot.boundChannels.get(query.channelId);
+  if (bound !== undefined) {
+    return { kind: 'note', note: snapshot.channelNotes.get(bound)! };
+  }
+  const left = snapshot.unloadedChannels.get(query.channelId);
+  if (left !== undefined) return { kind: 'unloaded', files: left };
+  const title = query.title?.trim() ?? '';
+  if (title === '') return { kind: 'untitled' };
+  const name = slugify(title);
+  if (name === null || name === DEFAULT_NOTE) return { kind: 'none', name };
+  const named = snapshot.channelNotes.get(name);
+  if (named !== undefined && named.channelId === null) {
+    return { kind: 'bindable', note: named };
+  }
+  const files = snapshot.unloadedNames.get(name);
+  if (named === undefined && files !== undefined) {
+    return { kind: 'unloaded', files };
+  }
+  return { kind: 'none', name };
+}
+
+/** Resolves what Workflow notes refer to: Channel notes and Channels. */
 class WorkflowResolver {
   constructor(
-    private readonly agents: ReadonlyMap<string, Agent>,
-    private readonly brokenAgents: ReadonlySet<string>,
-    private readonly topicClaims: ReadonlyMap<string, string>,
-    private readonly conflictedTopics: ReadonlySet<string>,
-    private readonly mainAgent: string,
+    private readonly notes: ReadonlyMap<string, ChannelNote>,
+    private readonly boundChannels: ReadonlyMap<string, string>,
+    private readonly unloadedNames: ReadonlyMap<string, readonly string[]>,
+    private readonly unloadedChannels: ReadonlyMap<string, readonly string[]>,
     private readonly topics: TopicLookup | undefined,
   ) {}
 
@@ -571,22 +663,17 @@ class WorkflowResolver {
     const error = (property: string, message: string) =>
       errors.push({ file: read.file, property, message });
 
-    if (note.agent !== null && !this.agents.has(note.agent)) {
-      error(
-        'agent',
-        this.brokenAgents.has(note.agent)
-          ? `the Agent note named ${note.agent} has errors`
-          : `no Agent note is named ${note.agent}`,
-      );
-    }
     const channels = note.channels.map((ref) => this.check(ref));
     for (const problem of channels) {
       if (typeof problem === 'string') error('channel', problem);
     }
     const historyChannels = note.history?.channels;
-    if (historyChannels !== undefined && historyChannels !== 'all') {
-      for (const ref of historyChannels) {
-        const problem = this.check(ref);
+    const history =
+      historyChannels === undefined || historyChannels === 'all'
+        ? 'all'
+        : historyChannels.map((ref) => this.check(ref));
+    if (history !== 'all') {
+      for (const problem of history) {
         if (typeof problem === 'string') error('history-channels', problem);
       }
     }
@@ -594,24 +681,18 @@ class WorkflowResolver {
 
     const refs = channels as ResolvedRef[];
     const first = refs[0];
-    const answer: Answer =
-      note.agent !== null
-        ? { kind: 'agent', agent: note.agent }
-        : first === undefined
-          ? { kind: 'agent', agent: this.mainAgent }
-          : this.answering(first);
-    if (answer.kind === 'conflict') {
+    const noteName = first === undefined ? DEFAULT_NOTE : this.noteOf(first);
+    if (typeof noteName === 'object' && noteName !== null) {
       error(
         'channel',
-        `"${String(note.channels[0])}" is claimed by more than one Agent; set agent`,
+        `the note for "${String(note.channels[0])}", ${brokenNotes(noteName.files)}`,
       );
       return errors;
     }
-    const { agent } = answer;
     const ids = (resolved: readonly ResolvedRef[]) =>
       unique(
         resolved.flatMap((ref) =>
-          ref.kind === 'channel' ? [ref.channel.id] : [],
+          ref.channel === undefined ? [] : [ref.channel.id],
         ),
       );
 
@@ -619,7 +700,7 @@ class WorkflowResolver {
       name: read.identity.name,
       title: read.identity.title,
       file: read.file,
-      agent,
+      note: noteName,
       schedule:
         note.schedule === null
           ? null
@@ -635,13 +716,9 @@ class WorkflowResolver {
           : {
               targets: ids(refs),
               history:
-                historyChannels === undefined || historyChannels === 'all'
+                history === 'all'
                   ? 'all'
-                  : ids(
-                      historyChannels.map(
-                        (ref) => this.check(ref) as ResolvedRef,
-                      ),
-                    ).sort((a, b) => a - b),
+                  : ids(history as ResolvedRef[]).sort((a, b) => a - b),
             },
       maxAttempts: note.maxAttempts,
       enabled: note.enabled,
@@ -651,71 +728,124 @@ class WorkflowResolver {
 
   /** What `ref` names, or why it names nothing. */
   private check(ref: ChannelRef): ResolvedRef | string {
-    if (this.topics !== undefined) {
+    if (typeof ref === 'number' || isGeneral(ref)) {
+      if (this.topics === undefined) {
+        return typeof ref === 'number' ? { kind: 'id' } : { kind: 'general' };
+      }
       const found = this.topics.resolve(ref);
       switch (found.kind) {
         case 'ok':
-          return { kind: 'channel', channel: found.channel };
+          return typeof ref === 'number'
+            ? { kind: 'id', channel: found.channel }
+            : { kind: 'general', channel: found.channel };
         case 'none':
           return typeof ref === 'number'
             ? `no Channel has the ID ${ref}`
-            : `no topic titled "${ref}"; seen topics: ${found.seen.join(', ') || 'none yet'}`;
+            : `no General topic${ref.includes('/') ? ` in "${ref.slice(0, ref.indexOf('/')).trim()}"` : ''} Pero has seen yet; write something there first`;
         case 'ambiguous':
-          return `"${String(ref)}" matches ${found.matches.length} topics: ${found.matches.join(', ')}; write <chat title>/<topic title>`;
+          return `"${ref}" matches ${found.matches.length} General topics: ${found.matches.join(', ')}; write <chat title>/General`;
       }
     }
-    if (typeof ref === 'number') return { kind: 'id' };
-    const slash = ref.indexOf('/');
-    if (slash !== -1 && !this.isClaimed(ref)) {
-      const chat = ref.slice(0, slash).trim();
-      const topic = ref.slice(slash + 1).trim();
-      if (chat === '' || topic === '') {
-        return `"${ref}" must be a topic title or <chat title>/<topic title>`;
-      }
-      return { kind: 'title', title: topic };
+    const name = slugify(ref);
+    const note = name === null ? undefined : this.notes.get(name);
+    if (name === DEFAULT_NOTE) {
+      return `"${ref}" answers every General topic and direct chat; write General, <chat title>/General, or a Channel ID`;
     }
-    return { kind: 'title', title: ref };
+    if (note === undefined) {
+      const files = name === null ? undefined : this.unloadedNames.get(name);
+      if (files !== undefined) return brokenNotes(files);
+      const names = [...this.notes.values()]
+        .filter((other) => other.name !== DEFAULT_NOTE)
+        .map((other) => other.title)
+        .sort(compare);
+      return `no Channel note named "${ref}"; Channel notes: ${names.join(', ') || 'none yet'}`;
+    }
+    if (this.topics === undefined) return { kind: 'note', note: note.name };
+    if (note.channelId === null) {
+      // The topic the note binds to once someone writes there.
+      const topics = this.topics
+        .topicsNamed(note.name)
+        .filter((topic) => !this.boundChannels.has(topic.channelId));
+      if (topics.length === 1) {
+        return { kind: 'note', note: note.name, channel: topics[0]! };
+      }
+      return topics.length === 0
+        ? `Pero hasn't seen a topic titled "${note.title}" for ${note.file}; write something there first`
+        : `${topics.length} topics are titled "${note.title}"; write something in the one ${note.file} is for, and Pero binds the note to it`;
+    }
+    const channel = this.topics.byChannelId(note.channelId);
+    if (channel === null) {
+      return `Pero hasn't seen the Channel ${note.channelId} of ${note.file}; write something there first`;
+    }
+    return { kind: 'note', note: note.name, channel };
   }
 
   /**
-   * The Agent answering in `ref`: the main Agent in a primary Channel or
-   * an unclaimed topic, and the claiming one in a claimed topic.
+   * The name of the note `ref`'s Channel uses: `Default.md` in a primary
+   * Channel; null for a Channel ID while there is no lookup.
    */
-  private answering(ref: ResolvedRef): Answer {
+  private noteOf(
+    ref: ResolvedRef,
+  ): string | null | { files: readonly string[] } {
     switch (ref.kind) {
-      case 'id':
-        return { kind: 'agent', agent: null };
-      case 'channel':
-        return ref.channel.primary
-          ? { kind: 'agent', agent: this.mainAgent }
-          : this.claimOf(ref.channel.title);
-      case 'title':
-        return ref.title.toLowerCase() === GENERAL_TOPIC.toLowerCase()
-          ? { kind: 'agent', agent: this.mainAgent }
-          : this.claimOf(ref.title);
+      case 'note':
+        return ref.note;
+      case 'general':
+        return DEFAULT_NOTE;
+      case 'id': {
+        const channel = ref.channel;
+        if (channel === undefined) return null;
+        const match = noteFor(
+          {
+            channelNotes: this.notes,
+            boundChannels: this.boundChannels,
+            unloadedNames: this.unloadedNames,
+            unloadedChannels: this.unloadedChannels,
+          },
+          {
+            channelId: channel.channelId,
+            primary: channel.primary,
+            title: channel.title,
+          },
+        );
+        switch (match.kind) {
+          case 'note':
+          case 'bindable':
+            return match.note.name;
+          case 'unloaded':
+            return { files: match.files };
+          case 'untitled':
+            return `channel-${channel.id}`;
+          case 'none':
+            return match.name ?? `channel-${channel.id}`;
+        }
+      }
     }
-  }
-
-  private claimOf(title: string): Answer {
-    const key = title.toLowerCase();
-    return this.conflictedTopics.has(key)
-      ? { kind: 'conflict' }
-      : { kind: 'agent', agent: this.topicClaims.get(key) ?? this.mainAgent };
-  }
-
-  private isClaimed(title: string): boolean {
-    const key = title.toLowerCase();
-    return this.topicClaims.has(key) || this.conflictedTopics.has(key);
   }
 }
 
-/** Who runs a Workflow; a null `agent` is decided once Pero runs. */
-type Answer = { kind: 'agent'; agent: string | null } | { kind: 'conflict' };
+/** Whether `ref` names a group's General topic: `General`, `<chat>/General`. */
+function isGeneral(ref: string): boolean {
+  const slash = ref.lastIndexOf('/');
+  const title = slash === -1 ? ref : ref.slice(slash + 1);
+  return title.trim().toLowerCase() === GENERAL_TOPIC.toLowerCase();
+}
 
 type ResolvedRef =
-  | { kind: 'channel'; channel: ResolvedChannel }
-  | { kind: 'title'; title: string }
-  | { kind: 'id' };
+  | { kind: 'note'; note: string; channel?: ResolvedChannel }
+  | { kind: 'general'; channel?: ResolvedChannel }
+  | { kind: 'id'; channel?: ResolvedChannel };
+
+/** `the note a has errors`, or `the notes a and b have errors`. */
+function brokenNotes(files: readonly string[]): string {
+  const and =
+    files.length <= 2
+      ? files.join(' and ')
+      : `${files.slice(0, -1).join(', ')}, and ${files.at(-1)}`;
+  return files.length === 1
+    ? `the note ${and} has errors`
+    : `the notes ${and} have errors`;
+}
 
 function unique(ids: readonly number[]): number[] {
   return [...new Set(ids)];

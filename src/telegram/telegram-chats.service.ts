@@ -131,7 +131,7 @@ export class TelegramChats implements OnModuleInit {
   }
 
   /**
-   * Removes chat `chatKey` from the allowlist. Its Channels, Agents, and
+   * Removes chat `chatKey` from the allowlist. Its Channels, notes, and
    * Sessions stay for when it is allowed again.
    */
   async deny(chatKey: string): Promise<{ chat: AllowedChatView }> {

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
   ChannelDetails,
+  ChannelNoteView,
   ChannelView,
   HistoryMessage,
 } from '../control/protocol.js';
@@ -15,8 +16,7 @@ const general: ChannelView = {
   integrationKind: 'telegram',
   key: '-1001234567890',
   title: 'Household',
-  agent: 'main',
-  agentEnabled: true,
+  note: 'data/System/Channels/Default.md',
   unanswered: null,
   createdAt: '2026-09-28T09:00:00.000Z',
 };
@@ -26,11 +26,37 @@ const groceries: ChannelView = {
   id: 12,
   key: '-1001234567890:42',
   title: 'Groceries',
-  agent: 'groceries',
+  note: 'data/System/Channels/Groceries.md',
+};
+
+const settings: ChannelNoteView = {
+  name: 'groceries',
+  title: 'Groceries',
+  file: 'data/System/Channels/Groceries.md',
+  channelId: 'telegram:-1001234567890:42',
+  provider: 'claude',
+  model: 'sonnet',
+  effort: null,
+  workingDirectory: null,
+  effectiveWorkingDirectory: '/home/me/workspace',
+  instructions: 'Keep the list.',
+  permissions: 'ask',
+  skipGitRepoCheck: false,
+  enabled: true,
+  origins: {
+    provider: 'default',
+    model: 'note',
+    effort: 'default',
+    permissions: 'pero',
+    workingDirectory: 'workspace',
+  },
+  errors: [],
 };
 
 const details: ChannelDetails = {
   ...groceries,
+  settings,
+  folderProblem: null,
   nextTurn: {
     kind: 'resume',
     reason: null,
@@ -67,32 +93,43 @@ describe('Channel formatting', () => {
     else process.env.TZ = zone;
   });
 
-  it('lists Channels with the Agent that answers in each now', () => {
+  it('lists Channels with the note each is answered with, then unused notes', () => {
     expect(
-      formatChannelList([
-        general,
-        {
-          ...groceries,
-          agentEnabled: false,
-          unanswered: 'Agent groceries is disabled',
-          title: null,
-        },
-        {
-          ...groceries,
-          id: 13,
-          key: '-1001234567890:43',
-          title: 'Chores',
-          agent: null,
-          agentEnabled: false,
-          unanswered: 'no Agent claims "Chores"',
-        },
-      ]),
+      formatChannelList(
+        [
+          general,
+          {
+            ...groceries,
+            unanswered: 'data/System/Channels/Groceries.md sets enabled: false',
+            title: null,
+          },
+          {
+            ...groceries,
+            id: 13,
+            key: '-1001234567890:43',
+            title: 'Chores',
+            note: null,
+          },
+        ],
+        [
+          { file: 'data/System/Channels/Garden.md', channelId: null },
+          {
+            file: 'data/System/Channels/Away.md',
+            channelId: 'telegram:-100999:1',
+          },
+        ],
+      ),
     ).toBe(
       [
-        'ID  CHANNEL                     TITLE      AGENT',
-        '1   telegram -1001234567890     Household  main',
-        '12  telegram -1001234567890:42  —          groceries (disabled)',
-        '13  telegram -1001234567890:43  Chores     none',
+        'ID  CHANNEL                     TITLE      NOTE',
+        '1   telegram -1001234567890     Household  data/System/Channels/Default.md',
+        '12  telegram -1001234567890:42  —          data/System/Channels/Groceries.md (not answering)',
+        '13  telegram -1001234567890:43  Chores     none yet',
+        '',
+        'Channel notes no Channel Pero has seen uses yet:',
+        '  NOTE                            CHANNEL-ID',
+        '  data/System/Channels/Garden.md  (none: a topic of its title binds it)',
+        '  data/System/Channels/Away.md    telegram:-100999:1',
       ].join('\n'),
     );
   });
@@ -103,26 +140,33 @@ describe('Channel formatting', () => {
     );
   });
 
-  it('shows a Channel with its next turn and history in local time', () => {
+  it('shows a Channel with its settings, next turn, and history in local time', () => {
     expect(formatChannelDetails(details)).toBe(
       [
         'Channel 12 "Groceries"',
-        '  address    telegram -1001234567890:42',
-        '  agent      groceries',
-        '  next turn  resumes Session 3',
-        '  history    4 messages, the latest at 2026-09-28 15:04',
-        '  created    2026-09-28 14:00',
+        '  address            telegram -1001234567890:42',
+        '  note               data/System/Channels/Groceries.md',
+        '  provider           claude (default)',
+        '  model              sonnet',
+        '  effort             (provider default)',
+        '  working directory  /home/me/workspace (workspace)',
+        '  instructions       Keep the list.',
+        '  permissions        ask (Pero.md)',
+        '  codex git check    required',
+        '  state              enabled',
+        '  next turn          resumes Session 3',
+        '  history            4 messages, the latest at 2026-09-28 15:04',
+        '  created            2026-09-28 14:00',
       ].join('\n'),
     );
   });
 
-  it('says why no one answers', () => {
+  it('says why Pero does not answer', () => {
     expect(
       formatChannelDetails({
         ...details,
-        agent: null,
-        agentEnabled: false,
-        unanswered: '"Groceries" is claimed by a.md and b.md',
+        settings: null,
+        unanswered: 'its note data/System/Channels/Groceries.md has errors',
         nextTurn: null,
         messages: 0,
         lastMessageAt: null,
@@ -131,12 +175,12 @@ describe('Channel formatting', () => {
       [
         'Channel 12 "Groceries"',
         '  address    telegram -1001234567890:42',
-        '  agent      none',
-        '  next turn  none: no one answers here',
+        '  note       data/System/Channels/Groceries.md',
+        "  next turn  none: Pero doesn't answer here",
         '  history    no messages yet',
         '  created    2026-09-28 14:00',
         '',
-        'Warning: no one answers here: "Groceries" is claimed by a.md and b.md.',
+        "Warning: Pero doesn't answer here: its note data/System/Channels/Groceries.md has errors.",
       ].join('\n'),
     );
   });
@@ -174,7 +218,7 @@ describe('Channel formatting', () => {
         '2026-09-28 15:04  out  pero                  Welcome',
         '2026-09-28 15:04  in   user                  Milk',
         '                                             and eggs',
-        '2026-09-28 15:04  out  agent groceries       Noted',
+        '2026-09-28 15:04  out  answer groceries      Noted',
         '2026-09-28 15:04  out  workflow weekly-shop  Shop on Friday',
       ].join('\n'),
     );

@@ -4,88 +4,75 @@ import { channelTopicLookup, type KnownChannel } from './channel-topics.js';
 const HOME = '-1001';
 const WORK = '-1002';
 
+const channel = (id: number, key: string, title: string | null) =>
+  ({ id, kind: 'telegram', key, title }) satisfies KnownChannel;
+
 const CHANNELS: KnownChannel[] = [
-  { id: 1, key: HOME, title: 'Home' },
-  { id: 2, key: `${HOME}:10`, title: 'Health' },
-  { id: 3, key: `${HOME}:11`, title: 'English' },
-  { id: 4, key: WORK, title: 'Work' },
-  { id: 5, key: `${WORK}:20`, title: 'English' },
-  { id: 6, key: '123456789', title: 'Ada Lovelace' },
-  { id: 7, key: `${HOME}:12`, title: null },
+  channel(1, HOME, 'Home'),
+  channel(2, `${HOME}:10`, 'Health'),
+  channel(4, WORK, 'Work'),
+  channel(5, `${WORK}:20`, 'English'),
+  channel(6, '123456789', 'Ada Lovelace'),
 ];
 
 describe('channelTopicLookup', () => {
   const lookup = channelTopicLookup(CHANNELS);
 
-  it('finds a topic by its title, ignoring case', () => {
-    for (const ref of ['Health', 'health', ' HEALTH ']) {
-      expect(lookup.resolve(ref)).toEqual({
-        kind: 'ok',
-        channel: { id: 2, primary: false, title: 'Health' },
-      });
-    }
-  });
-
   it('finds a Channel by its ID, a direct chat too', () => {
-    expect(lookup.resolve(3)).toEqual({
+    expect(lookup.resolve(2)).toEqual({
       kind: 'ok',
-      channel: { id: 3, primary: false, title: 'English' },
+      channel: {
+        id: 2,
+        channelId: `telegram:${HOME}:10`,
+        primary: false,
+        title: 'Health',
+      },
     });
     expect(lookup.resolve(6)).toEqual({
       kind: 'ok',
-      channel: { id: 6, primary: true, title: 'General' },
+      channel: {
+        id: 6,
+        channelId: 'telegram:123456789',
+        primary: true,
+        title: 'General',
+      },
     });
+    expect(lookup.resolve(99)).toEqual({ kind: 'none' });
   });
 
-  it('asks for the chat when several topics share a title', () => {
-    expect(lookup.resolve('English')).toEqual({
-      kind: 'ambiguous',
-      matches: ['Home/English', 'Work/English'],
-    });
-    expect(lookup.resolve('work/english')).toEqual({
-      kind: 'ok',
-      channel: { id: 5, primary: false, title: 'English' },
-    });
-  });
-
-  it("means a group's General topic by General", () => {
+  it("means a group's General topic by General, ignoring case", () => {
     expect(lookup.resolve('General')).toEqual({
       kind: 'ambiguous',
       matches: ['Home/General', 'Work/General'],
     });
-    expect(lookup.resolve('Home/General')).toEqual({
+    expect(lookup.resolve('home/general')).toEqual({
       kind: 'ok',
-      channel: { id: 1, primary: true, title: 'General' },
+      channel: {
+        id: 1,
+        channelId: `telegram:${HOME}`,
+        primary: true,
+        title: 'General',
+      },
     });
-  });
-
-  it('lists the topics seen when nothing matches', () => {
-    const none = {
+    expect(lookup.resolve('Away/General')).toEqual({ kind: 'none' });
+    expect(channelTopicLookup([]).resolve('General')).toEqual({
       kind: 'none',
-      seen: ['General', 'Health', 'English'],
-    };
-    expect(lookup.resolve('Helth')).toEqual(none);
-    expect(lookup.resolve('Ada Lovelace')).toEqual(none);
-    expect(lookup.resolve('Home/Running')).toEqual(none);
-    expect(lookup.resolve(99)).toEqual(none);
-  });
-
-  it('names a chat by its ID when Pero has not seen its title', () => {
-    expect(
-      channelTopicLookup([
-        { id: 1, key: `${HOME}:10`, title: 'Health' },
-        { id: 2, key: `${WORK}:20`, title: 'Health' },
-      ]).resolve('Health'),
-    ).toEqual({
-      kind: 'ambiguous',
-      matches: [`${HOME}/Health`, `${WORK}/Health`],
     });
   });
 
-  it('has seen nothing without Channels', () => {
-    expect(channelTopicLookup([]).resolve('Health')).toEqual({
-      kind: 'none',
-      seen: [],
+  it('finds the Channel a note’s channel-id names', () => {
+    expect(lookup.byChannelId(`telegram:${WORK}:20`)).toMatchObject({
+      id: 5,
+      title: 'English',
     });
+    expect(lookup.byChannelId(`telegram:${WORK}:21`)).toBeNull();
+  });
+
+  it('finds the topics a note’s name is the title of', () => {
+    expect(lookup.topicsNamed('english')).toEqual([
+      expect.objectContaining({ id: 5 }),
+    ]);
+    // A primary Channel is no topic.
+    expect(lookup.topicsNamed('home')).toEqual([]);
   });
 });

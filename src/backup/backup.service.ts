@@ -187,14 +187,14 @@ export class BackupService implements BeforeApplicationShutdown {
   }
 
   /**
-   * The folders the workspace's Agents use, which a restore checks
-   * for: the data folder, and each Agent's own.
+   * The folders the workspace's Channel notes use, which a restore checks
+   * for: the data folder, and each note's own.
    */
   private workingDirectories(): BackupManifest['workingDirectories'] {
-    const agents = this.definitions.agents();
+    const notes = this.definitions.channelNotes();
     return [
       { path: this.dataFolder(), agent: null },
-      ...agents.flatMap(({ name, note, workingDirectory }) =>
+      ...notes.flatMap(({ name, note, workingDirectory }) =>
         note.workingDirectory === null
           ? []
           : [{ path: workingDirectory, agent: name }],

@@ -54,8 +54,7 @@ describe('NotificationDelivery', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-delivery-');
     await ws.pero();
-    await ws.agent('Main');
-    await ws.agent('Coach');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     moduleRef = await Test.createTestingModule({
@@ -74,7 +73,7 @@ describe('NotificationDelivery', () => {
     ds = moduleRef.get<DataSource>(getDataSourceToken());
     delivery = moduleRef.get(NotificationDelivery);
     ws.use(moduleRef);
-    await ws.workflow('Brief', { agent: 'coach' }, 'Suggest one thing.');
+    await ws.workflow('Brief', {}, 'Suggest one thing.');
     await moduleRef.get(AllowedChatsService).allow({
       integrationKind: 'telegram',
       chatKey: OWNER.key,
@@ -382,11 +381,7 @@ describe('NotificationDelivery', () => {
 
     it('lists the latest Notifications newest first, by status, Workflow, Channel, and run', async () => {
       const channel = await target();
-      await ws.workflow(
-        'other',
-        { agent: 'coach', channel: channel.id },
-        'Other.',
-      );
+      await ws.workflow('other', { channel: channel.id }, 'Other.');
       const first = await finishedRun();
       await delivery.tick(after(first.nextAttemptAt!, 1));
       const { id: otherRun } = await moduleRef.get(WorkflowRuns).start('other');
@@ -528,11 +523,11 @@ describe('NotificationDelivery', () => {
 
     it('gives a fresh Session the posted messages once, after the conversation it carries over', async () => {
       await posted();
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say('Tell me more');
       const input = codex.requests.at(-1)!.input;
-      expect(input).toContain('main: echo: Hello');
+      expect(input).toContain('Pero: echo: Hello');
       expect(input.indexOf('[End of earlier conversation]')).toBeLessThan(
         input.indexOf('[Posted in this chat by Workflows'),
       );
@@ -543,7 +538,7 @@ describe('NotificationDelivery', () => {
     it('carries over earlier Workflow messages into a fresh Session', async () => {
       await posted();
       await say('Tell me more');
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say('And then?');
       const input = codex.requests.at(-1)!.input;
@@ -562,7 +557,6 @@ describe('NotificationDelivery', () => {
       await ws.workflow(
         'review',
         {
-          agent: 'coach',
           history: true,
           'history-messages': 'all',
           'history-hours': 24,

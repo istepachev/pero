@@ -43,7 +43,7 @@ export const backupManifestSchema = z.object({
   lastMigration: z.string().nullable(),
   /**
    * Folders the records point to, which the backup does not contain: the
-   * default working directory (`agent` null) and each Agent's own folder.
+   * default working directory (`agent` null) and each Channel note's own folder.
    */
   workingDirectories: z.array(
     z.object({ path: z.string(), agent: z.string().nullable() }),

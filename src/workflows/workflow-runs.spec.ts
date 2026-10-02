@@ -79,8 +79,7 @@ describe('Workflow Runs and the executor', () => {
     ws = TestWorkspace.create('pero-workflow-runs-');
     workspace = ws.root;
     await ws.pero();
-    await ws.agent('Main');
-    await ws.agent('Coach');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
@@ -91,13 +90,12 @@ describe('Workflow Runs and the executor', () => {
     ws.delete();
   });
 
-  /** A Workflow of `agent`, run by hand. */
+  /** A Workflow run by hand, with Default.md's settings. */
   async function manualWorkflow(
     name: string,
     input = `Run ${name}.`,
-    agent = 'coach',
   ): Promise<void> {
-    await ws.workflow(name, { agent }, input);
+    await ws.workflow(name, {}, input);
   }
 
   /** Changes `properties` of the note of Workflow `name`. */
@@ -150,7 +148,7 @@ describe('Workflow Runs and the executor', () => {
       .getRepository(WorkflowRun)
       .findOneByOrFail({ id: queued.id });
     expect(row.executionConfig).toMatchObject({
-      agentName: 'coach',
+      agentName: 'default',
       provider: 'claude',
       workingDirectory: workspace,
       input: 'Summarize the day.',
@@ -262,7 +260,7 @@ describe('Workflow Runs and the executor', () => {
   });
 
   it('runs with the settings captured when it started, whatever is edited meanwhile', async () => {
-    await ws.editAgent('Main', {}, 'Be kind.');
+    await ws.instructions('Be kind.');
     await manualWorkflow('brief', 'First input.');
     const held = claude.hold();
 
@@ -270,8 +268,8 @@ describe('Workflow Runs and the executor', () => {
     const request = await held.started;
     const own = join(ws.root, 'own');
     mkdirSync(own);
-    await ws.editAgent(
-      'Coach',
+    await ws.editChannel(
+      'Default',
       {
         provider: 'codex',
         model: 'gpt-6',
@@ -280,14 +278,14 @@ describe('Workflow Runs and the executor', () => {
       },
       'Be brief.',
     );
-    await ws.editAgent('Main', {}, 'Be blunt.');
+    await ws.instructions('Be blunt.');
     await ws.editWorkflow('brief', {}, 'Second input.');
     held.release();
     await executor.idle();
 
     const captured = {
       input: 'First input.',
-      instructions: `${ws.agentContext('Coach')}\n\nBe kind.`,
+      instructions: `${ws.channelContext('Default')}\n\nBe kind.`,
       providerOptions: { model: null, effort: null },
       workingDirectory: workspace,
     };
@@ -305,7 +303,7 @@ describe('Workflow Runs and the executor', () => {
     expect(codex.requests).toHaveLength(1);
     expect(codex.requests[0]).toMatchObject({
       input: 'Second input.',
-      instructions: `${ws.agentContext('Coach')}\n\nBe blunt.\n\nBe brief.`,
+      instructions: `${ws.channelContext('Default')}\n\nBe blunt.\n\nBe brief.`,
       providerOptions: { model: 'gpt-6', effort: 'high' },
       workingDirectory: own,
     });
@@ -328,7 +326,7 @@ describe('Workflow Runs and the executor', () => {
     await say('Hello');
     const sessionsBefore = await ds.getRepository(Session).find();
     const messagesBefore = await ds.getRepository(Message).count();
-    await manualWorkflow('review', 'Review the chat.', 'main');
+    await manualWorkflow('review', 'Review the chat.');
     claude.askNext();
 
     const { id } = await runs.start('review');
@@ -396,7 +394,7 @@ describe('Workflow Runs and the executor', () => {
       });
       await expect(
         moduleRef.get(AgentManager).runIsolated({
-          agent: 'coach',
+          note: 'default',
           provider: 'claude',
           request: {
             providerOptions: { model: null, effort: null },
@@ -505,7 +503,7 @@ describe('Workflow Runs and the executor', () => {
       await edit('a', { enabled: false });
       await restart();
       const b = await stopMidRun('b');
-      await ws.editAgent('Coach', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
 
       await restart();
 
@@ -513,7 +511,7 @@ describe('Workflow Runs and the executor', () => {
         'Pero stopped before the run finished; not retried: Workflow a is disabled',
       );
       expect((await run(b.id)).error).toBe(
-        'Pero stopped before the run finished; not retried: Agent coach is disabled',
+        'Pero stopped before the run finished; not retried: Channel note default is disabled',
       );
       expect(await allRuns()).toHaveLength(2);
     });
@@ -642,23 +640,23 @@ describe('Workflow Runs and the executor', () => {
     expect(claude.requests).toHaveLength(2);
   });
 
-  it('fails a queued run whose Agent was disabled before it started', async () => {
+  it('fails a queued run whose Channel note was disabled before it started', async () => {
     await ws.editPero({ 'max-concurrent-runs': 1 });
     await manualWorkflow('a');
-    await manualWorkflow('b', undefined, 'main');
+    await manualWorkflow('b');
     const held = claude.hold();
     await runs.start('a');
     const b = await runs.start('b');
     await held.started;
 
-    await ws.editAgent('Main', { enabled: false });
+    await ws.editChannel('Default', { enabled: false });
     held.release();
     await executor.idle();
 
     expect(await run(b.id)).toMatchObject({
       status: 'failed',
       startedAt: null,
-      error: 'Agent main was disabled before the run started',
+      error: 'Channel note default was disabled before the run started',
     });
     expect(claude.requests).toHaveLength(1);
   });
@@ -832,7 +830,7 @@ describe('Workflow Runs and the executor', () => {
     it('posts why a run failed, including one refused before it started', async () => {
       await ws.editPero({ 'max-concurrent-runs': 1 });
       await manualWorkflow('a');
-      await manualWorkflow('b', undefined, 'main');
+      await manualWorkflow('b');
       await target('a');
       await target('b', '-100777');
       claude.failNext();
@@ -842,7 +840,7 @@ describe('Workflow Runs and the executor', () => {
       await runs.start('a');
       const b = await runs.start('b');
       await held.started;
-      await ws.editAgent('Main', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
       held.release();
       await executor.idle();
 
@@ -850,7 +848,7 @@ describe('Workflow Runs and the executor', () => {
         `Run ${a.id} of Workflow a failed: The model is overloaded`,
       ]);
       expect(texts(await notificationsOf(b.id))).toEqual([
-        `Run ${b.id} of Workflow b failed: Agent main was disabled before the run started`,
+        `Run ${b.id} of Workflow b failed: Channel note default was disabled before the run started`,
       ]);
     });
 
@@ -896,11 +894,7 @@ describe('Workflow Runs and the executor', () => {
     it('posts nothing for a cancelled or skipped run', async () => {
       await manualWorkflow('brief');
       await target('brief');
-      await ws.workflow(
-        'review',
-        { agent: 'coach', history: true },
-        'Review {{history}}',
-      );
+      await ws.workflow('review', { history: true }, 'Review {{history}}');
       await notify('review', await target('brief', '-100777'));
       const held = claude.hold();
       const running = await runs.start('brief');
@@ -1011,7 +1005,7 @@ describe('Workflow Runs and the executor', () => {
     ): Promise<void> {
       await ws.workflow(
         'review',
-        { agent: 'coach', history: true, ...history },
+        { history: true, ...history },
         'Review:\n{{history}}',
       );
     }
@@ -1088,11 +1082,7 @@ describe('Workflow Runs and the executor', () => {
       await runReview();
 
       await ws.removeWorkflow('review');
-      await ws.workflow(
-        'weekly',
-        { agent: 'coach', history: true },
-        'Review:\n{{history}}',
-      );
+      await ws.workflow('weekly', { history: true }, 'Review:\n{{history}}');
       const { id } = await runs.start('weekly');
       await executor.idle();
 
@@ -1126,7 +1116,7 @@ describe('Workflow Runs and the executor', () => {
       expect(second.window).toMatchObject({ afterId: null, count: 1 });
     });
 
-    it("keeps to the Channels it names, and adds the Agents' replies when asked", async () => {
+    it("keeps to the Channels it names, and adds Pero's replies when asked", async () => {
       await say('In English');
       await say('Buy milk', '8');
       const english = await channelId(`${HOME.key}:7`);
@@ -1138,7 +1128,7 @@ describe('Workflow Runs and the executor', () => {
       const { input, window } = await runReview();
 
       expect(input).toContain('[English] User: In English');
-      expect(input).toContain('[English] english: echo: In English');
+      expect(input).toContain('[English] Pero: echo: In English');
       expect(input).not.toContain('Buy milk');
       // Pero's own notices, such as the welcome, are left out.
       expect(input).not.toContain('pero agents edit');
@@ -1441,10 +1431,10 @@ describe('Workflow Runs and the executor', () => {
       await executor.idle();
       expect(await run(retry.id)).toMatchObject({ status: 'completed' });
 
-      await ws.editAgent('Coach', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
       await expect(runs.retry(other.id)).rejects.toThrow(
         new InvalidInputError(
-          'Agent coach is disabled; enable it first (enabled: true in its note)',
+          'Channel note default is disabled; enable it first (enabled: true in Channels/Default.md)',
         ),
       );
       expect(await ds.getRepository(WorkflowRun).count()).toBe(3);
@@ -1489,7 +1479,7 @@ describe('Workflow Runs and the executor', () => {
     });
 
     it('runs any Workflow, with a schedule or without', async () => {
-      await ws.workflow('brief', { agent: 'coach', hour: 9 }, 'Go.');
+      await ws.workflow('brief', { hour: 9 }, 'Go.');
       await ws.workflow('quiet', {}, 'Hush.');
 
       const scheduled = await runs.start('BRIEF');
@@ -1507,7 +1497,7 @@ describe('Workflow Runs and the executor', () => {
       });
     });
 
-    it('runs a disabled Workflow, but not while its Agent is disabled', async () => {
+    it('runs a disabled Workflow, but not while its Channel note is disabled', async () => {
       await manualWorkflow('brief');
 
       await edit('brief', { enabled: false });
@@ -1515,9 +1505,9 @@ describe('Workflow Runs and the executor', () => {
       await executor.idle();
       expect(await run(run1.id)).toMatchObject({ status: 'completed' });
 
-      await ws.editAgent('Coach', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
       await expect(runs.start('brief')).rejects.toThrow(
-        'Agent coach is disabled; enable it first (enabled: true in its note)',
+        'Channel note default is disabled; enable it first (enabled: true in Channels/Default.md)',
       );
       await ws.removeWorkflow('brief');
       await expect(runs.start('brief')).rejects.toThrow(

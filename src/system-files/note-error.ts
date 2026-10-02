@@ -7,7 +7,7 @@ import type { z } from 'zod';
  * log report it.
  */
 export interface NoteError {
-  /** The note's path inside the system folder, such as `Agents/Coach.md`. */
+  /** The note's path inside the system folder, such as `Channels/Coach.md`. */
   file: string;
   /** The property at fault, as written in the note; null for the whole note. */
   property: string | null;

@@ -20,29 +20,24 @@ import {
   type ContextUsage,
   SessionService,
 } from '../sessions/session.service.js';
-import type { Agent } from '../system-files/snapshot.js';
-import {
-  Definitions,
-  requireAgent,
-  routeQuery,
-} from '../system/definitions.js';
+import type { ChannelNote } from '../system-files/snapshot.js';
+import { Definitions, routeQuery } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 import { type AgentRequest, agentRequest } from './agent-request.js';
 
-/** One message for the Agent assigned to a Channel. */
+/** One message in a Channel, for Pero to answer. */
 export interface TurnInput {
   channelId: number;
-  /** The name of the Channel's Agent. */
-  agent: string;
   /** The message as recorded in the Channel's history. */
   messageId: number;
   input: string;
-  /** Asks the owner about tools the Agent's permissions leave open. */
+  /** Asks the owner about tools the note's permissions leave open. */
   approve?: ToolApprover;
 }
 
-/** What the Agent answered, and the Session it answered in. */
+/** What Pero answered, and the Session it answered in. */
 export interface TurnResult {
+  /** The name of the Channel note the turn ran with. */
   agentName: string;
   sessionId: number;
   text: string;
@@ -53,10 +48,10 @@ export interface TurnResult {
  * or record, no history, and no one to approve tools.
  */
 export interface IsolatedTurn {
-  /** The name of the Agent that runs it. */
-  agent: string;
+  /** The name of the Channel note it runs with. */
+  note: string;
   provider: Provider;
-  /** The Agent's part of the request, as captured for this turn. */
+  /** The note's part of the request, as captured for this turn. */
   request: AgentRequest;
   input: string;
   /** Names the turn in logs, such as `Workflow daily-brief, run 7`. */
@@ -87,7 +82,7 @@ export class TurnError extends Error {
   }
 }
 
-/** What a Channel's Agent is doing, for `/status`. */
+/** What Pero is doing in a Channel, for `/status`. */
 export interface ChannelActivity {
   /** When the running turn started; null when none is running. */
   runningSince: Date | null;
@@ -117,9 +112,9 @@ interface ChannelTurnsState {
 }
 
 /**
- * Runs Agents' turns: builds each request from the Agent record, runs it
- * in the Channel's Session, and persists the provider's session ID as soon
- * as the runtime reports it. A Session whose provider has none of the
+ * Runs turns: builds each request from the note the Channel uses as the
+ * turn starts, runs it in the Channel's Session, and persists the
+ * provider's session ID as soon as the runtime reports it. A Session whose provider has none of the
  * conversation yet starts from the Channel's latest messages, and each turn
  * receives the Workflow messages posted there since the last person's
  * message. Turns within a Session run one at a time in the order they were
@@ -129,8 +124,8 @@ interface ChannelTurnsState {
 @Injectable()
 export class AgentManager implements BeforeApplicationShutdown {
   private readonly logger = new Logger('Agents');
-  /** The last accepted turn of each Session, keyed by Channel and Agent. */
-  private readonly queues = new Map<string, Promise<unknown>>();
+  /** The last accepted turn of each Channel's Session, by Channel. */
+  private readonly queues = new Map<number, Promise<unknown>>();
   /** Every accepted turn until it settles. */
   private readonly accepted = new Set<Promise<unknown>>();
   /** Aborts each turn that has started. */
@@ -151,15 +146,15 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   /**
    * Accepts a turn behind the Session's earlier ones and settles when it
-   * has run: with the answer, null when the Channel no longer goes to the
-   * Agent, or a `TurnError`.
+   * has run: with the answer, null when Pero no longer answers in the
+   * Channel, or a `TurnError`.
    */
   runTurn(turn: TurnInput): Promise<TurnResult | null> {
     if (this.draining !== null) {
       return Promise.reject(new TurnError(STOPPING, true));
     }
-    // One active Session per Channel and Agent, so this pair names it.
-    const key = `${turn.channelId}:${turn.agent}`;
+    // One active Session per Channel.
+    const key = turn.channelId;
     const channel = this.channelTurns(turn.channelId);
     const stops = channel.stops;
     channel.queued++;
@@ -220,7 +215,7 @@ export class AgentManager implements BeforeApplicationShutdown {
 
   /**
    * Runs a turn in a new provider conversation of its own, touching no
-   * Session or history. Tools the Agent's permissions leave to the owner
+   * Session or history. Tools the note's permissions leave to the owner
    * are refused, since no one is there to ask. Settles with the answer or a
    * `TurnError`; the caller bounds how many run at once.
    */
@@ -279,26 +274,26 @@ export class AgentManager implements BeforeApplicationShutdown {
     const run = { controller, startedAt: new Date() };
     channel.running.add(run);
     const startedAt = run.startedAt.getTime();
-    const base = `Channel ${turn.channelId}, Agent ${turn.agent}`;
+    let base = `Channel ${turn.channelId}`;
     let where = base;
     let provider: Provider | null = null;
     try {
-      // The Agent as the turn starts, then one snapshot of its Session and
+      // The note as the turn starts, then one snapshot of its Session and
       // the history.
-      const defined = requireAgent(this.definitions, turn.agent);
-      const request = agentRequest(defined, this.definitions.defaults());
       const first = await inTransaction(this.dataSource, (manager) =>
-        this.prepareWithin(manager, turn, defined, (agent) =>
-          this.sessions.beginWithin(manager, turn.channelId, agent),
+        this.prepareWithin(manager, turn, (note) =>
+          this.sessions.beginWithin(manager, turn.channelId, note),
         ),
       );
       if (first.session === null) {
         this.logger.debug(`Skipped a turn in ${where}: ${first.skipped}`);
         return null;
       }
-      const { agent } = first;
+      const { note: agent } = first;
+      const request = agentRequest(agent, this.definitions.defaults());
       let { session } = first;
       provider = agent.provider;
+      base = `Channel ${turn.channelId}, note ${agent.name}`;
       where = `${base}, Session ${session.id} (${agent.provider})`;
       // Read first: the turn may record a provider session ID as it runs.
       const resumed = session.providerSessionId;
@@ -311,8 +306,8 @@ export class AgentManager implements BeforeApplicationShutdown {
         // without its own session store: the same turn runs once more in a
         // fresh Session that starts from the Channel's latest messages.
         const retry = await inTransaction(this.dataSource, (manager) =>
-          this.prepareWithin(manager, turn, agent, (agent) =>
-            this.sessions.replaceWithin(manager, session, agent),
+          this.prepareWithin(manager, turn, (note) =>
+            this.sessions.replaceWithin(manager, session, note),
           ),
         );
         this.logger.warn(
@@ -324,7 +319,13 @@ export class AgentManager implements BeforeApplicationShutdown {
         if (retry.session === null) return null;
         session = retry.session;
         where = `${base}, Session ${session.id} (${agent.provider})`;
-        text = await this.runInSession(retry, request, turn, where, controller);
+        text = await this.runInSession(
+          retry,
+          agentRequest(retry.note, this.definitions.defaults()),
+          turn,
+          where,
+          controller,
+        );
       }
       this.logger.log(
         `Turn completed in ${where} after ${Date.now() - startedAt} ms`,
@@ -344,29 +345,20 @@ export class AgentManager implements BeforeApplicationShutdown {
   }
 
   /**
-   * Inside the caller's transaction: why `agent` no longer takes the turn,
-   * or the Session `begin` gives it, with the turn's message attached and
-   * the input it runs with.
+   * Inside the caller's transaction: why Pero no longer answers the turn,
+   * or the note the Channel uses now and the Session `begin` gives it,
+   * with the turn's message attached and the input it runs with.
    */
   private async prepareWithin(
     manager: EntityManager,
     turn: TurnInput,
-    agent: Agent,
-    begin: (agent: Agent) => Promise<Session>,
+    begin: (note: ChannelNote) => Promise<Session>,
   ): Promise<PreparedTurn> {
-    const skipped = await skipReasonWithin(
-      manager,
-      this.definitions,
-      turn,
-      agent,
-    );
-    if (skipped !== null) {
-      return { agent, session: null, skipped };
+    const note = await routeWithin(manager, this.definitions, turn);
+    if (typeof note === 'string') {
+      return { session: null, skipped: note };
     }
-    // The Channel went to another Agent before: its Session ends, so going
-    // back to it later starts afresh with the Channel's latest messages.
-    await this.sessions.closeOthersWithin(manager, turn.channelId, agent.name);
-    const session = await begin(agent);
+    const session = await begin(note);
     await this.history.attachSessionWithin(manager, turn.messageId, session.id);
     // Without a provider session, the provider has none of the
     // conversation: a changed provider or folder, a changed route, a
@@ -378,15 +370,15 @@ export class AgentManager implements BeforeApplicationShutdown {
       turn.input,
       { carryOver: session.providerSessionId === null },
     );
-    return { agent, session, input, posted, carried };
+    return { note, session, input, posted, carried };
   }
 
   /**
-   * Runs a prepared turn in its Session with `request`, the Agent's part of
+   * Runs a prepared turn in its Session with `request`, the note's part of
    * it; resolves to the reply text.
    */
   private async runInSession(
-    { agent, session, input, posted, carried }: ReadyTurn,
+    { note, session, input, posted, carried }: ReadyTurn,
     request: AgentRequest,
     turn: TurnInput,
     where: string,
@@ -399,7 +391,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       this.logger.log(`Passed ${posted} Workflow message(s) into ${where}`);
     }
     return this.run(
-      agent.provider,
+      note.provider,
       { ...request, input },
       {
         ...(session.providerSessionId === null
@@ -425,7 +417,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     turn.signal?.addEventListener('abort', cancel, { once: true });
     const startedAt = Date.now();
     const { provider } = turn;
-    const where = `${turn.label}, Agent ${turn.agent} (${provider})`;
+    const where = `${turn.label}, note ${turn.note} (${provider})`;
     try {
       let providerSessionId: string | null = null;
       const text = await this.run(
@@ -509,7 +501,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     for await (const event of runtime.execute({
       ...request,
       ...options,
-      // So that an Agent can't change its own configuration unasked.
+      // So that a turn can't change Pero's configuration unasked.
       systemFolder: folders.systemFolder,
       guideFile: guideFile(folders.workspace),
       signal: controller.signal,
@@ -540,7 +532,8 @@ export class AgentManager implements BeforeApplicationShutdown {
 
 /** A turn ready to run in its Session. */
 interface ReadyTurn {
-  agent: Agent;
+  /** The note the Channel uses as the turn starts. */
+  note: ChannelNote;
   session: Session;
   input: string;
   /** How many Workflow messages the input passes on. */
@@ -549,9 +542,8 @@ interface ReadyTurn {
   carried: number;
 }
 
-/** A turn ready to run, or why its Agent no longer takes it. */
-type PreparedTurn =
-  ReadyTurn | { agent: Agent; session: null; skipped: string };
+/** A turn ready to run, or why Pero no longer answers it. */
+type PreparedTurn = ReadyTurn | { session: null; skipped: string };
 
 /**
  * Whether `error` says the provider no longer has the conversation
@@ -567,27 +559,23 @@ function lostConversation(error: unknown, resumed: string | null): boolean {
 }
 
 /**
- * Why a turn accepted earlier no longer runs: its Agent was disabled, or
- * its Channel went to another Agent or no one meanwhile, as when notes
- * changed. Null when it runs.
+ * The note Channel `turn.channelId` uses now, or why a turn accepted
+ * earlier no longer runs: Pero no longer answers there, as when its note
+ * was disabled meanwhile.
  */
-async function skipReasonWithin(
+async function routeWithin(
   manager: EntityManager,
   definitions: Definitions,
-  turn: Pick<TurnInput, 'channelId' | 'agent'>,
-  agent: Pick<Agent, 'enabled'>,
-): Promise<string | null> {
-  if (!agent.enabled) return 'the Agent is disabled';
+  turn: Pick<TurnInput, 'channelId'>,
+): Promise<ChannelNote | string> {
   const channel = await manager
     .getRepository(Channel)
     .findOneByOrFail({ id: turn.channelId });
-  // Otherwise the old Agent would open a Session where it no longer answers.
   const route = definitions.route(routeQuery(channel));
-  if (route.kind === 'unanswered') return 'no one answers in the Channel now';
-  if (route.agent.name !== turn.agent) {
-    return `the Channel goes to Agent ${route.agent.name} now`;
+  if (route.kind === 'unanswered') {
+    return 'Pero no longer answers in the Channel';
   }
-  return null;
+  return route.note;
 }
 
 /** `error` as the owner should read it; `signal` is the turn's own. */

@@ -5,7 +5,6 @@ import {
   Logger,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { AgentViews } from '../agents/agent-views.service.js';
 import { BackupService } from '../backup/backup.service.js';
 import { ChannelViews } from '../channels/channel-views.service.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
@@ -48,7 +47,6 @@ export class ControlService implements OnModuleDestroy {
     private readonly telegramChats: TelegramChats,
     private readonly providers: ProviderAuthService,
     private readonly backup: BackupService,
-    private readonly agentViews: AgentViews,
     private readonly channelViews: ChannelViews,
     private readonly workflowViews: WorkflowViews,
     private readonly workflowRuns: WorkflowRuns,
@@ -79,11 +77,7 @@ export class ControlService implements OnModuleDestroy {
           await this.providers.check();
           return this.status();
         },
-        'agents.list': async () => ({ agents: await this.agentViews.list() }),
-        'agents.get': ({ name }) => this.agentViews.details(name),
-        'channels.list': async () => ({
-          channels: await this.channelViews.list(),
-        }),
+        'channels.list': () => this.channelViews.list(),
         'channels.get': ({ id }) => this.channelViews.details(id),
         'channels.history': ({ id, limit }) =>
           this.channelViews.history(id, limit),
@@ -148,7 +142,6 @@ export class ControlService implements OnModuleDestroy {
       defaultProvider: defaults.provider,
       providerDefaults: defaults.providerDefaults,
       dataFolder: defaults.dataFolder,
-      mainAgent: this.definitions.mainAgentName(),
       historyCarryover: defaults.historyCarryover,
       historyRetentionDays: defaults.historyRetentionDays,
       defaultPermissions: defaults.permissions,

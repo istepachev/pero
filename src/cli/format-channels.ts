@@ -2,47 +2,83 @@ import type {
   ChannelDetails,
   ChannelView,
   HistoryMessage,
+  UnusedNoteView,
 } from '../control/protocol.js';
-import { describeNextTurn } from './format-agents.js';
+import {
+  describeNextTurn,
+  indented,
+  noteErrorLines,
+  noteRows,
+} from './format-notes.js';
 import { table } from './format-status.js';
 
-/** `pero channels ls`: one row per Channel. */
-export function formatChannelList(channels: readonly ChannelView[]): string {
-  if (channels.length === 0) {
-    return (
-      'No Channels yet. Allow a Telegram chat with pero telegram allow ' +
-      '<chat-id>, then message the bot there or create a topic.'
+/**
+ * `pero channels ls`: one row per Channel with its note, then the Channel
+ * notes none of them uses.
+ */
+export function formatChannelList(
+  channels: readonly ChannelView[],
+  unusedNotes: readonly UnusedNoteView[] = [],
+): string {
+  const lines =
+    channels.length === 0
+      ? [
+          'No Channels yet. Allow a Telegram chat with pero telegram allow ' +
+            '<chat-id>, then message the bot there or create a topic.',
+        ]
+      : table([
+          ['ID', 'CHANNEL', 'TITLE', 'NOTE'],
+          ...channels.map((channel) => [
+            String(channel.id),
+            address(channel),
+            channel.title ?? '—',
+            noteOf(channel),
+          ]),
+        ]);
+  if (unusedNotes.length > 0) {
+    lines.push(
+      '',
+      'Channel notes no Channel Pero has seen uses yet:',
+      ...indented([
+        ['NOTE', 'CHANNEL-ID'],
+        ...unusedNotes.map((note) => [
+          note.file,
+          note.channelId ?? '(none: a topic of its title binds it)',
+        ]),
+      ]),
     );
   }
-  return table([
-    ['ID', 'CHANNEL', 'TITLE', 'AGENT'],
-    ...channels.map((channel) => [
-      String(channel.id),
-      address(channel),
-      channel.title ?? '—',
-      agent(channel),
-    ]),
-  ]).join('\n');
+  return lines.join('\n');
 }
 
-/** `pero channels show`: the Channel, who answers there, and its next turn. */
+/**
+ * `pero channels show`: the Channel, the settings Pero answers there
+ * with, and its next turn.
+ */
 export function formatChannelDetails(channel: ChannelDetails): string {
   const lines = [
     `Channel ${channel.id}${channel.title === null ? '' : ` "${channel.title}"`}`,
-    ...table([
+    ...indented([
       ['address', address(channel)],
-      ['agent', agent(channel)],
+      ...(channel.settings === null
+        ? [['note', channel.note ?? 'none']]
+        : noteRows(channel.settings)),
       [
         'next turn',
         channel.nextTurn === null
-          ? 'none: no one answers here'
+          ? "none: Pero doesn't answer here"
           : describeNextTurn(channel.nextTurn),
       ],
       ['history', describeHistory(channel)],
       ['created', localDateTime(new Date(channel.createdAt))],
-    ]).map((row) => `  ${row}`),
+    ]),
   ];
-  const warning = agentWarning(channel);
+  if (channel.settings !== null)
+    lines.push(...noteErrorLines(channel.settings));
+  if (channel.folderProblem !== null) {
+    lines.push('', `Warning: ${channel.folderProblem}`);
+  }
+  const warning = unansweredWarning(channel);
   if (warning !== null) lines.push('', warning);
   return lines.join('\n');
 }
@@ -84,10 +120,10 @@ export function describeChannel(channel: ChannelAddress): string {
   return `Channel ${channel.id} (${address(channel)}${title})`;
 }
 
-/** Why no one answers in the Channel; null when an Agent does. */
-export function agentWarning(channel: ChannelView): string | null {
+/** Why Pero doesn't answer in the Channel; null when it does. */
+export function unansweredWarning(channel: ChannelView): string | null {
   if (channel.unanswered === null) return null;
-  return `Warning: no one answers here: ${channel.unanswered}.`;
+  return `Warning: Pero doesn't answer here: ${channel.unanswered}.`;
 }
 
 /** What names a Channel in one-line messages. */
@@ -100,9 +136,9 @@ function address(channel: ChannelAddress): string {
   return `${channel.integrationKind} ${channel.key}`;
 }
 
-function agent(channel: ChannelView): string {
-  if (channel.agent === null) return 'none';
-  return channel.agentEnabled ? channel.agent : `${channel.agent} (disabled)`;
+function noteOf(channel: ChannelView): string {
+  const note = channel.note ?? 'none yet';
+  return channel.unanswered === null ? note : `${note} (not answering)`;
 }
 
 function origin(message: HistoryMessage): string {
@@ -110,7 +146,7 @@ function origin(message: HistoryMessage): string {
     case 'user':
       return 'user';
     case 'agent':
-      return `agent ${message.agent ?? '?'}`;
+      return `answer ${message.agent ?? '?'}`;
     case 'pero':
       return 'pero';
     case 'workflow':

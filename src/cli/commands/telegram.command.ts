@@ -63,7 +63,7 @@ export class TelegramAllowCommand extends PeroCommand {
   name: 'deny',
   arguments: '<chat-id>',
   description:
-    'Stop serving a Telegram chat, keeping its Channels and Agents for when it is allowed again',
+    'Stop serving a Telegram chat, keeping its Channels and notes for when it is allowed again',
   argsDescription: CHAT_ID,
   allowUnknownOptions: true,
 })
@@ -77,7 +77,7 @@ export class TelegramDenyCommand extends PeroCommand {
             client.call('telegram.deny', { chatId: chatId! }),
           );
     console.log(
-      `Denied: ${describe(chat)}. Its Channels and Agents are kept and resume if you allow it again.` +
+      `Denied: ${describe(chat)}. Its Channels and notes are kept and resume if you allow it again.` +
         (client === null ? `\n${NOT_RUNNING}` : ''),
     );
   }

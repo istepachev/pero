@@ -108,7 +108,7 @@ describe('formatAllowed', () => {
       [
         'Allowed: group "Family" (-4567)',
         "Warning: the bot isn't an administrator of Family (-4567)",
-        'Turn on Topics in the group settings to give each Agent its own topic; Pero follows the new chat ID this gives the group.',
+        'Turn on Topics in the group settings to give each subject its own topic; Pero follows the new chat ID this gives the group.',
       ].join('\n'),
     );
   });

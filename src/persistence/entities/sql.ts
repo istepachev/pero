@@ -29,7 +29,7 @@ export type MessageOrigin = (typeof MESSAGE_ORIGINS)[number];
 
 /**
  * Where a Workflow Run stands: `pending` until the executor claims it,
- * `running` while its Agent works, then how it ended.
+ * `running` while its turn works, then how it ended.
  */
 export const RUN_STATUSES = [
   'pending',

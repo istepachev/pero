@@ -11,7 +11,7 @@ import { jsonObject, jsonTransformer } from '../json-transformer.js';
 import { INTEGRATION_KINDS, type IntegrationKind, oneOf } from './sql.js';
 
 /**
- * A conversation endpoint, such as one Telegram topic. Which Agent answers
+ * A conversation endpoint, such as one Telegram topic. Which note answers
  * there isn't stored: it follows the notes on each message.
  */
 @Entity('channels')

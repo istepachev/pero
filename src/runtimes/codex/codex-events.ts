@@ -144,7 +144,7 @@ export function classifyCodexFailure(
     return new RuntimeError(
       'failed',
       `Codex works only in a Git repository, and ${workingDirectory} is ` +
-        `not one; run git init there, or let the Agent skip Codex's Git check`,
+        `not one; run git init there, or set skip-git-repo-check: true in the Channel's note`,
     );
   }
   // The process's last words say more than its exit code.

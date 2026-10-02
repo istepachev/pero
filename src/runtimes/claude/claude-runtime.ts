@@ -70,7 +70,7 @@ export class ClaudeRuntime implements AgentRuntime {
     const dropped = API_BILLING_ENV.filter((name) => env[name] !== undefined);
     if (dropped.length > 0) {
       this.logger.warn(
-        `Ignoring ${dropped.join(' and ')}: Claude Agents use the Claude ` +
+        `Ignoring ${dropped.join(' and ')}: Pero uses Claude with the Claude ` +
           `Code sign-in of the account running Pero`,
       );
     }

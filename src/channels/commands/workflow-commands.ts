@@ -125,7 +125,7 @@ export class WorkflowCommands {
       screen: runDoneScreen(
         run.status === 'cancelled'
           ? `Cancelled run #${run.id} of ${name}.`
-          : `Cancelling run #${run.id} of ${name}: its Agent is stopping.`,
+          : `Cancelling run #${run.id} of ${name}: its answer is stopping.`,
         run,
         by,
       ),

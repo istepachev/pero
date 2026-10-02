@@ -157,7 +157,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     expect(result).toEqual({
       code: 0,
       stdout: expect.stringMatching(
-        /^Checked 2 Agents and 2 Workflows in data\/System: no problems\./,
+        /^Checked 2 Channel notes and 2 Workflows in data\/System: no problems\./,
       ),
     });
     // Checking writes nothing into the example.
@@ -170,26 +170,33 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
   it('answers each topic by its note, writes notes for new topics, applies edits, and runs the weekly report', async () => {
     await start();
 
-    // Health answers the Health topic, starting with the main Agent's instructions.
+    // Health.md answers the Health topic, which it is bound to now, after
+    // the persona and the instructions every Channel shares.
     expect(await createTopic('Health', HEALTH)).toMatch(
-      /^This topic talks to Agent health: claude, model opus, working in /,
+      /^Pero answers in this topic with claude, model opus, working in /,
+    );
+    expect(readFileSync(system('Channels/Health.md'), 'utf8')).toContain(
+      `\nchannel-id: telegram:${forum.id}:${HEALTH}\n---\n`,
     );
     expect(await say('Ran 5 km', HEALTH)).toBe('echo: Ran 5 km');
     expect(lastRequest()).toMatchObject({
       instructions: expect.stringMatching(
-        /^The owner's notes are in the data folder, .*\n\nYou are a calm, concise personal assistant\..*\n\nYou are my health coach\./s,
+        /^The owner's notes are in the data folder, .*\n\nYou are a calm, concise personal assistant\..*\n\nYou help with everyday questions and keep my notes tidy\.\n\nYou are my health coach\./s,
       ),
       providerOptions: { model: 'opus', effort: 'high' },
       workingDirectory: workspace,
     });
 
-    // A new topic writes its note from the template, whose Agent answers.
+    // A new topic writes its note from the template, bound to the topic.
     expect(await createTopic('Finance', FINANCE)).toMatch(
-      /^This topic talks to Agent finance: /,
+      /^Pero answers in this topic with /,
     );
-    const template = readFileSync(system('Agents/_Template.md'), 'utf8');
-    expect(readFileSync(system('Agents/Finance.md'), 'utf8')).toBe(
-      template.replace(/\n---\n/, '\n\ntopic: Finance\n---\n'),
+    const template = readFileSync(system('Channels/_Template.md'), 'utf8');
+    expect(readFileSync(system('Channels/Finance.md'), 'utf8')).toBe(
+      template.replace(
+        /\n---\n/,
+        `\n\nchannel-id: telegram:${forum.id}:${FINANCE}\n---\n`,
+      ),
     );
     expect(await say('Paid rent', FINANCE)).toBe('echo: Paid rent');
     expect(lastRequest().instructions).toContain(
@@ -197,7 +204,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     );
 
     // Editing Health's note changes its next answer.
-    const health = system('Agents/Health.md');
+    const health = system('Channels/Health.md');
     writeFileSync(
       health,
       readFileSync(health, 'utf8')
@@ -220,7 +227,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     const report = await client.call('workflows.get', {
       name: 'weekly-health-report',
     });
-    expect(report).toMatchObject({ agent: 'health', errors: [] });
+    expect(report).toMatchObject({ note: 'health', errors: [] });
     const nextRunAt = new Date(report.schedule!.nextRunAt!);
     expect(
       nextRunAt.toLocaleString('en-GB', {
@@ -261,7 +268,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     await vi.waitFor(() => expect(api.sent()).toHaveLength(seen + 2));
     expect(api.sent().slice(seen)).toEqual([
       expect.objectContaining({
-        text: expect.stringMatching(/^This chat talks to Agent main: /),
+        text: expect.stringMatching(/^Pero answers in this chat with /),
       }),
       expect.objectContaining({ text: 'echo: Hello' }),
     ]);
@@ -270,7 +277,7 @@ describe('The example workspace (e2e)', { timeout: 60_000 }, () => {
     );
     await daemon!.app.get(SystemNotes).refresh();
     await expect(client.call('check')).resolves.toMatchObject({
-      agents: 3,
+      channels: 3,
       workflows: 2,
       topicsChecked: true,
       problems: [],

@@ -16,12 +16,15 @@ import {
   stateOf,
 } from '../scheduler/schedule-state.js';
 import { findWorkflowNote, shownPath } from '../system-files/note-paths.js';
-import type { Agent, ResolvedWorkflow } from '../system-files/snapshot.js';
+import type {
+  ChannelNote,
+  ResolvedWorkflow,
+} from '../system-files/snapshot.js';
 import { Definitions } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 
 /**
- * Workflows as the CLI shows them: their note, their Agent, when they run
+ * Workflows as the CLI shows them: their note, their Channel note, when they run
  * next, and the Channels they name.
  */
 @Injectable()
@@ -50,9 +53,6 @@ export class WorkflowViews {
   }
 
   private views(workflows: ResolvedWorkflow[]): Promise<WorkflowView[]> {
-    const agents = new Map(
-      this.definitions.agents().map((agent) => [agent.name, agent]),
-    );
     return inTransaction(this.dataSource, async (manager) => {
       const ids = new Set(
         workflows.flatMap(({ history, resolved }) => [
@@ -75,7 +75,7 @@ export class WorkflowViews {
         .map((workflow) =>
           this.view(
             workflow,
-            agents.get(workflow.agent) ?? null,
+            this.definitions.channelNote(workflow.note),
             channels,
             states,
           ),
@@ -87,7 +87,7 @@ export class WorkflowViews {
   /** `workflow` as the CLI shows it; null when a rescan since removed its note. */
   private view(
     workflow: ResolvedWorkflow,
-    agent: Agent | null,
+    agent: ChannelNote,
     channels: ReadonlyMap<number, WorkflowChannelView>,
     states: ReadonlyMap<string, ScheduleTimes>,
   ): WorkflowView | null {
@@ -103,8 +103,8 @@ export class WorkflowViews {
       name: workflow.name,
       title: workflow.title,
       ...note,
-      agent: workflow.agent,
-      agentEnabled: agent?.enabled ?? false,
+      note: workflow.note,
+      noteEnabled: agent.enabled,
       inputTemplate: workflow.input,
       enabled: workflow.enabled,
       maxAttempts: workflow.maxAttempts,

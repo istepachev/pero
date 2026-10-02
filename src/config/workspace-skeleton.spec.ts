@@ -13,7 +13,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseNote } from '../system-files/note.js';
-import { readAgentNote, readPeroNote } from '../system-files/schemas.js';
+import {
+  readChannelNote,
+  readPeroNote,
+  readTextNote,
+} from '../system-files/schemas.js';
 import { STATE_GITIGNORE } from './workspace-layout.js';
 import { defaultHostConfig, readHostConfig } from './host-config.js';
 import {
@@ -49,7 +53,9 @@ describe('initWorkspace', () => {
       { path: '.pero/.gitignore', action: 'created' },
       { path: '.pero/config.yaml', action: 'created' },
       { path: 'data/System/Pero.md', action: 'created' },
-      { path: 'data/System/Agents/Main.md', action: 'created' },
+      { path: 'data/System/Persona.md', action: 'created' },
+      { path: 'data/System/Instructions.md', action: 'created' },
+      { path: 'data/System/Channels/Default.md', action: 'created' },
       { path: 'data/System/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('.env\n');
@@ -57,7 +63,9 @@ describe('initWorkspace', () => {
     expect(read('.pero/config.yaml')).toBe(defaultHostConfig());
     expect(statSync(join(dir, '.pero')).mode & 0o777).toBe(0o700);
     expect(readdirSync(join(dir, 'data/System/Workflows'))).toEqual([]);
-    expect(readdirSync(join(dir, 'data/System/Agents'))).toEqual(['Main.md']);
+    expect(readdirSync(join(dir, 'data/System/Channels'))).toEqual([
+      'Default.md',
+    ]);
   });
 
   it('changes nothing the second time', () => {
@@ -72,10 +80,10 @@ describe('initWorkspace', () => {
 
   it('fills in only what a cloned workspace is missing', () => {
     mkdirSync(join(dir, '.pero'), { recursive: true });
-    mkdirSync(join(dir, 'vault', 'System', 'Agents'), { recursive: true });
+    mkdirSync(join(dir, 'vault', 'System'), { recursive: true });
     writeFileSync(join(dir, '.gitignore'), 'node_modules/');
     writeFileSync(join(dir, '.pero', 'config.yaml'), 'data: vault\n');
-    writeFileSync(join(dir, 'vault', 'System', 'Agents', 'Main.md'), 'Mine.\n');
+    writeFileSync(join(dir, 'vault', 'System', 'Persona.md'), 'Mine.\n');
 
     const { entries } = initWorkspace(dir, home);
 
@@ -84,12 +92,14 @@ describe('initWorkspace', () => {
       { path: '.pero/.gitignore', action: 'created' },
       { path: '.pero/config.yaml', action: 'kept' },
       { path: 'vault/System/Pero.md', action: 'created' },
-      { path: 'vault/System/Agents/Main.md', action: 'kept' },
+      { path: 'vault/System/Persona.md', action: 'kept' },
+      { path: 'vault/System/Instructions.md', action: 'created' },
+      { path: 'vault/System/Channels/Default.md', action: 'created' },
       { path: 'vault/System/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('node_modules/\n.env\n');
     expect(read('.pero/config.yaml')).toBe('data: vault\n');
-    expect(read('vault/System/Agents/Main.md')).toBe('Mine.\n');
+    expect(read('vault/System/Persona.md')).toBe('Mine.\n');
     expect(existsSync(join(dir, 'data'))).toBe(false);
   });
 
@@ -123,7 +133,6 @@ describe('initWorkspace', () => {
       'codex-effort': null,
       permissions: 'ask',
       timezone,
-      'main-agent': 'Main',
       'history-carryover': 50,
       'history-retention-days': null,
       'max-concurrent-runs': 2,
@@ -138,22 +147,27 @@ describe('initWorkspace', () => {
         },
         permissions: 'ask',
         timezone,
-        mainAgent: 'main',
         historyCarryover: 50,
         historyRetentionDays: null,
         maxConcurrentRuns: 2,
       },
     });
 
-    // The main Agent's settings show empty, so it follows Pero.md.
-    const main = load('data/System/Agents/Main.md');
+    for (const file of ['Persona.md', 'Instructions.md']) {
+      const text = load(`data/System/${file}`);
+      expect(readTextNote(file, text)).toMatchObject({ ok: true });
+      expect(text.body).not.toBeNull();
+    }
+
+    // Default.md's settings show empty, so it follows Pero.md.
+    const main = load('data/System/Channels/Default.md');
     expect(main.properties).toEqual({
       provider: null,
       model: null,
       effort: null,
       permissions: null,
     });
-    expect(readAgentNote('Agents/Main.md', main)).toMatchObject({
+    expect(readChannelNote('Channels/Default.md', main)).toMatchObject({
       ok: true,
       value: {
         provider: null,

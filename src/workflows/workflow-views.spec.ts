@@ -22,7 +22,7 @@ describe('WorkflowViews', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-workflow-views-');
     await ws.pero({ timezone: 'Europe/Berlin' });
-    await ws.agent('Health', { topic: 'Health' });
+    await ws.channel('Health', { 'channel-id': 'telegram:-100777:5' });
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: ws.database }),
@@ -59,7 +59,7 @@ describe('WorkflowViews', () => {
     );
   }
 
-  it('shows a note Workflow: its note, Agent, schedule, and the Channels it names', async () => {
+  it('shows a note Workflow: its note, Channel note, schedule, and the Channels it names', async () => {
     const home = await seen('-100777', 'Home');
     const health = await seen('-100777:5', 'Health');
     await ws.workflow(
@@ -91,8 +91,8 @@ describe('WorkflowViews', () => {
       name: 'weekly-report',
       title: 'Weekly report',
       file: 'data/System/Workflows/Weekly report.md',
-      agent: 'health',
-      agentEnabled: true,
+      note: 'health',
+      noteEnabled: true,
       inputTemplate: 'Write the weekly report.',
       enabled: true,
       maxAttempts: 1,
@@ -124,12 +124,12 @@ describe('WorkflowViews', () => {
     expect(await views.list()).toEqual([view]);
   });
 
-  it('shows a Workflow of the main Agent with no schedule', async () => {
+  it('shows a Workflow of Default.md with no schedule', async () => {
     await ws.workflow('Brief', {});
 
     expect(await views.details('brief')).toMatchObject({
-      agent: 'main',
-      agentEnabled: false,
+      note: 'default',
+      noteEnabled: true,
       schedule: null,
       channels: [],
       history: null,
@@ -150,7 +150,7 @@ describe('WorkflowViews', () => {
     });
   });
 
-  it("resolves a topic once Pero has seen it, until then reporting the note's error", async () => {
+  it("resolves a Channel once Pero has seen it, until then reporting the note's error", async () => {
     await ws.workflow('Report', { channel: 'Health' });
     expect(await views.list()).toEqual([]);
     await expect(views.details('report')).rejects.toThrow(
@@ -162,7 +162,8 @@ describe('WorkflowViews', () => {
       {
         file: 'Workflows/Report.md',
         property: 'channel',
-        message: 'no topic titled "Health"; seen topics: none yet',
+        message:
+          "Pero hasn't seen the Channel telegram:-100777:5 of Channels/Health.md; write something there first",
       },
     ]);
 
@@ -170,7 +171,7 @@ describe('WorkflowViews', () => {
     await ws.rescan();
 
     expect(await views.details('report')).toMatchObject({
-      agent: 'health',
+      note: 'health',
       channels: [expect.objectContaining({ id: health.id })],
     });
     expect(moduleRef.get(SystemNotes).snapshot()!.errors).toEqual([]);

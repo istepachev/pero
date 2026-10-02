@@ -18,19 +18,19 @@ export function formatCheck(result: WorkspaceCheck): string {
   }
   if (lines.length > 0) lines.push('');
 
-  const { problems, agents, workflows, systemFolder } = result;
+  const { problems, channels, workflows, systemFolder } = result;
   if (problems.length > 0) {
     lines.push(
       `${count(problems.length, 'problem')} in ${count(byFile.size, 'file')}.`,
     );
   } else {
     lines.push(
-      `Checked ${count(agents, 'Agent')} and ${count(workflows, 'Workflow')} in ${systemFolder}: no problems.`,
+      `Checked ${count(channels, 'Channel note')} and ${count(workflows, 'Workflow')} in ${systemFolder}: no problems.`,
     );
   }
   if (!result.topicsChecked && systemFolder !== null) {
     lines.push(
-      "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+      "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
     );
   }
   return lines.join('\n');

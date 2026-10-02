@@ -5,7 +5,7 @@
 | Command | What it runs | Where |
 |---|---|---|
 | `npm test` | Unit tests: services against a real temporary SQLite database, adapters against mocked SDKs and a mocked Bot API | CI |
-| `npm run test:e2e` | Builds, then starts real daemons in-process on temporary workspaces, drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Agents use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
+| `npm run test:e2e` | Builds, then starts real daemons in-process on temporary workspaces, drives them through the control socket and the CLI, and talks to them through an in-process fake Telegram Bot API over HTTP. Turns use the echo runtime (`PERO_FAKE_RUNTIME=echo`), and fake `claude` and `codex` executables stand in for the sign-in checks. | CI |
 | `npm run test:smoke` | Builds, then runs real Claude and Codex turns through the built runtime adapters. Each is skipped unless enabled, uses a little of the subscription, and never runs in CI. | By hand, on the host |
 | `node scripts/check-doc-links.js` | Checks that every relative link in the committed Markdown files resolves, headings included | CI |
 | `node bin/pero.js check --workspace examples/workspace` | Checks the [example workspace](../examples/workspace/) as committed, after the build | CI |
@@ -43,7 +43,7 @@ Pero runs Claude and Codex with the sign-ins of the OS account its daemon runs a
 
    `PERO_SMOKE_CODEX_MODEL` changes the model the resumed Codex turn switches to (`gpt-5.5` by default).
 
-The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that resuming a conversation Claude Code does not have is reported as lost (so Pero continues in a fresh Session), checks that an `ask` Agent's shell command is refused, checks that an `ask` Agent writes in its folder but is refused the system folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
+The Claude test creates a session that writes a file in a temporary folder, resumes it from another process with a different model and effort, checks that resuming a conversation Claude Code does not have is reported as lost (so Pero continues in a fresh Session), checks that an `ask` turn's shell command is refused, checks that an `ask` turn writes in its folder but is refused the system folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the turn skips the check, that the `ask` sandbox confines writes to the folder, and that a signed-out Codex is reported as such.
 
 When a test fails:
 - **Signed out:** sign in again as the service account, not as yourself.
@@ -52,16 +52,16 @@ When a test fails:
 
 ## Checking a real bot by hand
 
-To see the Telegram path work end to end before any provider is set up, run Pero with the echo runtime, where every Agent answers `echo: <message>`:
+To see the Telegram path work end to end before any provider is set up, run Pero with the echo runtime, where every turn answers `echo: <message>`:
 
 1. `pero init ~/pero-check && cd ~/pero-check`, then `PERO_FAKE_RUNTIME=echo pero run`, and follow the [recommended Telegram setup](./USER_GUIDE.md#set-up-telegram) until the group is allowed.
-2. Create a topic. Pero writes its note, `data/System/Agents/<Topic title>.md`, and posts a welcome naming the new Agent and its note; a message there gets its echo.
-3. Create a second topic and write in both; `pero agents` lists an Agent and a note for each, and `pero channels` a Channel for each.
-4. Write in the General topic and in a direct chat with the bot. Both answer as the main Agent, and `pero channels` shows them as separate Channels.
-5. Type `/` in a topic: Telegram's menu lists Pero's commands. `/status` names the topic's Agent and its note; press New session, then Yes, start over, and the menu changes in place. The next message's echo has no `[Earlier conversation` part.
+2. Create a topic. Pero writes its note, `data/System/Channels/<Topic title>.md`, with the topic's `channel-id`, and posts a welcome naming the note; a message there gets its echo.
+3. Create a second topic and write in both; `pero channels` lists a Channel for each, each with its own note.
+4. Write in the General topic and in a direct chat with the bot. Both are answered from `Channels/Default.md`, and `pero channels` shows them as separate Channels.
+5. Type `/` in a topic: Telegram's menu lists Pero's commands. `/status` names the topic and its note (`Config:`); press New session, then Yes, start over, and the menu changes in place. The next message's echo has no `[Earlier conversation` part.
 6. `pero stop`, then `PERO_FAKE_RUNTIME=echo pero run` again, and write in each Channel: every one answers, and `pero channels show <channel>` says its next turn resumes its Session.
 7. Add `provider: codex` to the properties of one topic's note, wait 10 seconds, then write in that topic: the echo starts with `[Earlier conversation in this chat`, the Channel's recent messages.
-8. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and its Agent keeps answering with the last good version. `pero check` lists the error.
+8. Break that note, such as with `provider: codx`: within about 20 seconds, the topic gets one message naming the error, and Pero keeps answering there with the note's last good version. `pero check` lists the error.
 9. Stop Pero and start it without `PERO_FAKE_RUNTIME` to use the real providers.
 
 ## Checking a release on a fresh machine
@@ -79,10 +79,10 @@ Before merging a PR that bumps the version, walk through the README's [Get start
 
 2. **`mkdir ~/workspace && cd ~/workspace && pero run`.** It offers to make the folder a workspace, asks which provider to use when both CLIs are installed and waits until it is signed in, then asks for the bot token. It offers to install Pero as a service: accept, and it ends with `pero status` showing the service's Pero, with Telegram and the provider ready. `systemctl --user status pero` (or `launchctl print gui/$(id -u)/com.perokit.pero` on macOS) shows it running, and after a reboot `pero status` shows it running again.
 3. **Allow a group.** Create a private group with Topics turned on, add the bot as an administrator, and write in it: `pero run` offers to allow that chat, and once allowed the bot posts the first steps in the General topic.
-4. **Onboard a topic.** Create one: Pero writes `data/System/Agents/<Topic title>.md` and posts a welcome naming the new Agent and its note. A message there gets the provider's answer, and a second one continues the conversation. Ask it to create a Workflow: it reads `.pero/guide.md` without asking, asks about the schedule and topic, and asks with Allow and Deny before writing the note, which `pero workflows` then lists.
+4. **Onboard a topic.** Create one: Pero writes `data/System/Channels/<Topic title>.md`, bound to it by `channel-id`, and posts a welcome naming the note. A message there gets the provider's answer, and a second one continues the conversation. Ask it to create a Workflow: it reads `.pero/guide.md` without asking, asks about the schedule and topic, and asks with Allow and Deny before writing the note, which `pero workflows` then lists.
 5. **Edit a note.** Change that note's instructions, wait 10 seconds, and write in the topic: the answer follows the edit. Break the note, such as with `provider: codx`: the topic gets one message naming the error, and `pero check` lists it. Fix it again.
-6. **Use the commands.** Type `/` in the topic: Telegram lists Pero's commands. `/status` names the topic's Agent with its note (`Config:`) and, for a Claude Agent, how full its context is. Press Effort, then a level: the message changes in place and the note gets `effort`. Send a long request and `/stop`: the answer stops without a failure message. `/new`, then a message: the answer doesn't know what came before.
-7. **Run a Workflow.** Copy [Evening review](../examples/workspace/data/System/Workflows/Evening%20review.md) into `data/System/Workflows/`, with `channel` set to the topic's title. `pero workflows` shows its next run, and `pero workflows run evening-review` prints the answer and posts it in the topic. In the topic, `/run` offers the Workflow as a button, and pressing it queues a run that `/runs` lists.
+6. **Use the commands.** Type `/` in the topic: Telegram lists Pero's commands. `/status` names the topic's note (`Config:`) and, with Claude, how full its context is. Press Effort, then a level: the message changes in place and the note gets `effort`. Send a long request and `/stop`: the answer stops without a failure message. `/new`, then a message: the answer doesn't know what came before.
+7. **Run a Workflow.** Copy [Evening review](../examples/workspace/data/System/Workflows/Evening%20review.md) into `data/System/Workflows/`, with `channel` set to the name of the topic's note, which is the topic's title. `pero workflows` shows its next run, and `pero workflows run evening-review` prints the answer and posts it in the topic. In the topic, `/run` offers the Workflow as a button, and pressing it queues a run that `/runs` lists.
 8. **Back up.** Commit the workspace to Git (`git init && git add -A && git commit -m Workspace`): `git show --stat HEAD` lists `.pero/config.yaml` and the notes, but not `.env`, the database, `logs/`, or `run/`. Then `mkdir -p ~/backups && pero backup ~/backups/pero.tgz`.
 9. **Restore into a clone** at the same path, as [Moving to a fresh machine](./OPERATIONS.md#moving-to-a-fresh-machine) does:
 
@@ -108,7 +108,7 @@ The tests that matter most guard the boundaries that could lose or misroute work
 | Pero is ready without Telegram or providers, and keeps running when they fail | `test/control.e2e-spec.ts` |
 | One daemon runs per workspace, and a killed one never blocks the next start | `test/lifecycle.e2e-spec.ts`; `test/control.e2e-spec.ts` |
 | A CLI command never loads the database stack or the Telegram client | `test/cli.e2e-spec.ts`, with `test/fixtures/deny-daemon-deps.mjs` preloaded |
-| One migration creates a schema that holds only state | `src/persistence/persistence.module.spec.ts`: a fresh database matches the entities, and the migration reverts cleanly; `src/persistence/entities/domain-entities.spec.ts`: no Agent, Workflow, or settings table, and the constraints on each state table |
+| One migration creates a schema that holds only state | `src/persistence/persistence.module.spec.ts`: a fresh database matches the entities, and the migration reverts cleanly; `src/persistence/entities/domain-entities.spec.ts`: no Channel note, Workflow, or settings table, and the constraints on each state table |
 
 ### Conversations
 
@@ -116,19 +116,19 @@ The tests that matter most guard the boundaries that could lose or misroute work
 |---|---|
 | The first interactive `pero run` refuses to start without an installed, signed-in provider CLI, and writes the provider picked to `Pero.md` | `src/cli/setup/first-run.spec.ts`; `src/system-files/note-writer.spec.ts`: the empty `provider` property `pero init` writes is filled in |
 | `pero service install` writes a systemd user unit or launchd agent that runs `pero run --foreground`, and starts it | `src/cli/system-service.spec.ts`, against recorded `systemctl`, `loginctl`, and `launchctl` calls |
-| Creating a topic in an allowed forum group onboards a new Agent that answers there | `test/interactive.e2e-spec.ts`; onboarding edge cases in `src/channels/note-agents.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
-| Two topics keep separate contexts while working in the same shared folder | `test/interactive.e2e-spec.ts`: separate Agents, Sessions, and provider sessions, both in the default folder |
-| An Agent with its own folder works there | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts` |
-| The General topic and a direct chat reach the main Agent in separate Sessions | `test/interactive.e2e-spec.ts` |
+| Creating a topic in an allowed forum group writes a Channel note bound to it, and Pero answers there with it | `test/interactive.e2e-spec.ts`; onboarding edge cases in `src/channels/note-channels.spec.ts` and `src/channels/channel-onboarding.spec.ts` |
+| Two topics keep separate contexts while working in the same shared folder | `test/interactive.e2e-spec.ts`: separate notes, Sessions, and provider sessions, both in the default folder |
+| A Channel whose note names its own folder works there | `test/interactive.e2e-spec.ts`; `test/channel-notes.e2e-spec.ts` |
+| The General topic and a direct chat are answered from `Default.md` in separate Sessions | `test/interactive.e2e-spec.ts` |
 | A follow-up resumes the right provider session after a restart | `test/interactive.e2e-spec.ts`: each of four Channels resumes its own provider session in a new daemon; real resume from another process in both smoke tests |
-| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it | `test/interactive.e2e-spec.ts`; `test/agent-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a Channel moved to another Agent |
-| `/status`, `/new`, `/stop`, and `/help` are answered by Pero, not the Agent, and stay out of the history; their buttons edit the menu in place; an unknown command goes to the Agent | `test/telegram.e2e-spec.ts`; `src/channels/commands/channel-commands.spec.ts`; `src/channels/commands/screens.spec.ts`; `src/telegram/telegram-adapter.spec.ts`; parsing in `src/telegram/telegram-updates.spec.ts` |
+| A new provider or folder starts a fresh Session that carries over recent messages; a new model or effort continues it, as does a `channel-id` moved to another note | `test/interactive.e2e-spec.ts`; `test/channel-notes.e2e-spec.ts`; `test/channels.e2e-spec.ts` for a `channel-id` moved to another note |
+| `/status`, `/new`, `/stop`, and `/help` are answered by Pero itself, not by a turn, and stay out of the history; their buttons edit the menu in place; an unknown command is answered by a turn | `test/telegram.e2e-spec.ts`; `src/channels/commands/channel-commands.spec.ts`; `src/channels/commands/screens.spec.ts`; `src/telegram/telegram-adapter.spec.ts`; parsing in `src/telegram/telegram-updates.spec.ts` |
 | `/new` starts a fresh Session that carries nothing over from before it; `/stop` ends the running turn silently and drops the waiting ones | `test/telegram.e2e-spec.ts`; `src/agents/agent-manager.spec.ts`; `src/channels/commands/channel-commands.spec.ts` |
-| `/model` and `/effort` show the Agent's value with a button per choice, and set or remove it in its note, keeping the note's comments | `src/channels/commands/channel-commands.spec.ts`; `src/system-files/note-writer.spec.ts` |
+| `/model` and `/effort` show the Channel's value with a button per choice, and set or remove it in its note, keeping the note's comments | `src/channels/commands/channel-commands.spec.ts`; `src/system-files/note-writer.spec.ts` |
 | `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry` show and manage Workflows and runs, offering a menu when no Workflow or run, or an unknown one, is named | `src/channels/commands/workflow-commands.spec.ts`; `test/telegram.e2e-spec.ts` |
 | `/status` shows how full a Claude conversation's context is | `src/runtimes/claude/claude-events.spec.ts`; `src/agents/agent-manager.spec.ts`; `src/channels/commands/screens.spec.ts` |
 | Each Channel's history holds the text sent and received there, and nothing else | `test/interactive.e2e-spec.ts`; `test/channels.e2e-spec.ts`; `src/agents/agent-manager.spec.ts` |
-| A chat that is not allowed invokes no runtime, creates no Agent, and gets only the pairing hint | `test/interactive.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
+| A chat that is not allowed invokes no runtime, creates no Channel or note, and gets only the pairing hint | `test/interactive.e2e-spec.ts`; `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts` |
 | While `pero run` waits for a chat to pair, that chat is told to confirm in the terminal | `test/telegram.e2e-spec.ts`; `src/channels/channel-router.spec.ts`; `src/channels/pairing-requests.spec.ts` |
 | Codex and Claude subscription sign-ins each have a documented SDK smoke test under the service's account | `test/smoke/claude-runtime.smoke-spec.ts` and `test/smoke/codex-runtime.smoke-spec.ts`, run as in [the section above](#provider-smoke-tests-under-the-services-account) |
 
@@ -136,13 +136,13 @@ The tests that matter most guard the boundaries that could lose or misroute work
 
 | Behavior | Verified by |
 |---|---|
-| `pero check` validates any workspace with or without Pero, including in CI | `test/check.e2e-spec.ts`: without Pero, including `--json`; `test/system-notes.e2e-spec.ts`: topic titles through the daemon; `src/system-files/check.spec.ts` and `src/system-files/snapshot.spec.ts`; the CI step that checks the example workspace |
-| The running daemon keeps an up-to-date snapshot of the notes, and `pero status` reports broken ones | `src/system-files/reload.spec.ts`: an edit within one scan, a note caught mid-write, last good versions, and 500 notes; `src/system/system-notes.service.spec.ts` and `test/system-notes.e2e-spec.ts`: the `settings` component |
+| `pero check` validates any workspace with or without Pero, including in CI | `test/check.e2e-spec.ts`: without Pero, including `--json`; `test/system-notes.e2e-spec.ts`: Workflow Channels against the topics the daemon has seen; `src/system-files/check.spec.ts` and `src/system-files/snapshot.spec.ts`; the CI step that checks the example workspace |
+| The running daemon keeps an up-to-date snapshot of the notes, and `pero status` reports broken ones | `src/system-files/reload.spec.ts`: an edit within one scan, a note caught mid-write, last good versions, and 500 notes; `src/system/system-notes.service.spec.ts` and `test/system-notes.e2e-spec.ts`: the `system` component |
 | Runtime code reads definitions synchronously, loaded before anything reads them | `src/system/definitions.spec.ts`; `src/system/system-notes.service.spec.ts`: the notes load before the startup of modules that read them |
-| Agents, their prompts, defaults, and which topic each answers are configured only by notes, and changes apply within 10 seconds | `test/agent-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, the main Agent's instructions, and `topic`; `src/channels/note-agents.spec.ts`: routing by `topic`; `test/cli.e2e-spec.ts`: no command changes them |
-| New topics create notes | `src/channels/note-agents.spec.ts`: one note when the topic's creation and first message race, the template, numbering, and renames; `test/example-workspace.e2e-spec.ts` |
-| State refers to Agents and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name Agents and Workflows that no row holds, and one schedule row per Workflow name |
-| Claude `ask` Agents can't change configuration without asking | `src/runtimes/claude/edit-policy.spec.ts`: an edit under the system folder, through a symlink or `../`, asks; `src/runtimes/claude/claude-runtime.spec.ts`: refused in a Workflow run; the Claude smoke test |
+| Pero's personality and instructions, Channel notes, defaults, and which topic each note answers are configured only by notes, and changes apply within 10 seconds | `test/channel-notes.e2e-spec.ts`: edits of the body, model, effort, provider, folder, `Pero.md`, `Persona.md`, and `Instructions.md`, and a `channel-id` moved to another note; `src/channels/note-channels.spec.ts`: `Default.md` for primary Channels, binding by `channel-id` and by title, and why Pero doesn't answer; `test/cli.e2e-spec.ts`: no command changes them |
+| New topics create notes | `src/channels/note-channels.spec.ts`: one note when the topic's creation and first message race, the template, numbering, a note of the topic's title bound instead, and renames that keep the note; `test/example-workspace.e2e-spec.ts` |
+| State refers to Channel notes and Workflows by name | `src/persistence/entities/domain-entities.spec.ts`: Sessions, messages, and runs name notes and Workflows that no row holds, and one schedule row per Workflow name |
+| Claude with `ask` can't change configuration without asking | `src/runtimes/claude/edit-policy.spec.ts`: an edit under the system folder, through a symlink or `../`, asks; `src/runtimes/claude/claude-runtime.spec.ts`: refused in a Workflow run; the Claude smoke test |
 | Broken notes are reported in Telegram once | `src/notifications/broken-note-reports.spec.ts`: once per broken version, nothing for a fix, one message per Channel, and only logs at startup; `test/workflows.e2e-spec.ts`: in the Workflow's Channel |
 | Allowed chats can be changed by editing `config.yaml` | `src/host-config/host-config.service.spec.ts`: chats added or removed by hand are served or turned away from the next look, and a broken edit keeps the last valid version; `test/cli.e2e-spec.ts`: `telegram allow` and `deny` edit the file while Pero is stopped, and an invalid file stops startup |
 | Committing the workspace commits `config.yaml` and nothing secret | `scripts/check-packed-install.sh`: `git add -A` in a running workspace stages `config.yaml` and the notes, not `.env`, the database, logs, or `run/`; `test/cli.e2e-spec.ts` and `src/config/env-file.spec.ts`: `pero status` reports a `.env` Git would commit |

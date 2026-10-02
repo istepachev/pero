@@ -155,7 +155,7 @@ describe('configOrNewWorkspace', () => {
     const { result, select } = run({ cwd: here, interactive: true });
     await expect(result).resolves.toMatchObject({ firstRun: true });
     expect(select).toHaveBeenCalledWith({
-      message: 'Which folder is the vault your Agents keep notes in?',
+      message: 'Which folder is the vault Pero keeps notes in?',
       choices: [
         { value: 'archive', name: 'archive/' },
         { value: 'data', name: 'data/' },
@@ -180,7 +180,7 @@ describe('configOrNewWorkspace', () => {
     });
     await expect(result).resolves.toMatchObject({ firstRun: true });
     expect(select).toHaveBeenCalledWith({
-      message: 'Which folder is the vault your Agents keep notes in?',
+      message: 'Which folder is the vault Pero keeps notes in?',
       choices: [
         { value: 'data', name: 'Create data/' },
         { value: 'Vault', name: 'Vault/' },
@@ -260,7 +260,7 @@ describe('configOrNewWorkspace', () => {
 
     await expect(result).resolves.toMatchObject({ firstRun: true });
     expect(select).toHaveBeenCalledWith({
-      message: 'Which provider should your Agents use?',
+      message: 'Which provider should Pero use?',
       choices: [
         { value: 'claude', name: 'claude — Claude Code CLI, not signed in' },
         { value: 'codex', name: 'codex — Codex CLI, signed in' },
@@ -357,7 +357,7 @@ describe('configOrNewWorkspace', () => {
     const text = readFileSync(note, 'utf8');
     expect(text).toMatch(/^provider: claude /m);
     expect(text).toMatch(/^timezone: /m);
-    expect(text).toMatch(/^main-agent: Main /m);
+    expect(text).toMatch(/^max-concurrent-runs: 2$/m);
   });
 
   it('asks nothing once the workspace has a database, or off a terminal', async () => {
