@@ -20,7 +20,7 @@ export interface PendingSetup {
  * What stands between the daemon and a working installation: the Telegram
  * bot token, a Telegram chat to serve, the bot as an administrator of each
  * allowed group, each such group private, and sign-in for each provider in use. Providers
- * no Agent uses are left out. Without `chats`, as from a daemon too old
+ * no Channel uses are left out. Without `chats`, as from a daemon too old
  * to list them, the chat is too.
  */
 export function pendingSetup(
@@ -65,7 +65,7 @@ export function pendingSetup(
       if (chat.danger !== null) {
         pending.push({
           name: 'telegram-public',
-          message: `Telegram: ${describe(chat)} is public, so anyone can join it and talk to its Agents — make it private in the group's settings, or pero telegram deny ${chat.chatId}`,
+          message: `Telegram: ${describe(chat)} is public, so anyone can join it and talk to Pero — make it private in the group's settings, or pero telegram deny ${chat.chatId}`,
         });
       }
     }

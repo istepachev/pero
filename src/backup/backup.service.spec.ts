@@ -183,9 +183,9 @@ describe('BackupService', () => {
     ]);
   });
 
-  it("records the data folder and the Agents' own folders", async () => {
-    await ws.agent('Coder', { 'working-directory': own });
-    await ws.agent('Notes');
+  it("records the data folder and the Channel notes' own folders", async () => {
+    await ws.channel('Coder', { 'working-directory': own });
+    await ws.channel('Notes');
     await moduleRef.close();
     await boot();
     const file = join(tmp, 'backup.tgz');

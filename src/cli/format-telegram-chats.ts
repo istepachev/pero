@@ -98,7 +98,7 @@ export function formatAllowed(
     }
     if (chat.topics !== true) {
       lines.push(
-        'Turn on Topics in the group settings to give each Agent its own topic; Pero follows the new chat ID this gives the group.',
+        'Turn on Topics in the group settings to give each subject its own topic; Pero follows the new chat ID this gives the group.',
       );
     }
   }

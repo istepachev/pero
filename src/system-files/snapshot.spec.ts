@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelRef } from './schemas.js';
 import {
   buildSnapshot,
+  noteFor,
+  type ResolvedChannel,
   type SnapshotContext,
   type TopicLookup,
-  topicClaim,
   type TopicResolution,
 } from './snapshot.js';
 
@@ -13,6 +14,8 @@ const CONTEXT: SnapshotContext = {
   homeDir: '/home/me',
   hostTimeZone: 'UTC',
 };
+
+const HEALTH_ID = 'telegram:-100123:5';
 
 /** A snapshot of the notes in `files`, keyed by path. */
 function snapshot(
@@ -50,21 +53,20 @@ describe('buildSnapshot', () => {
       },
       permissions: 'ask',
       timezone: 'UTC',
-      mainAgent: 'main',
       historyCarryover: 50,
       historyRetentionDays: null,
       maxConcurrentRuns: 2,
     });
-    expect(result.mainInstructions).toBeNull();
+    expect(result.persona).toBeNull();
+    expect(result.instructions).toBeNull();
     expect(result.peroProperties.size).toBe(0);
-    expect(result.agents.size).toBe(0);
+    expect(result.channelNotes.size).toBe(0);
     expect(result.workflows.size).toBe(0);
-    expect(result.mainAgent).toBe('main');
     expect(result.errors).toEqual([]);
     expect(Object.isFrozen(result)).toBe(true);
   });
 
-  it('builds the workspace in five notes from the overview', () => {
+  it('builds the example workspace', () => {
     const result = snapshot({
       'Pero.md': `---
 provider: claude
@@ -72,42 +74,43 @@ claude-model: opus
 permissions: ask
 timezone: Europe/Berlin
 ---`,
-      'Agents/Main.md': 'You help with everyday questions.',
-      'Agents/Health.md': `---
-topic: Health
+      'Persona.md': 'You are calm and concise.',
+      'Instructions.md': 'You help with everyday questions.',
+      'Channels/Default.md': 'Keep it short here.',
+      'Channels/Health.md': `---
+channel-id: ${HEALTH_ID}
 effort: high
 ---
 You are my health coach.`,
       'Workflows/Weekly health report.md': WEEKLY,
     });
     expect(result.errors).toEqual([]);
-    expect(result.mainInstructions).toBe('You help with everyday questions.');
-    expect(result.agents.get('main')).toMatchObject({
-      name: 'main',
-      title: 'Main',
-      file: 'Agents/Main.md',
-      topic: null,
+    expect(result.persona).toBe('You are calm and concise.');
+    expect(result.instructions).toBe('You help with everyday questions.');
+    expect(result.channelNotes.get('default')).toMatchObject({
+      name: 'default',
+      title: 'Default',
+      file: 'Channels/Default.md',
+      channelId: null,
       provider: 'claude',
       model: 'opus',
       effort: null,
       permissions: 'ask',
       workingDirectory: '/home/me/workspace',
-      mainInstructions: false,
-      instructions: 'You help with everyday questions.',
+      instructions: 'Keep it short here.',
     });
-    expect(result.agents.get('health')).toMatchObject({
-      topic: 'Health',
-      mainInstructions: true,
+    expect(result.channelNotes.get('health')).toMatchObject({
+      channelId: HEALTH_ID,
       model: 'opus',
       effort: 'high',
       note: expect.objectContaining({ model: null, effort: 'high' }),
     });
-    expect(result.topicClaims).toEqual(new Map([['health', 'health']]));
+    expect(result.boundChannels).toEqual(new Map([[HEALTH_ID, 'health']]));
     expect(result.workflows.get('weekly-health-report')).toEqual({
       name: 'weekly-health-report',
       title: 'Weekly health report',
       file: 'Workflows/Weekly health report.md',
-      agent: 'health',
+      note: 'health',
       schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       channels: ['Health'],
       history: null,
@@ -118,7 +121,7 @@ You are my health coach.`,
     });
   });
 
-  it('applies Pero.md defaults for the Agent’s own provider', () => {
+  it('applies Pero.md defaults for the note’s own provider', () => {
     const result = snapshot({
       'Pero.md': `---
 provider: codex
@@ -127,16 +130,16 @@ codex-effort: minimal
 claude-model: sonnet
 permissions: bypass
 ---`,
-      'Agents/Coder.md': '',
-      'Agents/Writer.md': '---\nprovider: claude\npermissions: ask\n---',
+      'Channels/Coder.md': '',
+      'Channels/Writer.md': '---\nprovider: claude\npermissions: ask\n---',
     });
-    expect(result.agents.get('coder')).toMatchObject({
+    expect(result.channelNotes.get('coder')).toMatchObject({
       provider: 'codex',
       model: 'gpt-5.5',
       effort: 'minimal',
       permissions: 'bypass',
     });
-    expect(result.agents.get('writer')).toMatchObject({
+    expect(result.channelNotes.get('writer')).toMatchObject({
       provider: 'claude',
       model: 'sonnet',
       effort: null,
@@ -147,8 +150,8 @@ permissions: bypass
   it('resolves working directories against the workspace', () => {
     const folder = (path: string) =>
       snapshot({
-        'Agents/Site.md': `---\nworking-directory: ${path}\n---`,
-      }).agents.get('site')!.workingDirectory;
+        'Channels/Site.md': `---\nworking-directory: ${path}\n---`,
+      }).channelNotes.get('site')!.workingDirectory;
     expect(folder('projects/site')).toBe('/home/me/workspace/projects/site');
     expect(folder('~/code')).toBe('/home/me/code');
     expect(folder('/srv/site')).toBe('/srv/site');
@@ -156,426 +159,180 @@ permissions: bypass
 
   it('reads notes in subfolders and skips ignored ones', () => {
     const result = snapshot({
-      'Agents/Coaches/Running.md': '---\ntopic: Running\n---',
-      'Agents/_Template.md': '---\nmodle: broken\n---',
-      'Agents/.draft.md': 'not read',
+      'Channels/Coaches/Running.md': 'Run.',
+      'Channels/_Template.md': '---\nmodle: broken\n---',
+      'Channels/.draft.md': 'not read',
       '.obsidian/app.md': 'not read',
-      'Agents/notes.txt': 'not read',
+      'Channels/notes.txt': 'not read',
       'Workflows/_Ideas.md': '---\nhour: 99\n---',
     });
     expect(result.errors).toEqual([]);
-    expect([...result.agents.keys()]).toEqual(['running']);
-    expect(result.agents.get('running')!.file).toBe(
-      'Agents/Coaches/Running.md',
+    expect([...result.channelNotes.keys()]).toEqual(['running']);
+    expect(result.channelNotes.get('running')!.file).toBe(
+      'Channels/Coaches/Running.md',
     );
   });
 
-  it('ignores notes outside Pero.md, Agents/, and Workflows/', () => {
+  it('ignores notes outside the notes it reads', () => {
     expect(
       errorsOf({
         'Templates/Daily Journal.md': '---\nmodle: broken\n---',
-        'Agent/Health.md': 'Hi',
+        'Agents/Health.md': '---\ntopic: Health\n---',
+        'Channel/Health.md': 'Hi',
         'Notes.md': 'Stray',
       }),
     ).toEqual([]);
   });
 
-  it('leaves out both notes of a duplicate name, and what depends on them', () => {
-    const result = snapshot({
-      'Agents/Health.md': 'One',
-      'Agents/Old/health.md': 'Two',
-      'Agents/Café.md': 'Three',
-      'Agents/Cafe.md': 'Four',
-      'Workflows/Report.md': '---\nagent: Health\n---\nGo',
-    });
-    expect(result.agents.size).toBe(0);
-    expect(result.workflows.size).toBe(0);
-    expect(
-      errorsOf({
-        'Agents/Health.md': 'One',
-        'Agents/Old/health.md': 'Two',
-        'Workflows/Report.md': '---\nagent: Health\n---\nGo',
-      }),
-    ).toEqual([
-      'Agents/Health.md -: has the same name, health, as Agents/Old/health.md; rename one of them',
-      'Agents/Old/health.md -: has the same name, health, as Agents/Health.md; rename one of them',
-      'Workflows/Report.md agent: the Agent note named health has errors',
+  it('reads Persona.md and Instructions.md as text only', () => {
+    const files = {
+      'Persona.md': '---\ntags: [pero]\n---\nBe kind.',
+      'Instructions.md': '---\nmodel: opus\n---\nHelp.',
+    };
+    expect(snapshot(files).persona).toBe('Be kind.');
+    expect(snapshot(files).instructions).toBeNull();
+    expect(errorsOf(files)).toEqual([
+      'Instructions.md model: unknown property',
     ]);
   });
 
-  it('lets an Agent and a Workflow share a name', () => {
+  it('reports the properties Channel notes no longer take', () => {
+    expect(
+      errorsOf({
+        'Channels/Health.md':
+          '---\ntopic: Health\nskip-main-instructions: true\n---',
+        'Pero.md': '---\nmain-agent: Main\n---',
+        'Workflows/Report.md': '---\nagent: Main\n---\nGo',
+      }),
+    ).toEqual([
+      'Channels/Health.md topic: unknown property',
+      'Channels/Health.md skip-main-instructions: unknown property',
+      'Pero.md main-agent: unknown property',
+      'Workflows/Report.md agent: unknown property',
+    ]);
+  });
+
+  it('keeps a channel-id off Default.md', () => {
+    expect(
+      errorsOf({ 'Channels/Default.md': `---\nchannel-id: ${HEALTH_ID}\n---` }),
+    ).toEqual([
+      'Channels/Default.md channel-id: must not be set: Default.md answers every General topic and direct chat',
+    ]);
+  });
+
+  it('checks a channel-id’s form', () => {
+    expect(
+      errorsOf({
+        'Channels/A.md': '---\nchannel-id: -100123\n---',
+        'Channels/B.md': '---\nchannel-id: slack:C123\n---',
+        'Channels/C.md': '---\nchannel-id: "telegram:"\n---',
+      }),
+    ).toEqual([
+      'Channels/A.md channel-id: must be <integration>:<address>, such as telegram:-1001234567890:5',
+      'Channels/B.md channel-id: must be <integration>:<address>, such as telegram:-1001234567890:5',
+      'Channels/C.md channel-id: must be <integration>:<address>, such as telegram:-1001234567890:5',
+    ]);
+  });
+
+  it('leaves out both notes of a duplicate name, and what depends on them', () => {
+    const files = {
+      'Channels/Health.md': 'One',
+      'Channels/Old/health.md': 'Two',
+      'Workflows/Report.md': '---\nchannel: Health\n---\nGo',
+    };
+    const result = snapshot(files);
+    expect(result.channelNotes.size).toBe(0);
+    expect(result.workflows.size).toBe(0);
+    expect(result.unloadedNames).toEqual(
+      new Map([['health', ['Channels/Health.md', 'Channels/Old/health.md']]]),
+    );
+    expect(errorsOf(files)).toEqual([
+      'Channels/Health.md -: has the same name, health, as Channels/Old/health.md; rename one of them',
+      'Channels/Old/health.md -: has the same name, health, as Channels/Health.md; rename one of them',
+      'Workflows/Report.md channel: the notes Channels/Health.md and Channels/Old/health.md have errors',
+    ]);
+  });
+
+  it('leaves out both notes bound to one Channel', () => {
+    const files = {
+      'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+      'Channels/Fitness.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+      'Channels/Sleep.md': 'Sleep.',
+    };
+    const result = snapshot(files);
+    expect([...result.channelNotes.keys()]).toEqual(['sleep']);
+    expect(result.unloadedChannels).toEqual(
+      new Map([[HEALTH_ID, ['Channels/Health.md', 'Channels/Fitness.md']]]),
+    );
+    expect(errorsOf(files)).toEqual([
+      `Channels/Fitness.md channel-id: ${HEALTH_ID} is also the channel-id of Channels/Health.md; keep it in only one of them`,
+      `Channels/Health.md channel-id: ${HEALTH_ID} is also the channel-id of Channels/Fitness.md; keep it in only one of them`,
+    ]);
+  });
+
+  it('lets a Channel note and a Workflow share a name', () => {
     const result = snapshot({
-      'Agents/Review.md': 'Agent',
+      'Channels/Review.md': 'Channel',
       'Workflows/Review.md': 'Workflow',
     });
     expect(result.errors).toEqual([]);
-    expect(result.agents.has('review')).toBe(true);
+    expect(result.channelNotes.has('review')).toBe(true);
     expect(result.workflows.has('review')).toBe(true);
   });
 
-  it('answers a topic claimed twice with neither Agent, and reports both', () => {
-    const files = {
-      'Agents/Health.md': '---\ntopic: Health\n---',
-      'Agents/Running.md': '---\ntopic: health\n---',
-      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
-    };
-    const result = snapshot(files);
-    expect([...result.agents.keys()].sort()).toEqual([
-      'health',
-      'running',
-      'sleep',
-    ]);
-    expect(result.conflictedTopics).toEqual(new Set(['health']));
-    expect(result.topicClaims).toEqual(new Map([['sleep', 'sleep']]));
-    expect(errorsOf(files)).toEqual([
-      'Agents/Health.md topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
-      'Agents/Running.md topic: "health" is also claimed by Agents/Health.md, so neither answers there',
-    ]);
-  });
-
-  it('records the topics of Agent notes left out for errors', () => {
-    const result = snapshot({
-      'Agents/Health.md': '---\ntopic: Health\neffort: extreme\n---',
-      'Agents/Coach.md': '---\ntopic: Running\nmodle: x\n---',
-      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
-      'Agents/Night.md': '---\ntopic: Sleep\nmodle: x\n---',
-      'Agents/a/Chat.md': '---\ntopic: Chat\n---',
-      'Agents/b/Chat.md': '---\ntopic: Chat\n---',
-      'Agents/Many.md': '---\ntopic: [Talk, Walk]\n---',
-      'Agents/Broken.md': '---\ntopic: [\n---',
-    });
-    expect(result.unloadedTopics).toEqual(
-      new Map([
-        ['health', ['Agents/Health.md']],
-        ['running', ['Agents/Coach.md']],
-        ['chat', ['Agents/a/Chat.md', 'Agents/b/Chat.md']],
-      ]),
-    );
-    // Sleep is claimed by a note that loaded.
-    expect(result.topicClaims.get('sleep')).toBe('sleep');
-  });
-
-  it('keeps a note loaded from its last good version out of unloaded topics', () => {
+  it('keeps a note loaded from its last good version out of unloaded ones', () => {
     const result = buildSnapshot(
       [
         {
-          file: 'Agents/Health.md',
-          text: '---\ntopic: Health\nmodle: x\n---',
-          fallback: '---\ntopic: Health\n---',
+          file: 'Channels/Health.md',
+          text: `---\nchannel-id: ${HEALTH_ID}\nmodle: x\n---`,
+          fallback: `---\nchannel-id: ${HEALTH_ID}\n---`,
         },
       ],
       CONTEXT,
     );
-    expect(result.unloadedTopics.size).toBe(0);
-    expect(result.topicClaims.get('health')).toBe('health');
+    expect(result.unloadedChannels.size).toBe(0);
+    expect(result.boundChannels.get(HEALTH_ID)).toBe('health');
   });
 
-  it('tells who answers a topic by its title', () => {
-    const result = snapshot({
-      'Agents/Health.md': '---\ntopic: Health\n---',
-      'Agents/Sleep.md': '---\ntopic: Sleep\n---',
-      'Agents/Running.md': '---\ntopic: sleep\n---',
-      'Agents/Coach.md': '---\ntopic: Coaching\nmodle: x\n---',
-    });
-    expect(topicClaim(result, ' HEALTH ')).toEqual({
-      kind: 'agent',
-      agent: 'health',
-    });
-    expect(topicClaim(result, 'Sleep')).toEqual({
-      kind: 'conflict',
-      files: ['Agents/Running.md', 'Agents/Sleep.md'],
-    });
-    expect(topicClaim(result, 'coaching')).toEqual({
-      kind: 'unloaded',
-      files: ['Agents/Coach.md'],
-    });
-    expect(topicClaim(result, 'Groceries')).toEqual({ kind: 'unclaimed' });
-  });
-
-  it('lets a disabled Agent keep its topic', () => {
-    const result = snapshot({
-      'Agents/Health.md': '---\ntopic: Health\nenabled: false\n---',
-    });
-    expect(result.topicClaims.get('health')).toBe('health');
-  });
-
-  describe('the main Agent', () => {
-    it('may be missing while it is the default', () => {
-      const result = snapshot({ 'Agents/Health.md': 'Hi' });
-      expect(result.mainAgent).toBe('main');
-      expect(result.errors).toEqual([]);
-    });
-
-    it('must exist when Pero.md names it', () => {
-      expect(errorsOf({ 'Pero.md': '---\nmain-agent: Home\n---' })).toEqual([
-        'Pero.md main-agent: no Agent note is named home',
-      ]);
-      expect(
-        snapshot({
-          'Pero.md': '---\nmain-agent: Home\n---',
-          'Agents/Home.md': 'Hi',
-        }).errors,
-      ).toEqual([]);
-    });
-
-    it('must load when Pero.md names it', () => {
-      expect(
-        errorsOf({
-          'Pero.md': '---\nmain-agent: Home\n---',
-          'Agents/Home.md': '---\nmodle: x\n---',
-        }),
-      ).toEqual([
-        'Agents/Home.md modle: unknown property (did you mean model?)',
-        'Pero.md main-agent: the Agent note named home has errors',
-      ]);
-    });
-
-    it('has no topic, and its instructions start every other Agent’s', () => {
-      const files = {
-        'Pero.md': '---\nmain-agent: Home\n---',
-        'Agents/Home.md': '---\ntopic: Home\n---\nBe kind.',
-      };
-      expect(errorsOf(files)).toEqual([
-        'Agents/Home.md topic: must not be set: the main Agent answers General topics and direct chats; give the topic a note of its own',
-        'Pero.md main-agent: the Agent note named home has errors',
-      ]);
-      expect(snapshot(files).mainInstructions).toBeNull();
-
-      const result = snapshot({
-        'Pero.md': '---\nmain-agent: Home\n---',
-        'Agents/Home.md': 'Be kind.',
-        'Agents/Health.md': '---\ntopic: Health\n---\nCoach me.',
-        'Agents/Code.md':
-          '---\ntopic: Code\nskip-main-instructions: true\n---\nReview.',
-      });
-      expect(result.mainInstructions).toBe('Be kind.');
-      expect(result.agents.get('home')!.mainInstructions).toBe(false);
-      expect(result.agents.get('health')!.mainInstructions).toBe(true);
-      expect(result.agents.get('code')!.mainInstructions).toBe(false);
-    });
-  });
-
-  it('keeps the Agents when Pero.md is broken, with all defaults', () => {
+  it('keeps the Channel notes when Pero.md is broken, with all defaults', () => {
     const files = {
       'Pero.md': '---\nprovider: gemini\ntimezone: Asia/Tokyo\n---',
-      'Agents/Main.md': 'Hi',
+      'Channels/Default.md': 'Hi',
     };
     const result = snapshot(files);
     expect(result.defaults).toMatchObject({
       provider: 'claude',
       timezone: 'UTC',
     });
-    expect(result.agents.has('main')).toBe(true);
+    expect(result.channelNotes.has('default')).toBe(true);
     expect(errorsOf(files)).toEqual([
       'Pero.md provider: must be claude or codex',
     ]);
   });
 
-  it('checks an Agent’s effort against its provider', () => {
+  it('checks a note’s effort against its provider', () => {
     const files = {
       'Pero.md': '---\nprovider: codex\n---',
-      'Agents/Deep.md': '---\neffort: ultra\n---',
-      'Agents/Quick.md': '---\nprovider: claude\neffort: minimal\n---',
+      'Channels/Deep.md': '---\neffort: ultra\n---',
+      'Channels/Quick.md': '---\nprovider: claude\neffort: minimal\n---',
     };
     const result = snapshot(files);
-    expect(result.agents.get('deep')!.effort).toBe('ultra');
-    expect(result.agents.has('quick')).toBe(false);
+    expect(result.channelNotes.get('deep')!.effort).toBe('ultra');
+    expect(result.channelNotes.has('quick')).toBe(false);
     expect(errorsOf(files)).toEqual([
-      'Agents/Quick.md effort: must be low, medium, high, xhigh, or max for claude',
+      'Channels/Quick.md effort: must be low, medium, high, xhigh, or max for claude',
     ]);
-  });
-
-  it('leaves out a note that does not parse, with its errors', () => {
-    const files = {
-      'Agents/Health.md': '---\ntopic: [Health\n---',
-      'Agents/Main.md': 'Hi',
-    };
-    const result = snapshot(files);
-    expect([...result.agents.keys()]).toEqual(['main']);
-    expect(result.errors).toEqual([
-      expect.objectContaining({ file: 'Agents/Health.md', property: null }),
-    ]);
-  });
-
-  describe('Workflows', () => {
-    it('are left out when their Agent is missing or broken', () => {
-      const files = {
-        'Agents/Health.md': '---\nprovider: gemini\n---',
-        'Workflows/Report.md': '---\nagent: Health\n---\nGo',
-        'Workflows/Review.md': '---\nagent: Coach\n---\nGo',
-      };
-      const result = snapshot(files);
-      expect(result.workflows.size).toBe(0);
-      expect(errorsOf(files)).toEqual([
-        'Agents/Health.md provider: must be claude or codex',
-        'Workflows/Report.md agent: the Agent note named health has errors',
-        'Workflows/Review.md agent: no Agent note is named coach',
-      ]);
-    });
-
-    it('run with a disabled Agent', () => {
-      const result = snapshot({
-        'Agents/Health.md': '---\nenabled: false\n---',
-        'Workflows/Report.md': '---\nagent: Health\n---\nGo',
-      });
-      expect(result.workflows.get('report')!.agent).toBe('health');
-    });
-
-    it('take the Agent from their first channel', () => {
-      const agentOf = (channel: string) =>
-        snapshot({
-          'Agents/Health.md': '---\ntopic: Health\n---',
-          'Workflows/Report.md': `---\nchannel: ${channel}\n---\nGo`,
-        }).workflows.get('report')!.agent;
-      expect(agentOf('Health')).toBe('health');
-      expect(agentOf('[health, Other]')).toBe('health');
-      expect(agentOf('Home/Health')).toBe('health');
-      expect(agentOf('General')).toBe('main');
-      expect(agentOf('Finance')).toBe('main');
-      expect(agentOf('[Finance, Health]')).toBe('main');
-      expect(agentOf('5')).toBeNull();
-    });
-
-    it('fall back to the main Agent without a channel', () => {
-      expect(
-        snapshot({
-          'Pero.md': '---\nmain-agent: Home\n---',
-          'Agents/Home.md': 'Hi',
-          'Workflows/Report.md': 'Go',
-        }).workflows.get('report')!.agent,
-      ).toBe('home');
-    });
-
-    it('need an agent when their first channel is claimed twice', () => {
-      const files = {
-        'Agents/Health.md': '---\ntopic: Health\n---',
-        'Agents/Running.md': '---\ntopic: Health\n---',
-        'Workflows/Report.md': '---\nchannel: Health\n---\nGo',
-      };
-      expect(snapshot(files).workflows.size).toBe(0);
-      expect(errorsOf(files)).toContain(
-        'Workflows/Report.md channel: "Health" is claimed by more than one Agent; set agent',
-      );
-    });
-
-    it('check chat/topic syntax without a lookup', () => {
-      const files = {
-        'Workflows/Report.md':
-          '---\nchannel: Home/\nhistory: true\nhistory-channels: /Health\n---\nGo',
-      };
-      expect(errorsOf(files)).toEqual([
-        'Workflows/Report.md channel: "Home/" must be a topic title or <chat title>/<topic title>',
-        'Workflows/Report.md history-channels: "/Health" must be a topic title or <chat title>/<topic title>',
-      ]);
-    });
-
-    it('take their schedule time zone from Pero.md or the host', () => {
-      const zone = (files: Record<string, string>) =>
-        snapshot({ 'Workflows/Report.md': WEEKLY, ...files }).workflows.get(
-          'report',
-        )!.schedule!.timezone;
-      expect(zone({})).toBe('UTC');
-      expect(zone({ 'Pero.md': '---\ntimezone: Asia/Tokyo\n---' })).toBe(
-        'Asia/Tokyo',
-      );
-      expect(
-        zone({
-          'Workflows/Report.md': `---\nhour: 9\ntimezone: America/New_York\n---\nGo`,
-        }),
-      ).toBe('America/New_York');
-    });
-  });
-
-  describe('with a topic lookup', () => {
-    const channels: Record<string, TopicResolution> = {
-      health: {
-        kind: 'ok',
-        channel: { id: 3, primary: false, title: 'Health' },
-      },
-      general: {
-        kind: 'ok',
-        channel: { id: 1, primary: true, title: 'Home' },
-      },
-      '7': {
-        kind: 'ok',
-        channel: { id: 7, primary: false, title: 'Health' },
-      },
-      '8': { kind: 'ok', channel: { id: 8, primary: true, title: 'Me' } },
-      english: {
-        kind: 'ambiguous',
-        matches: ['Home/English', 'Work/English'],
-      },
-    };
-    const topics: TopicLookup = {
-      resolve: (ref: ChannelRef) =>
-        channels[String(ref).toLowerCase()] ?? {
-          kind: 'none',
-          seen: ['General', 'Health', 'English'],
-        },
-    };
-    const agentOf = (channel: string) =>
-      snapshot(
-        {
-          'Agents/Health.md': '---\ntopic: Health\n---',
-          'Workflows/Report.md': `---\nchannel: ${channel}\n---\nGo`,
-        },
-        { topics },
-      ).workflows.get('report')!.agent;
-
-    it('resolves the Agent through the Channel found', () => {
-      expect(agentOf('Health')).toBe('health');
-      expect(agentOf('7')).toBe('health');
-      expect(agentOf('General')).toBe('main');
-      expect(agentOf('8')).toBe('main');
-    });
-
-    it('gives the Channels found by ID, each once, and history sorted', () => {
-      const result = snapshot(
-        {
-          'Agents/Health.md': '---\ntopic: Health\n---',
-          'Workflows/Report.md':
-            '---\nchannel: [Health, 8, General, 7, health]\nhistory: true\nhistory-channels: [8, Health]\n---\nGo',
-          'Workflows/All.md': '---\nhistory: true\n---\nGo',
-        },
-        { topics },
-      );
-      expect(result.workflows.get('report')!.resolved).toEqual({
-        targets: [3, 8, 1, 7],
-        history: [3, 8],
-      });
-      expect(result.workflows.get('all')!.resolved).toEqual({
-        targets: [],
-        history: 'all',
-      });
-    });
-
-    it('reports titles and IDs that match no topic, or several', () => {
-      const files = {
-        'Workflows/Report.md': `---
-channel: [Helth, 99]
-history: true
-history-channels: English
----
-Go`,
-      };
-      const result = snapshot(files, { topics });
-      expect(result.workflows.size).toBe(0);
-      expect(errorsOf(files, { topics })).toEqual([
-        'Workflows/Report.md channel: no topic titled "Helth"; seen topics: General, Health, English',
-        'Workflows/Report.md channel: no Channel has the ID 99',
-        'Workflows/Report.md history-channels: "English" matches 2 topics: Home/English, Work/English; write <chat title>/<topic title>',
-      ]);
-    });
   });
 
   it('sorts errors by file', () => {
     expect(
       snapshot({
         'Workflows/B.md': '---\nhour: 30\n---\nGo',
-        'Agents/A.md': '---\nmodle: x\n---',
+        'Channels/A.md': '---\nmodle: x\n---',
         'Pero.md': '---\nprovidr: x\n---',
       }).errors.map((error) => error.file),
-    ).toEqual(['Agents/A.md', 'Pero.md', 'Workflows/B.md']);
+    ).toEqual(['Channels/A.md', 'Pero.md', 'Workflows/B.md']);
   });
 
   it('lists the properties Pero.md sets, leaving out empty ones', () => {
@@ -591,5 +348,251 @@ Go`,
   it('lists no Pero.md properties while it is broken', () => {
     const result = snapshot({ 'Pero.md': '---\nprovider: gemini\n---' });
     expect(result.peroProperties.size).toBe(0);
+  });
+});
+
+describe('noteFor', () => {
+  const result = snapshot({
+    'Channels/Default.md': 'Here.',
+    'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+    'Channels/Sleep.md': 'Sleep.',
+    'Channels/Здоровье.md': 'Привет.',
+    'Channels/Garden.md': '---\nchannel-id: telegram:-100123:9\nmodle: x\n---',
+    'Channels/Coach.md': '---\nmodle: x\n---',
+  });
+  const topic = (channelId: string, title: string | null) =>
+    noteFor(result, { channelId, primary: false, title });
+
+  it('gives every primary Channel Default.md', () => {
+    expect(
+      noteFor(result, {
+        channelId: 'telegram:-100123',
+        primary: true,
+        title: 'Health',
+      }),
+    ).toMatchObject({ kind: 'note', note: { name: 'default' } });
+    expect(
+      noteFor(snapshot({}), {
+        channelId: 'telegram:42',
+        primary: true,
+        title: null,
+      }),
+    ).toEqual({ kind: 'none', name: 'default' });
+  });
+
+  it('matches a bound note by its channel-id, whatever the title', () => {
+    expect(topic(HEALTH_ID, 'Fitness')).toMatchObject({
+      kind: 'note',
+      note: { name: 'health' },
+    });
+  });
+
+  it('offers an unbound note named as the title to bind', () => {
+    expect(topic('telegram:-100123:6', ' SLEEP ')).toMatchObject({
+      kind: 'bindable',
+      note: { name: 'sleep' },
+    });
+    expect(topic('telegram:-100123:7', 'Zdorove')).toMatchObject({
+      kind: 'bindable',
+      note: { file: 'Channels/Здоровье.md' },
+    });
+  });
+
+  it('gives a title whose note is bound elsewhere no note', () => {
+    expect(topic('telegram:-100456:5', 'Health')).toEqual({
+      kind: 'none',
+      name: 'health',
+    });
+  });
+
+  it('names the notes left out for a Channel', () => {
+    expect(topic('telegram:-100123:9', 'Garden')).toEqual({
+      kind: 'unloaded',
+      files: ['Channels/Garden.md'],
+    });
+    expect(topic('telegram:-100123:10', 'Coach')).toEqual({
+      kind: 'unloaded',
+      files: ['Channels/Coach.md'],
+    });
+  });
+
+  it('waits for a topic’s title', () => {
+    expect(topic('telegram:-100123:11', null)).toEqual({ kind: 'untitled' });
+  });
+
+  it('never binds Default.md to a topic', () => {
+    expect(topic('telegram:-100123:12', 'Default')).toEqual({
+      kind: 'none',
+      name: 'default',
+    });
+  });
+});
+
+describe('Workflows', () => {
+  it('take their note from their first channel, or Default.md', () => {
+    const noteOf = (channel: string | null) =>
+      snapshot({
+        'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+        'Channels/Sleep.md': '---\nchannel-id: telegram:-100123:6\n---',
+        'Workflows/Report.md':
+          channel === null ? 'Go' : `---\nchannel: ${channel}\n---\nGo`,
+      }).workflows.get('report')!.note;
+    expect(noteOf('Health')).toBe('health');
+    expect(noteOf('[sleep, Health]')).toBe('sleep');
+    expect(noteOf('General')).toBe('default');
+    expect(noteOf('Home/General')).toBe('default');
+    expect(noteOf(null)).toBe('default');
+    expect(noteOf('5')).toBeNull();
+  });
+
+  it('run with a disabled note', () => {
+    const result = snapshot({
+      'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\nenabled: false\n---`,
+      'Workflows/Report.md': '---\nchannel: Health\n---\nGo',
+    });
+    expect(result.workflows.get('report')!.note).toBe('health');
+  });
+
+  it('report a note that is missing, or Default.md', () => {
+    const files = {
+      'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+      'Channels/Sleep.md': 'Sleep.',
+      'Workflows/Report.md': `---
+channel: [Helth, Sleep, Default]
+history: true
+history-channels: Nope
+---
+Go`,
+    };
+    expect(snapshot(files).workflows.size).toBe(0);
+    expect(errorsOf(files)).toEqual([
+      'Workflows/Report.md channel: no Channel note named "Helth"; Channel notes: Health, Sleep',
+      'Workflows/Report.md channel: "Default" answers every General topic and direct chat; write General, <chat title>/General, or a Channel ID',
+      'Workflows/Report.md history-channels: no Channel note named "Nope"; Channel notes: Health, Sleep',
+    ]);
+  });
+
+  it('take their schedule time zone from Pero.md or the host', () => {
+    const zone = (files: Record<string, string>) =>
+      snapshot({
+        'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+        'Workflows/Report.md': WEEKLY,
+        ...files,
+      }).workflows.get('report')!.schedule!.timezone;
+    expect(zone({})).toBe('UTC');
+    expect(zone({ 'Pero.md': '---\ntimezone: Asia/Tokyo\n---' })).toBe(
+      'Asia/Tokyo',
+    );
+    expect(
+      zone({
+        'Workflows/Report.md': `---\nhour: 9\ntimezone: America/New_York\n---\nGo`,
+      }),
+    ).toBe('America/New_York');
+  });
+
+  describe('with a lookup', () => {
+    const channel = (
+      id: number,
+      channelId: string,
+      primary: boolean,
+      title: string,
+    ): ResolvedChannel => ({ id, channelId, primary, title });
+    const byKey = new Map<string, ResolvedChannel>([
+      [HEALTH_ID, channel(3, HEALTH_ID, false, 'Fitness')],
+      ['telegram:-100123:8', channel(8, 'telegram:-100123:8', false, 'Sleep')],
+    ]);
+    const refs: Record<string, TopicResolution> = {
+      general: {
+        kind: 'ok',
+        channel: channel(1, 'telegram:-100123', true, 'General'),
+      },
+      '7': { kind: 'ok', channel: channel(7, 'telegram:42', true, 'General') },
+      '8': { kind: 'ok', channel: byKey.get('telegram:-100123:8')! },
+      '9': {
+        kind: 'ok',
+        channel: channel(9, 'telegram:-100123:9', false, 'New'),
+      },
+      'work/general': { kind: 'none' },
+    };
+    const topics: TopicLookup = {
+      resolve: (ref: ChannelRef) =>
+        refs[String(ref).toLowerCase()] ?? { kind: 'none' },
+      byChannelId: (channelId) => byKey.get(channelId) ?? null,
+      topicsNamed: (name) =>
+        [...byKey.values()].filter(
+          (found) => found.title.toLowerCase() === name,
+        ),
+    };
+    const files = {
+      'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
+      'Channels/Sleep.md': 'Sleep.',
+      'Channels/Away.md': '---\nchannel-id: telegram:-100999:1\n---',
+    };
+
+    it('posts to the Channels the notes are bound to', () => {
+      const result = snapshot(
+        {
+          ...files,
+          'Workflows/Report.md':
+            '---\nchannel: [Health, 7, General, health]\nhistory: true\nhistory-channels: [7, Health]\n---\nGo',
+          'Workflows/All.md': '---\nhistory: true\n---\nGo',
+        },
+        { topics },
+      );
+      expect(result.workflows.get('report')).toMatchObject({
+        note: 'health',
+        resolved: { targets: [3, 7, 1], history: [3, 7] },
+      });
+      expect(result.workflows.get('all')!.resolved).toEqual({
+        targets: [],
+        history: 'all',
+      });
+    });
+
+    it('takes the note of a Channel named by ID', () => {
+      const noteOf = (ref: number) =>
+        snapshot(
+          { ...files, 'Workflows/Report.md': `---\nchannel: ${ref}\n---\nGo` },
+          { topics },
+        ).workflows.get('report')!.note;
+      expect(noteOf(7)).toBe('default');
+      expect(noteOf(8)).toBe('sleep');
+      expect(noteOf(9)).toBe('new');
+    });
+
+    it('posts a note without a channel-id to the topic of its title', () => {
+      const result = snapshot(
+        { ...files, 'Workflows/Report.md': '---\nchannel: Sleep\n---\nGo' },
+        { topics },
+      );
+      expect(result.workflows.get('report')).toMatchObject({
+        note: 'sleep',
+        resolved: { targets: [8] },
+      });
+      const unseen = {
+        ...files,
+        'Channels/Garden.md': 'Garden.',
+        'Workflows/Report.md': '---\nchannel: Garden\n---\nGo',
+      };
+      expect(errorsOf(unseen, { topics })).toEqual([
+        'Workflows/Report.md channel: Pero hasn\'t seen a topic titled "Garden" for Channels/Garden.md; write something there first',
+      ]);
+    });
+
+    it('reports Channels it hasn’t seen', () => {
+      const report = {
+        ...files,
+        'Workflows/Report.md': `---
+channel: [Away, 99, Work/General]
+---
+Go`,
+      };
+      expect(snapshot(report, { topics }).workflows.size).toBe(0);
+      expect(errorsOf(report, { topics })).toEqual([
+        "Workflows/Report.md channel: Pero hasn't seen the Channel telegram:-100999:1 of Channels/Away.md; write something there first",
+        'Workflows/Report.md channel: no Channel has the ID 99',
+        'Workflows/Report.md channel: no General topic in "Work" Pero has seen yet; write something there first',
+      ]);
+    });
   });
 });

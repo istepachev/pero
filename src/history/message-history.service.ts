@@ -370,7 +370,7 @@ function carried(message: Message): CarriedMessage {
       speaker = `Workflow ${workflowOf(message) ?? '?'}`;
       break;
     default:
-      speaker = message.agentName ?? 'Agent';
+      speaker = 'Pero';
   }
   return { speaker, text: message.text, createdAt: message.createdAt };
 }

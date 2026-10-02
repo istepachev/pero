@@ -31,12 +31,12 @@ interface Pending {
 }
 
 /** Posted in the Channel to ask about `summary`. */
-export function approvalText(agentName: string, summary: string): string {
-  return `Agent ${agentName} wants to use a tool:\n${summary}`;
+export function approvalText(summary: string): string {
+  return `Pero wants to use a tool:\n${summary}`;
 }
 
 /**
- * Asks the owner in a Channel whether its Agent may use a tool: posts the
+ * Asks the owner in a Channel whether Pero may use a tool there: posts the
  * request with Allow and Deny buttons, which anyone in the chat may press,
  * and waits for the answer. A request not answered in time, whose turn
  * ends, or that Pero outlives by stopping is denied. Nothing of it joins
@@ -95,7 +95,7 @@ export class ToolApprovals {
     if (request.signal.aborted) return this.denied('aborted');
     if (this.closed) return this.denied('stopping');
     const id = randomBytes(6).toString('base64url');
-    const text = approvalText(channel.agent.name, request.summary);
+    const text = approvalText(request.summary);
     const where = `${channel.integrationKind} Channel ${channel.id}`;
 
     let settle!: (outcome: Outcome) => void;

@@ -14,17 +14,17 @@ export interface CommandInfo {
 export const COMMANDS: readonly CommandInfo[] = [
   {
     name: 'status',
-    description: "This topic's Agent, its conversation, and Pero",
+    description: "This topic's settings, its conversation, and Pero",
   },
   {
     name: 'new',
     description: 'Start this topic over, without the conversation so far',
   },
-  { name: 'stop', description: "Stop the Agent's answer in this topic" },
-  { name: 'model', description: "Show or change this topic's Agent's model" },
+  { name: 'stop', description: "Stop Pero's answer in this topic" },
+  { name: 'model', description: "Show or change this topic's model" },
   {
     name: 'effort',
-    description: "Show or change this topic's Agent's reasoning effort",
+    description: "Show or change this topic's reasoning effort",
   },
   { name: 'workflows', description: 'Workflows, when they run, and how' },
   { name: 'run', description: 'Run a Workflow now' },
@@ -36,7 +36,7 @@ export const COMMANDS: readonly CommandInfo[] = [
 
 const NAMES: ReadonlySet<string> = new Set(COMMANDS.map(({ name }) => name));
 
-/** Whether Pero answers `/name` itself rather than its Agent. */
+/** Whether Pero answers `/name` itself rather than as a message. */
 export function isCommand(name: string): boolean {
   return NAMES.has(name);
 }

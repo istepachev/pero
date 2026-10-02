@@ -99,18 +99,15 @@ describe('ChannelRouter', () => {
   }
 
   /**
-   * A Channel that Agent `agentName` answers: a note of its own claims a
-   * topic's `title`, and the main Agent answers a primary Channel.
+   * A Channel answered with the Channel note named `noteName`: a topic's,
+   * named as its `title`, or `Default.md` for a primary Channel.
    */
   async function channel(
     key: string,
-    agentName: string,
-    title: string | null = key.includes(':') ? noteTitle(agentName) : null,
+    noteName: string,
+    title: string | null = key.includes(':') ? noteTitle(noteName) : null,
   ) {
-    await ws.agent(
-      noteTitle(agentName),
-      key.includes(':') && title !== null ? { topic: title } : {},
-    );
+    await ws.channel(noteTitle(noteName));
     return ds.getRepository(Channel).save({
       integrationKind: 'telegram',
       externalKey: key,
@@ -119,7 +116,7 @@ describe('ChannelRouter', () => {
     });
   }
 
-  /** The note title of the Agent named `name`. */
+  /** The title of the Channel note named `name`. */
   function noteTitle(name: string): string {
     return name.charAt(0).toUpperCase() + name.slice(1);
   }
@@ -226,9 +223,9 @@ describe('ChannelRouter', () => {
       await allow(OWNER);
     });
 
-    it('resolves a known key to its Channel and assigned Agent', async () => {
+    it('resolves a known key to its Channel and its note', async () => {
       const topic = await channel(`${GROUP.key}:7`, 'groceries');
-      const primary = await channel(GROUP.key, 'main');
+      const primary = await channel(GROUP.key, 'default');
       const message = inboundMessage(GROUP, { topic: '7' });
 
       await adapter.deliver(message);
@@ -239,7 +236,7 @@ describe('ChannelRouter', () => {
         1,
         expect.objectContaining({
           id: topic.id,
-          agent: expect.objectContaining({ name: 'groceries' }),
+          note: expect.objectContaining({ name: 'groceries' }),
         }),
         message,
         expect.any(Number),
@@ -248,7 +245,7 @@ describe('ChannelRouter', () => {
         2,
         expect.objectContaining({
           id: primary.id,
-          agent: expect.objectContaining({ name: 'main' }),
+          note: expect.objectContaining({ name: 'default' }),
         }),
         expect.anything(),
         expect.any(Number),
@@ -258,7 +255,7 @@ describe('ChannelRouter', () => {
     });
 
     it('hands an unknown key to onboarding', async () => {
-      await channel(GROUP.key, 'main');
+      await channel(GROUP.key, 'default');
       const message = inboundMessage(GROUP, { topic: '8' });
 
       await adapter.deliver(message);
@@ -279,16 +276,16 @@ describe('ChannelRouter', () => {
       expect(turns.handle).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           id: onboarded.id,
-          agent: expect.objectContaining({ name: 'groceries' }),
+          note: expect.objectContaining({ name: 'groceries' }),
         }),
         message,
         expect.any(Number),
       );
     });
 
-    it('drops a message when onboarding returns a Channel whose Agent is disabled', async () => {
+    it('drops a message when onboarding returns a Channel whose note is disabled', async () => {
       const onboarded = await channel(`${GROUP.key}:8`, 'groceries');
-      await ws.editAgent('Groceries', { enabled: false });
+      await ws.editChannel('Groceries', { enabled: false });
       onboarding.onUnknownChannel.mockResolvedValueOnce(onboarded);
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '9' }));
@@ -307,7 +304,7 @@ describe('ChannelRouter', () => {
     });
 
     it('passes a duplicate update on only once', async () => {
-      await channel(OWNER.key, 'main');
+      await channel(OWNER.key, 'default');
       const message = inboundMessage(OWNER, { updateId: '100' });
 
       await adapter.deliver(message);
@@ -326,11 +323,11 @@ describe('ChannelRouter', () => {
       ]);
     });
 
-    it('drops messages for a disabled Agent', async () => {
+    it('drops messages for a disabled note', async () => {
       await channel(`${GROUP.key}:7`, 'groceries');
-      await channel(GROUP.key, 'main');
-      await ws.editAgent('Groceries', { enabled: false });
-      await ws.editAgent('Main', { enabled: false });
+      await channel(GROUP.key, 'default');
+      await ws.editChannel('Groceries', { enabled: false });
+      await ws.editChannel('Default', { enabled: false });
 
       await adapter.deliver(inboundMessage(GROUP, { topic: '7' }));
       await adapter.deliver(inboundMessage(GROUP));
@@ -341,7 +338,7 @@ describe('ChannelRouter', () => {
 
     it("learns a topic's title from a message, and keeps one it knows", async () => {
       const topic = await channel(`${GROUP.key}:7`, 'groceries', null);
-      const primary = await channel(GROUP.key, 'main');
+      const primary = await channel(GROUP.key, 'default');
       const titleOf = async (id: number) =>
         (await ds.getRepository(Channel).findOneByOrFail({ id })).title;
 
@@ -420,7 +417,7 @@ describe('ChannelRouter', () => {
       const error = vi
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
-      await channel(OWNER.key, 'main');
+      await channel(OWNER.key, 'default');
       turns.handle.mockRejectedValueOnce(new Error('Runtime exploded'));
 
       await expect(

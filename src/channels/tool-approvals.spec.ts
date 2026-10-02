@@ -64,7 +64,7 @@ describe('ToolApprovals', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-approvals-');
-    await ws.agent('Main');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     await boot();
   });
@@ -98,7 +98,7 @@ describe('ToolApprovals', () => {
 
     expect(prompt.address).toEqual(OWNER.address);
     expect(prompt.message.text).toBe(
-      'Agent main wants to use a tool:\nBash: curl -sI https://example.com',
+      'Pero wants to use a tool:\nBash: curl -sI https://example.com',
     );
     expect(
       prompt.message.buttons?.flat().map((button) => button.label),

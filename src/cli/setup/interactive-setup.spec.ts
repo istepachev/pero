@@ -25,7 +25,6 @@ class FakeDaemon {
       codex: { model: null, effort: null },
     },
     dataFolder: '/home/owner/workspace/data',
-    mainAgent: 'main',
     historyCarryover: 50,
     historyRetentionDays: null,
     defaultPermissions: 'ask',
@@ -494,7 +493,7 @@ describe('runInteractiveSetup', () => {
       // Only once the group is set up.
       expect(
         printed.indexOf(
-          'Pero posted your first steps there. Reply to start talking to your main Agent.',
+          'Pero posted your first steps there. Reply to start talking to Pero.',
         ),
       ).toBe(
         printed.indexOf(
@@ -529,7 +528,7 @@ describe('runInteractiveSetup', () => {
 
     it('shows the danger of a public group, and checks again until it is private', async () => {
       const danger =
-        'Home (-100777) is a public group (@home): anyone can find it, join, and talk to its Agents';
+        'Home (-100777) is a public group (@home): anyone can find it, join, and talk to Pero';
       daemon.telegram = {
         bot: 'pero_test_bot',
         allowed: [{ ...allowedChat('-100777', 'group', 'Home'), danger }],
@@ -571,7 +570,7 @@ describe('runInteractiveSetup', () => {
         'Skipped; anyone can still join group "Home" (-100777). Make it private, or pero telegram deny -100777',
       );
       expect(printed.at(-1)).toContain(
-        'Telegram: group "Home" (-100777) is public, so anyone can join it and talk to its Agents',
+        'Telegram: group "Home" (-100777) is public, so anyone can join it and talk to Pero',
       );
     });
 

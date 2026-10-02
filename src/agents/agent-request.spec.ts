@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Agent } from '../system-files/snapshot.js';
+import type { ChannelNote } from '../system-files/snapshot.js';
 import {
   agentContext,
   agentRequest,
@@ -13,62 +13,39 @@ const FOLDERS = {
   systemFolder: '/ws/data/System',
   guideFile: '/ws/.pero/guide.md',
 };
-const HEALTH = { title: 'Health', file: 'Agents/Health.md' };
+const HEALTH = { title: 'Health', file: 'Channels/Health.md' };
 const CONTEXT = agentContext(HEALTH, FOLDERS);
 
 describe('composeInstructions', () => {
-  const main = { ...FOLDERS, mainInstructions: 'Answer in English.' };
+  const shared = {
+    ...FOLDERS,
+    persona: 'Be calm.',
+    instructions: 'Answer in English.',
+  };
 
-  it('starts with the context, then the main Agent’s instructions, then its own', () => {
+  it('starts with the context, then the persona, the instructions, and the note’s own', () => {
     expect(
-      composeInstructions(
-        {
-          ...HEALTH,
-          instructions: 'Track spending.',
-          mainInstructions: true,
-        },
-        main,
-      ),
-    ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
+      composeInstructions({ ...HEALTH, instructions: 'Track spending.' }, shared),
+    ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
       `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}`,
     );
   });
 
-  it('leaves the main Agent’s instructions out for the main Agent or one that opts out', () => {
-    expect(
-      composeInstructions(
-        {
-          ...HEALTH,
-          instructions: 'Track spending.',
-          mainInstructions: false,
-        },
-        main,
-      ),
-    ).toBe(`${CONTEXT}\n\nTrack spending.`);
-  });
-
   it('leaves out empty parts, keeping the context', () => {
     expect(
-      composeInstructions(
-        { ...HEALTH, instructions: null, mainInstructions: true },
-        main,
-      ),
-    ).toBe(`${CONTEXT}\n\nAnswer in English.`);
+      composeInstructions({ ...HEALTH, instructions: null }, shared),
+    ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.`);
     expect(
       composeInstructions(
-        {
-          ...HEALTH,
-          instructions: 'Track spending.',
-          mainInstructions: true,
-        },
-        { ...FOLDERS, mainInstructions: null },
+        { ...HEALTH, instructions: 'Track spending.' },
+        { ...FOLDERS, persona: null, instructions: null },
       ),
     ).toBe(`${CONTEXT}\n\nTrack spending.`);
     expect(
       composeInstructions(
-        { ...HEALTH, instructions: '  ', mainInstructions: true },
-        { ...FOLDERS, mainInstructions: '' },
+        { ...HEALTH, instructions: '  ' },
+        { ...FOLDERS, persona: '', instructions: '\n' },
       ),
     ).toBe(CONTEXT);
   });
@@ -76,58 +53,63 @@ describe('composeInstructions', () => {
   it('trims each part so they meet at one blank line', () => {
     expect(
       composeInstructions(
-        {
-          ...HEALTH,
-          instructions: '\nTrack spending.\n',
-          mainInstructions: true,
-        },
-        { ...FOLDERS, mainInstructions: 'Answer in English.\n\n' },
+        { ...HEALTH, instructions: '\nTrack spending.\n' },
+        { ...FOLDERS, persona: null, instructions: 'Answer in English.\n\n' },
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
   });
 });
 
 describe('systemFolderNote', () => {
-  it('names the Agent, its note, Pero.md, the Workflows, and the guide', () => {
+  it('names the Channel, its note, the shared notes, the Workflows, and the guide', () => {
     const note = systemFolderNote(
-      { title: 'Weekly Health', file: 'Agents/Coaches/Weekly Health.md' },
+      { title: 'Weekly Health', file: 'Channels/Coaches/Weekly Health.md' },
       FOLDERS,
     );
-    expect(note).toContain('the Agent Weekly Health of Pero');
+    expect(note).toContain('You are Pero');
+    expect(note).toContain('the Channel Weekly Health.');
     expect(note).toContain(
-      'the note /ws/data/System/Agents/Coaches/Weekly Health.md.',
+      'the note /ws/data/System/Channels/Coaches/Weekly Health.md.',
     );
+    expect(note).toContain('/ws/data/System/Persona.md');
+    expect(note).toContain('/ws/data/System/Instructions.md');
     expect(note).toContain('/ws/data/System/Pero.md');
     expect(note).toContain('notes in /ws/data/System/Workflows.');
     expect(note).toMatch(/read \/ws\/\.pero\/guide\.md\.$/);
   });
+
+  it('says where the note goes for a Channel without one', () => {
+    expect(
+      systemFolderNote({ title: 'Garden', file: null }, FOLDERS),
+    ).toContain(
+      'This Channel has no note of its own yet; Pero writes one in /ws/data/System/Channels.',
+    );
+  });
 });
 
 describe('agentRequest', () => {
-  it("maps the Agent's settings and composes the instructions", () => {
-    const note: Agent['note'] = {
-      topic: null,
+  it("maps the note's settings and composes the instructions", () => {
+    const note: ChannelNote['note'] = {
+      channelId: null,
       provider: 'codex',
       model: 'gpt-5',
       effort: 'high',
       permissions: 'bypass',
       workingDirectory: null,
-      skipMainInstructions: false,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'Track spending.',
     };
-    const agent: Agent = {
+    const channel: ChannelNote = {
       name: 'coach',
       title: 'Coach',
-      file: 'Agents/Coach.md',
-      topic: null,
+      file: 'Channels/Coach.md',
+      channelId: null,
       provider: 'codex',
       model: 'gpt-5',
       effort: 'high',
       permissions: 'bypass',
       workingDirectory: '/vault',
-      mainInstructions: true,
       skipGitRepoCheck: true,
       enabled: false,
       instructions: 'Track spending.',
@@ -139,12 +121,13 @@ describe('agentRequest', () => {
       guideFile: '/ws/.pero/guide.md',
     };
     expect(
-      agentRequest(agent, {
+      agentRequest(channel, {
         ...folders,
-        mainInstructions: 'Answer in English.',
+        persona: null,
+        instructions: 'Answer in English.',
       }),
     ).toEqual({
-      instructions: `${agentContext(agent, folders)}\n\nAnswer in English.\n\nTrack spending.`,
+      instructions: `${agentContext(channel, folders)}\n\nAnswer in English.\n\nTrack spending.`,
       providerOptions: { model: 'gpt-5', effort: 'high' },
       workingDirectory: '/vault',
       skipGitRepoCheck: true,

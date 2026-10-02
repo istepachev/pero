@@ -3,7 +3,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { AgentManager } from '../../agents/agent-manager.js';
-import { AgentViews } from '../../agents/agent-views.service.js';
 import {
   ConflictError,
   InvalidInputError,
@@ -14,7 +13,7 @@ import {
   CODEX_EFFORTS,
   type Provider,
 } from '../../config/provider-options.js';
-import type { AgentView } from '../../control/protocol.js';
+import type { ChannelNoteView } from '../../control/protocol.js';
 import { ComponentHealth } from '../../health/component-health.js';
 import { MessageHistory } from '../../history/message-history.service.js';
 import { Channel } from '../../persistence/entities/channel.entity.js';
@@ -22,8 +21,12 @@ import { Message } from '../../persistence/entities/message.entity.js';
 import { Session } from '../../persistence/entities/session.entity.js';
 import { inTransaction } from '../../persistence/transaction.js';
 import { SessionService } from '../../sessions/session.service.js';
-import { AgentNotes } from '../../system/agent-notes.service.js';
-import { Definitions, type Route } from '../../system/definitions.js';
+import { ChannelNotes } from '../../system/channel-notes.service.js';
+import {
+  Definitions,
+  type Route,
+  routeQuery,
+} from '../../system/definitions.js';
 import { SystemNotes } from '../../system/system-notes.service.js';
 import type {
   ActionResult,
@@ -31,23 +34,24 @@ import type {
   InboundCommand,
 } from '../channel-adapter.js';
 import { ChannelSender } from '../channel-sender.js';
+import { channelNoteView, folderProblem } from '../channel-note-view.js';
 import { unansweredText } from '../channel-stages.js';
 import { buttonCommand } from './command-list.js';
 import { WorkflowCommands } from './workflow-commands.js';
 import {
-  type AgentOption,
-  type AgentStatus,
   type Answer,
+  type ChannelStatus,
   helpScreen,
   optionScreen,
   optionSetScreen,
   type OptionStatus,
   newConfirmScreen,
   newDoneScreen,
-  noAgentScreen,
+  type NoteOption,
   type Screen,
   statusScreen,
   stopScreen,
+  unansweredScreen,
 } from './screens.js';
 
 /**
@@ -76,13 +80,12 @@ export class ChannelCommands {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly sender: ChannelSender,
     private readonly agents: AgentManager,
-    private readonly agentViews: AgentViews,
     private readonly sessions: SessionService,
     private readonly history: MessageHistory,
     private readonly health: ComponentHealth,
     private readonly definitions: Definitions,
     private readonly notes: SystemNotes,
-    private readonly agentNotes: AgentNotes,
+    private readonly channelNotes: ChannelNotes,
     private readonly workflows: WorkflowCommands,
   ) {}
 
@@ -143,7 +146,7 @@ export class ChannelCommands {
         case 'new':
           return await this.startOver(channel, route, command.args, by);
         case 'stop':
-          return this.stop(channel, route, by);
+          return this.stop(channel, by);
         case 'workflows':
           return await this.workflows.workflows(command.args.trim());
         case 'run':
@@ -157,6 +160,7 @@ export class ChannelCommands {
         case 'model':
         case 'effort':
           return await this.option(
+            channel,
             route,
             command.name,
             command.args.trim(),
@@ -192,29 +196,30 @@ export class ChannelCommands {
     const { timezone } = this.definitions.defaults();
     return statusScreen({
       where: channel.title,
-      agent:
-        route.kind === 'agent'
-          ? await this.agentStatus(channel, route.agent.name)
+      channel:
+        route.kind === 'answered'
+          ? await this.channelStatus(channel, route)
           : null,
-      unanswered: route.kind === 'agent' ? null : unansweredText(route.reason),
+      unanswered:
+        route.kind === 'answered' ? null : unansweredText(route.reason),
       components: this.health.list(),
       timezone,
       now: new Date(),
     });
   }
 
-  private async agentStatus(
+  private async channelStatus(
     channel: Channel,
-    name: string,
-  ): Promise<AgentStatus> {
-    const agent = await this.agentViews.details(name);
+    route: Extract<Route, { kind: 'answered' }>,
+  ): Promise<ChannelStatus> {
+    const note = this.noteView(route);
     const activity = this.agents.activity(channel.id);
     const { workspace } = this.notes.folders();
+    const problem = await folderProblem(note.effectiveWorkingDirectory);
     return inTransaction(this.dataSource, async (manager) => {
-      const session = await manager.getRepository(Session).findOneBy({
-        channelId: channel.id,
-        agentName: name,
-        status: 'active',
+      const session = await manager.getRepository(Session).findOne({
+        where: { channelId: channel.id, status: 'active' },
+        order: { id: 'DESC' },
       });
       const messages = manager.getRepository(Message);
       const lastAnswer = await messages.findOne({
@@ -223,9 +228,9 @@ export class ChannelCommands {
         order: { id: 'DESC' },
       });
       return {
-        agent,
-        folder: shownFolder(workspace, agent.effectiveWorkingDirectory),
-        folderProblem: agent.folderProblem,
+        note,
+        folder: shownFolder(workspace, note.effectiveWorkingDirectory),
+        folderProblem: problem,
         runningSince: activity.runningSince,
         queued: activity.queued,
         lastAnswerAt: lastAnswer?.createdAt ?? null,
@@ -248,7 +253,7 @@ export class ChannelCommands {
   }
 
   /**
-   * `/new`: stops the Agent, closes the Channel's Session, and marks where
+   * `/new`: stops Pero's answer, closes the Channel's Session, and marks where
    * the next one starts, so it carries nothing from before. Its button
    * asks first (`ask`); typed, or confirmed (`yes`), it acts at once.
    */
@@ -258,15 +263,14 @@ export class ChannelCommands {
     args: string,
     by: string | null,
   ): Promise<Answer> {
-    if (route.kind !== 'agent') {
+    if (route.kind !== 'answered') {
       return {
-        screen: noAgentScreen(unansweredText(route.reason)),
+        screen: unansweredScreen(unansweredText(route.reason)),
         notice: null,
       };
     }
-    const agent = route.agent.name;
     if (args === 'ask') {
-      return { screen: newConfirmScreen(agent), notice: null };
+      return { screen: newConfirmScreen(), notice: null };
     }
     // Stopped first: an answer still coming would join the new context.
     const { stopped } = this.agents.stop(channel.id);
@@ -278,33 +282,30 @@ export class ChannelCommands {
     });
     this.logger.log(`Started ${where(channel)} over, as ${by ?? 'asked'}`);
     return {
-      screen: newDoneScreen(agent, stopped, by),
+      screen: newDoneScreen(stopped, by),
       notice: 'Started over',
     };
   }
 
   /**
-   * `/model` and `/effort`: without a value, the Agent's current one and a
-   * button for each choice; with one, or `default`, it goes into the
-   * Agent's note, from where it applies to the Agent's next answer.
+   * `/model` and `/effort`: without a value, the Channel's current one and
+   * a button for each choice; with one, or `default`, it goes into the
+   * Channel's note, from where it applies to the next answer.
    */
   private async option(
+    channel: Channel,
     route: Route,
-    option: AgentOption,
+    option: NoteOption,
     value: string,
     by: string | null,
   ): Promise<Answer> {
-    if (route.kind !== 'agent') {
+    if (route.kind !== 'answered') {
       return {
-        screen: noAgentScreen(unansweredText(route.reason)),
+        screen: unansweredScreen(unansweredText(route.reason)),
         notice: null,
       };
     }
-    const name = route.agent.name;
-    const status = this.optionStatus(
-      await this.agentViews.details(name),
-      option,
-    );
+    const status = this.optionStatus(this.noteView(route), option);
     if (value === '') return { screen: optionScreen(status), notice: null };
     const wanted =
       value.toLowerCase() === 'default'
@@ -316,16 +317,21 @@ export class ChannelCommands {
       wanted === null
         ? null
         : option === 'effort' && !status.choices.includes(wanted)
-          ? `There is no effort ${value} for ${route.agent.provider}.`
+          ? `There is no effort ${value} for ${route.note.provider}.`
           : /\s/.test(wanted)
             ? `A model's name has no spaces: ${value}`
             : null;
     if (problem !== null) {
       return { screen: optionScreen(status, problem), notice: null };
     }
-    const { changed } = await this.agentNotes.setProperty(name, option, wanted);
+    const name = await this.noteNameFor(channel, route);
+    const { changed } = await this.channelNotes.setProperty(
+      name,
+      option,
+      wanted,
+    );
     const after = this.optionStatus(
-      await this.agentViews.details(name),
+      this.noteView(this.definitions.route(routeQuery(channel))),
       option,
     );
     return {
@@ -334,13 +340,58 @@ export class ChannelCommands {
     };
   }
 
+  /** The settings `route` answers with, as `/status` shows them. */
+  private noteView(route: Route): ChannelNoteView {
+    if (route.kind !== 'answered') {
+      throw new ConflictError("Pero doesn't answer here now");
+    }
+    return channelNoteView(
+      route.note,
+      this.notes.snapshot(),
+      this.notes.folders(),
+    );
+  }
+
+  /**
+   * The name of the note `channel` uses, writing or binding it first when
+   * it has none, so a setting has a note to go into.
+   */
+  private async noteNameFor(
+    channel: Channel,
+    route: Extract<Route, { kind: 'answered' }>,
+  ): Promise<string> {
+    if (route.match === 'note') return route.note.name;
+    const query = routeQuery(channel);
+    const file =
+      route.match === 'bindable'
+        ? ((await this.channelNotes.bind(route.note.file!, query.channelId))
+          ? route.note.file
+          : null)
+        : query.primary
+          ? await this.channelNotes.createDefault()
+          : await this.channelNotes.createFor(
+              query.channelId,
+              channel.title?.trim() ?? '',
+              channel.externalKey.slice(channel.externalKey.indexOf(':') + 1),
+            );
+    const after = this.definitions.route(query);
+    if (file === null || after.kind !== 'answered' || after.match !== 'note') {
+      throw new ConflictError(
+        "This Channel's note couldn't be written; see pero logs",
+      );
+    }
+    return after.note.name;
+  }
+
   /** What `/model` or `/effort` shows of `agent`, with its choices. */
-  private optionStatus(agent: AgentView, option: AgentOption): OptionStatus {
+  private optionStatus(
+    agent: ChannelNoteView,
+    option: NoteOption,
+  ): OptionStatus {
     const defaults =
       this.definitions.defaults().providerDefaults[agent.provider];
     const value = agent[option];
     return {
-      agent: agent.name,
       file: agent.file,
       option,
       value,
@@ -357,16 +408,16 @@ export class ChannelCommands {
 
   /**
    * Models to offer for `provider`: its well-known names, then those the
-   * workspace already uses, such as other Agents' and `Pero.md`'s.
+   * workspace already uses, such as other Channels' and `Pero.md`'s.
    */
   private modelChoices(
     provider: Provider,
     used: readonly (string | null)[],
   ): string[] {
     const others = this.definitions
-      .agents()
-      .filter((agent) => agent.provider === provider)
-      .map((agent) => agent.model);
+      .channelNotes()
+      .filter((note) => note.provider === provider)
+      .map((note) => note.model);
     const choices = new Set<string>(MODEL_SUGGESTIONS[provider]);
     for (const model of [...used, ...others]) {
       if (model !== null) choices.add(model);
@@ -375,23 +426,22 @@ export class ChannelCommands {
   }
 
   /** `/stop`: stops the running answer and drops the waiting messages. */
-  private stop(channel: Channel, route: Route, by: string | null): Answer {
+  private stop(channel: Channel, by: string | null): Answer {
     const result = this.agents.stop(channel.id);
-    const agent = route.kind === 'agent' ? route.agent.name : null;
     if (result.stopped || result.dropped > 0) {
       this.logger.log(
         `Stopped ${where(channel)}: ${result.stopped ? 'its running turn and ' : ''}${result.dropped} waiting`,
       );
     }
     return {
-      screen: stopScreen(agent, result, by),
+      screen: stopScreen(result, by),
       notice:
         result.stopped || result.dropped > 0 ? 'Stopped' : 'Nothing to stop',
     };
   }
 }
 
-/** The folder an Agent works in, as its owner names it. */
+/** The folder turns work in, as the owner names it. */
 function shownFolder(workspace: string, folder: string): string {
   const inside = relative(workspace, folder);
   if (inside === '') return 'the workspace';

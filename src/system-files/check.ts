@@ -34,10 +34,10 @@ export interface WorkspaceCheck {
    * when `config.yaml` is invalid, and the notes were not checked.
    */
   systemFolder: string | null;
-  /** How many Agents and Workflows loaded. */
-  agents: number;
+  /** How many Channel notes and Workflows loaded. */
+  channels: number;
   workflows: number;
-  /** Whether topic titles were checked against the topics Pero has seen. */
+  /** Whether Channel references were checked against the Channels Pero has seen. */
   topicsChecked: boolean;
   /** `config.yaml`'s first, then `.env`'s, then the notes' by file. */
   problems: CheckProblem[];
@@ -48,7 +48,7 @@ export interface CheckWorkspaceInput {
   workspace: string;
   homeDir: string;
   hostTimeZone: string;
-  /** Without one, topic titles are checked for syntax only. */
+  /** Without one, Channel references are checked without Pero's database. */
   topics?: TopicLookup;
 }
 
@@ -126,7 +126,7 @@ export async function checkWorkspace(
   if (config === null) {
     return {
       systemFolder: null,
-      agents: 0,
+      channels: 0,
       workflows: 0,
       topicsChecked: false,
       problems,
@@ -144,7 +144,7 @@ export async function checkWorkspace(
   }
   return {
     systemFolder: shown(systemFolder),
-    agents: snapshot.agents.size,
+    channels: snapshot.channelNotes.size,
     workflows: snapshot.workflows.size,
     topicsChecked: input.topics !== undefined,
     problems,

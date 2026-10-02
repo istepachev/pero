@@ -41,10 +41,10 @@ export class WorkspaceInitError extends Error {
 export function peroNote(timeZone: string): string {
   const timezone = `timezone: ${timeZone}`;
   return `---
-# Installation defaults: each applies to every Agent and Workflow that
+# Installation defaults: each applies to every Channel and Workflow that
 # doesn't set its own. An empty property takes the default: claude for
 # provider, and the provider's own model and effort.
-# Instructions go in the Agents' notes, not here.
+# Instructions go in Persona.md, Instructions.md, and the Channels' notes.
 provider:                     # claude or codex
 claude-model:                 # such as opus or sonnet
 claude-effort:                # low, medium, high, xhigh, or max
@@ -52,7 +52,6 @@ codex-model:                  # such as gpt-5.5
 codex-effort:                 # minimal, low, medium, high, xhigh, max, ultra, or persistent
 permissions: ask              # ask or bypass
 ${timezone.padEnd(29)} # this server's; set yours, such as Europe/Berlin
-main-agent: Main              # the Agent note for General topics and direct chats
 history-carryover: 50
 history-retention-days:       # keep everything when empty
 max-concurrent-runs: 2
@@ -60,27 +59,50 @@ max-concurrent-runs: 2
 `;
 }
 
-const MAIN_NOTE = `---
-# The main Agent: it answers the General topic of every allowed group,
-# groups without topics, and direct chats. Every topic's Agent starts
-# with these instructions, then adds its own.
-# A property left empty takes Pero.md's value.
+const PERSONA_NOTE = `You are a calm, concise personal assistant. Reply in the language you're written to in.
+`;
+
+const INSTRUCTIONS_NOTE = `You help with everyday questions and keep my notes tidy.
+`;
+
+/** The settings every Channel note lists, as Pero writes them. */
+const CHANNEL_SETTINGS = `# A property left empty takes Pero.md's value.
 provider:                            # claude or codex
 model:                               # such as opus or sonnet
 effort:                              # such as low, medium, or high
 permissions:                         # ask or bypass
-# working-directory: projects/site   # relative to the workspace
+# working-directory: projects/site   # relative to the workspace`;
+
+/**
+ * The note Pero writes for a new Channel when `Channels/_Template.md`
+ * doesn't exist; it sets `channel-id` in it.
+ */
+export const CHANNEL_TEMPLATE_NOTE = `---
+# This Channel's settings and instructions: its turns start with
+# Persona.md and Instructions.md, then the text below.
+# channel-id binds the note to its Channel; keep it as Pero wrote it.
+channel-id:
+${CHANNEL_SETTINGS}
 ---
-You are a calm, concise personal assistant. Reply in the language you're written to in.
-You help with everyday questions and keep my notes tidy.
+`;
+
+const DEFAULT_NOTE = `---
+# The Default Channel: General topics, groups without topics, and direct
+# chats. Its turns start with Persona.md and Instructions.md, then the
+# text below.
+${CHANNEL_SETTINGS}
+---
 `;
 
 /**
- * The notes `pero init` writes as they are, by their path in the system
- * folder; `Pero.md`, which holds the host's time zone, is `peroNote`'s.
+ * The notes Pero writes when they are missing, as they are, by their path
+ * in the system folder; `Pero.md`, which holds the host's time zone, is
+ * `peroNote`'s.
  */
 export const SKELETON_NOTES: Readonly<Record<string, string>> = {
-  'Agents/Main.md': MAIN_NOTE,
+  'Persona.md': PERSONA_NOTE,
+  'Instructions.md': INSTRUCTIONS_NOTE,
+  'Channels/Default.md': DEFAULT_NOTE,
 };
 
 /**
@@ -88,7 +110,7 @@ export const SKELETON_NOTES: Readonly<Record<string, string>> = {
  * never overwriting a file: `.gitignore` listing `.env`, `.pero/` with its
  * `.gitignore` and a commented `config.yaml` naming `data` as the data
  * folder (`data/` by default), and in the system folder `Pero.md`,
- * `Agents/Main.md`, and `Workflows/`.
+ * `Persona.md`, `Instructions.md`, `Channels/Default.md`, and `Workflows/`.
  * In a cloned workspace it only fills in what is missing, and an existing
  * `config.yaml` decides where the system folder is.
  */
@@ -144,8 +166,9 @@ export function initWorkspace(
     join(system, 'Pero.md'),
     peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
-  folder(join(system, 'Agents'));
-  file(join(system, 'Agents', 'Main.md'), MAIN_NOTE);
+  for (const [path, text] of Object.entries(SKELETON_NOTES)) {
+    file(join(system, path), text);
+  }
   const workflows = join(system, 'Workflows');
   entries.push({
     path: `${shown(workflows)}/`,

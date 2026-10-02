@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { HealthModule } from '../health/health.module.js';
-import { AgentNotes } from './agent-notes.service.js';
+import { ChannelNotes } from './channel-notes.service.js';
 import { Definitions } from './definitions.js';
 import { SystemNotes } from './system-notes.service.js';
 
@@ -13,7 +13,7 @@ import { SystemNotes } from './system-notes.service.js';
  */
 @Module({
   imports: [HealthModule],
-  providers: [SystemNotes, AgentNotes, Definitions],
-  exports: [SystemNotes, AgentNotes, Definitions],
+  providers: [SystemNotes, ChannelNotes, Definitions],
+  exports: [SystemNotes, ChannelNotes, Definitions],
 })
 export class SystemModule {}

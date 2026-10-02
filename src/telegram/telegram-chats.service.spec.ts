@@ -45,7 +45,7 @@ describe('TelegramChats', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-chats-');
-    await ws.agent('Main');
+    await ws.channel('Default');
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
@@ -84,9 +84,9 @@ describe('TelegramChats', () => {
     );
   }
 
-  /** The Agent notes, by file name. */
-  function agentNotes(): string[] {
-    return readdirSync(join(ws.systemFolder, 'Agents')).sort();
+  /** The Channel notes, by file name. */
+  function channelNotes(): string[] {
+    return readdirSync(join(ws.systemFolder, 'Channels')).sort();
   }
 
   function chats(): TelegramChats {
@@ -170,11 +170,11 @@ describe('TelegramChats', () => {
 
     expect(welcome).toMatchObject({ chat_id: '1234' });
     expect(welcome?.text).toMatch(
-      /^This chat talks to Agent main: claude, default model, working in .+\.\n\nFirst steps:\n/,
+      /^Pero answers in this chat with claude, default model, working in .+\.\n\nFirst steps:\n/,
     );
     expect(welcome?.text).toContain('pero telegram allow <chat-id>');
 
-    // The first message goes to the Agent, and checking the chat again
+    // The first message is answered, and checking the chat again
     // posts nothing.
     api.push(message(DIRECT, 'One'));
     const sent = await sentCount(3);
@@ -305,7 +305,7 @@ describe('TelegramChats', () => {
     });
     expect(runtime.requests).toHaveLength(1);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(agentNotes()).toEqual(['Main.md']);
+    expect(channelNotes()).toEqual(['Default.md']);
 
     await chats().allow('1234');
     api.push(message(DIRECT, 'Three'));
@@ -319,6 +319,6 @@ describe('TelegramChats', () => {
       expect.objectContaining({ id: session!.id, status: 'active' }),
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(agentNotes()).toEqual(['Main.md']);
+    expect(channelNotes()).toEqual(['Default.md']);
   });
 });

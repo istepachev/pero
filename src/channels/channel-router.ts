@@ -35,7 +35,7 @@ import { UnansweredReplies } from './unanswered-replies.js';
  * The reply a chat that is not allowed gets, each hint at most once an
  * hour: how to pair it in a terminal on the host, or, while `pero run`
  * waits for a chat there, to confirm it in that terminal. Pero's own
- * text, never an Agent's: no runtime answers a chat that is not allowed.
+ * text, never a model's: no runtime answers a chat that is not allowed.
  */
 export function pairingHint(
   kind: IntegrationKind,
@@ -52,7 +52,7 @@ export function pairingHint(
 /**
  * Takes every update from the connected adapters. Only allowed chats get
  * past it, each update only once; a message then joins its Channel's
- * history and goes to the Agent that answers there now, through onboarding
+ * history and is answered with the Channel's note, through onboarding
  * first when its Channel is new. Where no one answers, Pero says why once.
  */
 @Injectable()
@@ -115,7 +115,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       const command = message.content.command;
       if (command !== undefined && isCommand(command.name)) {
         // Pero's own business: neither the command nor its answer joins
-        // the history, and no Agent sees them.
+        // the history, and no turn sees them.
         const channel = await this.channelOf(message);
         await this.inboundUpdates.markProcessed(kind, updateId);
         if (channel === null) return;
@@ -131,7 +131,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
       }
-      // Recorded as its update is handed on, so a message the Agent gets is
+      // Recorded as its update is handed on, so a message a turn gets is
       // in the history, and a redelivered one never is twice.
       const messageId = await this.inboundUpdates.markProcessed(
         kind,
@@ -139,7 +139,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         (manager) =>
           this.history.recordInboundWithin(manager, {
             channelId: channel.id,
-            agentName: channel.agent.name,
+            agentName: channel.note.name,
             externalMessageId: message.messageId,
             senderId: message.senderId,
             text: message.content.text,
@@ -224,8 +224,9 @@ export class ChannelRouter implements BeforeApplicationShutdown {
   }
 
   /**
-   * The Channel `message` goes to, onboarding it when new, with the Agent
-   * that answers there now; null, after saying why once, when no one does.
+   * The Channel `message` goes to, onboarding it when new, with the note
+   * Pero answers there with now; null, after saying why once, when it
+   * doesn't answer there.
    * The route follows the notes on every message, so it isn't stored.
    */
   private async route(message: InboundMessage): Promise<RoutedChannel | null> {
@@ -237,7 +238,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       return null;
     }
     this.unanswered.answered(channel.id);
-    return Object.assign(channel, { agent: route.agent });
+    return Object.assign(channel, { note: route.note });
   }
 
   /**

@@ -98,7 +98,7 @@ describe('Channel onboarding', () => {
         'codex-effort': 'low',
         timezone: 'Asia/Tokyo',
       });
-      await ws.agent('Main');
+      await ws.channel('Default');
       await boot(ws.database, ws.hostConfig());
     });
 
@@ -121,19 +121,15 @@ describe('Channel onboarding', () => {
         }),
       ]);
       const welcome =
-        `This topic talks to Agent groceries-errands: codex, model ` +
-        `gpt-5.5-codex, working in ${ws.root}. Its settings and ` +
-        `instructions are in data/System/Agents/Groceries & Errands.md: ` +
-        `edit that note, or ask here to change them.`;
+        `Pero answers in this topic with codex, model gpt-5.5-codex, ` +
+        `working in ${ws.root}. This topic's settings and instructions are ` +
+        `in data/System/Channels/Groceries & Errands.md: edit that note, ` +
+        `or ask here to change them.`;
       expect(
         welcomeText(
-          {
-            name: 'groceries-errands',
-            provider: 'codex',
-            model: 'gpt-5.5-codex',
-          },
+          { provider: 'codex', model: 'gpt-5.5-codex' },
           ws.root,
-          'data/System/Agents/Groceries & Errands.md',
+          'data/System/Channels/Groceries & Errands.md',
           'topic',
         ),
       ).toBe(welcome);
@@ -156,7 +152,7 @@ describe('Channel onboarding', () => {
       expect(turns.handle).not.toHaveBeenCalled();
     });
 
-    it('welcomes a Channel before its first message goes to the Agent', async () => {
+    it('welcomes a Channel before its first message is answered', async () => {
       let sentBeforeTurn = -1;
       turns.handle.mockImplementationOnce(() => {
         sentBeforeTurn = adapter.sent.length;
@@ -174,23 +170,25 @@ describe('Channel onboarding', () => {
       await moduleRef.get(ChannelOnboarding).onChatAllowed('telegram', GROUP);
 
       const steps = firstStepsText(
-        { name: 'main', provider: 'codex', model: 'gpt-5.5-codex' },
+        { provider: 'codex', model: 'gpt-5.5-codex' },
         ws.root,
         {
-          note: 'data/System/Agents/Main.md',
+          note: 'data/System/Channels/Default.md',
+          persona: 'data/System/Persona.md',
+          instructions: 'data/System/Instructions.md',
           pero: 'data/System/Pero.md',
-          agents: 'data/System/Agents/',
+          channels: 'data/System/Channels/',
           workflows: 'data/System/Workflows/',
           timezone: 'Asia/Tokyo',
         },
         'group',
       );
       expect(steps).toMatch(
-        /^This chat talks to Agent main: codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: this Agent's personality and instructions are in data\/System\/Agents\/Main\.md\./,
+        /^Pero answers in this chat with codex, model gpt-5\.5-codex, working in .+\.\n\nFirst steps:\n1\. Make it yours: Pero's personality is in data\/System\/Persona\.md and its instructions in data\/System\/Instructions\.md\./,
       );
       expect(steps).toContain('2. Create a topic for each subject');
       expect(steps).toContain(
-        '3. Schedules use the time zone Asia/Tokyo. Set yours, and defaults for every Agent such as the provider and model, in data/System/Pero.md.',
+        '3. Schedules use the time zone Asia/Tokyo. Set yours, and defaults for every Channel such as the provider and model, in data/System/Pero.md.',
       );
       expect(steps).toContain('Workflows are notes in data/System/Workflows/.');
       expect(adapter.sent).toEqual([
@@ -200,7 +198,7 @@ describe('Channel onboarding', () => {
         expect.objectContaining({ externalKey: GROUP.key, title: 'Household' }),
       ]);
 
-      // Its first message goes straight to the Agent, and allowing it again
+      // Its first message is answered at once, and allowing it again
       // after a restart's worth of forgetting changes nothing.
       await adapter.deliver(inboundMessage(GROUP));
       await moduleRef.get(ChannelOnboarding).onChatAllowed('telegram', GROUP);
@@ -209,14 +207,14 @@ describe('Channel onboarding', () => {
       expect(turns.handle).toHaveBeenCalledOnce();
     });
 
-    it('tells a direct chat how to get an Agent per topic', async () => {
+    it('tells a direct chat how to get a Channel per subject', async () => {
       await adapter.deliver(inboundMessage(OWNER));
 
       expect(adapter.sent).toHaveLength(1);
       const text = String(adapter.sent[0]!.message.text);
-      expect(text).toMatch(/^This chat talks to Agent main: /);
+      expect(text).toMatch(/^Pero answers in this chat with /);
       expect(text).toContain(
-        '2. Get an Agent per subject: create a private Telegram group',
+        '2. Get a Channel per subject: create a private Telegram group',
       );
       expect(text).not.toContain('Create a topic for each subject');
     });

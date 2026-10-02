@@ -1,9 +1,4 @@
 import { Module } from '@nestjs/common';
-import {
-  AgentsCommand,
-  AgentsListCommand,
-  AgentsShowCommand,
-} from './commands/agents.command.js';
 import { BackupCommand } from './commands/backup.command.js';
 import {
   ChannelsCommand,
@@ -71,9 +66,6 @@ import { StrictArguments } from './strict-arguments.js';
     ServiceUninstallCommand,
     LogsCommand,
     SettingsCommand,
-    AgentsCommand,
-    AgentsListCommand,
-    AgentsShowCommand,
     ChannelsCommand,
     ChannelsListCommand,
     ChannelsShowCommand,

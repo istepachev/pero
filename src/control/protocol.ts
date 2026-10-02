@@ -44,7 +44,7 @@ export const componentStatusSchema = z.object({
   /** When the component entered its current state. */
   since: z.iso.datetime(),
   /**
-   * Whether health depends on it; a provider no Agent uses is listed but
+   * Whether health depends on it; a provider no Channel note uses is listed but
    * not required. Older daemons send no flag and require everything.
    */
   required: z.boolean().default(true),
@@ -89,10 +89,8 @@ export type TokenView = z.infer<typeof tokenViewSchema>;
 export const settingsViewSchema = z.object({
   defaultProvider: z.enum(PROVIDERS),
   providerDefaults: providerDefaultsSchema,
-  /** The owner's notes and files, which every Agent's instructions name. */
+  /** The owner's notes and files, which every turn's instructions name. */
   dataFolder: z.string(),
-  /** The name of the Agent primary Channels get. */
-  mainAgent: z.string(),
   historyCarryover: z.int(),
   /** Days of message history kept; null keeps all of it. */
   historyRetentionDays: z.int().nullable(),
@@ -147,7 +145,7 @@ export const allowedChatSchema = z.object({
   problem: z.string().nullable(),
   /**
    * Why the group is unsafe to serve: it is public, so anyone can join
-   * and talk to its Agents. Null when it is not, or from an older daemon.
+   * and talk to Pero. Null when it is not, or from an older daemon.
    */
   danger: z.string().nullable().default(null),
   /** When a daemon from before `config.yaml` recorded the allowing. */
@@ -178,33 +176,30 @@ export const telegramChatsSchema = z.object({
 
 export type TelegramChats = z.infer<typeof telegramChatsSchema>;
 
-/** An Agent as the CLI sees it. */
-export const agentViewSchema = z.object({
+/** The settings a Channel's turns use, from its note, as the CLI sees them. */
+export const channelNoteSchema = z.object({
+  /** Its file title as a slug; for a Channel without a note, its title's. */
   name: z.string(),
   title: z.string(),
+  /** The note, relative to the workspace when inside it; null for none yet. */
+  file: z.string().nullable(),
+  /** The Channel it is bound to by `channel-id`; null for none yet. */
+  channelId: z.string().nullable(),
   provider: z.enum(PROVIDERS),
   /** Null: the provider's default. */
   model: z.string().nullable(),
   /** Null: the provider's default. */
   effort: z.string().nullable(),
-  /** The Agent's own folder; null when it follows the default. */
+  /** The note's own folder; null when it follows the default. */
   workingDirectory: z.string().nullable(),
   /** The folder its turns run in. */
   effectiveWorkingDirectory: z.string(),
-  /** The Agent's own instructions; null means none. */
+  /** The note's own instructions; null means none. */
   instructions: z.string().nullable(),
-  /** Whether the main Agent's instructions precede its own. */
-  useMainInstructions: z.boolean(),
   permissions: z.enum(PERMISSION_MODES),
   /** Codex only: whether it may work in a folder outside a Git repository. */
   skipGitRepoCheck: z.boolean(),
   enabled: z.boolean(),
-  /** Whether it is the Agent primary Channels get when onboarded. */
-  main: z.boolean(),
-  /** The note that defines it, relative to the workspace when inside it. */
-  file: z.string(),
-  /** The title of the topic it answers in; null for none. */
-  topic: z.string().nullable(),
   /** Where its values come from: the note, `Pero.md`, or Pero's defaults. */
   origins: z.object({
     provider: z.enum(VALUE_ORIGINS),
@@ -219,10 +214,10 @@ export const agentViewSchema = z.object({
   ),
 });
 
-export type AgentView = z.infer<typeof agentViewSchema>;
+export type ChannelNoteView = z.infer<typeof channelNoteSchema>;
 
 /**
- * What a Channel's next turn with its Agent does: `new` starts its first
+ * What a Channel's next turn does: `new` starts its first
  * Session; `resume` continues the active one; `restart` keeps the active
  * Session, whose first turn never reached the provider, and starts the
  * provider session again; `fresh` closes it for a new one, because the
@@ -244,29 +239,6 @@ export const nextTurnSchema = z.object({
 
 export type NextTurn = z.infer<typeof nextTurnSchema>;
 
-/** A Channel that goes to an Agent now. */
-export const agentChannelSchema = z.object({
-  id: z.int(),
-  integrationKind: z.enum(INTEGRATION_KINDS),
-  /** The integration's address, such as `<chat_id>:<topic_id>`. */
-  key: z.string(),
-  title: z.string().nullable(),
-  nextTurn: nextTurnSchema,
-});
-
-export type AgentChannelView = z.infer<typeof agentChannelSchema>;
-
-export const agentDetailsSchema = agentViewSchema.extend({
-  /** Oldest first. */
-  channels: z.array(agentChannelSchema),
-  /** Why its folder cannot be used now; null when it can. */
-  folderProblem: z.string().nullable(),
-});
-
-export type AgentDetails = z.infer<typeof agentDetailsSchema>;
-
-const agentNameSchema = z.string().trim().min(1, 'must not be empty');
-
 /** A Channel as `pero channels ls` lists it. */
 export const channelViewSchema = z.object({
   id: z.int(),
@@ -275,23 +247,34 @@ export const channelViewSchema = z.object({
   key: z.string(),
   title: z.string().nullable(),
   /**
-   * The Agent that answers there now, chosen from the notes on each
-   * message; with `agentEnabled` false, the disabled Agent that would.
-   * Null when no Agent would.
+   * The note Pero answers there with, relative to the workspace when
+   * inside it, matched on each message; null while it has none.
    */
-  agent: z.string().nullable(),
-  agentEnabled: z.boolean(),
-  /** Why no one answers there now; null when an Agent does. */
+  note: z.string().nullable(),
+  /** Why Pero doesn't answer there now; null when it does. */
   unanswered: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
 
 export type ChannelView = z.infer<typeof channelViewSchema>;
 
+/** A Channel note no Channel Pero has seen uses yet. */
+export const unusedNoteSchema = z.object({
+  file: z.string(),
+  /** Its `channel-id`; null until Pero binds it. */
+  channelId: z.string().nullable(),
+});
+
+export type UnusedNoteView = z.infer<typeof unusedNoteSchema>;
+
 export const channelDetailsSchema = channelViewSchema.extend({
+  /** The settings its turns use; null when Pero doesn't answer there. */
+  settings: channelNoteSchema.nullable(),
+  /** Why its folder cannot be used now; null when it can. */
+  folderProblem: z.string().nullable(),
   /**
-   * What the next turn with its Agent does with its Session; null when no
-   * one answers there.
+   * What the next turn does with its Session; null when Pero doesn't
+   * answer there.
    */
   nextTurn: nextTurnSchema.nullable(),
   /** How many messages its history holds. */
@@ -308,7 +291,7 @@ export const historyMessageSchema = z.object({
   createdAt: z.iso.datetime(),
   direction: z.enum(MESSAGE_DIRECTIONS),
   origin: z.enum(MESSAGE_ORIGINS),
-  /** The Agent it was to or from; null for Pero's and Workflows' messages. */
+  /** The Channel note its turn ran with; null for other messages. */
   agent: z.string().nullable(),
   /** The Workflow whose Notification it delivered; null for other messages. */
   workflow: z.string().nullable(),
@@ -362,10 +345,11 @@ export const workflowViewSchema = z.object({
   title: z.string(),
   /** Its note, relative to the workspace when inside it. */
   file: z.string(),
-  /** The name of the Agent its runs use. */
-  agent: z.string(),
-  agentEnabled: z.boolean(),
-  /** The input each run sends to the Agent. */
+  /** The name of the Channel note its runs use. */
+  note: z.string(),
+  /** Whether that note is enabled; a run with a disabled one is held. */
+  noteEnabled: z.boolean(),
+  /** The input each run sends. */
   inputTemplate: z.string(),
   /** False stops it running by itself; it still runs by hand. */
   enabled: z.boolean(),
@@ -414,10 +398,10 @@ export const runViewSchema = z.object({
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   finishedAt: z.iso.datetime().nullable(),
-  /** What the Agent answered; null until it completes. */
+  /** What Pero answered; null until it completes. */
   result: z.string().nullable(),
   /**
-   * Completed without its Agent, since its history window had no
+   * Completed without a turn, since its history window had no
    * messages; `result` is then null.
    */
   skipped: z.boolean(),
@@ -507,7 +491,7 @@ const notificationIdSchema = z.int().positive();
 /** What `pero check` found in the workspace; see `WorkspaceCheck`. */
 export const workspaceCheckSchema = z.object({
   systemFolder: z.string().nullable(),
-  agents: z.int().nonnegative(),
+  channels: z.int().nonnegative(),
   workflows: z.int().nonnegative(),
   topicsChecked: z.boolean(),
   problems: z.array(
@@ -546,7 +530,7 @@ export const CONTROL_OPERATIONS = {
       alreadyAllowed: z.boolean(),
     }),
   },
-  /** Keeps the chat's Channels and Agents for when it is allowed again. */
+  /** Keeps the chat's Channels and notes for when it is allowed again. */
   'telegram.deny': {
     params: z.strictObject({ chatId: telegramChatIdSchema }),
     result: z.object({ chat: allowedChatSchema }),
@@ -556,19 +540,13 @@ export const CONTROL_OPERATIONS = {
     params: z.strictObject({ token: telegramBotTokenSchema }),
     result: tokenViewSchema,
   },
-  /** Every Agent, by name. */
-  'agents.list': {
-    params: noParams,
-    result: z.object({ agents: z.array(agentViewSchema) }),
-  },
-  'agents.get': {
-    params: z.strictObject({ name: agentNameSchema }),
-    result: agentDetailsSchema,
-  },
-  /** Every Channel, by ID. */
+  /** Every Channel, by ID, and the Channel notes none of them uses. */
   'channels.list': {
     params: noParams,
-    result: z.object({ channels: z.array(channelViewSchema) }),
+    result: z.object({
+      channels: z.array(channelViewSchema),
+      unusedNotes: z.array(unusedNoteSchema).default([]),
+    }),
   },
   'channels.get': {
     params: z.strictObject({ id: channelIdSchema }),

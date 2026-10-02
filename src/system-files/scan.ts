@@ -20,8 +20,9 @@ export interface NoteFile {
 }
 
 /**
- * Every note in the system folder `dir`, sorted by path: `Pero.md` and the
- * `.md` files anywhere under `Agents/` and `Workflows/`, leaving out names
+ * Every note in the system folder `dir`, sorted by path: `Pero.md`,
+ * `Persona.md`, `Instructions.md`, and the `.md` files anywhere under
+ * `Channels/` and `Workflows/`, leaving out names
  * that start with `_` or `.`. Other folders, such as the owner's
  * `Templates/`, `.obsidian/`, and `.trash/`, are never entered.
  * Linked files are read; linked folders are not entered. A missing folder

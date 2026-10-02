@@ -49,10 +49,10 @@ export class ProviderAuthService
   /** The providers health depends on, in `PROVIDERS` order. */
   inUse(): Provider[] {
     const { provider } = this.definitions.defaults();
-    const agents = this.definitions.agents();
+    const notes = this.definitions.channelNotes();
     const used = new Set([
       provider,
-      ...agents.filter((agent) => agent.enabled).map((agent) => agent.provider),
+      ...notes.filter((note) => note.enabled).map((note) => note.provider),
     ]);
     return PROVIDERS.filter((provider) => used.has(provider));
   }

@@ -81,7 +81,7 @@ describe('AgentManager', () => {
     ws = TestWorkspace.create('pero-agent-manager-');
     workspace = ws.root;
     await ws.pero();
-    await ws.agent('Main');
+    await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
@@ -189,8 +189,8 @@ describe('AgentManager', () => {
 
   it("builds the request from the Agent's resolved settings", async () => {
     await say(OWNER, 'Hello');
-    await ws.editAgent(
-      'Main',
+    await ws.editChannel(
+      'Default',
       { model: 'claude-opus-5-5', effort: 'high' },
       'Be brief.',
     );
@@ -200,8 +200,8 @@ describe('AgentManager', () => {
     expect(claude.requests[0]).not.toHaveProperty('providerSessionId');
     expect(claude.requests[1]).toMatchObject({
       input: 'Again',
-      // The main Agent's own instructions, which it doesn't repeat.
-      instructions: `${ws.agentContext('Main')}\n\nBe brief.`,
+      // Default.md's own instructions, after the context.
+      instructions: `${ws.channelContext('Default')}\n\nBe brief.`,
       providerOptions: { model: 'claude-opus-5-5', effort: 'high' },
       workingDirectory: workspace,
       skipGitRepoCheck: false,
@@ -227,7 +227,7 @@ describe('AgentManager', () => {
     }
 
     it('starts a fresh Session when the provider changes', async () => {
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say(OWNER, 'Again');
 
@@ -255,13 +255,13 @@ describe('AgentManager', () => {
       const request = claude.requests.at(-1)!;
       expect(request.providerSessionId).toBe('fake-claude-1');
       expect(request.workingDirectory).toBe(workspace);
-      expect(request.instructions).toBe(ws.agentContext('Main', other));
+      expect(request.instructions).toBe(ws.channelContext('Default', other));
     });
 
     it('starts a fresh Session when the Agent gets its own folder', async () => {
       const own = join(ws.root, 'own');
       mkdirSync(own);
-      await ws.editAgent('Main', { 'working-directory': own });
+      await ws.editChannel('Default', { 'working-directory': own });
 
       await say(OWNER, 'Again');
 
@@ -270,7 +270,7 @@ describe('AgentManager', () => {
     });
 
     it('resumes the same Session when the model or effort changes', async () => {
-      await ws.editAgent('Main', { model: 'claude-sonnet-5', effort: 'low' });
+      await ws.editChannel('Default', { model: 'claude-sonnet-5', effort: 'low' });
 
       await say(OWNER, 'Again');
 
@@ -292,7 +292,7 @@ describe('AgentManager', () => {
     });
   });
 
-  it('keeps separate Sessions for a General topic and a direct chat of the main Agent', async () => {
+  it('keeps separate Sessions for a General topic and a direct chat answered from Default.md', async () => {
     await say(GROUP, 'From the group');
     await say(OWNER, 'From the chat');
     await say(GROUP, 'Group again');
@@ -309,12 +309,12 @@ describe('AgentManager', () => {
     ).toEqual([
       {
         channelId: general.id,
-        agentName: 'main',
+        agentName: 'default',
         providerSessionId: 'fake-claude-1',
       },
       {
         channelId: direct.id,
-        agentName: 'main',
+        agentName: 'default',
         providerSessionId: 'fake-claude-2',
       },
     ]);
@@ -328,7 +328,7 @@ describe('AgentManager', () => {
     await say(OWNER, 'Again');
 
     expect(sentTexts().slice(-2)).toEqual([
-      "Agent main couldn't answer: The model is overloaded.",
+      "Pero couldn't answer: The model is overloaded.",
       'echo: Again',
     ]);
     // The session was reported before the failure, so it carries on.
@@ -356,7 +356,7 @@ describe('AgentManager', () => {
       ]);
       const retried = claude.requests[2]!.input;
       expect(retried).toMatch(
-        /^\[Earlier conversation in this chat, from a previous session\]\n.*User: one\n.*main: echo: one\n\[End of earlier conversation\]\n\ntwo$/s,
+        /^\[Earlier conversation in this chat, from a previous session\]\n.*User: one\n.*Pero: echo: one\n\[End of earlier conversation\]\n\ntwo$/s,
       );
       expect(sentTexts().at(-1)).toBe(`echo: ${retried}`);
       const [old, fresh] = await allSessions();
@@ -387,7 +387,7 @@ describe('AgentManager', () => {
 
       expect(claude.requests).toHaveLength(1);
       expect(sentTexts().at(-1)).toBe(
-        "Agent main couldn't answer: No conversation found with session ID: fake-claude-1.",
+        "Pero couldn't answer: No conversation found with session ID: fake-claude-1.",
       );
     });
   });
@@ -422,7 +422,6 @@ describe('AgentManager', () => {
 
     await moduleRef.get(AgentManager).runTurn({
       channelId: channel.id,
-      agent: 'main',
       messageId: message!.id,
       input: 'Again',
       approve,
@@ -439,7 +438,7 @@ describe('AgentManager', () => {
     await say(OWNER, 'Hello');
     await say(OWNER, 'Again');
     await moduleRef.get(AgentManager).runIsolated({
-      agent: 'main',
+      note: 'default',
       provider: 'claude',
       request: {
         providerOptions: { model: null, effort: null },
@@ -469,7 +468,7 @@ describe('AgentManager', () => {
     await say(OWNER, 'Hello');
 
     expect(sentTexts().at(-1)).toBe(
-      "Agent main couldn't answer: the claude runtime isn't available yet.",
+      "Pero couldn't answer: the claude runtime isn't available yet.",
     );
   });
 
@@ -479,7 +478,7 @@ describe('AgentManager', () => {
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await ws.editAgent('Main', { enabled: false });
+    await ws.editChannel('Default', { enabled: false });
 
     held.release();
     await idle();
@@ -495,15 +494,14 @@ describe('AgentManager', () => {
     ).toMatchObject({ direction: 'in', sessionId: null });
   });
 
-  it('skips a turn whose Channel went to another Agent after it was accepted', async () => {
+  it('skips a turn whose Channel lost its note after it was accepted', async () => {
     await say(OWNER, 'Hello');
-    const channel = await channelFor(OWNER.key);
-    await ws.agent('Other');
     const held = claude.hold();
     await adapter.deliver(inboundMessage(OWNER, { text: 'one' }));
     await held.started;
     await adapter.deliver(inboundMessage(OWNER, { text: 'two' }));
-    await ws.editPero({ 'main-agent': 'Other' });
+    // A second note of the name leaves both out.
+    await ws.write('Channels/Old/default.md', 'Old');
 
     held.release();
     await idle();
@@ -512,42 +510,21 @@ describe('AgentManager', () => {
       'Hello',
       'one',
     ]);
-
-    // The new Agent starts fresh, with the skipped message carried over,
-    // and the old Agent's Session ends.
-    await say(OWNER, 'three');
-    expect(claude.requests.at(-1)!.input).toMatch(/User: two\n.*\n\nthree$/s);
-    expect(
-      (await allSessions()).filter((session) => session.status === 'active'),
-    ).toEqual([
-      expect.objectContaining({ channelId: channel.id, agentName: 'other' }),
-    ]);
   });
 
-  it('starts afresh when a Channel goes back to an Agent it had before', async () => {
+  it('keeps the Session while the Channel’s note is written again', async () => {
     await say(OWNER, 'Hello');
-    await ws.agent('Other');
+    await ws.remove('Channels/Default.md');
+    await say(OWNER, 'Again');
 
-    await ws.editPero({ 'main-agent': 'Other' });
-    await say(OWNER, 'to other');
-    await ws.editPero({ 'main-agent': null });
-    await say(OWNER, 'back');
-
-    // Main's first Session ended; its return starts a new one.
-    expect(claude.requests.at(-1)!.providerSessionId).toBeUndefined();
-    expect(claude.requests.at(-1)!.input).toMatch(
-      /User: to other\n.*\n\nback$/s,
-    );
+    expect(ws.read('Channels/Default.md')).toContain('Default Channel');
+    expect(claude.requests.at(-1)!.providerSessionId).toBeDefined();
     expect(
       (await allSessions()).map(({ agentName, status }) => ({
         agentName,
         status,
       })),
-    ).toEqual([
-      { agentName: 'main', status: 'closed' },
-      { agentName: 'other', status: 'closed' },
-      { agentName: 'main', status: 'active' },
-    ]);
+    ).toEqual([{ agentName: 'default', status: 'active' }]);
   });
 
   describe('message history', () => {
@@ -565,7 +542,7 @@ describe('AgentManager', () => {
       const [session] = await allSessions();
       const entry = {
         channelId: direct.id,
-        agentName: 'main',
+        agentName: 'default',
         sessionId: session!.id,
       };
       expect(await allMessages()).toEqual([
@@ -574,7 +551,7 @@ describe('AgentManager', () => {
           agentName: null,
           sessionId: null,
           origin: 'pero',
-          text: expect.stringMatching(/^This chat talks to Agent main/),
+          text: expect.stringMatching(/^Pero answers in this chat/),
         }),
         expect.objectContaining({
           ...entry,
@@ -604,7 +581,7 @@ describe('AgentManager', () => {
         origin: 'pero',
         agentName: null,
         sessionId: null,
-        text: "Agent main couldn't answer: The model is overloaded.",
+        text: "Pero couldn't answer: The model is overloaded.",
       });
     });
 
@@ -616,7 +593,7 @@ describe('AgentManager', () => {
       await say(OWNER, 'Again');
 
       expect((await allMessages()).map((message) => message.text)).toEqual([
-        expect.stringMatching(/^This chat talks to Agent main/),
+        expect.stringMatching(/^Pero answers in this chat/),
         'Hello',
         'echo: Hello',
         'Again',
@@ -633,16 +610,16 @@ describe('AgentManager', () => {
       await ws.pero({ 'history-carryover': 3 });
       await say(OWNER, 'one');
       await say(OWNER, 'two');
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say(OWNER, 'three');
       await say(OWNER, 'four');
 
       expect(transcript(codex.requests[0]!.input)).toEqual([
         '[Earlier conversation in this chat, from a previous session]',
-        'main: echo: one',
+        'Pero: echo: one',
         'User: two',
-        'main: echo: two',
+        'Pero: echo: two',
         '[End of earlier conversation]',
         '',
         'three',
@@ -658,14 +635,14 @@ describe('AgentManager', () => {
       await say(OWNER, 'one');
       const own = join(ws.root, 'own');
       mkdirSync(own);
-      await ws.editAgent('Main', { 'working-directory': own });
+      await ws.editChannel('Default', { 'working-directory': own });
 
       await say(OWNER, 'two');
 
       expect(transcript(claude.requests[1]!.input)).toEqual([
         '[Earlier conversation in this chat, from a previous session]',
         'User: one',
-        'main: echo: one',
+        'Pero: echo: one',
         '[End of earlier conversation]',
         '',
         'two',
@@ -675,7 +652,7 @@ describe('AgentManager', () => {
     it("carries only the Channel's own messages", async () => {
       await say(GROUP, 'In the group');
       await say(OWNER, 'In the chat');
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say(OWNER, 'Again');
 
@@ -687,7 +664,7 @@ describe('AgentManager', () => {
     it('carries nothing when history-carryover is 0', async () => {
       await say(OWNER, 'one');
       await ws.pero({ 'history-carryover': 0 });
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say(OWNER, 'two');
 
@@ -705,14 +682,14 @@ describe('AgentManager', () => {
         .getRepository(Channel)
         .update(channel.id, { contextFromMessageId: latest!.id });
       await say(OWNER, 'three');
-      await ws.editAgent('Main', { provider: 'codex' });
+      await ws.editChannel('Default', { provider: 'codex' });
 
       await say(OWNER, 'four');
 
       expect(transcript(codex.requests[0]!.input)).toEqual([
         '[Earlier conversation in this chat, from a previous session]',
         'User: three',
-        'main: echo: three',
+        'Pero: echo: three',
         '[End of earlier conversation]',
         '',
         'four',
@@ -723,7 +700,7 @@ describe('AgentManager', () => {
   describe('isolated turns', () => {
     function isolated(signal: AbortSignal) {
       const turn: IsolatedTurn = {
-        agent: 'main',
+        note: 'default',
         provider: 'claude',
         request: {
           providerOptions: { model: null, effort: null },
@@ -841,7 +818,7 @@ describe('AgentManager', () => {
       expect(request.signal.aborted).toBe(true);
       expect(claude.requests).toHaveLength(2);
       const stopped =
-        'Pero stopped before Agent main answered. ' +
+        'Pero stopped before it answered. ' +
         'Send the message again once Pero is back.';
       expect(sentTexts().slice(-2)).toEqual([stopped, stopped]);
       // The provider session survives for the next start.
@@ -868,7 +845,7 @@ describe('AgentManager', () => {
       await say(OWNER, 'Hello');
 
       expect(claude.requests).toHaveLength(0);
-      expect(sentTexts().at(-1)).toMatch(/^Pero stopped before Agent main/);
+      expect(sentTexts().at(-1)).toMatch(/^Pero stopped before it answered/);
     });
   });
 });

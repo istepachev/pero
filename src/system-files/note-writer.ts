@@ -8,7 +8,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { dirname, posix } from 'node:path';
-import { Document, isMap, isScalar, parseDocument } from 'yaml';
+import { Document, isMap, parseDocument } from 'yaml';
 import { slugify, SLUG_MAX_LENGTH } from '../config/slug.js';
 import { NOTE_FOLDERS, noteIdentity } from './note-files.js';
 
@@ -43,20 +43,17 @@ export function formatNote(
   return ['---', `${frontmatter}---`, ...lines, ''].join('\n');
 }
 
-/** The template a new topic's Agent note starts from, in `Agents/`. */
-export const AGENT_TEMPLATE = posix.join(NOTE_FOLDERS.agent, '_Template.md');
-
-/** The note that would define the Agent named `name`, such as the main one. */
-export function agentNoteFor(name: string): string {
-  const title = name.charAt(0).toUpperCase() + name.slice(1);
-  return posix.join(NOTE_FOLDERS.agent, `${title}.md`);
-}
+/** The template a new Channel's note starts from, in `Channels/`. */
+export const CHANNEL_TEMPLATE = posix.join(
+  NOTE_FOLDERS.channel,
+  '_Template.md',
+);
 
 /** How long a new note's file name may be, before ` 2` and `.md`. */
 const TITLE_MAX_LENGTH = 80;
 
 /**
- * The file name, without `.md`, of the Agent note for a topic titled
+ * The file name, without `.md`, of the note for a Channel titled
  * `title`: characters that file systems or Obsidian links don't allow
  * become spaces, and a leading `_` or `.`, which would hide the note, is
  * dropped. Short enough that its name, and those of `<title> 2` and so
@@ -81,22 +78,26 @@ export function topicNoteTitle(title: string, topicId: string): string {
 }
 
 /**
- * A path for a new Agent note titled `title`, among `files`, the notes in
- * the system folder: `Agents/<title>.md`, or `<title> 2.md` and so on,
- * past files that exist and titles whose name an Agent note already has.
+ * A path for a new Channel note titled `title`, among `files`, the notes
+ * in the system folder: `Channels/<title>.md`, or `<title> 2.md` and so
+ * on, past files that exist and titles whose name a Channel note already
+ * has.
  */
-export function freeAgentNote(title: string, files: readonly string[]): string {
+export function freeChannelNote(
+  title: string,
+  files: readonly string[],
+): string {
   const taken = new Set<string>();
   const paths = new Set(files.map((file) => file.toLowerCase()));
   for (const file of files) {
     const found = noteIdentity(file);
-    if (found.ok && found.identity.kind === 'agent') {
+    if (found.ok && found.identity.kind === 'channel') {
       taken.add(found.identity.name);
     }
   }
   for (let n = 1; ; n += 1) {
     const candidate = n === 1 ? title : `${title} ${n}`;
-    const file = posix.join(NOTE_FOLDERS.agent, `${candidate}.md`);
+    const file = posix.join(NOTE_FOLDERS.channel, `${candidate}.md`);
     if (paths.has(file.toLowerCase())) continue;
     if (taken.has(slugify(candidate)!)) continue;
     return file;
@@ -132,17 +133,17 @@ const YAML_OPTIONS = { version: '1.2' } as const;
 const PRINT_OPTIONS = { lineWidth: 0, flowCollectionPadding: false } as const;
 
 /**
- * The Agent note for the topic titled `title`, from `template`, the text of
- * `_Template.md`: its properties, comments, and body, with `topic` set to
- * the title. Without a template, or with one whose properties don't
- * parse, `topic` alone; `problem` then says what was wrong with it.
+ * The note for the Channel `channelId`, from `template`: the text of
+ * `_Template.md`, or Pero's own, with its properties, comments, and body,
+ * and `channel-id` set. A commented-out `# channel-id:` line becomes the
+ * property. With a template whose properties don't parse, `channel-id`
+ * alone; `problem` then says what was wrong with it.
  */
 export function noteFromTemplate(
-  template: string | null,
-  title: string,
+  template: string,
+  channelId: string,
 ): { text: string; problem: string | null } {
-  const bare = formatNote([['topic', title]], null);
-  if (template === null) return { text: bare, problem: null };
+  const bare = formatNote([['channel-id', channelId]], null);
   const split = splitNote(template);
   const document: Document = parseDocument(
     split?.frontmatter ?? '',
@@ -160,40 +161,9 @@ export function noteFromTemplate(
       problem: 'its properties must be "name: value" lines',
     };
   }
-  if (isMap(document.contents)) document.contents.delete('topic');
-  document.set('topic', title);
-  // After the closing `---`: a line break, then the body, as written.
-  const after =
-    split === null ? `\n${template}` : split.rest.replace(/^---[ \t]*/, '');
-  const text = `---\n${document.toString(PRINT_OPTIONS)}---${after}`;
+  const text = replaceNoteProperty(template, 'channel-id', channelId);
+  if (text === null) return { text: bare, problem: "its properties don't parse" };
   return { text: text.endsWith('\n') ? text : `${text}\n`, problem: null };
-}
-
-/**
- * `text`, a note whose `topic` is `from` in any case, with it set to `to`.
- * The rest of the frontmatter keeps its comments, and the body stays as
- * written. Null when the note's topic isn't `from` or its properties
- * don't parse.
- */
-export function renameTopicIn(
-  text: string,
-  from: string,
-  to: string,
-): string | null {
-  const split = splitNote(text);
-  if (split === null) return null;
-  const document: Document = parseDocument(split.frontmatter, YAML_OPTIONS);
-  if (document.errors.length > 0 || !isMap(document.contents)) return null;
-  const node = document.contents.get('topic', true);
-  if (
-    !isScalar(node) ||
-    String(node.value).trim().toLowerCase() !== from.trim().toLowerCase()
-  ) {
-    return null;
-  }
-  node.value = to;
-  node.type = undefined;
-  return `${split.opening}${document.toString(PRINT_OPTIONS)}${split.rest}`;
 }
 
 /**
@@ -309,7 +279,7 @@ function replaceLine(
 
 /** Whether `value` reads back as itself when written bare after `key: `. */
 function plainWord(value: string): boolean {
-  if (!/^[A-Za-z][\w.\-/[\]@]*$/.test(value)) return false;
+  if (!/^[A-Za-z][\w.\-/[\]@:]*$/.test(value)) return false;
   return parseDocument(`v: ${value}`, YAML_OPTIONS).get('v') === value;
 }
 

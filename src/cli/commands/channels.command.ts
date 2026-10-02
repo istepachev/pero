@@ -17,14 +17,15 @@ const CHANNEL = { channel: "the Channel's ID, as pero channels ls lists it" };
 
 @SubCommand({
   name: 'ls',
-  description: 'List the Channels and the Agent that answers in each now',
+  description:
+    'List the Channels and the note each is answered with, then the Channel notes none uses',
   options: { isDefault: true },
 })
 export class ChannelsListCommand extends PeroCommand {
   async run(): Promise<void> {
     const { client } = await this.requireDaemon();
-    const { channels } = await client.call('channels.list');
-    console.log(formatChannelList(channels));
+    const { channels, unusedNotes } = await client.call('channels.list');
+    console.log(formatChannelList(channels, unusedNotes));
   }
 }
 
@@ -32,7 +33,7 @@ export class ChannelsListCommand extends PeroCommand {
   name: 'show',
   arguments: '<channel>',
   description:
-    'Show a Channel, who answers there now, and whether its next turn resumes its Session',
+    'Show a Channel, the settings it is answered with, and whether its next turn resumes its Session',
   argsDescription: CHANNEL,
 })
 export class ChannelsShowCommand extends PeroCommand {
@@ -85,7 +86,7 @@ export class ChannelsHistoryCommand extends PeroCommand {
 @Command({
   name: 'channels',
   description:
-    'List Channels, see which Agent answers in each, and read their history',
+    'List Channels, see the note and settings each is answered with, and read their history',
   subCommands: [
     ChannelsListCommand,
     ChannelsShowCommand,

@@ -14,7 +14,12 @@ import { STATE_DIR_NAME } from '../../config/bootstrap-config.js';
 import { HOST_CONFIG_FILE } from '../../config/host-config.js';
 import { guideFile } from '../../guide/agent-guide.js';
 import { HostConfigModule } from '../../host-config/host-config.module.js';
-import { NOTE_FOLDERS, PERO_NOTE } from '../../system-files/note-files.js';
+import {
+  INSTRUCTIONS_NOTE,
+  NOTE_FOLDERS,
+  PERO_NOTE,
+  PERSONA_NOTE,
+} from '../../system-files/note-files.js';
 import { formatNote, type NoteValue } from '../../system-files/note-writer.js';
 import { SystemNotes } from '../system-notes.service.js';
 
@@ -28,13 +33,14 @@ interface TestNote {
 
 /**
  * A workspace in a temporary folder for tests, with its system folder
- * in `data/System`: `Pero.md`, Agent, and Workflow notes are written
- * here, and a booted module reads them again after each write.
+ * in `data/System`: `Pero.md`, `Persona.md`, `Instructions.md`, Channel
+ * notes, and Workflow notes are written here, and a booted module reads
+ * them again after each write.
  */
 export class TestWorkspace {
   /** The workspace. */
   readonly root: string;
-  /** `data/`, where Agents without a folder of their own work. */
+  /** `data/`, the data folder. */
   readonly dataFolder: string;
   readonly systemFolder: string;
   /** `.pero/`. */
@@ -64,12 +70,17 @@ export class TestWorkspace {
   }
 
   /**
-   * What the instructions of the Agent with note `Agents/<title>.md` start
-   * with in this workspace, its data folder `dataFolder`.
+   * What the instructions of a turn with the Channel note
+   * `Channels/<title>.md` start with in this workspace, its data folder
+   * `dataFolder`; `file` null for a Channel without a note.
    */
-  agentContext(title: string, dataFolder = this.dataFolder): string {
+  channelContext(
+    title: string,
+    dataFolder = this.dataFolder,
+    file: string | null = channelFile(title),
+  ): string {
     return agentContext(
-      { title, file: `${NOTE_FOLDERS.agent}/${title}.md` },
+      { title, file },
       {
         dataFolder,
         systemFolder: this.systemFolder,
@@ -121,7 +132,7 @@ export class TestWorkspace {
     await this.module?.get(SystemNotes).rescan();
   }
 
-  /** Writes `Pero.md` with `properties` and `body`, the shared instructions. */
+  /** Writes `Pero.md` with `properties`, and `body`, which is an error. */
   pero(
     properties: TestNoteProperties = {},
     body?: string | null,
@@ -137,25 +148,35 @@ export class TestWorkspace {
     return this.note(PERO_NOTE, properties, body, false);
   }
 
+  /** Writes `Persona.md` as `body`. */
+  persona(body: string | null): Promise<void> {
+    return this.note(PERSONA_NOTE, {}, body, true);
+  }
+
+  /** Writes `Instructions.md` as `body`. */
+  instructions(body: string | null): Promise<void> {
+    return this.note(INSTRUCTIONS_NOTE, {}, body, true);
+  }
+
   /**
-   * Writes the Agent note `Agents/<title>.md`, which defines the Agent
-   * named after `title`, with `properties` and `body`, its instructions.
+   * Writes the Channel note `Channels/<title>.md`, named after `title`,
+   * with `properties` and `body`, its instructions.
    */
-  agent(
+  channel(
     title: string,
     properties: TestNoteProperties = {},
     body?: string | null,
   ): Promise<void> {
-    return this.note(agentFile(title), properties, body, true);
+    return this.note(channelFile(title), properties, body, true);
   }
 
-  /** Changes the Agent note of `title`, keeping its other properties. */
-  editAgent(
+  /** Changes the Channel note of `title`, keeping its other properties. */
+  editChannel(
     title: string,
     properties: TestNoteProperties,
     body?: string | null,
   ): Promise<void> {
-    return this.note(agentFile(title), properties, body, false);
+    return this.note(channelFile(title), properties, body, false);
   }
 
   /**
@@ -221,8 +242,8 @@ export class TestWorkspace {
   }
 }
 
-function agentFile(title: string): string {
-  return posix.join(NOTE_FOLDERS.agent, `${title}.md`);
+function channelFile(title: string): string {
+  return posix.join(NOTE_FOLDERS.channel, `${title}.md`);
 }
 
 function workflowFile(title: string): string {

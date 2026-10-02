@@ -1,5 +1,8 @@
+import { slugify } from '../config/slug.js';
+import type { IntegrationKind } from '../persistence/entities/sql.js';
 import type { ChannelRef } from '../system-files/schemas.js';
 import {
+  channelIdFor,
   GENERAL_TOPIC,
   type ResolvedChannel,
   type TopicLookup,
@@ -9,6 +12,7 @@ import {
 /** A Channel Pero has seen, as the `channels` table keeps it. */
 export interface KnownChannel {
   id: number;
+  kind: IntegrationKind;
   /** `<chat_id>` for a chat's primary Channel, `<chat_id>:<topic_id>` for a topic. */
   key: string;
   /** The topic's title, or the chat's for a primary Channel. */
@@ -17,16 +21,16 @@ export interface KnownChannel {
 
 interface Entry {
   channel: ResolvedChannel;
-  /** The title a reference matches: the topic's, or `General` in a group. */
-  title: string | null;
+  /** Whether it is a group's General topic, which `General` names. */
+  general: boolean;
   chatTitle: string;
 }
 
 /**
- * Finds the Channels Workflow references name among `channels`: a topic
- * by its title, a group's General topic as `General`, either one within a
- * chat as `<chat title>/<topic title>`, and any Channel by its ID. Titles
- * match ignoring case.
+ * Finds the Channels Workflow references name among `channels`: a group's
+ * General topic as `General` or `<chat title>/General`, ignoring case, any
+ * Channel by its ID, the Channel a note's `channel-id` names, and the
+ * topics a note without one would be bound to, by their title.
  */
 export function channelTopicLookup(
   channels: readonly KnownChannel[],
@@ -39,27 +43,21 @@ export function channelTopicLookup(
   const entries: Entry[] = channels.map((channel) => {
     const [chatKey] = channel.key.split(':') as [string];
     const topic = channel.key.includes(':');
-    const group = chatKey.startsWith('-');
     return {
       channel: {
         id: channel.id,
+        channelId: channelIdFor(channel.kind, channel.key),
         primary: !topic,
         title: topic ? (channel.title ?? '') : GENERAL_TOPIC,
       },
-      // A direct chat has no topic title to name it by; its ID does.
-      title: topic ? channel.title : group ? GENERAL_TOPIC : null,
+      // A direct chat has no General topic to name it by; its ID does.
+      general: !topic && chatKey.startsWith('-'),
       chatTitle: chatTitles.get(chatKey) ?? chatKey,
     };
   });
-  const seen = [
-    ...new Set(
-      entries.flatMap((entry) => (entry.title === null ? [] : [entry.title])),
-    ),
-  ];
-  const titled = (title: string) =>
-    entries.filter(
-      (entry) => entry.title?.toLowerCase() === title.trim().toLowerCase(),
-    );
+  const byChannelId = new Map(
+    entries.map((entry) => [entry.channel.channelId, entry.channel]),
+  );
 
   return {
     resolve(ref: ChannelRef): TopicResolution {
@@ -67,22 +65,33 @@ export function channelTopicLookup(
       if (typeof ref === 'number') {
         matches = entries.filter((entry) => entry.channel.id === ref);
       } else {
-        matches = titled(ref);
-        const slash = ref.indexOf('/');
-        if (matches.length === 0 && slash !== -1) {
+        matches = entries.filter((entry) => entry.general);
+        const slash = ref.lastIndexOf('/');
+        if (slash !== -1) {
           const chat = ref.slice(0, slash).trim().toLowerCase();
-          matches = titled(ref.slice(slash + 1)).filter(
+          matches = matches.filter(
             (entry) => entry.chatTitle.toLowerCase() === chat,
           );
         }
       }
-      if (matches.length === 1)
+      if (matches.length === 1) {
         return { kind: 'ok', channel: matches[0]!.channel };
-      if (matches.length === 0) return { kind: 'none', seen };
+      }
+      if (matches.length === 0) return { kind: 'none' };
       return {
         kind: 'ambiguous',
-        matches: matches.map((entry) => `${entry.chatTitle}/${entry.title}`),
+        matches: matches.map((entry) => `${entry.chatTitle}/${GENERAL_TOPIC}`),
       };
+    },
+    byChannelId(channelId: string): ResolvedChannel | null {
+      return byChannelId.get(channelId) ?? null;
+    },
+    topicsNamed(name: string): ResolvedChannel[] {
+      return entries
+        .filter(
+          ({ channel }) => !channel.primary && slugify(channel.title) === name,
+        )
+        .map(({ channel }) => channel);
     },
   };
 }

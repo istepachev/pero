@@ -62,7 +62,7 @@ export function workflowsScreen(
     return {
       text: [
         ...(problem === null ? [] : [problem]),
-        `No Workflows yet. Ask an Agent to create one, or add a note to ${options.folder}.`,
+        `No Workflows yet. Ask Pero to create one, or add a note to ${options.folder}.`,
       ].join('\n'),
     };
   }
@@ -119,7 +119,7 @@ export function workflowScreen(
   const lines = [
     `Workflow ${view.title}`,
     `Config: ${view.file}`,
-    `Agent: ${view.agent}${view.agentEnabled ? '' : ' (disabled, so it cannot run)'}`,
+    `Channel note: ${view.note}${view.noteEnabled ? '' : ' (disabled, so it cannot run)'}`,
     `Schedule: ${
       schedule === null
         ? 'none, it runs by hand'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findAgentNote, findWorkflowNote, shownPath } from './note-paths.js';
+import { findChannelNote, findWorkflowNote, shownPath } from './note-paths.js';
 
 describe('note paths', () => {
   it('shows paths inside the workspace relative to it', () => {
@@ -12,26 +12,26 @@ describe('note paths', () => {
     );
   });
 
-  it('finds an Agent note by name or title, in subfolders too', () => {
+  it('finds a Channel note by name or title, in subfolders too', () => {
     const files = [
       'Pero.md',
-      'Agents/Main.md',
-      'Agents/Home/Health Coach.md',
+      'Channels/Main.md',
+      'Channels/Home/Health Coach.md',
       'Workflows/Health Coach.md',
     ];
-    expect(findAgentNote(files, 'health-coach')).toBe(
-      'Agents/Home/Health Coach.md',
+    expect(findChannelNote(files, 'health-coach')).toBe(
+      'Channels/Home/Health Coach.md',
     );
-    expect(findAgentNote(files, 'Health Coach')).toBe(
-      'Agents/Home/Health Coach.md',
+    expect(findChannelNote(files, 'Health Coach')).toBe(
+      'Channels/Home/Health Coach.md',
     );
-    expect(findAgentNote(files, 'MAIN')).toBe('Agents/Main.md');
-    expect(findAgentNote(files, 'coach')).toBeNull();
+    expect(findChannelNote(files, 'MAIN')).toBe('Channels/Main.md');
+    expect(findChannelNote(files, 'coach')).toBeNull();
   });
 
   it('finds a Workflow note by name or title, in subfolders too', () => {
     const files = [
-      'Agents/Weekly Report.md',
+      'Channels/Weekly Report.md',
       'Workflows/Health/Weekly Report.md',
     ];
     expect(findWorkflowNote(files, 'weekly-report')).toBe(

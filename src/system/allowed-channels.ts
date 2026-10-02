@@ -12,11 +12,16 @@ export async function allowedChannels(
 ): Promise<KnownChannel[]> {
   const chats = new Set(allowed.map((chat) => chat.chatKey));
   const channels = await dataSource.getRepository(Channel).find({
-    select: { id: true, externalKey: true, title: true },
+    select: { id: true, integrationKind: true, externalKey: true, title: true },
     where: { integrationKind: 'telegram' },
     order: { id: 'ASC' },
   });
   return channels
     .filter((channel) => chats.has(channel.externalKey.split(':')[0]!))
-    .map(({ id, externalKey, title }) => ({ id, key: externalKey, title }));
+    .map(({ id, integrationKind, externalKey, title }) => ({
+      id,
+      kind: integrationKind,
+      key: externalKey,
+      title,
+    }));
 }

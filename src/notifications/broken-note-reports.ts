@@ -14,7 +14,11 @@ import { HostConfigService } from '../host-config/host-config.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { shownPath } from '../system-files/note-paths.js';
 import type { BrokenNote } from '../system-files/reload.js';
+import { slugify } from '../config/slug.js';
+import { channelIdOf } from '../system-files/schemas.js';
 import {
+  channelIdFor,
+  DEFAULT_NOTE,
   type NoteRead,
   readNote,
   type SystemSnapshot,
@@ -41,8 +45,8 @@ export interface BrokenNoteReport {
  * often edited on a phone, far from `pero check` and the log: one message
  * per broken version, keyed by its content, naming the note and each error,
  * and what Pero uses meanwhile. It goes to the Channels the note relates to
- * (an Agent's topics, a Workflow's `channel`), else to the main Agent's
- * primary Channel, and isn't recorded in Channel history.
+ * (a Channel note's Channel, a Workflow's `channel`), else to a primary
+ * Channel, and isn't recorded in Channel history.
  *
  * Notes broken at startup are only logged, as before: no edit is waiting
  * for an answer. A fixed note is logged by `SystemNotes` and forgotten
@@ -158,14 +162,17 @@ export function brokenNoteReport(
   snapshot: SystemSnapshot,
 ): BrokenNoteReport {
   const read = readNote(note.file, note.text).note;
-  const inUse = (definitions: ReadonlyMap<string, { file: string }>) =>
+  const inUse = (definitions: ReadonlyMap<string, { file: string | null }>) =>
     [...definitions.values()].some(({ file }) => file === note.file);
   switch (read?.kind) {
     case 'pero':
       // Its own defaults stand in for a Pero.md left out.
       return { note, read, inUse: note.fallback || read.read.result.ok };
-    case 'agent':
-      return { note, read, inUse: inUse(snapshot.agents) };
+    case 'persona':
+    case 'instructions':
+      return { note, read, inUse: note.fallback };
+    case 'channel':
+      return { note, read, inUse: inUse(snapshot.channelNotes) };
     case 'workflow':
       return { note, read, inUse: inUse(snapshot.workflows) };
     default:
@@ -198,9 +205,10 @@ export function brokenNoteMessage(
 }
 
 /**
- * The Channels a broken note relates to, by ID: the topic an Agent
- * claims, or the Channels a Workflow posts to, as the broken version and
- * the version in use name them. Only Channels Pero has seen count.
+ * The Channels a broken note relates to, by ID: a Channel note's Channel,
+ * by its `channel-id` or else its title, or the Channels a Workflow posts
+ * to, as the broken version
+ * and the version in use name them. Only Channels Pero has seen count.
  */
 function relatedChannels(
   { note, read }: BrokenNoteReport,
@@ -210,27 +218,41 @@ function relatedChannels(
 ): number[] {
   const ids = new Set<number>();
   switch (read?.kind) {
-    case 'agent': {
-      const titles = listed(read.read.note?.properties.topic);
-      for (const agent of snapshot.agents.values()) {
-        if (agent.file === note.file && agent.topic !== null) {
-          titles.push(agent.topic);
-        }
+    case 'channel': {
+      const { name } = read.read.identity;
+      // Default.md's errors go to a primary Channel, as below.
+      if (name === DEFAULT_NOTE) break;
+      const bound = new Set<string>();
+      const id = channelIdOf(read.read.note?.properties['channel-id']);
+      if (id !== null) bound.add(id);
+      const loaded = snapshot.channelNotes.get(name);
+      if (loaded?.file === note.file && loaded.channelId !== null) {
+        bound.add(loaded.channelId);
       }
-      const keys = new Set(
-        titles.map((title) => String(title).trim().toLowerCase()),
-      );
       for (const channel of channels) {
-        const title = channel.title?.trim().toLowerCase();
-        if (channel.key.includes(':') && title !== undefined && keys.has(title))
-          ids.add(channel.id);
+        const matches =
+          bound.size > 0
+            ? bound.has(channelIdFor(channel.kind, channel.key))
+            : channel.key.includes(':') &&
+              slugify(channel.title ?? '') === name;
+        if (matches) ids.add(channel.id);
       }
       break;
     }
     case 'workflow': {
       for (const ref of listed(read.read.note?.properties.channel)) {
-        const found = lookup.resolve(ref);
-        if (found.kind === 'ok') ids.add(found.channel.id);
+        const named =
+          typeof ref === 'string'
+            ? snapshot.channelNotes.get(slugify(ref) ?? '')
+            : undefined;
+        const found =
+          named?.channelId != null
+            ? lookup.byChannelId(named.channelId)
+            : (() => {
+                const resolved = lookup.resolve(ref);
+                return resolved.kind === 'ok' ? resolved.channel : null;
+              })();
+        if (found != null) ids.add(found.id);
       }
       for (const workflow of snapshot.workflows.values()) {
         if (workflow.file !== note.file) continue;
@@ -243,8 +265,8 @@ function relatedChannels(
 }
 
 /**
- * The main Agent's primary Channel: that of the first chat in
- * `config.yaml` whose primary Channel Pero has seen; none if none.
+ * A primary Channel: that of the first chat in `config.yaml` whose
+ * primary Channel Pero has seen; none if none.
  */
 function primaryChannel(
   allowed: readonly HostAllowedChat[],

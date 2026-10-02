@@ -76,10 +76,10 @@ describe('SystemNotes', () => {
   }
 
   it('loads the notes at startup and reports them ok', async () => {
-    write('Agents/Health.md', '---\ntopic: Health\n---\nCoach');
+    write('Channels/Health.md', '---\nchannel-id: telegram:-1:5\n---\nCoach');
     await boot();
-    expect(notes.snapshot()!.agents.get('health')).toMatchObject({
-      topic: 'Health',
+    expect(notes.snapshot()!.channelNotes.get('health')).toMatchObject({
+      channelId: 'telegram:-1:5',
       workingDirectory: tmp,
     });
     expect(health.get('system')).toMatchObject({
@@ -90,7 +90,7 @@ describe('SystemNotes', () => {
   });
 
   it('reports how many notes have errors', async () => {
-    write('Agents/Coach.md', '---\nmodle: x\nefort: y\n---');
+    write('Channels/Coach.md', '---\nmodle: x\nefort: y\n---');
     write('Workflows/Report.md', '---\nhour: 99\n---\nGo');
     await boot();
     expect(health.get('system')).toMatchObject({
@@ -101,16 +101,16 @@ describe('SystemNotes', () => {
   });
 
   it('takes in edits on a rescan and tells listeners', async () => {
-    write('Agents/Health.md', 'Coach');
+    write('Channels/Health.md', 'Coach');
     await boot();
     const changes: SystemChange[] = [];
     notes.onChange((change) => changes.push(change));
 
-    write('Agents/Health.md', '---\nmodel: opus\n---\nCoach');
+    write('Channels/Health.md', '---\nmodel: opus\n---\nCoach');
     await notes.rescan();
-    expect(notes.snapshot()!.agents.get('health')!.model).toBe('opus');
+    expect(notes.snapshot()!.channelNotes.get('health')!.model).toBe('opus');
     expect(changes).toEqual([
-      { snapshot: notes.snapshot(), files: ['Agents/Health.md'] },
+      { snapshot: notes.snapshot(), files: ['Channels/Health.md'] },
     ]);
 
     await notes.rescan();
@@ -118,9 +118,9 @@ describe('SystemNotes', () => {
   });
 
   it('turns degraded when a note breaks, and ok when it is fixed', async () => {
-    write('Agents/Health.md', '---\nmodel: opus\n---\nCoach');
+    write('Channels/Health.md', '---\nmodel: opus\n---\nCoach');
     await boot();
-    write('Agents/Health.md', '---\nmodel: opus\nmodle: x\n---\nCoach');
+    write('Channels/Health.md', '---\nmodel: opus\nmodle: x\n---\nCoach');
     await notes.rescan();
     expect(health.get('system')!.state).toBe('ok');
     await notes.rescan();
@@ -128,15 +128,15 @@ describe('SystemNotes', () => {
       state: 'degraded',
       detail: '1 note has errors; run pero check',
     });
-    expect(notes.snapshot()!.agents.get('health')!.model).toBe('opus');
+    expect(notes.snapshot()!.channelNotes.get('health')!.model).toBe('opus');
 
-    write('Agents/Health.md', '---\nmodel: sonnet\n---\nCoach');
+    write('Channels/Health.md', '---\nmodel: sonnet\n---\nCoach');
     await notes.rescan();
     expect(health.get('system')!.state).toBe('ok');
   });
 
   it('loads the notes before the startup of modules that read them', async () => {
-    write('Agents/Health.md', 'Coach');
+    write('Channels/Health.md', 'Coach');
 
     @Injectable()
     class Reader implements OnModuleInit {
@@ -145,7 +145,7 @@ describe('SystemNotes', () => {
         @Inject(Definitions) private readonly definitions: Definitions,
       ) {}
       onModuleInit(): void {
-        this.agents = this.definitions.agents().map((agent) => agent.name);
+        this.agents = this.definitions.channelNotes().map((note) => note.name);
       }
     }
     @Module({ imports: [SystemModule], providers: [Reader] })

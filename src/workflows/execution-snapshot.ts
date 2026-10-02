@@ -10,7 +10,7 @@ import {
 } from '../config/provider-options.js';
 import { toolPolicySchema } from '../config/tool-policy.js';
 import { HISTORY_MESSAGES } from '../config/workflow-input.js';
-import type { Agent } from '../system-files/snapshot.js';
+import type { ChannelNote } from '../system-files/snapshot.js';
 
 /**
  * The window of Channel history a run reads, fixed when the executor
@@ -44,10 +44,11 @@ export type HistoryRead = z.infer<typeof historyReadSchema>;
 
 /**
  * What a Workflow Run executes with, captured when the executor claims it:
- * the Agent's resolved settings and the input. The run uses this copy, so
- * later edits to the Agent or the Workflow leave it alone.
+ * the Channel note's resolved settings and the input. The run uses this
+ * copy, so later edits to the note or the Workflow leave it alone.
  */
 export const executionSnapshotSchema = z.object({
+  /** The name of the Channel note it runs with. */
   agentName: z.string(),
   provider: z.enum(PROVIDERS),
   providerOptions: providerOptionsSchema,
@@ -56,9 +57,9 @@ export const executionSnapshotSchema = z.object({
   /** Shared and own instructions, already composed. */
   instructions: z.string(),
   toolPolicy: toolPolicySchema,
-  /** Lets a Codex Agent work in a folder that is not a Git repository. */
+  /** Lets Codex work in a folder that is not a Git repository. */
   skipGitRepoCheck: z.boolean(),
-  /** What the run sends the Agent, with any history already rendered. */
+  /** What the run sends, with any history already rendered. */
   input: z.string(),
   /** The Channel history the input carries; absent when it reads none. */
   history: historyReadSchema.optional(),
@@ -67,11 +68,11 @@ export const executionSnapshotSchema = z.object({
 export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
 
 /**
- * The snapshot of `agent`'s settings, with the shared instructions
- * composed in, and of `input` and its `history`.
+ * The snapshot of `agent`'s settings, the Channel note a run uses, with
+ * the shared instructions composed in, and of `input` and its `history`.
  */
 export function executionSnapshot(
-  agent: Agent,
+  agent: ChannelNote,
   defaults: InstructionDefaults,
   input: string,
   history?: HistoryRead,
@@ -85,7 +86,7 @@ export function executionSnapshot(
   };
 }
 
-/** The Agent's part of a runtime request, as `snapshot` captured it. */
+/** The note's part of a runtime request, as `snapshot` captured it. */
 export function snapshotRequest(snapshot: ExecutionSnapshot): AgentRequest {
   return {
     instructions: snapshot.instructions,

@@ -72,7 +72,7 @@ export interface FirstRun {
  * declining, or having no terminal, stops with the `pero init` to run.
  *
  * On a terminal, a workspace's first start (no database yet) first settles
- * the provider its Agents use: the one `Pero.md` sets, or else the owner's
+ * the provider Pero uses: the one `Pero.md` sets, or else the owner's
  * pick among the provider CLIs installed, written to `Pero.md`. It refuses
  * to go on, before anything is made or started, while that provider's CLI
  * is missing or signed out.
@@ -165,7 +165,7 @@ async function pickDataFolder(
   choices.push({ value: NEW_FOLDER, name: 'Create a new folder…' });
   const prompts = await context.prompts();
   const picked = await prompts.select({
-    message: 'Which folder is the vault your Agents keep notes in?',
+    message: 'Which folder is the vault Pero keeps notes in?',
     choices,
     initial: DEFAULT_DATA_FOLDER,
   });
@@ -281,7 +281,7 @@ async function settleProvider(
   } else if (installed.length === 0) {
     throw new CliError(
       [
-        'Pero runs its Agents with Claude Code or Codex, and neither CLI was found. Install one and sign in, then run pero run again:',
+        'Pero runs with Claude Code or Codex, and neither CLI was found. Install one and sign in, then run pero run again:',
         ...PROVIDERS.map(
           (p) => `  ${cliLabel(p)}: ${installHint(p)}, then ${signInHint(p)}`,
         ),
@@ -296,7 +296,7 @@ async function settleProvider(
   } else {
     const prompts = await context.prompts();
     provider = await prompts.select({
-      message: 'Which provider should your Agents use?',
+      message: 'Which provider should Pero use?',
       choices: PROVIDERS.map((p) => ({
         value: p,
         name: `${p} — ${cliLabel(p)}, ${found.get(p)!.state === 'ok' ? 'signed in' : 'not signed in'}`,
@@ -352,7 +352,7 @@ function writeProvider(
   if (updated === null) return;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, updated);
-  print(`Agents use ${provider}; change it with provider: in ${path}`);
+  print(`Pero uses ${provider}; change it with provider: in ${path}`);
 }
 
 function readText(path: string): string | null {

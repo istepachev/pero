@@ -23,7 +23,6 @@ import { inTransaction } from '../persistence/transaction.js';
 import type { ResolvedWorkflow } from '../system-files/snapshot.js';
 import {
   Definitions,
-  requireAgent,
   requireWorkflow,
 } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
@@ -168,12 +167,12 @@ export class WorkflowRuns {
     return result;
   }
 
-  /** Refuses to queue a run of `workflow` unless its Agent is enabled. */
+  /** Refuses to queue a run of `workflow` unless its Channel note is enabled. */
   private requireRunnable(workflow: ResolvedWorkflow): void {
-    const agent = requireAgent(this.definitions, workflow.agent);
-    if (!agent.enabled) {
+    const note = this.definitions.channelNote(workflow.note);
+    if (!note.enabled) {
       throw new InvalidInputError(
-        `Agent ${agent.name} is disabled; enable it first (enabled: true in its note)`,
+        `Channel note ${note.name} is disabled; enable it first (enabled: true in ${note.file})`,
       );
     }
   }

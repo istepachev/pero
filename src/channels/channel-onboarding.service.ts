@@ -6,13 +6,21 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { shownPath } from '../system-files/note-paths.js';
-import { type Agent, topicClaim } from '../system-files/snapshot.js';
-import { AgentNotes } from '../system/agent-notes.service.js';
+import {
+  INSTRUCTIONS_NOTE,
+  NOTE_FOLDERS,
+  PERO_NOTE,
+  PERSONA_NOTE,
+} from '../system-files/note-files.js';
+import {
+  channelIdFor,
+  type ChannelNote,
+} from '../system-files/snapshot.js';
+import { ChannelNotes } from '../system/channel-notes.service.js';
 import {
   Definitions,
   type Route,
   routeQuery,
-  type Unanswered,
 } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
@@ -30,30 +38,34 @@ import {
 } from './channel-stages.js';
 
 /**
- * Posted in a new Channel: who answers there, and `note`, the file that
- * holds its settings and instructions, as the owner reads it.
+ * Posted in a new Channel: how Pero answers there, and `note`, the file
+ * that holds its settings and instructions, as the owner reads it.
  */
 export function welcomeText(
-  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
+  note: Pick<ChannelNote, 'provider' | 'model'>,
   folder: string,
-  note: string,
+  file: string,
   where: 'topic' | 'chat',
 ): string {
   return (
-    `${whoAnswers(agent, folder, where)} ` +
-    `Its settings and instructions are in ${note}: edit that note, ` +
-    `or ask here to change them.`
+    `${whoAnswers(note, folder, where)} ` +
+    `This ${where}'s settings and instructions are in ${file}: edit that ` +
+    `note, or ask here to change them.`
   );
 }
 
 /** The notes and folders a new owner learns of, as they read them. */
 export interface FirstStepsPaths {
-  /** The main Agent's note. */
+  /** `Default.md`, the note of General topics and direct chats. */
   note: string;
-  /** `Pero.md`, the defaults for every Agent and Workflow. */
+  /** `Persona.md`, Pero's personality. */
+  persona: string;
+  /** `Instructions.md`, Pero's general instructions. */
+  instructions: string;
+  /** `Pero.md`, the defaults for every Channel and Workflow. */
   pero: string;
-  /** The folder of Agent notes. */
-  agents: string;
+  /** The folder of Channel notes. */
+  channels: string;
   /** The folder of Workflow notes. */
   workflows: string;
   /** The time zone schedules use now. */
@@ -61,71 +73,69 @@ export interface FirstStepsPaths {
 }
 
 /**
- * Posted in a chat's new primary Channel, where the main Agent answers,
- * so usually right after setup: who answers there, then what a new owner
- * does first. A direct chat (`private`) hears how to get topics; any other
- * chat, how to use them.
+ * Posted in a chat's new primary Channel, so usually right after setup:
+ * how Pero answers there, then what a new owner does first. A direct chat
+ * (`private`) hears how to get topics; any other chat, how to use them.
  */
 export function firstStepsText(
-  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
+  note: Pick<ChannelNote, 'provider' | 'model'>,
   folder: string,
   paths: FirstStepsPaths,
   kind: ChatKind | null,
 ): string {
   const topics =
     kind === 'private'
-      ? `2. Get an Agent per subject: create a private Telegram group, ` +
+      ? `2. Get a Channel per subject: create a private Telegram group, ` +
         `turn on Topics, add this bot as an administrator, and allow the ` +
-        `group with pero telegram allow <chat-id>. Each topic there gets an ` +
-        `Agent of its own; its General topic talks to this one.`
+        `group with pero telegram allow <chat-id>. Each topic there gets a ` +
+        `note of its own in ${paths.channels}; its General topic is ` +
+        `answered as this chat is, from ${paths.note}.`
       : `2. Create a topic for each subject, such as Health or a side ` +
-        `project. Each new topic gets an Agent of its own, with a note in ` +
-        `${paths.agents} named after the topic. Every topic's Agent starts ` +
-        `with this Agent's instructions, then adds its own.`;
+        `project. Each new topic gets a note in ${paths.channels} named ` +
+        `after it, for that topic's own instructions and settings; this ` +
+        `chat's are in ${paths.note}.`;
   return [
-    whoAnswers(agent, folder, 'chat'),
+    whoAnswers(note, folder, 'chat'),
     '',
     'First steps:',
-    `1. Make it yours: this Agent's personality and instructions are in ` +
-      `${paths.note}. ` +
-      `Say who you are, how it should talk to you, and what it helps you ` +
-      `with. Or just ask here, such as "be less formal" or "always answer ` +
-      `in German".`,
+    `1. Make it yours: Pero's personality is in ${paths.persona} and its ` +
+      `instructions in ${paths.instructions}. Say who you are, how it ` +
+      `should talk to you, and what it helps you with. Or just ask here, ` +
+      `such as "be less formal" or "always answer in German".`,
     topics,
     `3. Schedules use the time zone ${paths.timezone}. Set yours, and ` +
-      `defaults for every Agent such as the provider and model, in ` +
+      `defaults for every Channel such as the provider and model, in ` +
       `${paths.pero}.`,
-    `4. Put an Agent to work on a schedule: ask it, say, "every evening at ` +
-      `9, sum up what we talked about today". Workflows are notes in ` +
+    `4. Put Pero to work on a schedule: ask it, say, "every evening at 9, ` +
+      `sum up what we talked about today". Workflows are notes in ` +
       `${paths.workflows}.`,
     '',
-    'When an Agent wants to run a command or change a setting, it asks ' +
-      'here with Allow and Deny buttons. Pero reads edited notes within ' +
+    'When Pero wants to run a command or change a setting, it asks here ' +
+      'with Allow and Deny buttons. Pero reads edited notes within ' +
       'seconds. /help lists what Pero answers itself, such as /status and ' +
       '/new to start over.',
   ].join('\n');
 }
 
-/** Who answers in a Channel, with what, and where it works. */
+/** How Pero answers in a Channel: with what, and where it works. */
 function whoAnswers(
-  agent: Pick<Agent, 'name' | 'provider' | 'model'>,
+  note: Pick<ChannelNote, 'provider' | 'model'>,
   folder: string,
   where: 'topic' | 'chat',
 ): string {
-  const { model } = agent;
+  const { model } = note;
   return (
-    `This ${where} talks to Agent ${agent.name}: ${agent.provider}, ` +
+    `Pero answers in this ${where} with ${note.provider}, ` +
     `${model === null ? 'default model' : `model ${model}`}, ` +
     `working in ${folder}.`
   );
 }
 
 /**
- * Records each new Channel in an allowed chat, and welcomes it when an
- * Agent answers there. Notes choose that Agent on every message, and Pero
- * writes the note that answers a topic no Agent claims and the main
- * Agent's when a primary Channel finds none; a renamed topic's title
- * follows in the note that claims it.
+ * Records each new Channel in an allowed chat, and welcomes it when Pero
+ * answers there. The notes are matched on every message, and Pero writes
+ * the note of a Channel that has none, binds a note named as its title
+ * to it, and writes `Default.md` when a primary Channel finds none.
  */
 @Injectable()
 export class ChannelOnboardingService extends ChannelOnboarding {
@@ -144,7 +154,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     private readonly allowedChats: AllowedChatsService,
     private readonly definitions: Definitions,
     private readonly notes: SystemNotes,
-    private readonly agentNotes: AgentNotes,
+    private readonly channelNotes: ChannelNotes,
   ) {
     super();
   }
@@ -200,7 +210,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
 
   /**
    * The Channel for `inbound`, in a chat of `chatKind`, creating it when
-   * new, and welcoming it when an Agent answers there.
+   * new, and welcoming it when Pero answers there.
    */
   private async onboard(
     kind: IntegrationKind,
@@ -234,8 +244,8 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * Who answers in `channel` now, writing the note that answers it when
-   * Pero should, and welcoming it when it is new or Pero wrote that note.
+   * How Pero answers in `channel` now, writing or binding its note when it
+   * has none, and welcoming it when it is new or Pero wrote that note.
    * `chatKind` is its chat's, when known.
    */
   private async settle(
@@ -245,50 +255,45 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   ): Promise<Route> {
     let route = routeOf(channel, this.definitions);
     let wrote = false;
-    if (route.kind === 'unanswered' && this.writesFor(channel, route.reason)) {
+    if (route.kind === 'answered' && route.match !== 'note') {
       ({ route, wrote } = await this.serially(() => this.writeFor(channel)));
     }
-    if (route.kind === 'agent' && (created || wrote)) {
-      await this.welcome(channel, route.agent, chatKind);
+    if (route.kind === 'answered' && (created || wrote)) {
+      await this.welcome(channel, route.note, chatKind);
     }
     return route;
   }
 
   /**
-   * Whether Pero writes a note where no one answers for `reason`: a topic
-   * no Agent claims, or a primary Channel without the main Agent's note.
-   */
-  private writesFor(channel: Channel, reason: Unanswered): boolean {
-    return (
-      reason.kind === 'unclaimed' ||
-      (reason.kind === 'no-main-agent' && routeQuery(channel).primary)
-    );
-  }
-
-  /**
-   * Writes the note that answers in `channel`, unless one appeared while
-   * this waited its turn; runs in the queue. Where writing fails, the
-   * Channel stays unanswered and is told why as before.
+   * Writes the note `channel` uses, or binds the one named as its title to
+   * it, unless that happened while this waited its turn; runs in the
+   * queue. Where writing fails, the Channel goes on with the defaults.
    */
   private async writeFor(
     channel: Channel,
   ): Promise<{ route: Route; wrote: boolean }> {
     const route = routeOf(channel, this.definitions);
-    if (route.kind !== 'unanswered' || !this.writesFor(channel, route.reason)) {
+    if (route.kind !== 'answered' || route.match === 'note') {
       return { route, wrote: false };
     }
-    const { reason } = route;
+    const query = routeQuery(channel);
     let file: string | null;
     try {
-      file =
-        reason.kind === 'unclaimed'
-          ? await this.agentNotes.createForTopic(
-              reason.title,
-              topicIdOf(channel),
-            )
-          : reason.kind === 'no-main-agent'
-            ? await this.agentNotes.createMain(reason.agent)
-            : null;
+      if (route.match === 'bindable') {
+        const bound = await this.channelNotes.bind(
+          route.note.file!,
+          query.channelId,
+        );
+        file = bound ? route.note.file : null;
+      } else if (query.primary) {
+        file = await this.channelNotes.createDefault();
+      } else {
+        file = await this.channelNotes.createFor(
+          query.channelId,
+          channel.title?.trim() ?? '',
+          topicIdOf(channel),
+        );
+      }
     } catch (error) {
       this.logger.warn(
         `Could not write a note for ${channel.integrationKind} Channel ` +
@@ -300,13 +305,13 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     const after = routeOf(channel, this.definitions);
     if (after.kind === 'unanswered') {
       this.logger.warn(
-        `Wrote ${file}, but no one answers in ${channel.integrationKind} ` +
-          `Channel ${channel.externalKey} yet: ${unansweredSummary(after.reason)}`,
+        `Wrote ${file}, but Pero doesn't answer in ${channel.integrationKind} ` +
+          `Channel ${channel.externalKey}: ${unansweredSummary(after.reason)}`,
       );
     } else {
       this.logger.log(
         `${channel.integrationKind} Channel ${channel.externalKey} is ` +
-          `answered by Agent ${after.agent.name}, from the new ${file}`,
+          `answered from ${file}`,
       );
     }
     return { route: after, wrote: true };
@@ -318,7 +323,7 @@ export class ChannelOnboardingService extends ChannelOnboarding {
    */
   private async welcome(
     channel: Channel,
-    agent: Agent,
+    note: ChannelNote,
     chatKind: ChatKind | null,
   ): Promise<void> {
     if (this.welcomed.has(channel.id)) return;
@@ -326,21 +331,23 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     const { workspace, systemFolder } = this.notes.folders();
     const shown = (path: string) =>
       shownPath(workspace, join(systemFolder, path));
-    const note = shown(agent.file);
+    const file = note.file === null ? '(no note yet)' : shown(note.file);
     const text = routeQuery(channel).primary
       ? firstStepsText(
-          agent,
-          agent.workingDirectory,
+          note,
+          note.workingDirectory,
           {
-            note,
-            pero: shown('Pero.md'),
-            agents: `${shown('Agents')}/`,
-            workflows: `${shown('Workflows')}/`,
+            note: file,
+            persona: shown(PERSONA_NOTE),
+            instructions: shown(INSTRUCTIONS_NOTE),
+            pero: shown(PERO_NOTE),
+            channels: `${shown(NOTE_FOLDERS.channel)}/`,
+            workflows: `${shown(NOTE_FOLDERS.workflow)}/`,
             timezone: this.definitions.defaults().timezone,
           },
           chatKind,
         )
-      : welcomeText(agent, agent.workingDirectory, note, 'topic');
+      : welcomeText(note, note.workingDirectory, file, 'topic');
     await this.notify(channel.integrationKind, channel.externalKey, () =>
       this.sender.post(channel, text, { origin: 'pero' }),
     );
@@ -354,11 +361,8 @@ export class ChannelOnboardingService extends ChannelOnboarding {
   }
 
   /**
-   * Retitles a renamed topic's Channel, first setting the `topic` of the
-   * one note claiming it to the new title; runs in the queue, so no message
-   * routes between the two. The note is left as it is when another Agent
-   * claims the new title already, or while another topic Pero knows has the
-   * old title, which then keeps the Agent.
+   * Retitles a renamed topic's Channel. Its note keeps its name: it is
+   * bound to the Channel by `channel-id`, and Workflows name it.
    */
   private rename(
     kind: IntegrationKind,
@@ -383,57 +387,15 @@ export class ChannelOnboardingService extends ChannelOnboarding {
       );
       return;
     }
-    const from = channel.title?.trim() ?? '';
-    const to = inbound.title?.trim() ?? '';
-    const snapshot = this.notes.snapshot();
-    if (
-      inbound.topicId !== null &&
-      snapshot !== null &&
-      from !== '' &&
-      to !== '' &&
-      from.toLowerCase() !== to.toLowerCase()
-    ) {
-      const claim = topicClaim(snapshot, from);
-      const agent =
-        claim.kind === 'agent' ? snapshot.agents.get(claim.agent) : undefined;
-      const taken = topicClaim(snapshot, to);
-      const shared =
-        agent !== undefined &&
-        (await channels.find({ where: { integrationKind: kind } })).some(
-          (other) =>
-            other.id !== channel.id &&
-            !routeQuery(other).primary &&
-            other.title?.trim().toLowerCase() === from.toLowerCase(),
-        );
-      if (agent !== undefined && shared) {
-        this.logger.log(
-          `Left ${agent.file} as it is: another topic is still titled "${from}"`,
-        );
-      } else if (agent !== undefined && taken.kind === 'unclaimed') {
-        try {
-          await this.agentNotes.renameTopic(agent.file, from, to);
-        } catch (error) {
-          this.logger.warn(
-            `Could not rename topic "${from}" in ${agent.file}: ${describe(error)}`,
-          );
-        }
-      } else if (agent !== undefined) {
-        this.logger.log(
-          `Left ${agent.file} as it is: the renamed topic "${to}" is ` +
-            (taken.kind === 'agent'
-              ? `claimed by Agent ${taken.agent} already`
-              : `claimed by other notes too`),
-        );
-      }
-    }
     await channels.update(channel.id, { title: inbound.title });
   }
 
   /**
    * Moves a chat that now lives under a new ID, as when a group gains
-   * topics: its primary Channel, whose key is the chat's, then its entry in
-   * `config.yaml`. A chat that migrates has no topics yet, so no other
-   * Channel has its key. Sessions and history follow the Channel's ID.
+   * topics: its primary Channel, whose key is the chat's, its entry in
+   * `config.yaml`, then the `channel-id` of its notes. A chat that
+   * migrates has no topics yet, so no other Channel has its key. Sessions
+   * and history follow the Channel's ID.
    */
   private async migrate(
     event: Extract<ChannelEvent, { type: 'chat-migrated' }>,
@@ -475,6 +437,19 @@ export class ChannelOnboardingService extends ChannelOnboarding {
     this.logger.log(
       `Followed ${integrationKind} chat ${chat.key} to its new ID ${newChatKey}`,
     );
+    try {
+      await this.serially(() =>
+        this.channelNotes.rebindChat(
+          channelIdFor(integrationKind, chat.key),
+          channelIdFor(integrationKind, newChatKey),
+        ),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not move the notes of ${integrationKind} chat ${chat.key} ` +
+          `to ${newChatKey}; set their channel-id by hand: ${describe(error)}`,
+      );
+    }
   }
 
   /** Sends Pero's own notice with `send`; a failure is only logged. */

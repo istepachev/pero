@@ -38,7 +38,7 @@ describe('checkWorkspace', () => {
   it('passes on the pero init skeleton', async () => {
     expect(await check()).toEqual({
       systemFolder: 'data/System',
-      agents: 1,
+      channels: 1,
       workflows: 0,
       topicsChecked: false,
       problems: [],
@@ -46,13 +46,13 @@ describe('checkWorkspace', () => {
   });
 
   it('reports the notes’ problems by their path in the workspace', async () => {
-    write('data/System/Agents/Coach.md', '---\nmodle: sonnet\n---\nCoach');
+    write('data/System/Channels/Coach.md', '---\nmodle: sonnet\n---\nCoach');
     write('data/System/Workflows/Weekly.md', '---\nday: sunday\n---\nGo');
     write('data/System/Workflows/Daily.md', '---\nhour: 9\n---\nGo');
     const result = await check();
     expect(result.problems).toEqual([
       {
-        file: 'data/System/Agents/Coach.md',
+        file: 'data/System/Channels/Coach.md',
         property: 'modle',
         message: 'unknown property (did you mean model?)',
       },
@@ -62,18 +62,18 @@ describe('checkWorkspace', () => {
         message: 'must be set when day or minute is',
       },
     ]);
-    expect(result).toMatchObject({ agents: 1, workflows: 1 });
+    expect(result).toMatchObject({ channels: 1, workflows: 1 });
   });
 
   it('finds the system folder where config.yaml says', async () => {
     write('.pero/config.yaml', 'data: vault\nsystem: pero-system\n');
     mkdirSync(join(workspace, 'vault'));
-    write('pero-system/Agents/Main.md', '---\neffort: huge\n---');
+    write('pero-system/Channels/Default.md', '---\neffort: huge\n---');
     const result = await check();
     expect(result.systemFolder).toBe('pero-system');
     expect(result.problems).toEqual([
       expect.objectContaining({
-        file: 'pero-system/Agents/Main.md',
+        file: 'pero-system/Channels/Default.md',
         property: 'effort',
       }),
     ]);
@@ -82,13 +82,13 @@ describe('checkWorkspace', () => {
   it('shows a system folder outside the workspace by its full path', async () => {
     const outside = join(home, 'notes');
     write('.pero/config.yaml', `system: ${outside}\n`);
-    mkdirSync(join(outside, 'Agents'), { recursive: true });
-    writeFileSync(join(outside, 'Agents', 'Bad.md'), '---\nenabled: yes\n---');
+    mkdirSync(join(outside, 'Channels'), { recursive: true });
+    writeFileSync(join(outside, 'Channels', 'Bad.md'), '---\nenabled: yes\n---');
     const result = await check();
     expect(result.systemFolder).toBe(outside);
     expect(result.problems).toEqual([
       {
-        file: join(outside, 'Agents/Bad.md'),
+        file: join(outside, 'Channels/Bad.md'),
         property: 'enabled',
         message: 'must be true or false',
       },
@@ -97,10 +97,10 @@ describe('checkWorkspace', () => {
 
   it('reports an invalid config.yaml line by line, without the notes', async () => {
     write('.pero/config.yaml', 'data: [a]\nbogus: 1\n');
-    write('data/System/Agents/Coach.md', '---\nmodle: x\n---');
+    write('data/System/Channels/Coach.md', '---\nmodle: x\n---');
     expect(await check()).toEqual({
       systemFolder: null,
-      agents: 0,
+      channels: 0,
       workflows: 0,
       topicsChecked: false,
       problems: [

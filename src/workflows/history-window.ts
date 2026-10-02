@@ -69,7 +69,7 @@ export async function readHistoryWindow(
       // The foreign key guarantees the Channel.
       channel: message.channel!.title ?? message.channel!.externalKey,
       speaker:
-        message.origin === 'user' ? 'User' : (message.agentName ?? 'Agent'),
+        message.origin === 'user' ? 'User' : 'Pero',
       text: message.text,
       createdAt: message.createdAt,
     })),

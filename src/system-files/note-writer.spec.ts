@@ -8,15 +8,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CHANNEL_TEMPLATE_NOTE } from '../config/workspace-skeleton.js';
 import { parseNote } from './note.js';
 import { noteIdentity } from './note-files.js';
 import {
-  agentNoteFor,
   createFileExclusive,
   formatNote,
-  freeAgentNote,
+  freeChannelNote,
   noteFromTemplate,
-  renameTopicIn,
   replaceNoteProperty,
   setNoteProperty,
   topicNoteTitle,
@@ -24,7 +23,7 @@ import {
 import { readNote } from './snapshot.js';
 
 function roundTrip(text: string) {
-  const result = parseNote('Agents/Health.md', text);
+  const result = parseNote('Channels/Health.md', text);
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
   return result.note;
 }
@@ -103,7 +102,7 @@ describe('topicNoteTitle', () => {
     const title = topicNoteTitle('Щука '.repeat(40), '5');
     expect(title.length).toBeLessThanOrEqual(80);
     const name = (n: string) => {
-      const found = noteIdentity(`Agents/${n}.md`);
+      const found = noteIdentity(`Channels/${n}.md`);
       return found.ok ? found.identity.name : null;
     };
     expect(name(title)).not.toBeNull();
@@ -111,107 +110,83 @@ describe('topicNoteTitle', () => {
   });
 });
 
-describe('freeAgentNote', () => {
+describe('freeChannelNote', () => {
   it('uses the title when nothing has it', () => {
-    expect(freeAgentNote('Health', ['Pero.md', 'Agents/Coach.md'])).toBe(
-      'Agents/Health.md',
+    expect(freeChannelNote('Health', ['Pero.md', 'Channels/Coach.md'])).toBe(
+      'Channels/Health.md',
     );
   });
 
-  it('numbers the file past files and names that exist anywhere in Agents', () => {
-    expect(freeAgentNote('Health', ['Agents/Health.md'])).toBe(
-      'Agents/Health 2.md',
+  it('numbers the file past files and names that exist anywhere in Channels', () => {
+    expect(freeChannelNote('Health', ['Channels/Health.md'])).toBe(
+      'Channels/Health 2.md',
     );
     expect(
-      freeAgentNote('Health', ['Agents/Me/health.md', 'Agents/Health 2.md']),
-    ).toBe('Agents/Health 3.md');
-    // A Workflow of that name is no Agent.
-    expect(freeAgentNote('Health', ['Workflows/Health.md'])).toBe(
-      'Agents/Health.md',
+      freeChannelNote('Health', [
+        'Channels/Me/health.md',
+        'Channels/Health 2.md',
+      ]),
+    ).toBe('Channels/Health 3.md');
+    // A Workflow of that name is no Channel note.
+    expect(freeChannelNote('Health', ['Workflows/Health.md'])).toBe(
+      'Channels/Health.md',
     );
-  });
-});
-
-describe('agentNoteFor', () => {
-  it("names the note after the Agent's name", () => {
-    expect(agentNoteFor('main')).toBe('Agents/Main.md');
-    expect(agentNoteFor('my-boss')).toBe('Agents/My-boss.md');
   });
 });
 
 describe('noteFromTemplate', () => {
-  it("keeps the template's properties, comments, and body, and sets the topic", () => {
+  const ID = 'telegram:-100123:5';
+
+  it("keeps the template's properties, comments, and body, and sets channel-id", () => {
     const { text, problem } = noteFromTemplate(
-      '---\n# Coaching\nmodel: sonnet # fast\ntopic: Old\n---\nYou coach.\n',
-      'Health',
+      '---\n# Coaching\nmodel: sonnet # fast\nchannel-id: old\n---\nYou coach.\n',
+      ID,
     );
     expect(problem).toBeNull();
     expect(text).toBe(
-      '---\n# Coaching\nmodel: sonnet # fast\ntopic: Health\n---\nYou coach.\n',
+      `---\n# Coaching\nmodel: sonnet # fast\nchannel-id: ${ID}\n---\nYou coach.\n`,
     );
   });
 
-  it('reads back as an Agent note for the topic, from a commented template', () => {
+  it('reads back as a Channel note, from a commented template', () => {
     const { text } = noteFromTemplate(
       [
         '---',
-        '# The starting point for the Agent of a new topic.',
+        '# The starting point for the note of a new Channel.',
+        '# channel-id:',
         '# model: sonnet',
         '# effort: high',
         '---',
         'You are my assistant for this topic.',
         '',
       ].join('\n'),
-      '2026',
+      ID,
     );
-    expect(readNote('Agents/2026.md', text).errors).toEqual([]);
+    expect(readNote('Channels/2026.md', text).errors).toEqual([]);
     expect(roundTrip(text)).toEqual({
-      properties: { topic: '2026' },
+      properties: { 'channel-id': ID },
       body: 'You are my assistant for this topic.',
     });
     expect(text).toContain('# model: sonnet');
   });
 
+  it("fills in Pero's own template", () => {
+    const { text, problem } = noteFromTemplate(CHANNEL_TEMPLATE_NOTE, ID);
+    expect(problem).toBeNull();
+    expect(readNote('Channels/Health.md', text).errors).toEqual([]);
+    expect(roundTrip(text).properties).toMatchObject({ 'channel-id': ID });
+  });
+
   it('uses a template without properties as the body', () => {
-    expect(noteFromTemplate('Be kind.', 'Health').text).toBe(
-      '---\ntopic: Health\n---\nBe kind.\n',
+    expect(noteFromTemplate('Be kind.', ID).text).toBe(
+      `---\nchannel-id: ${ID}\n---\nBe kind.\n`,
     );
   });
 
-  it('writes the topic alone without a template, or with a broken one', () => {
-    expect(noteFromTemplate(null, 'Health')).toEqual({
-      text: '---\ntopic: Health\n---\n',
-      problem: null,
-    });
-    const broken = noteFromTemplate('---\nmodel: [\n---\nBody', 'Health');
-    expect(broken.text).toBe('---\ntopic: Health\n---\n');
+  it('writes channel-id alone with a broken template', () => {
+    const broken = noteFromTemplate('---\nmodel: [\n---\nBody', ID);
+    expect(broken.text).toBe(`---\nchannel-id: ${ID}\n---\n`);
     expect(broken.problem).toMatch(/^its properties don't parse/);
-  });
-});
-
-describe('renameTopicIn', () => {
-  const note =
-    '---\n# Mine\ntopic: Health # mine\nmodel: sonnet\n---\n\nYou  track.\n\n';
-
-  it('renames the title in any case, keeping comments and the body', () => {
-    expect(renameTopicIn(note, 'health', 'Fitness')).toBe(
-      '---\n# Mine\ntopic: Fitness # mine\nmodel: sonnet\n---\n\nYou  track.\n\n',
-    );
-  });
-
-  it('quotes a title that needs it', () => {
-    expect(
-      renameTopicIn('---\ntopic: Health # me\n---\nBody', 'Health', '2026'),
-    ).toBe('---\ntopic: "2026" # me\n---\nBody');
-  });
-
-  it("is null when the note's topic isn't the title or doesn't parse", () => {
-    expect(renameTopicIn(note, 'Garden', 'Fitness')).toBeNull();
-    expect(renameTopicIn('You track.', 'Health', 'Fitness')).toBeNull();
-    expect(
-      renameTopicIn('---\ntopics: [Health]\n---\n', 'Health', 'Fit'),
-    ).toBeNull();
-    expect(renameTopicIn('---\ntopic: [\n---\n', 'Health', 'Fit')).toBeNull();
   });
 });
 
@@ -219,15 +194,15 @@ describe('createFileExclusive', () => {
   it('writes a new file, never replaces one, and leaves no temporary file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pero-note-writer-'));
     try {
-      const path = join(dir, 'Agents', 'Health.md');
+      const path = join(dir, 'Channels', 'Health.md');
       expect(createFileExclusive(path, 'one')).toBe(true);
       expect(createFileExclusive(path, 'two')).toBe(false);
       expect(readFileSync(path, 'utf8')).toBe('one');
-      writeFileSync(join(dir, 'Agents', 'Sleep.md'), 'mine');
-      expect(createFileExclusive(join(dir, 'Agents', 'Sleep.md'), 'x')).toBe(
+      writeFileSync(join(dir, 'Channels', 'Sleep.md'), 'mine');
+      expect(createFileExclusive(join(dir, 'Channels', 'Sleep.md'), 'x')).toBe(
         false,
       );
-      expect(readdirSync(join(dir, 'Agents')).sort()).toEqual([
+      expect(readdirSync(join(dir, 'Channels')).sort()).toEqual([
         'Health.md',
         'Sleep.md',
       ]);

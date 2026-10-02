@@ -11,10 +11,10 @@ import { ChannelTurns, type RoutedChannel } from './channel-stages.js';
 import { ToolApprovals } from './tool-approvals.js';
 
 /** Posted instead of an answer when a turn fails. */
-export function failureText(agentName: string, error: unknown): string {
+export function failureText(error: unknown): string {
   if (error instanceof TurnError && error.interrupted) {
     return (
-      `Pero stopped before Agent ${agentName} answered. ` +
+      `Pero stopped before it answered. ` +
       `Send the message again once Pero is back.`
     );
   }
@@ -22,7 +22,7 @@ export function failureText(agentName: string, error: unknown): string {
     error instanceof TurnError
       ? error.message
       : 'Pero failed to run the turn; see pero logs';
-  return `Agent ${agentName} couldn't answer: ${reason.replace(/\.$/, '')}.`;
+  return `Pero couldn't answer: ${reason.replace(/\.$/, '')}.`;
 }
 
 /**
@@ -50,7 +50,6 @@ export class AgentChannelTurns extends ChannelTurns {
   ): Promise<void> {
     const turn = this.agents.runTurn({
       channelId: channel.id,
-      agent: channel.agent.name,
       messageId,
       input: message.content.text,
       approve: this.approvals.approverFor(channel),
@@ -90,7 +89,7 @@ export class AgentChannelTurns extends ChannelTurns {
     } catch (error) {
       // `/stop` has answered for it already.
       if (error instanceof TurnError && error.stopped) return;
-      text = failureText(channel.agent.name, error);
+      text = failureText(error);
       author = { origin: 'pero' };
     }
     try {

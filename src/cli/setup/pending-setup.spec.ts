@@ -38,7 +38,6 @@ const settings: SettingsView = {
     codex: { model: null, effort: null },
   },
   dataFolder: '/home/owner/workspace/data',
-  mainAgent: 'main',
   historyCarryover: 50,
   historyRetentionDays: null,
   defaultPermissions: 'ask',

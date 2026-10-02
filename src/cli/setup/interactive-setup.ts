@@ -72,7 +72,7 @@ export async function runInteractiveSetup(
     if (paired !== null) {
       block();
       context.print(
-        'Pero posted your first steps there. Reply to start talking to your main Agent.',
+        'Pero posted your first steps there. Reply to start talking to Pero.',
       );
     }
   }
@@ -141,11 +141,11 @@ async function pairChat(context: SetupContext): Promise<string | null> {
     choices: [
       {
         value: 'group',
-        name: 'Private Telegram group — an Agent per topic, just for you (recommended)',
+        name: 'Private Telegram group — a topic per subject, just for you (recommended)',
       },
       {
         value: 'direct',
-        name: 'Direct chat with the bot — one Agent only',
+        name: 'Direct chat with the bot — one conversation only',
       },
     ],
     initial: 'group',
@@ -194,7 +194,7 @@ function chatSteps(choice: ChatChoice, bot: string): string[] {
   if (choice === 'direct') {
     return [
       `Open ${bot} in Telegram (https://t.me/${bot.slice(1)}) and send it a message.`,
-      'There you talk to the main Agent only; a group with topics can be added later with pero telegram allow.',
+      'There you have one conversation only; a group with topics can be added later with pero telegram allow.',
     ];
   }
   return [
@@ -202,7 +202,7 @@ function chatSteps(choice: ChatChoice, bot: string): string[] {
     `  1. Create a new group with ${bot} as its member.`,
     '  2. In the group settings, turn on Topics.',
     `  3. Make ${bot} an administrator (Administrators → Add Admin), so it sees every message.`,
-    '  4. Keep the group private: anyone who can write in it can talk to its Agents.',
+    '  4. Keep the group private: anyone who can write in it can talk to Pero.',
     '  5. Send a message in the group.',
   ];
 }

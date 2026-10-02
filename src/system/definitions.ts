@@ -1,24 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { homedir } from 'node:os';
-import { join, posix } from 'node:path';
+import { join } from 'node:path';
 import { NotFoundError } from '../common/errors.js';
 import { guideFile } from '../guide/agent-guide.js';
 import type { Provider, ProviderDefaults } from '../config/provider-options.js';
 import type { PermissionMode } from '../config/tool-policy.js';
+import { slugify } from '../config/slug.js';
 import { shownPath } from '../system-files/note-paths.js';
-import { agentNoteFor } from '../system-files/note-writer.js';
-import { NOTE_FOLDERS } from '../system-files/note-files.js';
 import {
-  type Agent,
   buildSnapshot,
+  channelIdFor,
+  type ChannelNote,
+  DEFAULT_NOTE,
+  DEFAULT_NOTE_FILE,
+  defaultsNote,
   isResolved,
+  type NoteMatch,
+  noteFor,
   type ResolvedWorkflow,
   type SystemSnapshot,
-  topicClaim,
 } from '../system-files/snapshot.js';
 import { SystemNotes } from './system-notes.service.js';
 
-/** Installation defaults that Agents and Pero's own limits follow. */
+/** Installation defaults that turns and Pero's own limits follow. */
 export interface Defaults {
   provider: Provider;
   /** Each provider's model and effort; null lets the provider choose. */
@@ -32,21 +36,22 @@ export interface Defaults {
   historyRetentionDays: number | null;
   /** Upper bound on Workflow Runs executing at once. */
   maxConcurrentRuns: number;
-  /** The owner's notes and files, which every Agent's instructions name. */
+  /** The owner's notes and files, which every turn's instructions name. */
   dataFolder: string;
-  /** The notes themselves, which every Agent's instructions name. */
+  /** The notes themselves, which every turn's instructions name. */
   systemFolder: string;
-  /** The guide to the notes in `.pero/`, which every Agent's instructions name. */
+  /** The guide to the notes in `.pero/`, which every turn's instructions name. */
   guideFile: string;
-  /**
-   * The main Agent's instructions, placed before every other Agent's own
-   * unless its note opts out; null for none.
-   */
-  mainInstructions: string | null;
+  /** `Persona.md`'s text, which every turn's instructions start with. */
+  persona: string | null;
+  /** `Instructions.md`'s text, which follows the persona. */
+  instructions: string | null;
 }
 
 /** A Channel as routing sees it. */
 export interface RouteQuery {
+  /** `<integration>:<address>`, as a note's `channel-id` names it. */
+  channelId: string;
   /** A group's General topic, a group without topics, or a direct chat. */
   primary: boolean;
   /** The topic's title; null while Pero hasn't seen it. */
@@ -58,39 +63,40 @@ export interface RouteQuery {
  * its chat's; a topic's adds the topic's ID after a colon.
  */
 export function routeQuery(channel: {
+  integrationKind: string;
   externalKey: string;
   title: string | null;
 }): RouteQuery {
   return {
+    channelId: channelIdFor(channel.integrationKind, channel.externalKey),
     primary: !channel.externalKey.includes(':'),
     title: channel.title,
   };
 }
 
 /**
- * Why no Agent answers in a Channel. Files are notes' paths as the owner
- * reads them: inside the workspace, relative to it.
+ * Why Pero doesn't answer in a Channel. Files are notes' paths as the
+ * owner reads them: inside the workspace, relative to it.
  */
 export type Unanswered =
-  /** Its Agent is disabled; `file` is its note. */
-  | { kind: 'disabled'; agent: string; file: string }
-  /** Several Agents' notes, in `files`, claim the topic. */
-  | { kind: 'conflict'; title: string; files: string[] }
-  /** Only notes that have errors and never loaded, in `files`, claim it. */
-  | { kind: 'unloaded'; title: string; files: string[] }
-  /** No Agent claims the topic; `note` is the one Pero writes for it. */
-  | { kind: 'unclaimed'; title: string; note: string }
-  /** Pero hasn't seen the topic's title yet, so nothing can claim it. */
-  | { kind: 'untitled' }
-  /** No note defines the main Agent; `note` is the one to add. */
-  | { kind: 'no-main-agent'; agent: string; note: string };
-
-/** Who answers in a Channel now: an enabled Agent, or no one and why. */
-export type Route =
-  { kind: 'agent'; agent: Agent } | { kind: 'unanswered'; reason: Unanswered };
+  /** Its note sets `enabled: false`; `file` is the note. */
+  | { kind: 'disabled'; file: string }
+  /** Only notes that have errors and never loaded, in `files`, are for it. */
+  | { kind: 'unloaded'; files: string[] }
+  /** Pero hasn't seen the topic's title yet, so no note can match it. */
+  | { kind: 'untitled' };
 
 /**
- * What Pero is configured to run: the defaults, the Agents, and the
+ * How Pero answers in a Channel now: with its note's settings, or not at
+ * all and why. `match` says whether the note exists, so Pero can write or
+ * bind it.
+ */
+export type Route =
+  | { kind: 'answered'; note: ChannelNote; match: NoteMatch['kind'] }
+  | { kind: 'unanswered'; reason: Unanswered };
+
+/**
+ * What Pero is configured to run: the defaults, the Channel notes, and the
  * Workflows, from the workspace's notes as the current snapshot holds
  * them, so an edit applies from the next turn or run. Read-only; the
  * owner's edits of notes change the definitions, and `onChange` says when
@@ -113,39 +119,41 @@ export class Definitions {
       dataFolder,
       systemFolder,
       guideFile: guideFile(workspace),
-      mainInstructions: snapshot.mainInstructions,
+      persona: snapshot.persona,
+      instructions: snapshot.instructions,
     };
   }
 
-  /** The Agent named `name`, in any case; null if none. */
-  agent(name: string): Agent | null {
-    const { snapshot } = this.current();
-    return snapshot.agents.get(name.toLowerCase()) ?? null;
+  /**
+   * The settings of the Channel note named `name`, in any case: the note's,
+   * or `Pero.md`'s defaults while no note of that name loaded.
+   */
+  channelNote(name: string): ChannelNote {
+    const { snapshot, workspace } = this.current();
+    const key = slugify(name) ?? name.toLowerCase();
+    return (
+      snapshot.channelNotes.get(key) ??
+      defaultsNote(
+        key,
+        key === DEFAULT_NOTE ? 'Default' : name,
+        snapshot.defaults,
+        workspace,
+      )
+    );
   }
 
-  /** Every Agent, by name. */
-  agents(): Agent[] {
+  /** Every Channel note that loaded, by name. */
+  channelNotes(): ChannelNote[] {
     const { snapshot } = this.current();
-    return [...snapshot.agents.values()].sort((a, b) =>
+    return [...snapshot.channelNotes.values()].sort((a, b) =>
       a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     );
   }
 
-  /** The Agent primary Channels get; null while no note defines it. */
-  mainAgent(): Agent | null {
-    const { snapshot } = this.current();
-    return snapshot.agents.get(snapshot.mainAgent) ?? null;
-  }
-
-  /** The name of the Agent primary Channels get, even while it is not defined. */
-  mainAgentName(): string {
-    return this.current().snapshot.mainAgent;
-  }
-
   /**
-   * Who answers in `channel` now. A primary Channel gets the main Agent,
-   * and a topic the Agent whose `topic` is its title; an unclaimed topic
-   * gets none until Pero writes its note.
+   * How Pero answers in `channel` now: a primary Channel with `Default.md`,
+   * a topic with the note bound to it, or else the note named as its
+   * title; with `Pero.md`'s defaults while it has none.
    */
   route(channel: RouteQuery): Route {
     const { snapshot, systemFolder, workspace } = this.current();
@@ -155,45 +163,40 @@ export class Definitions {
       kind: 'unanswered',
       reason,
     });
-    const answered = (name: string): Route => {
-      const agent = snapshot.agents.get(name);
-      if (agent === undefined) {
-        return unanswered({
-          kind: 'no-main-agent',
-          agent: name,
-          note: shown(agentNoteFor(name)),
-        });
-      }
-      if (!agent.enabled) {
-        return unanswered({
-          kind: 'disabled',
-          agent: agent.name,
-          file: shown(agent.file),
-        });
-      }
-      return { kind: 'agent', agent };
-    };
-    if (channel.primary) return answered(snapshot.mainAgent);
-    const title = channel.title?.trim() ?? '';
-    if (title === '') return unanswered({ kind: 'untitled' });
-    const claim = topicClaim(snapshot, title);
-    switch (claim.kind) {
-      case 'agent':
-        return answered(claim.agent);
-      case 'conflict':
+    const match = noteFor(snapshot, channel);
+    let note: ChannelNote;
+    switch (match.kind) {
+      case 'untitled':
+        return unanswered({ kind: 'untitled' });
       case 'unloaded':
-        return unanswered({
-          kind: claim.kind,
+        return unanswered({ kind: 'unloaded', files: match.files.map(shown) });
+      case 'note':
+      case 'bindable':
+        note = match.note;
+        break;
+      case 'none': {
+        const title = channel.primary
+          ? 'Default'
+          : (channel.title?.trim() ?? '');
+        note = defaultsNote(
+          match.name ?? `channel-${channel.channelId}`,
           title,
-          files: claim.files.map(shown),
-        });
-      case 'unclaimed':
-        return unanswered({
-          kind: 'unclaimed',
-          title,
-          note: shown(posix.join(NOTE_FOLDERS.agent, `${title}.md`)),
-        });
+          snapshot.defaults,
+          workspace,
+        );
+        break;
+      }
     }
+    if (!note.enabled) {
+      return unanswered({ kind: 'disabled', file: shown(note.file!) });
+    }
+    return { kind: 'answered', note, match: match.kind };
+  }
+
+  /** `Default.md` as the owner reads its path. */
+  defaultNoteFile(): string {
+    const { systemFolder, workspace } = this.current();
+    return shownPath(workspace, join(systemFolder, DEFAULT_NOTE_FILE));
   }
 
   /**
@@ -226,7 +229,7 @@ export class Definitions {
   /**
    * The snapshot in use, and the data folder. Before the notes could be
    * read at all, as when the system folder is unreadable, there are no
-   * Agents and every default is Pero's own.
+   * Channel notes and every default is Pero's own.
    */
   private current(): {
     snapshot: SystemSnapshot;
@@ -249,13 +252,6 @@ export class Definitions {
       workspace: folders.workspace,
     };
   }
-}
-
-/** The Agent named `name`; `NotFoundError` if none. */
-export function requireAgent(definitions: Definitions, name: string): Agent {
-  const agent = definitions.agent(name);
-  if (agent === null) throw new NotFoundError(`No Agent named ${name}`);
-  return agent;
 }
 
 /** The Workflow named `name`; `NotFoundError` if none. */

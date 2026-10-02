@@ -34,12 +34,12 @@ function tableProperties(text: string): string[] {
     );
 }
 
-describe('the guide for Agents', () => {
+describe('the guide', () => {
   const guide = agentGuide();
 
   it.each([
     ['`Pero.md`', NOTE_PROPERTIES.pero],
-    ['Agent notes', NOTE_PROPERTIES.agent],
+    ['Channel notes', NOTE_PROPERTIES.channel],
     ['Workflow notes', NOTE_PROPERTIES.workflow],
   ])('lists every property of %s, and no other', (title, properties) => {
     expect(tableProperties(section(guide, title)).sort()).toEqual(

@@ -45,7 +45,7 @@ describe('HistoryRetention', () => {
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-retention-');
     await ws.pero();
-    await ws.agent('Coach');
+    await ws.channel('Coach');
     await boot();
     const channels = ds.getRepository(Channel);
     channelId = (
