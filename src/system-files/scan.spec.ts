@@ -58,7 +58,7 @@ describe('scanSystemFolder', () => {
     ]);
   });
 
-  it('skips ignored files and never enters ignored folders', async () => {
+  it('skips ignored files and never enters folders other than Agents/ and Workflows/', async () => {
     await write('Agents/Main.md', 'Hi');
     await write('Agents/_Template.md', 'Template');
     await write('Agents/.Hidden.md', 'Hidden');
@@ -66,6 +66,8 @@ describe('scanSystemFolder', () => {
     await write('_Drafts/Agents/Old.md', 'Old');
     await write('.obsidian/workspace.md', 'Obsidian');
     await write('.trash/Agents/Gone.md', 'Gone');
+    await write('Templates/Daily Journal.md', 'Journal');
+    await write('Notes.md', 'Stray');
     expect((await scanSystemFolder(system)).map((entry) => entry.file)).toEqual(
       ['Agents/Main.md'],
     );

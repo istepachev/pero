@@ -24,6 +24,7 @@ The data folder and system folder can be elsewhere: your instructions give their
 - **Notes are Markdown with YAML frontmatter,** the block between `---` lines at the top. The body is everything after it. Property names are lowercase and hyphenated. An unknown property is an error; `tags`, `aliases`, and `cssclasses` are allowed and ignored.
 - **The file name is the identity.** `Agents/Weekly Health.md` is the Agent titled *Weekly Health*, named `weekly-health`. Renaming a note makes a new Agent or Workflow, so don't rename to "fix" a title unless asked. Subfolders under `Agents/` and `Workflows/` are fine for grouping.
 - **Files starting with `_` or `.` are ignored,** such as `Agents/_Template.md`, the template for Agents of new topics.
+- **Pero reads only `Pero.md`, `Agents/`, and `Workflows/`.** Other folders and files in the system folder are the owner's, such as `Templates/`; a note elsewhere, even in a misspelled `Agent/`, is not an Agent or Workflow.
 - **Paths in notes** are relative to the workspace, not to the note. `~` is the home folder.
 - **Pero rereads the system folder every 10 seconds.** An edit applies from the next message or run; no restart is needed.
 

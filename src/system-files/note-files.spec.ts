@@ -26,6 +26,20 @@ describe('isIgnoredPath', () => {
     }
   });
 
+  it("skips the owner's files outside Pero.md, Agents/, and Workflows/", () => {
+    for (const file of [
+      'Templates/Daily Journal.md',
+      'Notes.md',
+      'pero.md',
+      'Agent/Health.md',
+      'agents/Health.md',
+      'Archive/Agents/Health.md',
+      'Agents.md',
+    ]) {
+      expect(isIgnoredPath(file)).toBe(true);
+    }
+  });
+
   it('skips anything that is not a .md file', () => {
     for (const file of [
       'Agents/Health.txt',
@@ -108,7 +122,7 @@ describe('noteIdentity', () => {
           file,
           property: null,
           message:
-            'not an Agent or Workflow note; move it under Agents/ or Workflows/, or start its name with _',
+            'not a note Pero reads; Pero reads only Pero.md and notes under Agents/ and Workflows/',
         },
       });
     }

@@ -1,7 +1,7 @@
 import { type Dirent } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isIgnoredPath } from './note-files.js';
+import { isIgnoredPath, isNoteFolder } from './note-files.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -20,9 +20,10 @@ export interface NoteFile {
 }
 
 /**
- * Every note in the system folder `dir`, sorted by path: `.md` files in
- * any subfolder, leaving out names that start with `_` or `.` and never
- * entering such folders, so `.obsidian/` and `.trash/` cost nothing.
+ * Every note in the system folder `dir`, sorted by path: `Pero.md` and the
+ * `.md` files anywhere under `Agents/` and `Workflows/`, leaving out names
+ * that start with `_` or `.`. Other folders, such as the owner's
+ * `Templates/`, `.obsidian/`, and `.trash/`, are never entered.
  * Linked files are read; linked folders are not entered. A missing folder
  * has no notes.
  */
@@ -67,6 +68,7 @@ async function walk(
     const file = prefix === '' ? child.name : `${prefix}/${child.name}`;
     if (child.name.startsWith('_') || child.name.startsWith('.')) continue;
     if (child.isDirectory()) {
+      if (prefix === '' && !isNoteFolder(child.name)) continue;
       await walk(root, file, entries);
       continue;
     }

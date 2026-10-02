@@ -26,18 +26,34 @@ export type NoteIdentityResult =
 
 const NOTE_EXTENSION = '.md';
 
+const NOTE_FOLDER_NAMES: ReadonlySet<string> = new Set(
+  Object.values(NOTE_FOLDERS),
+);
+
+/**
+ * Whether `name`, a folder at the system folder's root, holds notes:
+ * `Agents/` and `Workflows/`. Every other folder there is the owner's,
+ * such as `Templates/`, and Pero never enters it.
+ */
+export function isNoteFolder(name: string): boolean {
+  return NOTE_FOLDER_NAMES.has(name);
+}
+
 /**
  * Whether Pero skips `file`, a `/`-separated path inside the system
- * folder: anything but a `.md` file, and anything whose name or folder
- * starts with `_` or `.`, such as `Agents/_Template.md` or `.obsidian/`.
+ * folder: anything but `Pero.md` and the `.md` files under `Agents/` and
+ * `Workflows/`, and anything whose name or folder starts with `_` or `.`,
+ * such as `Agents/_Template.md`. The rest of the system folder is the
+ * owner's, such as `Templates/` or `.obsidian/`.
  */
 export function isIgnoredPath(file: string): boolean {
-  return (
-    !file.endsWith(NOTE_EXTENSION) ||
-    file
-      .split('/')
-      .some((segment) => segment.startsWith('_') || segment.startsWith('.'))
-  );
+  const segments = file.split('/');
+  if (!file.endsWith(NOTE_EXTENSION)) return true;
+  if (segments.some((name) => name.startsWith('_') || name.startsWith('.'))) {
+    return true;
+  }
+  if (file === PERO_NOTE) return false;
+  return !(segments.length > 1 && isNoteFolder(segments[0]!));
 }
 
 /**
@@ -58,7 +74,7 @@ export function noteIdentity(file: string): NoteIdentityResult {
   } else {
     return failure(
       file,
-      `not an Agent or Workflow note; move it under ${NOTE_FOLDERS.agent}/ or ${NOTE_FOLDERS.workflow}/, or start its name with _`,
+      `not a note Pero reads; Pero reads only ${PERO_NOTE} and notes under ${NOTE_FOLDERS.agent}/ and ${NOTE_FOLDERS.workflow}/`,
     );
   }
   const name = slugify(title);

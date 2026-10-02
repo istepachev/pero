@@ -90,6 +90,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
     );
     write('data/System/Workflows/Review.md', '---\nagent: Nobody\n---\nGo');
     write('data/System/Notes.md', 'Stray');
+    write('data/System/Templates/Daily Journal.md', '---\nmodle: x\n---');
 
     const result = await pero(['-w', workspace, 'check']);
     expect(result.code).toBe(1);
@@ -102,15 +103,13 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
         '  topic: "Health" is also claimed by Agents/Running.md, so neither answers there',
         'data/System/Agents/Running.md',
         '  topic: "health" is also claimed by Agents/Health.md, so neither answers there',
-        'data/System/Notes.md',
-        '  not an Agent or Workflow note; move it under Agents/ or Workflows/, or start its name with _',
         'data/System/Workflows/Review.md',
         '  agent: no Agent note is named nobody',
         'data/System/Workflows/Weekly health report.md',
         '  trigger: unknown property',
         '  hour: must be a whole number from 0 to 23',
         '',
-        '7 problems in 6 files.',
+        '6 problems in 5 files.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
         '',
       ].join('\n'),
