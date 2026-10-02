@@ -79,12 +79,19 @@ const CLIS: Record<Provider, ProviderCli> = {
     install: 'npm install -g @openai/codex',
     signIn: 'codex login (on a headless host: codex login --device-auth)',
     read({ code, stdout, stderr = '' }) {
-      // It prints "Logged in using …" to stderr, among any warnings.
-      const line = `${stdout}\n${stderr}`
+      // It prints "Logged in using ChatGPT" or "Logged in using an API key
+      // - sk-…" to stderr, among any warnings. Keep the method, drop the key.
+      const method = `${stdout}\n${stderr}`
         .split('\n')
-        .map((text) => text.trim())
-        .find((text) => text.startsWith('Logged in'));
-      return { signedIn: code === 0, detail: line ?? 'Signed in' };
+        .map(
+          (text) =>
+            /^Logged in using (?:an? )?(.+?)(?: - .*)?$/.exec(text.trim())?.[1],
+        )
+        .find((text) => text !== undefined);
+      return {
+        signedIn: code === 0,
+        detail: method ? `Signed in (${method})` : 'Signed in',
+      };
     },
   },
 };
