@@ -98,7 +98,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       const metadata = readDaemonMetadata(metadataFile);
       if (metadata) {
         kill(metadata.pid, 'SIGKILL');
-        await vi.waitFor(() => expect(isAlive(metadata.pid)).toBe(false), { timeout: 5000 });
+        await vi.waitFor(() => expect(isAlive(metadata.pid)).toBe(false));
       }
     }
     await api.close();
