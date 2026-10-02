@@ -357,7 +357,7 @@ describe('configOrNewWorkspace', () => {
     const text = readFileSync(note, 'utf8');
     expect(text).toMatch(/^provider: claude /m);
     expect(text).toMatch(/^timezone: /m);
-    expect(text).toMatch(/^# main-agent: Main /m);
+    expect(text).toMatch(/^main-agent: Main /m);
   });
 
   it('asks nothing once the workspace has a database, or off a terminal', async () => {
@@ -389,6 +389,6 @@ describe('configOrNewWorkspace', () => {
     });
 
     await expect(result).resolves.toMatchObject({ firstRun: true });
-    expect(peroNote(join(home, 'workspace'))).toMatch(/^# provider: claude/m);
+    expect(peroNote(join(home, 'workspace'))).toMatch(/^provider: +# claude/m);
   });
 });

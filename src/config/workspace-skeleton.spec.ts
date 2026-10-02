@@ -105,22 +105,64 @@ describe('initWorkspace', () => {
     );
   });
 
-  it('writes notes the system notes loader reads, with every default', () => {
+  it('writes notes the system notes loader reads, with every setting shown', () => {
     initWorkspace(dir, home);
-
-    for (const [file, readNote] of [
-      ['data/System/Pero.md', readPeroNote],
-      ['data/System/Agents/Main.md', readAgentNote],
-    ] as const) {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const load = (file: string) => {
       const parsed = parseNote(file, read(file));
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
-      expect(parsed.note.properties, file).toEqual(
-        file.endsWith('Pero.md')
-          ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
-          : {},
-      );
-      expect(readNote(file, parsed.note).ok, file).toBe(true);
-    }
+      return parsed.note;
+    };
+
+    const pero = load('data/System/Pero.md');
+    expect(pero.properties).toEqual({
+      provider: null,
+      'claude-model': null,
+      'claude-effort': null,
+      'codex-model': null,
+      'codex-effort': null,
+      permissions: 'ask',
+      timezone,
+      'main-agent': 'Main',
+      'history-carryover': 50,
+      'history-retention-days': null,
+      'max-concurrent-runs': 2,
+    });
+    expect(readPeroNote('Pero.md', pero)).toEqual({
+      ok: true,
+      value: {
+        provider: 'claude',
+        providerDefaults: {
+          claude: { model: null, effort: null },
+          codex: { model: null, effort: null },
+        },
+        permissions: 'ask',
+        timezone,
+        mainAgent: 'main',
+        historyCarryover: 50,
+        historyRetentionDays: null,
+        maxConcurrentRuns: 2,
+      },
+    });
+
+    // The main Agent's settings show empty, so it follows Pero.md.
+    const main = load('data/System/Agents/Main.md');
+    expect(main.properties).toEqual({
+      provider: null,
+      model: null,
+      effort: null,
+      permissions: null,
+    });
+    expect(readAgentNote('Agents/Main.md', main)).toMatchObject({
+      ok: true,
+      value: {
+        provider: null,
+        model: null,
+        effort: null,
+        permissions: null,
+        workingDirectory: null,
+      },
+    });
   });
 
   it("sets the host's time zone in Pero.md, where the owner can change it", () => {
