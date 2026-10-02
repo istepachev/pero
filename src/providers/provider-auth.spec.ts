@@ -65,7 +65,7 @@ describe('checkProviderAuth', () => {
       }),
     ).resolves.toEqual({
       state: 'ok',
-      detail: 'Logged in using ChatGPT',
+      detail: 'Signed in (ChatGPT)',
       installed: true,
     });
     await expect(
@@ -131,7 +131,7 @@ describe('checkProviderAuth', () => {
     const script = join(tmp, 'codex');
     writeFileSync(
       script,
-      '#!/bin/sh\necho "WARNING: odd" >&2\necho "Logged in using an API key" >&2\n',
+      '#!/bin/sh\necho "WARNING: odd" >&2\necho "Logged in using an API key - sk-proj-***abcd" >&2\n',
     );
     chmodSync(script, 0o755);
     const path = process.env.PATH;
@@ -139,7 +139,7 @@ describe('checkProviderAuth', () => {
     try {
       await expect(checkProviderAuth('codex')).resolves.toEqual({
         state: 'ok',
-        detail: 'Logged in using an API key',
+        detail: 'Signed in (API key)',
         installed: true,
       });
     } finally {

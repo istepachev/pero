@@ -267,7 +267,7 @@ describe('configOrNewWorkspace', () => {
       ],
       initial: 'codex',
     });
-    expect(printed).toContain('codex: Logged in using ChatGPT');
+    expect(printed).toContain('codex: Signed in (ChatGPT)');
     expect(peroNote(join(home, 'workspace'))).toMatch(
       /^provider: codex +# claude or codex$/m,
     );
