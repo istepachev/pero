@@ -216,7 +216,9 @@ describe('Channel notes in a workspace', () => {
         `---\n# For new topics\nmodel: haiku # quick\nchannel-id: ${idOf('6')}\n---\nYou help with this topic.\n`,
       );
       expect(sentTexts()).toEqual([
-        expect.stringMatching(/^Pero answers in this topic with claude, model haiku/),
+        expect.stringMatching(
+          /^Pero answers in this topic with claude, model haiku/,
+        ),
       ]);
       expect(moduleRef.get(Definitions).channelNote('running')).toMatchObject({
         instructions: 'You help with this topic.',

@@ -171,9 +171,11 @@ describe('Definitions', () => {
         'Channels/Health.md': HEALTH,
         'Channels/Sleep.md': 'Sleep.',
       });
-      expect(definitions.route(query('-100777:5', 'Fitness'))).toMatchObject(
-        { kind: 'answered', match: 'note', note: { name: 'health' } },
-      );
+      expect(definitions.route(query('-100777:5', 'Fitness'))).toMatchObject({
+        kind: 'answered',
+        match: 'note',
+        note: { name: 'health' },
+      });
       expect(definitions.route(query('-100777:7', 'Sleep'))).toMatchObject({
         kind: 'answered',
         match: 'bindable',

@@ -40,8 +40,8 @@ import {
 
 /*
  * The restore drill of docs/OPERATIONS.md as one story, through the fake
- * Bot API and the echo runtime: a workspace with Agents, Channels,
- * Workflows, and Sessions is backed up while it runs, restored on
+ * Bot API and the echo runtime: a workspace with Channels and their
+ * notes, Workflows, and Sessions is backed up while it runs, restored on
  * a "fresh machine" whose working folders come from the owner's own
  * backup, and carries on where it stopped.
  */
@@ -104,7 +104,7 @@ describe('Restore drill (e2e)', () => {
   });
 
   /**
-   * A daemon on `workspace`, and the fake Bot API whose Agents answer with
+   * A daemon on `workspace`, and the fake Bot API whose turns answer with
    * an echo.
    */
   async function start(workspace: string) {
@@ -217,14 +217,11 @@ describe('Restore drill (e2e)', () => {
 
   /** What a restore must bring back, as the control endpoint shows it. */
   async function definitions() {
-    const { agents } = await client.call('agents.list');
-    const { channels } = await client.call('channels.list');
+    const { channels, unusedNotes } = await client.call('channels.list');
     const { workflows } = await client.call('workflows.list');
     return {
       settings: await client.call('settings.get'),
-      agents: await Promise.all(
-        agents.map(({ name }) => client.call('agents.get', { name })),
-      ),
+      unusedNotes,
       channels: await Promise.all(
         channels.map(({ id }) => client.call('channels.get', { id })),
       ),
@@ -262,8 +259,8 @@ describe('Restore drill (e2e)', () => {
 
   it('brings back definitions and resumable Sessions on a fresh machine', async () => {
     // A workspace in use, whose data folder is the owner's vault: Channels
-    // with Sessions, an Agent with its own folder, and a Workflow that
-    // reads history and notifies a topic.
+    // with Sessions, a Channel note with its own folder, and a Workflow
+    // that reads history and notifies a topic.
     const ws = join(tmp, 'ws');
     mkdirSync(join(ws, '.pero'), { recursive: true });
     writeFileSync(join(ws, '.pero', 'config.yaml'), `data: ${vault}\n`);
@@ -271,11 +268,13 @@ describe('Restore drill (e2e)', () => {
     const system = join(vault, 'System');
     writeFileSync(
       join(system, 'Pero.md'),
-      '---\ntimezone: Europe/Lisbon\nhistory-carryover: 20\n---\nBe brief.\n',
+      '---\ntimezone: Europe/Lisbon\nhistory-carryover: 20\n---\n',
     );
+    writeFileSync(join(system, 'Instructions.md'), 'Be brief.\n');
+    // Unbound: the Kitchen topic binds it by its title.
     writeFileSync(
-      join(system, 'Agents', 'Coder.md'),
-      `---\ntopic: Kitchen\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
+      join(system, 'Channels', 'Kitchen.md'),
+      `---\nprovider: codex\nworking-directory: ${own}\nskip-git-repo-check: true\n---\nYou code.\n`,
     );
     writeFileSync(join(ws, '.env'), `PERO_TELEGRAM_BOT_TOKEN=${TOKEN}\n`, {
       mode: 0o600,
@@ -291,7 +290,7 @@ describe('Restore drill (e2e)', () => {
     }
     writeFileSync(
       join(system, 'Workflows', 'English.md'),
-      '---\nhour: 21\nchannel: English\nagent: english\nhistory: true\nmax-attempts: 2\n---\nSuggest better English for: {{history}}\n',
+      '---\nhour: 21\nchannel: English\nhistory: true\nmax-attempts: 2\n---\nSuggest better English for: {{history}}\n',
     );
     await daemon!.app.get(SystemNotes).refresh();
     // Its schedule gets its saved times, which the backup keeps.
@@ -454,8 +453,10 @@ describe('Restore drill (e2e)', () => {
       'Dear diary\n',
     );
     expect(readdirSync(join(ws, 'data', 'System')).sort()).toEqual([
-      'Agents',
+      'Channels',
+      'Instructions.md',
       'Pero.md',
+      'Persona.md',
       'Workflows',
     ]);
     // The token is written again on the new host.

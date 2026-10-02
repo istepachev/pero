@@ -11,7 +11,7 @@ export const POSTED_BUDGET = 20_000;
 
 /** One earlier message as the transcript shows it. */
 export interface CarriedMessage {
-  /** Who wrote it, such as `User`, the Agent's name, or `Workflow <name>`. */
+  /** Who wrote it, such as `User`, `Pero`, or `Workflow <name>`. */
   speaker: string;
   text: string;
   createdAt: Date;
@@ -43,7 +43,7 @@ export function withEarlierConversation(
 
 /**
  * `input` preceded by the Workflow messages posted in the chat since the
- * last message there (oldest first), so the Agent knows what the owner may
+ * last message there (oldest first), so Pero knows what the owner may
  * be answering. Kept within `budget` like `withEarlierConversation`.
  */
 export function withPostedMessages(

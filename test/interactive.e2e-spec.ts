@@ -32,9 +32,9 @@ import {
 
 /*
  * The interactive path as one story, through the fake Bot API and the
- * echo runtime: pairing, topic onboarding, the main Agent's General topic
- * and direct chat, a daemon restart, and provider and folder changes made
- * in notes.
+ * echo runtime: pairing, topic onboarding, the Default Channel's General
+ * topic and direct chat, a daemon restart, and provider and folder changes
+ * made in Channel notes.
  */
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
@@ -97,16 +97,16 @@ describe('Interactive path end to end (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Writes the Agent note `Agents/<title>.md` and has Pero read it. */
+  /** Writes the Channel note `Channels/<title>.md` and has Pero read it. */
   async function note(title: string, properties: string[], body: string) {
-    const path = join(vault, 'System', 'Agents', `${title}.md`);
+    const path = join(vault, 'System', 'Channels', `${title}.md`);
     writeFileSync(path, ['---', ...properties, '---', body, ''].join('\n'));
     clock += 1_000;
     utimesSync(path, new Date(clock), new Date(clock));
     await daemon!.app.get(SystemNotes).rescan();
   }
 
-  /** A daemon on the fake Bot API whose Agents answer with an echo. */
+  /** A daemon on the fake Bot API whose turns answer with an echo. */
   async function start() {
     daemon = await startDaemon({
       config: resolveBootstrapConfig({ workspace, env: {} }),
@@ -216,7 +216,7 @@ describe('Interactive path end to end (e2e)', () => {
           .some(
             (payload) =>
               sentTo(payload, FORUM, topic) &&
-              String(payload.text).startsWith('This topic talks to Agent '),
+              String(payload.text).startsWith('Pero answers in this topic '),
           ),
       ).toBe(true),
     );
@@ -225,6 +225,12 @@ describe('Interactive path end to end (e2e)', () => {
   async function channelIds(): Promise<Record<string, number>> {
     const { channels } = await client.call('channels.list');
     return Object.fromEntries(channels.map((c) => [c.key, c.id]));
+  }
+
+  /** The note each Channel is answered from, by its key. */
+  async function channelNotes(): Promise<Record<string, string | null>> {
+    const { channels } = await client.call('channels.list');
+    return Object.fromEntries(channels.map((c) => [c.key, c.note]));
   }
 
   async function history(channelId: number) {
@@ -238,7 +244,7 @@ describe('Interactive path end to end (e2e)', () => {
     ]);
   }
 
-  it('onboards topics, serves the main Agent, resumes after a restart, and carries history into a new provider', async () => {
+  it('onboards topics, serves the Default Channel, resumes after a restart, and carries history into a new provider', async () => {
     await start();
     await client.call('telegram.token', { token: TOKEN });
     await connected();
@@ -255,15 +261,15 @@ describe('Interactive path end to end (e2e)', () => {
           .some((call) => Number(call.payload.offset) > unpaired),
       ).toBe(true),
     );
-    expect(
-      (await client.call('agents.list')).agents.map((agent) => agent.name),
-    ).toEqual(['main']);
-    expect((await client.call('channels.list')).channels).toEqual([]);
+    expect(await client.call('channels.list')).toEqual({
+      channels: [],
+      unusedNotes: [],
+    });
     expect(requests('claude')).toEqual([]);
     expect(requests('codex')).toEqual([]);
 
     // The forum group and the direct chat are allowed; each new topic
-    // gets an Agent note of its own, whose Agent answers there.
+    // gets a Channel note of its own, which Pero answers there with.
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
     await client.call('telegram.allow', { chatId: DIRECT_KEY });
     await createTopic(GROCERIES, 'Groceries');
@@ -313,23 +319,26 @@ describe('Interactive path end to end (e2e)', () => {
       },
     ]);
 
-    // The General topic and the direct chat share the main Agent, each in
-    // a Session of its own.
+    // The General topic and the direct chat share Default.md, each in a
+    // Session of its own.
     expect(await say(FORUM, null, 'Hello')).toBe('echo: Hello');
     expect(await say(DIRECT, null, 'Hi')).toBe('echo: Hi');
-    expect(
-      (await client.call('agents.list')).agents.map((agent) => agent.name),
-    ).toEqual(['groceries', 'kitchen', 'main']);
+    expect(await channelNotes()).toEqual({
+      [GROCERIES_KEY]: 'data/System/Channels/Groceries.md',
+      [KITCHEN_KEY]: 'data/System/Channels/Kitchen.md',
+      [GENERAL_KEY]: 'data/System/Channels/Default.md',
+      [DIRECT_KEY]: 'data/System/Channels/Default.md',
+    });
     Object.assign(ids, await channelIds());
     const [, , general, direct] = await sessions();
     expect(general).toMatchObject({
       channelId: ids[GENERAL_KEY],
-      agentName: 'main',
+      agentName: 'default',
       status: 'active',
     });
     expect(direct).toMatchObject({
       channelId: ids[DIRECT_KEY],
-      agentName: 'main',
+      agentName: 'default',
       status: 'active',
     });
     expect(direct!.providerSessionId).not.toBe(general!.providerSessionId);
@@ -339,7 +348,7 @@ describe('Interactive path end to end (e2e)', () => {
       [
         'out',
         'pero',
-        expect.stringMatching(/^This topic talks to Agent groceries: /),
+        expect.stringMatching(/^Pero answers in this topic with claude, /),
       ],
       ['in', 'user', 'Milk'],
       ['out', 'agent', 'echo: Milk'],
@@ -350,7 +359,7 @@ describe('Interactive path end to end (e2e)', () => {
       [
         'out',
         'pero',
-        expect.stringMatching(/^This chat talks to Agent main: /),
+        expect.stringMatching(/^Pero answers in this chat with claude, /),
       ],
       ['in', 'user', 'Hi'],
       ['out', 'agent', 'echo: Hi'],
@@ -391,7 +400,7 @@ describe('Interactive path end to end (e2e)', () => {
     // A new provider starts a fresh Session with the Channel's history.
     await note(
       'Groceries',
-      ['topic: Groceries', 'provider: codex'],
+      [`channel-id: telegram:${GROCERIES_KEY}`, 'provider: codex'],
       'You shop.',
     );
     const carried = await say(FORUM, GROCERIES, 'Bread');
@@ -400,9 +409,9 @@ describe('Interactive path end to end (e2e)', () => {
     expect(request.workingDirectory).toBe(workspace);
     expect(request.input).toMatch(/^\[Earlier conversation in this chat/);
     expect(request.input).toMatch(
-      / User: Milk\n.* groceries: echo: Milk\n.* User: Back \d+\n.* groceries: echo: Back \d+\n/s,
+      / User: Milk\n.* Pero: echo: Milk\n.* User: Back \d+\n.* Pero: echo: Back \d+\n/s,
     );
-    expect(request.input).not.toMatch(/Soup|Hello|This topic talks/);
+    expect(request.input).not.toMatch(/Soup|Hello|Pero answers in/);
     expect(request.input).toMatch(/\n\nBread$/);
     expect(carried).toBe(`echo: ${request.input}`);
     expect(
@@ -416,10 +425,10 @@ describe('Interactive path end to end (e2e)', () => {
       }),
     ]);
 
-    // An Agent with its own folder works there; the other stays in the workspace.
+    // A Channel with its own folder works there; the other stays in the workspace.
     await note(
       'Kitchen',
-      ['topic: Kitchen', `working-directory: ${other}`],
+      [`channel-id: telegram:${KITCHEN_KEY}`, `working-directory: ${other}`],
       'You cook.',
     );
     await say(FORUM, KITCHEN, 'Pan');
@@ -436,11 +445,7 @@ describe('Interactive path end to end (e2e)', () => {
     });
 
     // A new model continues the same conversation.
-    await note(
-      'Main',
-      ['model: claude-sonnet-5'],
-      'You help with everyday questions and keep my notes tidy.',
-    );
+    await note('Default', ['model: claude-sonnet-5'], '');
     expect(await say(DIRECT, null, 'Again')).toBe('echo: Again');
     expect(lastRequest('claude')).toMatchObject({
       input: 'Again',

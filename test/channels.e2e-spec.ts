@@ -38,6 +38,8 @@ const FORUM: Chat.SupergroupChat = {
 const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 const GROCERIES = 42;
 const KITCHEN = 43;
+/** The `channel-id` of the topic `topic`. */
+const bound = (topic: number) => `telegram:${FORUM.id}:${topic}`;
 
 describe('Channels (e2e)', () => {
   let tmp: string;
@@ -58,8 +60,8 @@ describe('Channels (e2e)', () => {
     workspace = join(tmp, 'ws');
     initWorkspace(workspace, tmp);
     clock = Date.parse('2026-01-01T00:00:00Z');
-    write('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
-    write('Agents/Kitchen.md', '---\ntopic: Kitchen\n---\nYou cook.');
+    write('Channels/Groceries.md', 'You shop.');
+    write('Channels/Kitchen.md', 'You cook.');
     client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
   });
@@ -87,8 +89,9 @@ describe('Channels (e2e)', () => {
   }
 
   /**
-   * A daemon serving the forum group, whose Agents answer with an echo,
-   * with a Groceries and a Kitchen topic onboarded.
+   * A daemon serving the forum group, where Pero answers with an echo,
+   * with a Groceries and a Kitchen topic onboarded, each bound to the
+   * Channel note of its title.
    */
   async function start() {
     daemon = await startDaemon({
@@ -135,7 +138,7 @@ describe('Channels (e2e)', () => {
     });
   }
 
-  /** Sends `text` in `topic` and resolves to the Agent's answer. */
+  /** Sends `text` in `topic` and resolves to Pero's answer. */
   async function say(topic: number, text: string): Promise<string> {
     const before = api.sent().length;
     inTopic(topic, { text });
@@ -161,35 +164,41 @@ describe('Channels (e2e)', () => {
     return channels.find((c) => c.key === `${FORUM.id}:${topic}`)!.id;
   }
 
-  it('lists the Channels onboarding created, each with its Agent', async () => {
+  it('lists the Channels onboarding created, each with the note it binds', async () => {
     await start();
-    const { channels } = await client.call('channels.list');
+    const { channels, unusedNotes } = await client.call('channels.list');
     expect(channels).toEqual([
       expect.objectContaining({
         integrationKind: 'telegram',
         key: `${FORUM.id}:${GROCERIES}`,
         title: 'Groceries',
-        agent: 'groceries',
-        agentEnabled: true,
+        note: 'data/System/Channels/Groceries.md',
         unanswered: null,
       }),
       expect.objectContaining({
         key: `${FORUM.id}:${KITCHEN}`,
         title: 'Kitchen',
-        agent: 'kitchen',
+        note: 'data/System/Channels/Kitchen.md',
       }),
     ]);
+    expect(unusedNotes).toEqual([]);
     expect(
       await client.call('channels.get', { id: channels[0]!.id }),
     ).toMatchObject({
-      agent: 'groceries',
+      note: 'data/System/Channels/Groceries.md',
+      settings: {
+        name: 'groceries',
+        file: 'data/System/Channels/Groceries.md',
+        channelId: bound(GROCERIES),
+        instructions: 'You shop.',
+      },
       nextTurn: { kind: 'new', carriesOver: false },
       // The welcome.
       messages: 1,
     });
   });
 
-  it("moves a Channel to another Agent, which starts with the Channel's history, keeping every Channel's Session separate", async () => {
+  it("answers a Channel with the note its channel-id moves to, in the Channel's Session, keeping every Channel's Session separate", async () => {
     await start();
     const groceries = await channelId(GROCERIES);
     const kitchen = await channelId(KITCHEN);
@@ -203,58 +212,57 @@ describe('Channels (e2e)', () => {
     expect(first).toMatchObject({ agentName: 'groceries' });
     expect(second).toMatchObject({ agentName: 'kitchen' });
 
-    await edit('Agents/Groceries.md', 'You shop.');
-    await edit('Agents/Shopper.md', '---\ntopic: Groceries\n---\nYou buy.');
+    await edit('Channels/Groceries.md', 'You shop.');
+    await edit(
+      'Channels/Shopper.md',
+      `---\nchannel-id: ${bound(GROCERIES)}\n---\nYou buy.`,
+    );
     expect(await client.call('channels.get', { id: groceries })).toMatchObject({
-      agent: 'shopper',
-      nextTurn: { kind: 'new', carriesOver: true },
+      note: 'data/System/Channels/Shopper.md',
+      settings: { name: 'shopper', instructions: 'You buy.' },
+      nextTurn: { kind: 'resume', sessionId: first!.id, carriesOver: false },
     });
-    expect(
-      (await client.call('agents.get', { name: 'groceries' })).channels,
-    ).toEqual([]);
+    expect((await client.call('channels.list')).unusedNotes).toEqual([
+      { file: 'data/System/Channels/Groceries.md', channelId: null },
+    ]);
 
-    // The new Agent's first turn ends the old Agent's Session.
-    const carried = await say(GROCERIES, 'Bread');
-    expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
-    expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
-    expect(carried).not.toMatch(/Soup/);
-    expect(carried).toMatch(/\n\nBread$/);
+    expect(await say(GROCERIES, 'Bread')).toBe('echo: Bread');
 
-    // The other Channel keeps its Agent and Session.
+    // The other Channel keeps its note and Session.
     expect(await say(KITCHEN, 'Stew')).toBe('echo: Stew');
     expect(await sessions()).toEqual([
-      expect.objectContaining({ id: first!.id, status: 'closed' }),
+      expect.objectContaining({
+        id: first!.id,
+        channelId: groceries,
+        status: 'active',
+      }),
       expect.objectContaining({
         id: second!.id,
         channelId: kitchen,
         agentName: 'kitchen',
         status: 'active',
       }),
-      expect.objectContaining({
-        channelId: groceries,
-        agentName: 'shopper',
-        status: 'active',
-      }),
     ]);
   });
 
-  it("silences a disabled Agent's topic without onboarding it again, and resumes it once enabled", async () => {
+  it("silences a disabled Channel note's topic without onboarding it again, and resumes it once enabled", async () => {
     await start();
     const groceries = await channelId(GROCERIES);
     expect(await say(GROCERIES, 'Milk')).toBe('echo: Milk');
     const before = await sessions();
 
     await edit(
-      'Agents/Groceries.md',
-      '---\ntopic: Groceries\nenabled: false\n---\nYou shop.',
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${bound(GROCERIES)}\nenabled: false\n---\nYou shop.`,
     );
     expect(await client.call('channels.get', { id: groceries })).toMatchObject({
-      agent: 'groceries',
-      unanswered: 'Agent groceries is disabled',
+      note: 'data/System/Channels/Groceries.md',
+      unanswered: 'data/System/Channels/Groceries.md sets enabled: false',
     });
     // Once, saying why.
-    expect(await say(GROCERIES, 'Anyone?')).toMatch(
-      /^Agent groceries is disabled, so no one answers here/,
+    expect(await say(GROCERIES, 'Anyone?')).toBe(
+      "Pero doesn't answer here: data/System/Channels/Groceries.md sets " +
+        'enabled: false. To turn it back on, set enabled: true there.',
     );
     const sent = api.sent().length;
     await handled(inTopic(GROCERIES, { text: 'Still?' }));
@@ -262,7 +270,10 @@ describe('Channels (e2e)', () => {
     await handled(createTopic(GROCERIES, 'Groceries'));
     expect(api.sent()).toHaveLength(sent);
 
-    await edit('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
+    await edit(
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${bound(GROCERIES)}\n---\nYou shop.`,
+    );
     expect(await say(GROCERIES, 'Eggs')).toBe('echo: Eggs');
     expect(await sessions()).toEqual(before);
   });
@@ -287,7 +298,7 @@ describe('Channels (e2e)', () => {
         'out',
         'pero',
         null,
-        expect.stringMatching(/^This topic talks to Agent groceries: /),
+        expect.stringMatching(/^Pero answers in this topic with claude, /),
       ],
       ['in', 'user', 'groceries', 'Milk'],
       ['out', 'agent', 'groceries', 'echo: Milk'],

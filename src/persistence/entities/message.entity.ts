@@ -38,7 +38,7 @@ export {
 @Index('UQ_messages_notification_id', ['notificationId'], { unique: true })
 @Check('CHK_messages_direction', oneOf('direction', MESSAGE_DIRECTIONS))
 @Check('CHK_messages_origin', oneOf('origin', MESSAGE_ORIGINS))
-// People write in; Agents and Pero write out.
+// People write in; Pero's turns and Pero itself write out.
 @Check(
   'CHK_messages_origin_direction',
   `("direction" = 'in') = ("origin" = 'user')`,
@@ -67,7 +67,7 @@ export class Message {
   channel?: Channel;
 
   /**
-   * The name of the Agent the message was to or from; null for Pero's own
+   * The name of the Channel note its turn ran with; null for Pero's own
    * notices and a Workflow's.
    */
   @Column({ name: 'agent_name', type: 'text', nullable: true })

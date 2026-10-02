@@ -68,7 +68,6 @@ describe('Workflows from notes (e2e)', () => {
     database = join(workspace, '.pero', 'pero.sqlite');
     clock = Date.parse('2026-01-01T00:00:00Z');
     await pero();
-    write('Agents/Coach.md', 'You coach.');
     client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
   });
 
@@ -114,7 +113,7 @@ describe('Workflows from notes (e2e)', () => {
     daemon = await startDaemon({
       config: resolveBootstrapConfig({ workspace, env: {} }),
       foreground: false,
-      // Telegram is the fake Bot API and Agents echo: nothing real runs.
+      // Telegram is the fake Bot API and turns echo: nothing real runs.
       env: { PERO_TELEGRAM_API_ROOT: api.url, PERO_FAKE_RUNTIME: 'echo' },
     });
   }
@@ -125,21 +124,14 @@ describe('Workflows from notes (e2e)', () => {
     await start();
   }
 
-  /** The echo runtime Claude Agents use in the running daemon. */
+  /** The echo runtime Claude turns use in the running daemon. */
   function claude(): FakeAgentRuntime {
     return daemon!.app.get(AgentRuntimes).get('claude') as FakeAgentRuntime;
   }
 
-  /**
-   * The Workflow `brief` of Agent `coach`, run by hand, with the other
-   * `properties` of its note.
-   */
+  /** The Workflow `brief`, run by hand, with `properties` in its note. */
   async function manualBrief(properties: string[] = []) {
-    await workflow(
-      'Brief',
-      ['agent: coach', ...properties],
-      'Summarize the day.',
-    );
+    await workflow('Brief', properties, 'Summarize the day.');
   }
 
   /** What run `brief` posts: the Workflow's title over the echoed input. */
@@ -174,7 +166,7 @@ describe('Workflows from notes (e2e)', () => {
       expect((await client.call('telegram.chats')).bot).toBe('pero_test_bot'),
     );
     await client.call('telegram.allow', { chatId: String(FORUM.id) });
-    // The topic's creation writes its Agent's note, and that Agent answers.
+    // The topic's creation writes its Channel note, and Pero answers there.
     api.push({
       message: {
         message_id: nextMessageId++,
@@ -213,22 +205,18 @@ describe('Workflows from notes (e2e)', () => {
 
   it('serves Workflows from their notes, with each edit applying, across a restart', async () => {
     await pero(['timezone: Europe/Berlin']);
-    write('Agents/Editor.md', 'You edit.');
     await start();
 
-    await workflow(
-      'Evening review',
-      ['hour: 21', 'agent: coach'],
-      "Review today's chats.",
-    );
+    await workflow('Evening review', ['hour: 21'], "Review today's chats.");
     const listed = (await client.call('workflows.list')).workflows;
     expect(listed).toEqual([
       expect.objectContaining({
         name: 'evening-review',
         title: 'Evening review',
         file: 'data/System/Workflows/Evening review.md',
-        agent: 'coach',
-        agentEnabled: true,
+        // No `channel`: its runs use Default.md.
+        note: 'default',
+        noteEnabled: true,
         inputTemplate: "Review today's chats.",
         enabled: true,
         channels: [],
@@ -256,7 +244,7 @@ describe('Workflows from notes (e2e)', () => {
 
     await workflow(
       'Evening review',
-      ['hour: 22', 'agent: editor', 'enabled: false'],
+      ['hour: 22', 'enabled: false'],
       "Review today's chats, briefly.",
     );
     await restart();
@@ -264,7 +252,6 @@ describe('Workflows from notes (e2e)', () => {
     expect(
       await client.call('workflows.get', { name: 'Evening-Review' }),
     ).toMatchObject({
-      agent: 'editor',
       inputTemplate: "Review today's chats, briefly.",
       enabled: false,
       // Kept, but never due while it is disabled.
@@ -275,7 +262,8 @@ describe('Workflows from notes (e2e)', () => {
     ).rejects.toThrow(new NotFoundError('No Workflow named nothing'));
   });
 
-  it('reports a Workflow note naming a topic Pero has not seen, in status and check', async () => {
+  it('reports a Workflow note naming no Channel note, in status and check', async () => {
+    write('Channels/Health.md', 'You coach my health.');
     await start();
     await workflow('Report', ['channel: Helth'], 'Report.');
 
@@ -299,7 +287,7 @@ describe('Workflows from notes (e2e)', () => {
       {
         file: 'data/System/Workflows/Report.md',
         property: 'channel',
-        message: 'no topic titled "Helth"; seen topics: none yet',
+        message: 'no Channel note named "Helth"; Channel notes: Health',
       },
     ]);
   });
@@ -315,7 +303,7 @@ describe('Workflows from notes (e2e)', () => {
       message_thread_id: 7,
       text: [
         'Errors in data/System/Workflows/Brief.md:',
-        'channel: no topic titled "Helth"; seen topics: English',
+        'channel: no Channel note named "Helth"; Channel notes: English',
         "It's left out until it's fixed.",
       ].join('\n'),
     });
@@ -324,7 +312,7 @@ describe('Workflows from notes (e2e)', () => {
 
     await manualBrief([`channel: [${channel.id}, Hleth]`]);
     await vi.waitFor(() => expect(reports()).toHaveLength(2));
-    expect(reports()[1]).toContain('channel: no topic titled "Hleth"');
+    expect(reports()[1]).toContain('channel: no Channel note named "Hleth"');
 
     await manualBrief([`channel: ${channel.id}`]);
     await daemon!.app.get(BrokenNoteReports).idle();
@@ -343,7 +331,7 @@ describe('Workflows from notes (e2e)', () => {
 
   it('runs any Workflow by hand, away from every Channel', async () => {
     await start();
-    await workflow('Brief', ['agent: coach', 'hour: 9'], 'Summarize the day.');
+    await workflow('Brief', ['hour: 9'], 'Summarize the day.');
 
     await expect(
       client.call('workflows.run', { name: 'nothing' }),
@@ -374,12 +362,12 @@ describe('Workflows from notes (e2e)', () => {
     });
   });
 
-  it('reads the history input its note asks for, and completes a run with none to read without its Agent', async () => {
+  it('reads the history input its note asks for, and completes a run with none to read without a turn', async () => {
     await start();
     const english = (props: string[] = []) =>
       workflow(
         'English',
-        ['agent: coach', 'history: true', 'history-messages: people', ...props],
+        ['history: true', 'history-messages: people', ...props],
         'Suggest improvements:\n{{history}}',
       );
     await english(['history-channels: 42']);
@@ -423,7 +411,7 @@ describe('Workflows from notes (e2e)', () => {
       });
     });
 
-    await workflow('English', ['agent: coach'], 'Suggest improvements.');
+    await workflow('English', [], 'Suggest improvements.');
     expect(
       (await client.call('workflows.get', { name: 'english' })).history,
     ).toBeNull();
@@ -433,7 +421,7 @@ describe('Workflows from notes (e2e)', () => {
     const HOUR_MS = 60 * 60 * 1000;
     await workflow(
       'Hourly',
-      ['agent: coach', "cron: '0 * * * *'", 'timezone: UTC'],
+      ["cron: '0 * * * *'", 'timezone: UTC'],
       'Check the inbox.',
     );
     // Startup gives the schedule its saved times.
@@ -481,11 +469,7 @@ describe('Workflows from notes (e2e)', () => {
       return new Date(today > Date.now() ? today : today + DAY_MS);
     };
     const daily = (properties: string[]) =>
-      workflow(
-        'Daily',
-        ['agent: coach', 'timezone: UTC', ...properties],
-        'Plan the day.',
-      );
+      workflow('Daily', ['timezone: UTC', ...properties], 'Plan the day.');
     const nextRunAt = async () =>
       (await client.call('workflows.get', { name: 'daily' })).schedule!
         .nextRunAt;
@@ -589,7 +573,7 @@ describe('Workflows from notes (e2e)', () => {
     await start();
     await manualBrief();
     await pero(['max-concurrent-runs: 1']);
-    await workflow('Other', ['agent: coach'], 'Something else.');
+    await workflow('Other', [], 'Something else.');
     const held = claude().hold();
     const running = await client.call('workflows.run', { name: 'brief' });
     const request = await held.started;
@@ -626,13 +610,13 @@ describe('Workflows from notes (e2e)', () => {
   });
 
   it(
-    'runs the weekly report from the overview by hand, answered by the Health Agent, and posts it in Health',
+    'runs the weekly report from the overview by hand, with the Health Channel note, and posts it in Health',
     { timeout: 30_000 },
     async () => {
       await pero(['timezone: Europe/Berlin']);
       write(
-        'Agents/Health.md',
-        '---\ntopic: Health\neffort: high\n---\nYou are my health coach.',
+        'Channels/Health.md',
+        '---\neffort: high\n---\nYou are my health coach.',
       );
       await workflow(
         'Weekly health report',
@@ -649,7 +633,9 @@ describe('Workflows from notes (e2e)', () => {
       // Until Pero has seen the topic, the note can't name it.
       expect(
         (await client.call('check')).problems.map(({ message }) => message),
-      ).toEqual(['no topic titled "Health"; seen topics: none yet']);
+      ).toEqual([
+        `Pero hasn't seen a topic titled "Health" for Channels/Health.md; write something there first`,
+      ]);
 
       api.push({
         message: {
@@ -673,7 +659,8 @@ describe('Workflows from notes (e2e)', () => {
         name: 'weekly-health-report',
       });
       expect(report).toMatchObject({
-        agent: 'health',
+        note: 'health',
+        noteEnabled: true,
         channels: [{ key: `${FORUM.id}:9`, title: 'Health' }],
         schedule: { cron: '0 12 * * 0', timezone: 'Europe/Berlin' },
       });
@@ -686,6 +673,7 @@ describe('Workflows from notes (e2e)', () => {
           'echo: # Workflow Instruction\nCreate a weekly report from Health/Log.md.',
       });
       expect(claude().requests.at(-1)).toMatchObject({
+        instructions: expect.stringContaining('You are my health coach.'),
         providerOptions: { effort: 'high' },
       });
       await daemon!.app
@@ -711,6 +699,8 @@ describe('Workflows from notes (e2e)', () => {
       }),
     );
     daemon!.app.get(HostConfigService).allow('-1001234567890', 'Household');
+    // Unbound, it names the topic its title matches.
+    await note('Channels/English.md', 'You teach English.');
     await manualBrief(['channel: English']);
 
     expect(
@@ -961,7 +951,7 @@ describe('Workflows from notes (e2e)', () => {
           await client.call('channels.history', { id: channel.id, limit: 50 })
         ).messages.map(({ text }) => text);
       expect(await history()).toEqual([
-        expect.stringContaining('Agent'),
+        expect.stringMatching(/^Pero answers in this topic with /),
         'Hello',
         'echo: Hello',
         'Recent',

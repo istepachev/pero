@@ -199,7 +199,10 @@ describe('SystemReloader', () => {
   });
 
   it('resolves references afresh when another note changes', async () => {
-    await write('Channels/Health.md', '---\nchannel-id: telegram:-1:5\n---\nCoach');
+    await write(
+      'Channels/Health.md',
+      '---\nchannel-id: telegram:-1:5\n---\nCoach',
+    );
     await write('Workflows/Report.md', '---\nchannel: Health\n---\nGo');
     await reloader.rescan();
     expect(reloader.current()!.workflows.has('report')).toBe(true);
@@ -236,7 +239,10 @@ describe('SystemReloader', () => {
   it('rescans 500 unchanged notes quickly', async () => {
     await Promise.all(
       Array.from({ length: 500 }, (_, index) =>
-        write(`Channels/Group ${index % 10}/Channel ${index}.md`, `Hi ${index}`),
+        write(
+          `Channels/Group ${index % 10}/Channel ${index}.md`,
+          `Hi ${index}`,
+        ),
       ),
     );
     await reloader.rescan();
@@ -248,7 +254,10 @@ describe('SystemReloader', () => {
   });
 
   it('builds the snapshot again when the topics references resolve against change', async () => {
-    await write('Channels/Health.md', '---\nchannel-id: telegram:-100777:5\n---');
+    await write(
+      'Channels/Health.md',
+      '---\nchannel-id: telegram:-100777:5\n---',
+    );
     await write('Workflows/Report.md', '---\nchannel: Health\n---\nGo');
     reloader.setTopics(channelTopicLookup([]));
     await reloader.rescan();

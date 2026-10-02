@@ -73,7 +73,8 @@ export function formatChannelDetails(channel: ChannelDetails): string {
       ['created', localDateTime(new Date(channel.createdAt))],
     ]),
   ];
-  if (channel.settings !== null) lines.push(...noteErrorLines(channel.settings));
+  if (channel.settings !== null)
+    lines.push(...noteErrorLines(channel.settings));
   if (channel.folderProblem !== null) {
     lines.push('', `Warning: ${channel.folderProblem}`);
   }

@@ -38,7 +38,7 @@ export interface InboundChannel {
 
 /**
  * A command a message starts with, such as `/status` or `/model opus`, for
- * Pero rather than the Agent.
+ * Pero itself rather than a turn.
  */
 export interface InboundCommand {
   /** Lowercased, without the `/` or the bot's name. */
@@ -58,7 +58,7 @@ export interface InboundMessage {
   senderId: string;
   /**
    * The text, and the command it starts with, if any. A command Pero does
-   * not know goes to the Agent as text.
+   * not know is answered as text.
    */
   content: { text: string; command?: InboundCommand };
 }

@@ -488,8 +488,8 @@ describe('readTextNote', () => {
       value(readTextNote('Persona.md', note({ tags: ['pero'] }, 'Be kind.'))),
     ).toBe('Be kind.');
     expect(value(readTextNote('Persona.md', note({})))).toBeNull();
-    expect(
-      messageFor(readTextNote, 'Instructions.md', { model: 'opus' }),
-    ).toBe('unknown property');
+    expect(messageFor(readTextNote, 'Instructions.md', { model: 'opus' })).toBe(
+      'unknown property',
+    );
   });
 });

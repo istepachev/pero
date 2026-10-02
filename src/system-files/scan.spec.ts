@@ -81,7 +81,10 @@ describe('scanSystemFolder', () => {
       join(system, 'Channels/Coach.md'),
     );
     await symlink(join(root, 'Shared'), join(system, 'Channels/Linked'));
-    await symlink(join(root, 'missing.md'), join(system, 'Channels/Dangling.md'));
+    await symlink(
+      join(root, 'missing.md'),
+      join(system, 'Channels/Dangling.md'),
+    );
     expect((await scanSystemFolder(system)).map((entry) => entry.file)).toEqual(
       ['Channels/Coach.md', 'Channels/Main.md'],
     );
@@ -104,7 +107,10 @@ describe('scanSystemFolder', () => {
   it('scans 500 notes quickly', async () => {
     await Promise.all(
       Array.from({ length: 500 }, (_, index) =>
-        write(`Channels/Group ${index % 10}/Agent ${index}.md`, `Agent ${index}`),
+        write(
+          `Channels/Group ${index % 10}/Agent ${index}.md`,
+          `Agent ${index}`,
+        ),
       ),
     );
     const started = performance.now();

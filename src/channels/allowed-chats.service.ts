@@ -59,7 +59,7 @@ export class AllowedChatsService {
 
   /**
    * Removes a chat from the allowlist and returns what it was; null when it
-   * was not allowed. Its Channels, Agents, Sessions, and history stay, so
+   * was not allowed. Its Channels, notes, Sessions, and history stay, so
    * allowing it again picks up where it left off.
    */
   async deny(

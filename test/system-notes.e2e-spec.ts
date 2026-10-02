@@ -109,7 +109,7 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     );
 
   it('reports the notes as a system component, following edits', async () => {
-    const note = join(workspace, 'data', 'System', 'Agents', 'Coach.md');
+    const note = join(workspace, 'data', 'System', 'Channels', 'Coach.md');
     writeFileSync(note, '---\nmodle: sonnet\n---\nCoach');
     const client = await start();
 
@@ -126,16 +126,14 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     );
   });
 
-  it('checks Workflow topics against the topics Pero has seen', async () => {
+  it('checks Workflow Channels against the topics Pero has seen', async () => {
     const system = join(workspace, 'data', 'System');
     writeFileSync(
       join(workspace, '.pero', 'config.yaml'),
       `data: data\ntelegram:\n  allowed-chats:\n    - id: ${HOME_CHAT}\n      title: Home\n`,
     );
-    writeFileSync(
-      join(system, 'Agents', 'Health.md'),
-      '---\ntopic: Health\n---\nCoach',
-    );
+    writeFileSync(join(system, 'Channels', 'Health.md'), 'Coach');
+    writeFileSync(join(system, 'Channels', 'Finance.md'), 'Budget');
     writeFileSync(
       join(system, 'Workflows', 'Report.md'),
       '---\nhour: 12\nchannel: Health\n---\nReport',
@@ -152,8 +150,8 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     expect(running.stdout).toBe(
       [
         'data/System/Workflows/Typo.md',
-        '  channel: no topic titled "Helth"; seen topics: General, Health',
-        '  history-channels: no topic titled "Finance"; seen topics: General, Health',
+        '  channel: no Channel note named "Helth"; Channel notes: Finance, Health',
+        '  history-channels: Pero hasn\'t seen a topic titled "Finance" for Channels/Finance.md; write something there first',
         '',
         '2 problems in 1 file.',
         '',
@@ -166,11 +164,26 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
 
     await app!.stop('checking without Pero');
     app = undefined;
-    const stopped = await check();
-    expect(stopped).toEqual({
+    // Channel note names are checked without Pero; topics are not.
+    expect(await check()).toEqual({
+      code: 1,
+      stdout: [
+        'data/System/Workflows/Typo.md',
+        '  channel: no Channel note named "Helth"; Channel notes: Finance, Health',
+        '',
+        '1 problem in 1 file.',
+        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        '',
+      ].join('\n'),
+    });
+    writeFileSync(
+      join(system, 'Workflows', 'Typo.md'),
+      '---\nhour: 12\nchannel: [Health, Home/General]\nhistory: true\nhistory-channels: Finance\n---\nReport',
+    );
+    expect(await check()).toEqual({
       code: 0,
       stdout: [
-        'Checked 2 Agents and 2 Workflows in data/System: no problems.',
+        'Checked 3 Channel notes and 2 Workflows in data/System: no problems.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
         '',
       ].join('\n'),

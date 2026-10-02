@@ -364,9 +364,9 @@ export class ChannelCommands {
     const query = routeQuery(channel);
     const file =
       route.match === 'bindable'
-        ? ((await this.channelNotes.bind(route.note.file!, query.channelId))
+        ? (await this.channelNotes.bind(route.note.file!, query.channelId))
           ? route.note.file
-          : null)
+          : null
         : query.primary
           ? await this.channelNotes.createDefault()
           : await this.channelNotes.createFor(

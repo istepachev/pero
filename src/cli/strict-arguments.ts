@@ -5,8 +5,8 @@ import { InjectCommander } from 'nest-commander';
 /**
  * Makes every `pero` command refuse words it doesn't declare. Commander
  * ignores extra arguments by default, and hands a word that names no
- * subcommand to the group's default one, so `pero agents create garden`
- * would list the Agents instead of saying there is no such command.
+ * subcommand to the group's default one, so `pero channels create garden`
+ * would list the Channels instead of saying there is no such command.
  */
 @Injectable()
 export class StrictArguments implements OnApplicationBootstrap {

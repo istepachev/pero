@@ -68,8 +68,7 @@ export async function readHistoryWindow(
     messages.map((message) => ({
       // The foreign key guarantees the Channel.
       channel: message.channel!.title ?? message.channel!.externalKey,
-      speaker:
-        message.origin === 'user' ? 'User' : 'Pero',
+      speaker: message.origin === 'user' ? 'User' : 'Pero',
       text: message.text,
       createdAt: message.createdAt,
     })),

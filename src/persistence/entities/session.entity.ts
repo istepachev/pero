@@ -17,9 +17,10 @@ export const SESSION_STATUSES = ['active', 'closed'] as const;
 
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
-/** Conversational context of a Channel with an Agent. */
+/** Conversational context of a Channel. */
 @Entity('sessions')
-// At most one active Session per Channel and Agent; also the lookup index.
+// At most one active Session per Channel and note name; Pero keeps one per
+// Channel. Also the lookup index.
 @Index('UQ_sessions_active', ['channelId', 'agentName'], {
   unique: true,
   where: `"status" = 'active'`,
@@ -31,7 +32,7 @@ export class Session {
   @PrimaryGeneratedColumn({ type: 'integer' })
   id: number;
 
-  /** The name of the Agent it talks to. */
+  /** The name of the Channel note it began with. */
   @Column({ name: 'agent_name', type: 'text' })
   agentName: string;
 
@@ -50,7 +51,7 @@ export class Session {
   providerSessionId: string | null;
 
   /*
-   * A Session resumes only while the Agent still has the provider and the
+   * A Session resumes only while the Channel's note still has the provider and the
    * effective working directory it began with: another provider cannot read
    * the session ID, and a provider session belongs to its folder. Model,
    * effort, and instructions may change within a Session.

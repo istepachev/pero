@@ -6,7 +6,7 @@ import { unansweredSummary, unansweredText } from './channel-stages.js';
 
 /**
  * Tells a Channel no one answers in why, once: again only when the reason
- * changes, or after an Agent answered there in between. The reply stays
+ * changes, or after Pero answered there in between. The reply stays
  * out of the Channel's history, and the message isn't kept for later.
  * Kept in memory, so a restart may repeat a reply once.
  */
@@ -18,7 +18,7 @@ export class UnansweredReplies {
 
   constructor(private readonly sender: ChannelSender) {}
 
-  /** An Agent answers in Channel `id` again. */
+  /** Pero answers in Channel `id` again. */
   answered(id: number): void {
     this.told.delete(id);
   }

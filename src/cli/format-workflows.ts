@@ -14,7 +14,15 @@ export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
     return 'No Workflows yet. Add a note to the Workflows folder in the system folder.';
   }
   const lines = table([
-    ['NAME', 'CHANNEL NOTE', 'SCHEDULE', 'NEXT RUN', 'CHANNELS', 'STATE', 'NOTE'],
+    [
+      'NAME',
+      'CHANNEL NOTE',
+      'SCHEDULE',
+      'NEXT RUN',
+      'CHANNELS',
+      'STATE',
+      'NOTE',
+    ],
     ...workflows.map((workflow) => [
       `${workflow.name}${workflow.errors.length > 0 ? ' !' : ''}`,
       channelNote(workflow),
@@ -99,7 +107,7 @@ export function formatWorkflowDetails(workflow: WorkflowView): string {
 }
 
 /**
- * What a finished run leaves the owner: the Agent's answer, or why there
+ * What a finished run leaves the owner: its answer, or why there
  * is none.
  */
 export function runOutcome(run: RunView): { ok: boolean; text: string } {

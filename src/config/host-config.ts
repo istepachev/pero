@@ -19,9 +19,9 @@ import { ConfigError, resolvePath } from './bootstrap-config.js';
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
 /*
- * `config.yaml` holds what describes this installation and that an Agent
+ * `config.yaml` holds what describes this installation and that a turn
  * must not change: where the data folder is, and which chats Pero serves.
- * It lives in the workspace's `.pero/`, where an `ask` Claude Agent's edits
+ * It lives in the workspace's `.pero/`, where Claude's edits with `ask`
  * always ask, and is meant to be committed.
  */
 

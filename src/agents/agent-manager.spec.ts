@@ -270,7 +270,10 @@ describe('AgentManager', () => {
     });
 
     it('resumes the same Session when the model or effort changes', async () => {
-      await ws.editChannel('Default', { model: 'claude-sonnet-5', effort: 'low' });
+      await ws.editChannel('Default', {
+        model: 'claude-sonnet-5',
+        effort: 'low',
+      });
 
       await say(OWNER, 'Again');
 

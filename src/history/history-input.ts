@@ -13,7 +13,7 @@ export const HISTORY_PLACEHOLDER = '{{history}}';
 export interface WindowMessage {
   /** The Channel's title, or its key when it has none. */
   channel: string;
-  /** Who wrote it, such as `User` or the Agent's name. */
+  /** Who wrote it, such as `User` or `Pero`. */
   speaker: string;
   text: string;
   createdAt: Date;

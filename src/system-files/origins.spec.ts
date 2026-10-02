@@ -23,7 +23,10 @@ describe('channelOrigins', () => {
       },
     );
     expect(
-      channelOrigins(snapshot.channelNotes.get('coder')!, snapshot.peroProperties),
+      channelOrigins(
+        snapshot.channelNotes.get('coder')!,
+        snapshot.peroProperties,
+      ),
     ).toEqual({
       provider: 'pero',
       model: 'note',
@@ -32,7 +35,10 @@ describe('channelOrigins', () => {
       workingDirectory: 'workspace',
     });
     expect(
-      channelOrigins(snapshot.channelNotes.get('writer')!, snapshot.peroProperties),
+      channelOrigins(
+        snapshot.channelNotes.get('writer')!,
+        snapshot.peroProperties,
+      ),
     ).toEqual({
       provider: 'note',
       model: 'pero',

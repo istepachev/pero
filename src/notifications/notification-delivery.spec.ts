@@ -381,11 +381,7 @@ describe('NotificationDelivery', () => {
 
     it('lists the latest Notifications newest first, by status, Workflow, Channel, and run', async () => {
       const channel = await target();
-      await ws.workflow(
-        'other',
-        { channel: channel.id },
-        'Other.',
-      );
+      await ws.workflow('other', { channel: channel.id }, 'Other.');
       const first = await finishedRun();
       await delivery.tick(after(first.nextAttemptAt!, 1));
       const { id: otherRun } = await moduleRef.get(WorkflowRuns).start('other');

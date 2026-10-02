@@ -894,11 +894,7 @@ describe('Workflow Runs and the executor', () => {
     it('posts nothing for a cancelled or skipped run', async () => {
       await manualWorkflow('brief');
       await target('brief');
-      await ws.workflow(
-        'review',
-        { history: true },
-        'Review {{history}}',
-      );
+      await ws.workflow('review', { history: true }, 'Review {{history}}');
       await notify('review', await target('brief', '-100777'));
       const held = claude.hold();
       const running = await runs.start('brief');
@@ -1086,11 +1082,7 @@ describe('Workflow Runs and the executor', () => {
       await runReview();
 
       await ws.removeWorkflow('review');
-      await ws.workflow(
-        'weekly',
-        { history: true },
-        'Review:\n{{history}}',
-      );
+      await ws.workflow('weekly', { history: true }, 'Review:\n{{history}}');
       const { id } = await runs.start('weekly');
       await executor.idle();
 

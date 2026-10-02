@@ -15,14 +15,14 @@ import {
   withPostedMessages,
 } from './carry-over.js';
 
-/** Who wrote a message Pero sent: an Agent in its Session, or Pero itself. */
+/** Who wrote a message Pero sent: a turn in its Session, or Pero itself. */
 export type Author =
   { origin: 'agent'; agent: string; sessionId: number } | { origin: 'pero' };
 
-/** A person's message to a Channel's Agent. */
+/** A person's message in a Channel. */
 export interface InboundEntry {
   channelId: number;
-  /** The name of the Channel's Agent. */
+  /** The name of the note the Channel is answered with. */
   agentName: string;
   externalMessageId: string;
   senderId: string;
@@ -46,7 +46,7 @@ export interface DeliveredEntry {
 }
 
 /**
- * The conversation a fresh Session starts from: what people, Agents, and
+ * The conversation a fresh Session starts from: what people, Pero, and
  * Workflows said there. Pero's notices are left out.
  */
 const CARRIED_ORIGINS: readonly MessageOrigin[] = ['user', 'agent', 'workflow'];

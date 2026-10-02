@@ -25,7 +25,10 @@ describe('composeInstructions', () => {
 
   it('starts with the context, then the persona, the instructions, and the note’s own', () => {
     expect(
-      composeInstructions({ ...HEALTH, instructions: 'Track spending.' }, shared),
+      composeInstructions(
+        { ...HEALTH, instructions: 'Track spending.' },
+        shared,
+      ),
     ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
       `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}`,
@@ -33,9 +36,9 @@ describe('composeInstructions', () => {
   });
 
   it('leaves out empty parts, keeping the context', () => {
-    expect(
-      composeInstructions({ ...HEALTH, instructions: null }, shared),
-    ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.`);
+    expect(composeInstructions({ ...HEALTH, instructions: null }, shared)).toBe(
+      `${CONTEXT}\n\nBe calm.\n\nAnswer in English.`,
+    );
     expect(
       composeInstructions(
         { ...HEALTH, instructions: 'Track spending.' },

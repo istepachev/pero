@@ -15,7 +15,7 @@ export const PROVIDER_AUTH_EXEC = Symbol('PROVIDER_AUTH_EXEC');
 /**
  * Keeps each provider's component state current: whether its CLI is signed
  * in, and whether health depends on it at all. A provider is in use when it
- * is the default provider or an enabled Agent uses it, which follows each
+ * is the default provider or an enabled Channel note uses it, which follows each
  * change to the definitions.
  */
 @Injectable()

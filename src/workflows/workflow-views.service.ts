@@ -16,12 +16,15 @@ import {
   stateOf,
 } from '../scheduler/schedule-state.js';
 import { findWorkflowNote, shownPath } from '../system-files/note-paths.js';
-import type { ChannelNote, ResolvedWorkflow } from '../system-files/snapshot.js';
+import type {
+  ChannelNote,
+  ResolvedWorkflow,
+} from '../system-files/snapshot.js';
 import { Definitions } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 
 /**
- * Workflows as the CLI shows them: their note, their Agent, when they run
+ * Workflows as the CLI shows them: their note, their Channel note, when they run
  * next, and the Channels they name.
  */
 @Injectable()

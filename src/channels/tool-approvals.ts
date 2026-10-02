@@ -154,7 +154,7 @@ export class ToolApprovals {
       : this.denied(result.answer);
   }
 
-  /** The reason the Agent is given for a request that was not allowed. */
+  /** The reason a turn is given for a request that was not allowed. */
   private denied(answer: 'deny' | Unanswered): ToolApproval {
     const reasons: Record<typeof answer, string> = {
       deny: 'the owner denied it',

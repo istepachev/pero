@@ -83,7 +83,10 @@ describe('checkWorkspace', () => {
     const outside = join(home, 'notes');
     write('.pero/config.yaml', `system: ${outside}\n`);
     mkdirSync(join(outside, 'Channels'), { recursive: true });
-    writeFileSync(join(outside, 'Channels', 'Bad.md'), '---\nenabled: yes\n---');
+    writeFileSync(
+      join(outside, 'Channels', 'Bad.md'),
+      '---\nenabled: yes\n---',
+    );
     const result = await check();
     expect(result.systemFolder).toBe(outside);
     expect(result.problems).toEqual([

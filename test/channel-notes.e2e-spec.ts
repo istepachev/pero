@@ -43,8 +43,10 @@ const FORUM: Chat.SupergroupChat = {
 };
 const OWNER: User = { id: 1234, is_bot: false, first_name: 'Ada' };
 const TOPIC = 42;
+/** The Groceries topic's `channel-id`. */
+const GROCERIES = `telegram:${FORUM.id}:${TOPIC}`;
 
-describe('Agents from notes (e2e)', () => {
+describe('Channel notes (e2e)', () => {
   let tmp: string;
   let workspace: string;
   let client: ControlClient;
@@ -64,9 +66,10 @@ describe('Agents from notes (e2e)', () => {
     initWorkspace(workspace, tmp);
     mkdirSync(join(workspace, 'other'));
     clock = Date.parse('2026-01-01T00:00:00Z');
-    write('Agents/Main.md', 'Be brief.');
-    write('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
-    write('Agents/Pantry.md', '---\nmodel: haiku\n---\nYou stock up.');
+    write('Persona.md', 'Be calm.');
+    write('Instructions.md', 'Be brief.');
+    write('Channels/Groceries.md', 'You shop.');
+    write('Channels/Pantry.md', '---\nmodel: haiku\n---\nYou stock up.');
     client = createControlClient(join(workspace, '.pero', 'run', 'pero.sock'));
     nextMessageId = 1;
   });
@@ -93,7 +96,7 @@ describe('Agents from notes (e2e)', () => {
     await daemon!.app.get(SystemNotes).rescan();
   }
 
-  /** A daemon serving the forum group, whose Agents answer with an echo. */
+  /** A daemon serving the forum group, where Pero answers with an echo. */
   async function start() {
     daemon = await startDaemon({
       config: resolveBootstrapConfig({ workspace, env: {} }),
@@ -135,7 +138,7 @@ describe('Agents from notes (e2e)', () => {
     } satisfies UpdateBody);
   }
 
-  /** Sends `text` in the topic and resolves to the Agent's answer. */
+  /** Sends `text` in the topic and resolves to Pero's answer. */
   async function say(text: string): Promise<string> {
     const before = api.sent().length;
     inTopic({ text });
@@ -143,10 +146,10 @@ describe('Agents from notes (e2e)', () => {
     return String(api.sent().at(-1)!.text);
   }
 
-  /** What the instructions of the Agent titled `title` start with. */
+  /** What the instructions of a turn with `Channels/<title>.md` start with. */
   function context(title: string): string {
     return agentContext(
-      { title, file: `Agents/${title}.md` },
+      { title, file: `Channels/${title}.md` },
       {
         dataFolder: join(workspace, 'data'),
         systemFolder: join(workspace, 'data', 'System'),
@@ -155,7 +158,10 @@ describe('Agents from notes (e2e)', () => {
     );
   }
 
-  /** The Groceries topic, onboarded with the Agent its note defines. */
+  /**
+   * The Groceries topic, onboarded with `Channels/Groceries.md`, which Pero
+   * binds to it by title.
+   */
   async function groceries() {
     await start();
     inTopic({
@@ -164,50 +170,74 @@ describe('Agents from notes (e2e)', () => {
     });
     await vi.waitFor(() => expect(api.sent()).toHaveLength(1));
     expect(String(api.sent()[0]!.text)).toMatch(
-      /^This topic talks to Agent groceries: claude, default model/,
+      /^Pero answers in this topic with claude, default model, .*data\/System\/Channels\/Groceries\.md/s,
     );
+    expect(
+      readFileSync(
+        join(workspace, 'data', 'System', 'Channels', 'Groceries.md'),
+        'utf8',
+      ),
+    ).toBe(`---\nchannel-id: ${GROCERIES}\n---\nYou shop.`);
   }
 
-  it("applies edits to the body, model, effort, Pero.md, and the main Agent's instructions from the next turn of the same Session", async () => {
+  /** The ID of the Groceries topic's Channel. */
+  async function groceriesId(): Promise<number> {
+    const { channels } = await client.call('channels.list');
+    return channels.find(({ title }) => title === 'Groceries')!.id;
+  }
+
+  it('applies edits to the body, model, effort, Pero.md, Persona.md, and Instructions.md from the next turn of the same Session', async () => {
     await groceries();
     // The guide the instructions point to is written at startup.
     expect(readFileSync(guideFile(workspace), 'utf8')).toBe(agentGuide());
     expect(await say('Milk')).toBe('echo: Milk');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${context('Groceries')}\n\nBe brief.\n\nYou shop.`,
+      instructions: `${context('Groceries')}\n\nBe calm.\n\nBe brief.\n\nYou shop.`,
       providerOptions: { model: null, effort: null },
     });
     const [first] = await sessions();
+    expect(first).toMatchObject({ agentName: 'groceries' });
 
     await edit(
-      'Agents/Groceries.md',
-      '---\ntopic: Groceries\nmodel: sonnet\neffort: high\n---\nYou shop cheaply.',
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${GROCERIES}\nmodel: sonnet\neffort: high\n---\nYou shop cheaply.`,
     );
     expect(await say('Eggs')).toBe('echo: Eggs');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${context('Groceries')}\n\nBe brief.\n\nYou shop cheaply.`,
+      instructions: `${context('Groceries')}\n\nBe calm.\n\nBe brief.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
 
-    // Pero.md changes every Agent that doesn't set the value itself, and
-    // the main Agent's instructions start every other Agent's.
+    // Pero.md changes every Channel note that doesn't set the value itself,
+    // and Persona.md and Instructions.md start every Channel's instructions.
     await edit('Pero.md', '---\nclaude-model: opus\nclaude-effort: low\n---');
-    await edit('Agents/Main.md', 'Be kind.');
+    await edit('Persona.md', 'Be kind.');
+    await edit('Instructions.md', '');
     expect(await say('Bread')).toBe('echo: Bread');
     expect(lastRequest('claude')).toMatchObject({
       instructions: `${context('Groceries')}\n\nBe kind.\n\nYou shop cheaply.`,
       providerOptions: { model: 'sonnet', effort: 'high' },
       providerSessionId: first!.providerSessionId,
     });
+    await edit(
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${GROCERIES}\nmodel: haiku\n---\nYou shop.`,
+    );
     await expect(
-      client.call('agents.get', { name: 'pantry' }),
+      client.call('channels.get', { id: await groceriesId() }),
     ).resolves.toMatchObject({
-      model: 'haiku',
-      effort: 'low',
-      origins: { model: 'note', effort: 'pero' },
+      settings: {
+        name: 'groceries',
+        model: 'haiku',
+        effort: 'low',
+        origins: { model: 'note', effort: 'pero' },
+      },
     });
-    await edit('Agents/Groceries.md', '---\ntopic: Groceries\n---\nYou shop.');
+    await edit(
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${GROCERIES}\n---\nYou shop.`,
+    );
     expect(await say('Tea')).toBe('echo: Tea');
     expect(lastRequest('claude')).toMatchObject({
       providerOptions: { model: 'opus', effort: 'low' },
@@ -227,12 +257,12 @@ describe('Agents from notes (e2e)', () => {
     });
 
     await edit(
-      'Agents/Groceries.md',
-      '---\ntopic: Groceries\nprovider: codex\n---\nYou shop.',
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${GROCERIES}\nprovider: codex\n---\nYou shop.`,
     );
     const carried = await say('Eggs');
     expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
-    expect(carried).toMatch(/ User: Milk\n/);
+    expect(carried).toMatch(/ User: Milk\n.* Pero: echo: Milk\n/s);
     expect(carried).toMatch(/\n\nEggs$/);
     expect(await sessions()).toEqual([
       expect.objectContaining({ id: first!.id, status: 'closed' }),
@@ -240,8 +270,8 @@ describe('Agents from notes (e2e)', () => {
     ]);
 
     await edit(
-      'Agents/Groceries.md',
-      '---\ntopic: Groceries\nprovider: codex\nworking-directory: other\n---\nYou shop.',
+      'Channels/Groceries.md',
+      `---\nchannel-id: ${GROCERIES}\nprovider: codex\nworking-directory: other\n---\nYou shop.`,
     );
     expect(await say('Butter')).toMatch(
       /^echo: \[Earlier conversation.*User: Eggs.*\n\nButter$/s,
@@ -256,32 +286,35 @@ describe('Agents from notes (e2e)', () => {
     });
   });
 
-  it('moves a topic to the Agent that claims it from its next message, with recent messages', async () => {
+  it('answers a topic with the note its channel-id moves to from its next message, in the same Session', async () => {
     await groceries();
     expect(await say('Milk')).toBe('echo: Milk');
     const [first] = await sessions();
 
-    // Claimed twice: Pero reports both notes in the topic, neither
+    // Bound twice: Pero reports both notes in the topic, neither
     // answers, and Pero says why once.
     await edit(
-      'Agents/Pantry.md',
-      '---\ntopic: Groceries\nmodel: haiku\n---\nYou stock up.',
+      'Channels/Pantry.md',
+      `---\nchannel-id: ${GROCERIES}\nmodel: haiku\n---\nYou stock up.`,
     );
     await daemon!.app.get(BrokenNoteReports).idle();
     expect(api.sent().at(-1)).toMatchObject({
       message_thread_id: TOPIC,
       text: [
-        'Errors in data/System/Agents/Groceries.md:',
-        'topic: "Groceries" is also claimed by Agents/Pantry.md, so neither answers there',
+        'Errors in data/System/Channels/Groceries.md:',
+        `channel-id: ${GROCERIES} is also the channel-id of Channels/Pantry.md; keep it in only one of them`,
+        "It's left out until it's fixed.",
         '',
-        'Errors in data/System/Agents/Pantry.md:',
-        'topic: "Groceries" is also claimed by Agents/Groceries.md, so neither answers there',
+        'Errors in data/System/Channels/Pantry.md:',
+        `channel-id: ${GROCERIES} is also the channel-id of Channels/Groceries.md; keep it in only one of them`,
+        "It's left out until it's fixed.",
       ].join('\n'),
     });
     expect(await say('Eggs')).toBe(
-      'No one answers in this topic: data/System/Agents/Groceries.md and ' +
-        'data/System/Agents/Pantry.md set topic: Groceries. ' +
-        'Keep it in only one of them.',
+      "Pero doesn't answer here yet: data/System/Channels/Groceries.md and " +
+        "data/System/Channels/Pantry.md are this Channel's note but have " +
+        "errors, so they haven't loaded. Run pero check on the Pero host to " +
+        'see them.',
     );
     const told = api.sent().length;
     const update = inTopic({ text: 'Anyone?' });
@@ -294,24 +327,31 @@ describe('Agents from notes (e2e)', () => {
     );
     expect(api.sent()).toHaveLength(told);
 
-    await edit('Agents/Groceries.md', 'You shop.');
-    const carried = await say('Bread');
-    expect(carried).toMatch(/^echo: \[Earlier conversation in this chat/);
-    expect(carried).toMatch(/ User: Milk\n.* groceries: echo: Milk\n/s);
-    expect(carried).toMatch(/\n\nBread$/);
+    await edit('Channels/Groceries.md', 'You shop.');
+    expect(await say('Bread')).toBe('echo: Bread');
     expect(lastRequest('claude')).toMatchObject({
-      instructions: `${context('Pantry')}\n\nBe brief.\n\nYou stock up.`,
+      instructions: `${context('Pantry')}\n\nBe calm.\n\nBe brief.\n\nYou stock up.`,
       providerOptions: { model: 'haiku' },
+      providerSessionId: first!.providerSessionId,
     });
     expect(await sessions()).toEqual([
-      expect.objectContaining({ id: first!.id, status: 'closed' }),
-      expect.objectContaining({ agentName: 'pantry', status: 'active' }),
+      expect.objectContaining({
+        id: first!.id,
+        agentName: 'groceries',
+        status: 'active',
+      }),
     ]);
-    expect(
-      (await client.call('channels.list')).channels.map(({ title, agent }) => [
-        title,
-        agent,
-      ]),
-    ).toEqual([['Groceries', 'pantry']]);
+    expect(await client.call('channels.list')).toEqual({
+      channels: [
+        expect.objectContaining({
+          title: 'Groceries',
+          note: 'data/System/Channels/Pantry.md',
+          unanswered: null,
+        }),
+      ],
+      unusedNotes: [
+        { file: 'data/System/Channels/Groceries.md', channelId: null },
+      ],
+    });
   });
 });

@@ -19,7 +19,7 @@ export interface RunFinish {
   startedAt?: Date;
   finishedAt?: Date;
   executionConfig?: ExecutionSnapshot;
-  /** The Agent's answer, or that the run was skipped without it. */
+  /** The answer, or that the run was skipped without a turn. */
   result?: { text: string; providerSessionId?: string } | { skipped: true };
   errorText?: string;
 }

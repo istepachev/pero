@@ -154,7 +154,9 @@ const channelId = z
     const colon = value.indexOf(':');
     return (
       colon > 0 &&
-      (INTEGRATION_KINDS as readonly string[]).includes(value.slice(0, colon)) &&
+      (INTEGRATION_KINDS as readonly string[]).includes(
+        value.slice(0, colon),
+      ) &&
       value.length > colon + 1 &&
       !/\s/.test(value)
     );

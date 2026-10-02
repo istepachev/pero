@@ -70,7 +70,7 @@ describe('Telegram chats and pairing (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** A daemon on the fake Bot API whose Agents answer with an echo. */
+  /** A daemon on the fake Bot API whose turns answer with an echo. */
   async function start() {
     daemon = await startDaemon({
       config: resolveBootstrapConfig({ workspace, env: {} }),
@@ -83,9 +83,9 @@ describe('Telegram chats and pairing (e2e)', () => {
     );
   }
 
-  /** The Agent notes, by file name. */
-  function agentNotes(): string[] {
-    return readdirSync(join(workspace, 'data', 'System', 'Agents')).sort();
+  /** The Channel notes, by file name. */
+  function channelNotes(): string[] {
+    return readdirSync(join(workspace, 'data', 'System', 'Channels')).sort();
   }
 
   function db(): DataSource {
@@ -151,7 +151,7 @@ describe('Telegram chats and pairing (e2e)', () => {
       ).toMatchObject({ state: 'ok', detail: 'Connected as @pero_test_bot' }),
     );
 
-    // The General topic onboards the main Agent, which answers.
+    // The General topic is answered from Default.md.
     api.push(message(FORUM, 'One'));
     expect((await sentTexts(3)).at(-1)).toBe('echo: One');
     const [session] = await db().getRepository(Session).find();
@@ -162,7 +162,7 @@ describe('Telegram chats and pairing (e2e)', () => {
     ).rejects.toThrow(NotFoundError);
     const denied = api.push(message(FORUM, 'Two'));
     // Handled once the next poll confirms it: no reply, since the chat had
-    // its pairing hint this hour, and nothing reached an Agent.
+    // its pairing hint this hour, and nothing reached a turn.
     await vi.waitFor(() =>
       expect(
         api
@@ -184,7 +184,7 @@ describe('Telegram chats and pairing (e2e)', () => {
       }),
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
-    expect(agentNotes()).toEqual(['Main.md']);
+    expect(channelNotes()).toEqual(['Default.md']);
   });
 
   it('allows a chat that sends its first message during interactive setup', async () => {
@@ -241,7 +241,7 @@ describe('Telegram chats and pairing (e2e)', () => {
     expect((await client.call('telegram.chats')).allowed).toEqual([
       expect.objectContaining({ chatId: '1234', kind: 'private' }),
     ]);
-    // The chat was told, by Pero and not an Agent, to confirm here, then
+    // The chat was told, by Pero and not a turn, to confirm here, then
     // given the first steps once allowed.
     expect(api.sent()).toEqual([
       expect.objectContaining({
@@ -251,7 +251,7 @@ describe('Telegram chats and pairing (e2e)', () => {
       expect.objectContaining({
         chat_id: '1234',
         text: expect.stringMatching(
-          /^This chat talks to Agent main: .+\n\nFirst steps:\n/,
+          /^Pero answers in this chat with .+\n\nFirst steps:\n/,
         ),
       }),
     ]);
@@ -282,12 +282,12 @@ describe('Telegram chats and pairing (e2e)', () => {
     expect((await sentTexts(2)).at(-1)).toBe('echo: One');
     api.push(command(DIRECT, '/status'));
     expect((await sentTexts(3)).at(-1)).toMatch(
-      /^Agent main · Ada\nState: idle · last answer .*\nConfig: data\/System\/Agents\/Main\.md\n/,
+      /^Channel Ada\nState: idle · last answer .*\nConfig: data\/System\/Channels\/Default\.md\n/,
     );
 
     api.push(command(DIRECT, '/new'));
     expect((await sentTexts(4)).at(-1)).toBe(
-      "Started over: Agent main's next answer here begins a new conversation.",
+      "Started over: Pero's next answer here begins a new conversation.",
     );
     // A fresh Session would carry the conversation over, but not past /new.
     api.push(message(DIRECT, 'Two'));
@@ -314,7 +314,7 @@ describe('Telegram chats and pairing (e2e)', () => {
     ]);
   });
 
-  it("changes the Agent's effort from a /effort button", async () => {
+  it("changes the Channel's effort from a /effort button", async () => {
     await start();
     await client.call('telegram.allow', { chatId: String(DIRECT.id) });
     api.push(message(DIRECT, 'One'));
@@ -344,15 +344,19 @@ describe('Telegram chats and pairing (e2e)', () => {
     await vi.waitFor(() =>
       expect(api.callsOf('editMessageText')[0]?.payload).toMatchObject({
         message_id: 77,
-        text: expect.stringMatching(/^Agent main now uses effort low/),
+        text: expect.stringMatching(
+          /^This Channel now uses effort low, from the next answer\.\nConfig: data\/System\/Channels\/Default\.md\n/,
+        ),
       }),
     );
     expect(api.callsOf('answerCallbackQuery')[0]?.payload).toMatchObject({
       text: 'Effort set',
     });
-    expect(await client.call('agents.get', { name: 'main' })).toMatchObject({
-      effort: 'low',
-      origins: { effort: 'note' },
+    const [channel] = await db().getRepository(Channel).find();
+    expect(
+      await client.call('channels.get', { id: channel!.id }),
+    ).toMatchObject({
+      settings: { name: 'default', effort: 'low', origins: { effort: 'note' } },
     });
   });
 

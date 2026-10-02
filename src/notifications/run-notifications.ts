@@ -11,7 +11,7 @@ export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;
 
 /**
  * What a finished run tells the Channels its Workflow notifies: the
- * Agent's answer, headed by the Workflow's title, or why the run
+ * answer, headed by the Workflow's title, or why the run
  * failed. Null for a run that tells them nothing: one the owner cancelled,
  * one skipped for an empty history window, and an interrupted one that is
  * retried, whose retry tells them instead.

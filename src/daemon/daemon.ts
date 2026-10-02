@@ -98,11 +98,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   const guide = guideFile(layout.workspace);
   try {
     if (writeAgentGuide(guide))
-      logger.info({ file: guide }, 'Wrote the guide to Pero\'s settings');
+      logger.info({ file: guide }, "Wrote the guide to Pero's settings");
   } catch (error) {
     logger.warn(
       { err: error, file: guide },
-      'Could not write the guide to Pero\'s settings',
+      "Could not write the guide to Pero's settings",
     );
   }
 

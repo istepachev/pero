@@ -12,16 +12,9 @@ import {
   PERO_NOTE,
   PERSONA_NOTE,
 } from '../system-files/note-files.js';
-import {
-  channelIdFor,
-  type ChannelNote,
-} from '../system-files/snapshot.js';
+import { channelIdFor, type ChannelNote } from '../system-files/snapshot.js';
 import { ChannelNotes } from '../system/channel-notes.service.js';
-import {
-  Definitions,
-  type Route,
-  routeQuery,
-} from '../system/definitions.js';
+import { Definitions, type Route, routeQuery } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import type {

@@ -18,10 +18,7 @@ import { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { nextTurn } from '../sessions/next-turn.js';
 import { shownPath } from '../system-files/note-paths.js';
-import {
-  channelIdFor,
-  DEFAULT_NOTE,
-} from '../system-files/snapshot.js';
+import { channelIdFor, DEFAULT_NOTE } from '../system-files/snapshot.js';
 import { Definitions, type Route } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
 import { channelNoteView, folderProblem } from './channel-note-view.js';
@@ -110,7 +107,11 @@ export class ChannelViews {
         settings:
           note === null
             ? null
-            : channelNoteView(note, this.notes.snapshot(), this.notes.folders()),
+            : channelNoteView(
+                note,
+                this.notes.snapshot(),
+                this.notes.folders(),
+              ),
         folderProblem:
           note === null ? null : await folderProblem(note.workingDirectory),
         nextTurn:

@@ -215,9 +215,7 @@ describe('ChannelCommands', () => {
 
       await adapter.press(status, 'New session', OWNER);
       const confirm = adapter.edited.at(-1)!;
-      expect(confirm.message.text).toMatch(
-        /^Start over here\?/,
-      );
+      expect(confirm.message.text).toMatch(/^Start over here\?/);
       expect(labels(confirm)).toEqual([['Yes, start over', 'Cancel']]);
       expect(
         await ds.getRepository(Session).countBy({ status: 'active' }),
@@ -271,9 +269,7 @@ describe('ChannelCommands', () => {
     it('says when there is nothing to stop', async () => {
       await say(OWNER, '/stop');
 
-      expect(last().message.text).toBe(
-        "Pero isn't answering anything here.",
-      );
+      expect(last().message.text).toBe("Pero isn't answering anything here.");
     });
   });
 
@@ -369,7 +365,9 @@ describe('ChannelCommands', () => {
       expect(last().message.text).toBe(
         "Channels/Default.md's properties don't parse; pero check lists the errors",
       );
-      expect(ws.read('Channels/Default.md')).toBe('---\neffort: [\n---\nBe kind.\n');
+      expect(ws.read('Channels/Default.md')).toBe(
+        '---\neffort: [\n---\nBe kind.\n',
+      );
     });
 
     it("refuses a model name with spaces, and a Channel Pero doesn't answer", async () => {

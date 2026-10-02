@@ -162,7 +162,8 @@ export function noteFromTemplate(
     };
   }
   const text = replaceNoteProperty(template, 'channel-id', channelId);
-  if (text === null) return { text: bare, problem: "its properties don't parse" };
+  if (text === null)
+    return { text: bare, problem: "its properties don't parse" };
   return { text: text.endsWith('\n') ? text : `${text}\n`, problem: null };
 }
 

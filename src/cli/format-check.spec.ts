@@ -23,7 +23,9 @@ describe('formatCheck', () => {
   it('leaves out the topic note once topics were checked', () => {
     expect(
       formatCheck({ ...CLEAN, channels: 1, workflows: 0, topicsChecked: true }),
-    ).toBe('Checked 1 Channel note and 0 Workflows in data/System: no problems.');
+    ).toBe(
+      'Checked 1 Channel note and 0 Workflows in data/System: no problems.',
+    );
   });
 
   it('groups problems under their file', () => {

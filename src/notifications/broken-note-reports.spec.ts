@@ -24,7 +24,6 @@ import { NotificationsModule } from './notifications.module.js';
 const OWNER = privateChat('1234');
 const FORUM = groupChat('-1001', 'Household');
 
-
 /** The `channel-id` of the forum's Health topic. */
 const HEALTH = 'telegram:-1001:7';
 
