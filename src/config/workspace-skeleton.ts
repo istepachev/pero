@@ -33,25 +33,29 @@ export class WorkspaceInitError extends Error {
 }
 
 /**
- * `Pero.md` as `pero init` writes it, with `timeZone`, the host's, set so
- * the owner sees the zone schedules use and can change it.
+ * `Pero.md` as `pero init` writes it: every setting as a property, so
+ * Obsidian shows each one to change, with Pero's defaults or else empty.
+ * `timezone` is the host's, so the owner sees the zone schedules use;
+ * `provider` is left for the first `pero run` to fill in.
  */
 export function peroNote(timeZone: string): string {
   const timezone = `timezone: ${timeZone}`;
   return `---
 # Installation defaults: each applies to every Agent and Workflow that
-# doesn't set its own. Remove the # in front of a line to change it.
+# doesn't set its own. An empty property takes the default: claude for
+# provider, and the provider's own model and effort.
 # Instructions go in the Agents' notes, not here.
-# provider: claude            # claude or codex
-# claude-model: opus
-# claude-effort: high
-# codex-model: gpt-5.5
-# permissions: ask            # ask or bypass
+provider:                     # claude or codex
+claude-model:                 # such as opus or sonnet
+claude-effort:                # low, medium, high, xhigh, or max
+codex-model:                  # such as gpt-5.5
+codex-effort:                 # minimal, low, medium, high, xhigh, max, ultra, or persistent
+permissions: ask              # ask or bypass
 ${timezone.padEnd(29)} # this server's; set yours, such as Europe/Berlin
-# main-agent: Main            # the Agent note for General topics and direct chats
-# history-carryover: 50
-# history-retention-days: 90  # keep everything when not set
-# max-concurrent-runs: 2
+main-agent: Main              # the Agent note for General topics and direct chats
+history-carryover: 50
+history-retention-days:       # keep everything when empty
+max-concurrent-runs: 2
 ---
 `;
 }
@@ -60,11 +64,11 @@ const MAIN_NOTE = `---
 # The main Agent: it answers the General topic of every allowed group,
 # groups without topics, and direct chats. Every topic's Agent starts
 # with these instructions, then adds its own.
-# Remove the # to change a line.
-# provider: claude
-# model: sonnet
-# effort: high
-# permissions: ask
+# A property left empty takes Pero.md's value.
+provider:                            # claude or codex
+model:                               # such as opus or sonnet
+effort:                              # such as low, medium, or high
+permissions:                         # ask or bypass
 # working-directory: projects/site   # relative to the workspace
 ---
 You are a calm, concise personal assistant. Reply in the language you're written to in.

@@ -31,7 +31,7 @@ import {
 } from '../../providers/provider-auth.js';
 import { PERO_NOTE } from '../../system-files/note-files.js';
 import { parseNote } from '../../system-files/note.js';
-import { setNoteProperty } from '../../system-files/note-writer.js';
+import { replaceNoteProperty } from '../../system-files/note-writer.js';
 import { CliError } from '../errors.js';
 import { formatInit } from '../format-init.js';
 import { isPromptExit, type Prompts } from '../prompts.js';
@@ -332,8 +332,9 @@ async function settleProvider(
 }
 
 /**
- * Sets `provider` in the note at `path` unless it sets one already; a
- * missing note starts as `pero init` writes it.
+ * Sets `provider` in the note at `path` unless it sets one already, filling
+ * in the empty one `pero init` writes; a missing note starts as `pero init`
+ * writes it.
  */
 function writeProvider(
   path: string,
@@ -343,7 +344,11 @@ function writeProvider(
   const text =
     readText(path) ??
     peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const updated = setNoteProperty(text, 'provider', provider);
+  const parsed = parseNote(path, text);
+  if (!parsed.ok) return;
+  const current = parsed.note.properties.provider;
+  if (current !== undefined && current !== null) return;
+  const updated = replaceNoteProperty(text, 'provider', provider);
   if (updated === null) return;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, updated);

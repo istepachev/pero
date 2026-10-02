@@ -286,6 +286,16 @@ describe('replaceNoteProperty', () => {
     );
   });
 
+  it('fills in an empty property, keeping its comment in its column', () => {
+    expect(
+      replaceNoteProperty(
+        '---\nprovider:                     # claude or codex\n---\n',
+        'provider',
+        'codex',
+      ),
+    ).toBe('---\nprovider: codex               # claude or codex\n---\n');
+  });
+
   it('adds a property as setNoteProperty does, from its commented line', () => {
     expect(replaceNoteProperty(note, 'effort', 'low')).toBe(
       '---\ntopic: Running   # the topic\nmodel: sonnet  # cheaper\neffort: low\n---\nYou coach.\n',
