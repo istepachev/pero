@@ -378,6 +378,57 @@ describe('configOrNewWorkspace', () => {
     await expect(result).resolves.toMatchObject({ firstRun: false });
     expect(confirm).not.toHaveBeenCalled();
     expect(select).not.toHaveBeenCalled();
+    expect(peroNote(ws)).toMatch(/^provider: +# claude/m);
+  });
+
+  it('settles the provider again when Pero.md is gone from a workspace with a database', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, home);
+    writeFileSync(join(ws, '.pero', 'pero.sqlite'), '');
+    const note = join(ws, 'data', 'System', 'Pero.md');
+
+    rmSync(note);
+    const one = run({
+      cwd: ws,
+      interactive: true,
+      clis: { claude: 'signed-in', codex: 'missing' },
+    });
+    await expect(one.result).resolves.toMatchObject({ firstRun: false });
+    expect(one.select).not.toHaveBeenCalled();
+    expect(peroNote(ws)).toMatch(/^provider: claude /m);
+    expect(peroNote(ws)).toMatch(/^max-concurrent-runs: 2$/m);
+
+    rmSync(note);
+    const both = run({
+      cwd: ws,
+      interactive: true,
+      clis: { claude: 'signed-in', codex: 'signed-in' },
+      pick: 'codex',
+    });
+    await expect(both.result).resolves.toMatchObject({ firstRun: false });
+    expect(both.select).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Which provider should Pero use?' }),
+    );
+    expect(peroNote(ws)).toMatch(/^provider: codex /m);
+  });
+
+  it('leaves a missing Pero.md to pero run off a terminal or with its vault not mounted', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, home);
+    writeFileSync(join(ws, '.pero', 'pero.sqlite'), '');
+    rmSync(join(ws, 'data', 'System', 'Pero.md'));
+
+    const offTerminal = run({ cwd: ws, interactive: false });
+    await expect(offTerminal.result).resolves.toMatchObject({
+      firstRun: false,
+    });
+    expect(existsSync(join(ws, 'data', 'System', 'Pero.md'))).toBe(false);
+
+    writeFileSync(join(ws, '.pero', 'config.yaml'), 'data: Vault\n');
+    const unmounted = run({ cwd: ws, interactive: true });
+    await expect(unmounted.result).resolves.toMatchObject({ firstRun: false });
+    expect(unmounted.select).not.toHaveBeenCalled();
+    expect(existsSync(join(ws, 'Vault'))).toBe(false);
   });
 
   it('settles no provider for the echo runtime', async () => {

@@ -9,13 +9,16 @@ import {
 import { dirname, join } from 'node:path';
 import {
   type BootstrapConfig,
+  ConfigError,
   NoWorkspaceError,
   resolveBootstrapConfig,
 } from '../../config/bootstrap-config.js';
 import {
   DEFAULT_DATA_FOLDER,
+  type HostConfig,
   hostConfigPath,
   readHostConfig,
+  resolveDataFolder,
   resolveSystemFolder,
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
@@ -75,7 +78,10 @@ export interface FirstRun {
  * the provider Pero uses: the one `Pero.md` sets, or else the owner's
  * pick among the provider CLIs installed, written to `Pero.md`. It refuses
  * to go on, before anything is made or started, while that provider's CLI
- * is missing or signed out.
+ * is missing or signed out. A later start whose `Pero.md` is missing, as
+ * after the system folder was deleted, settles the provider the same way
+ * and writes a whole `Pero.md` with it, so it doesn't fall back to claude
+ * unasked.
  */
 export async function configOrNewWorkspace(
   context: FirstRunContext,
@@ -106,7 +112,21 @@ export async function configOrNewWorkspace(
   }
 
   const workspace = config?.workspace ?? suggested;
-  if (!context.interactive || existsSync(workspaceLayout(workspace).database)) {
+  if (!context.interactive) return { config: config!, firstRun: false };
+  if (existsSync(workspaceLayout(workspace).database)) {
+    const missing = missingPeroNote(workspace, context.home);
+    if (missing !== null && context.checkProviders !== false) {
+      context.block?.();
+      let provider: Provider;
+      try {
+        provider = await settleProvider(context, null);
+      } catch (error) {
+        if (!isPromptExit(error)) throw error;
+        throw new CliError('Setup interrupted; Pero was not started.', 130);
+      }
+      context.block?.();
+      writeProvider(missing, provider, context.print);
+    }
     return { config: config!, firstRun: false };
   }
 
@@ -234,6 +254,29 @@ function peroNotePath(workspace: string, home?: string, data?: string): string {
     system: null,
   };
   return join(resolveSystemFolder(config, workspace, home), PERO_NOTE);
+}
+
+/**
+ * `Pero.md` of `workspace` when it is missing and its data folder is
+ * there, or is `data/`, which `pero run` creates; null otherwise, as with
+ * a vault not mounted yet or an invalid `config.yaml`.
+ */
+function missingPeroNote(workspace: string, home?: string): string | null {
+  let config: Pick<HostConfig, 'data' | 'system'>;
+  try {
+    config = readHostConfig(
+      hostConfigPath(workspaceLayout(workspace).stateDir),
+    ) ?? { data: null, system: null };
+  } catch (error) {
+    if (error instanceof ConfigError) return null;
+    throw error;
+  }
+  const data = resolveDataFolder(config, workspace, home);
+  if (data !== join(workspace, DEFAULT_DATA_FOLDER) && !existsSync(data)) {
+    return null;
+  }
+  const note = join(resolveSystemFolder(config, workspace, home), PERO_NOTE);
+  return existsSync(note) ? null : note;
 }
 
 /** The provider the note at `path` sets; null when it sets none. */
