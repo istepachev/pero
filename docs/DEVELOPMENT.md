@@ -75,6 +75,8 @@ A merge to `main` publishes `@perokit/pero` when `package.json` holds a version 
 npm version minor --no-git-tag-version   # or patch, major, prerelease; updates package.json and package-lock.json
 ```
 
+Until 1.0.0, every PR bumps the version, a patch for fixes and a minor for features or breaking changes, so each merge ships; [AGENTS.md](../AGENTS.md) spells out the rule for coding agents.
+
 Before merging it, walk through [Checking a release on a fresh machine](./TESTING.md#checking-a-release-on-a-fresh-machine) with the PR's branch, and copy its steps into the PR as a checklist.
 
 After CI passes on the merge commit, the [Release workflow](../.github/workflows/release.yml) publishes that commit to npm with provenance, then creates the `vX.Y.Z` tag and a GitHub Release with generated notes. A version with a prerelease suffix, such as `0.2.0-beta.1`, is published under the `next` dist-tag and marked as a prerelease. Merges that leave the version alone publish nothing. Don't create release tags by hand. If the workflow fails partway, re-run it: it skips a version npm already has and a release that already exists.
