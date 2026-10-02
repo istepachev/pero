@@ -141,9 +141,7 @@ describe('BackupService', () => {
   });
 
   it('includes the data folder when asked, without links or the state directory', async () => {
-    // Startup wrote the default notes in the system folder.
     await withDataFolder(vault);
-    rmSync(join(vault, 'System'), { recursive: true });
     mkdirSync(join(vault, 'System'));
     writeFileSync(join(vault, 'System', 'Pero.md'), 'Be brief.\n');
     symlinkSync('/etc', join(vault, 'etc'));
@@ -179,11 +177,7 @@ describe('BackupService', () => {
     await backups.create(file, { includeData: true });
 
     const { dir, manifest } = await extract(file);
-    expect(readdirSync(join(dir, 'data')).sort()).toEqual([
-      'System',
-      'data',
-      'note.md',
-    ]);
+    expect(readdirSync(join(dir, 'data')).sort()).toEqual(['data', 'note.md']);
     expect(manifest.workingDirectories).toEqual([
       { path: ws.root, agent: null },
     ]);

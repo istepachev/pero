@@ -13,6 +13,7 @@ import {
 } from '../control/daemon-metadata.js';
 import { createLogger } from '../logging/logger.js';
 import { PinoLoggerService } from '../logging/pino-logger.service.js';
+import { fillWorkspace } from '../system-files/fill-workspace.js';
 import { acquireDaemonLock } from './daemon-lock.js';
 import { DaemonLifecycle, type StopResult } from './lifecycle.js';
 
@@ -81,6 +82,15 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   } catch (error) {
     lock.release();
     throw error;
+  }
+
+  // What can't be filled in is reported by the startup that needs it.
+  try {
+    for (const { action, path } of await fillWorkspace(layout.workspace)) {
+      logger.info({ path }, `Filled in the workspace: ${action} ${path}`);
+    }
+  } catch (error) {
+    logger.warn({ err: error }, 'Could not fill in the workspace');
   }
 
   // Agents read it before changing settings; a guide that can't be written

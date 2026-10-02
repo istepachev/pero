@@ -20,10 +20,7 @@ import {
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
 import { workspaceLayout } from '../../config/workspace-layout.js';
-import {
-  initWorkspace,
-  writeSystemSkeleton,
-} from '../../config/workspace-skeleton.js';
+import { initWorkspace, peroNote } from '../../config/workspace-skeleton.js';
 import {
   checkProviderAuth,
   cliLabel,
@@ -138,12 +135,6 @@ export async function configOrNewWorkspace(
       workspace: suggested,
       ...(context.home === undefined ? {} : { homeDir: context.home }),
     });
-  }
-  // A deleted system folder gets its defaults first, or Pero.md would be its only note.
-  const system = dirname(note);
-  if (!existsSync(system)) {
-    writeSystemSkeleton(system);
-    context.print(`Created the system folder ${system} with its defaults`);
   }
   if (provider !== null) writeProvider(note, provider, context.print);
   return { config, firstRun: true };
@@ -340,13 +331,18 @@ async function settleProvider(
   return provider;
 }
 
-/** Sets `provider` in the note at `path` unless it sets one already. */
+/**
+ * Sets `provider` in the note at `path` unless it sets one already; a
+ * missing note starts as `pero init` writes it.
+ */
 function writeProvider(
   path: string,
   provider: Provider,
   print: (text: string) => void,
 ): void {
-  const text = readText(path) ?? '';
+  const text =
+    readText(path) ??
+    peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const updated = setNoteProperty(text, 'provider', provider);
   if (updated === null) return;
   mkdirSync(dirname(path), { recursive: true });

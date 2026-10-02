@@ -1,5 +1,4 @@
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -88,24 +87,6 @@ describe('SystemNotes', () => {
       detail: null,
       required: true,
     });
-  });
-
-  it('writes the default notes when the system folder is missing', async () => {
-    rmSync(system, { recursive: true });
-    await boot();
-    expect(existsSync(join(system, 'Pero.md'))).toBe(true);
-    expect(existsSync(join(system, 'Workflows'))).toBe(true);
-    expect(notes.snapshot()!.agents.get('main')).toMatchObject({
-      file: 'Agents/Main.md',
-    });
-    expect(health.get('system')!.state).toBe('ok');
-  });
-
-  it('leaves an existing system folder as it is', async () => {
-    write('Agents/Health.md', 'Coach');
-    await boot();
-    expect(existsSync(join(system, 'Pero.md'))).toBe(false);
-    expect(existsSync(join(system, 'Agents', 'Main.md'))).toBe(false);
   });
 
   it('reports how many notes have errors', async () => {

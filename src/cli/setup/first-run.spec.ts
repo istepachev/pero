@@ -342,11 +342,11 @@ describe('configOrNewWorkspace', () => {
     );
   });
 
-  it('writes the defaults of a deleted system folder before the provider', async () => {
+  it('writes the provider into a whole Pero.md when it is missing', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, home);
-    const system = join(ws, 'data', 'System');
-    rmSync(system, { recursive: true });
+    const note = join(ws, 'data', 'System', 'Pero.md');
+    rmSync(note);
 
     const { result } = run({
       cwd: ws,
@@ -354,14 +354,10 @@ describe('configOrNewWorkspace', () => {
       clis: { claude: 'signed-in', codex: 'missing' },
     });
     await expect(result).resolves.toMatchObject({ firstRun: true });
-    expect(printed).toContain(
-      `Created the system folder ${system} with its defaults`,
-    );
-    expect(existsSync(join(system, 'Agents', 'Main.md'))).toBe(true);
-    expect(existsSync(join(system, 'Workflows'))).toBe(true);
-    const note = readFileSync(join(system, 'Pero.md'), 'utf8');
-    expect(note).toMatch(/^provider: claude /m);
-    expect(note).toMatch(/^timezone: /m);
+    const text = readFileSync(note, 'utf8');
+    expect(text).toMatch(/^provider: claude /m);
+    expect(text).toMatch(/^timezone: /m);
+    expect(text).toMatch(/^# main-agent: Main /m);
   });
 
   it('asks nothing once the workspace has a database, or off a terminal', async () => {
