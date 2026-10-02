@@ -172,7 +172,7 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
         '  channel: no Channel note named "Helth"; Channel notes: Finance, Health',
         '',
         '1 problem in 1 file.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
     });
@@ -184,7 +184,7 @@ describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: [
         'Checked 3 Channel notes and 2 Workflows in data/System: no problems.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
     });

@@ -407,7 +407,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(deny).toMatchObject({
       code: 0,
       stdout:
-        'Denied: group "Household" (-1001234567890). Its Channels and Agents are kept and resume if you allow it again.\n',
+        'Denied: group "Household" (-1001234567890). Its Channels and notes are kept and resume if you allow it again.\n',
     });
     const config = readFileSync(layout.configFile, 'utf8');
     // The template's own comments show an example entry with the same ID.
@@ -1271,7 +1271,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stderr: '',
       stdout:
-        'Denied: group -1001234567890. Its Channels and Agents are kept and resume if you allow it again.\n' +
+        'Denied: group -1001234567890. Its Channels and notes are kept and resume if you allow it again.\n' +
         notRunning,
     });
     expect(readFileSync(layout.configFile, 'utf8')).toBe(

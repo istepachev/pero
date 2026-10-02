@@ -68,7 +68,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
       code: 0,
       stdout: [
         'Checked 1 Channel note and 0 Workflows in data/System: no problems.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
       stderr: '',
@@ -121,7 +121,7 @@ describe('pero check (e2e)', { timeout: 60_000 }, () => {
         '  hour: must be a whole number from 0 to 23',
         '',
         '7 problems in 6 files.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
         '',
       ].join('\n'),
     );

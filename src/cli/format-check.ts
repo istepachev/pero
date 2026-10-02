@@ -30,7 +30,7 @@ export function formatCheck(result: WorkspaceCheck): string {
   }
   if (!result.topicsChecked && systemFolder !== null) {
     lines.push(
-      "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+      "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
     );
   }
   return lines.join('\n');

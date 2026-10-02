@@ -15,7 +15,7 @@ describe('formatCheck', () => {
     expect(formatCheck(CLEAN)).toBe(
       [
         'Checked 2 Channel notes and 1 Workflow in data/System: no problems.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
       ].join('\n'),
     );
   });
@@ -59,7 +59,7 @@ describe('formatCheck', () => {
         '  line 4: Map keys must be unique',
         '',
         '3 problems in 2 files.',
-        "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
+        "Workflow Channels weren't checked against the Channels Pero has seen, since Pero isn't running.",
       ].join('\n'),
     );
   });
