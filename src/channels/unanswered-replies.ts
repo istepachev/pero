@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Channel } from '../persistence/entities/channel.entity.js';
-import type { Unanswered } from '../settings/definitions.js';
+import type { Unanswered } from '../system/definitions.js';
 import { ChannelSender } from './channel-sender.js';
 import { unansweredSummary, unansweredText } from './channel-stages.js';
 

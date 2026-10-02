@@ -11,7 +11,7 @@ import { preview } from './preview.js';
 /** `pero workflows ls`: one row per Workflow. */
 export function formatWorkflowList(workflows: readonly WorkflowView[]): string {
   if (workflows.length === 0) {
-    return 'No Workflows yet. Add a note to the Workflows folder in the settings folder.';
+    return 'No Workflows yet. Add a note to the Workflows folder in the system folder.';
   }
   const lines = table([
     ['NAME', 'AGENT', 'SCHEDULE', 'NEXT RUN', 'CHANNELS', 'STATE', 'NOTE'],

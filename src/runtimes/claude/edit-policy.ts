@@ -12,10 +12,10 @@ import {
 
 /**
  * How an `ask` Agent's tool is approved: `allow` runs it without asking,
- * `settings` edits the settings folder, which only the owner may approve,
+ * `system` edits the system folder, which only the owner may approve,
  * and `ask` asks the owner as any other tool does.
  */
-export type EditDecision = 'allow' | 'settings' | 'ask';
+export type EditDecision = 'allow' | 'system' | 'ask';
 
 /** Claude Code's file-editing tools, by the input naming the file. */
 const EDIT_TOOLS: Readonly<Record<string, string>> = {
@@ -56,7 +56,7 @@ const CONFIG_FILES = new Set([
 /**
  * Decides about `tool`, called with `input`, for an Agent working in
  * `workingDirectory`: an edit in its folder is allowed, except under
- * `settingsFolder` and of the configuration files above, each resolved
+ * `systemFolder` and of the configuration files above, each resolved
  * through `../` and symlinks. So is reading `guideFile`, Pero's guide to
  * its settings, which an Agent's instructions name wherever its folder is.
  * Anything else asks, and so does a path that can't be resolved.
@@ -66,7 +66,7 @@ export async function editDecision(
   input: Record<string, unknown>,
   folders: {
     workingDirectory: string;
-    settingsFolder?: string;
+    systemFolder?: string;
     guideFile?: string;
   },
 ): Promise<EditDecision> {
@@ -83,10 +83,10 @@ export async function editDecision(
       resolve(folders.workingDirectory, expandHome(path)),
     );
     if (
-      folders.settingsFolder !== undefined &&
-      inside(await realPath(folders.settingsFolder), target)
+      folders.systemFolder !== undefined &&
+      inside(await realPath(folders.systemFolder), target)
     ) {
-      return 'settings';
+      return 'system';
     }
     const folder = await realPath(folders.workingDirectory);
     return inside(folder, target) && !isConfig(relative(folder, target))

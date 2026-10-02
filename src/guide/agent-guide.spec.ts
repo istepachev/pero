@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CLAUDE_EFFORTS, CODEX_EFFORTS } from '../config/provider-options.js';
-import { NOTE_PROPERTIES } from '../settings-files/schemas.js';
+import { NOTE_PROPERTIES } from '../system-files/schemas.js';
 import { agentGuide, guideFile, writeAgentGuide } from './agent-guide.js';
 
 /** The section of `guide` under heading `### <title>`, up to the next heading. */

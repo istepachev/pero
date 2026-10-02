@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { type Provider, PROVIDERS } from '../config/provider-options.js';
 import { ComponentHealth } from '../health/component-health.js';
-import { Definitions } from '../settings/definitions.js';
+import { Definitions } from '../system/definitions.js';
 import { checkProviderAuth, type Exec } from './provider-auth.js';
 
 /** How provider CLIs are run; tests replace it. */

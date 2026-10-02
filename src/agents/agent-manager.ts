@@ -20,13 +20,13 @@ import {
   type ContextUsage,
   SessionService,
 } from '../sessions/session.service.js';
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 import {
   Definitions,
   requireAgent,
   routeQuery,
-} from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+} from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 import { type AgentRequest, agentRequest } from './agent-request.js';
 
 /** One message for the Agent assigned to a Channel. */
@@ -146,7 +146,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     private readonly runtimes: AgentRuntimes,
     private readonly history: MessageHistory,
     private readonly health: ComponentHealth,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /**
@@ -510,7 +510,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       ...request,
       ...options,
       // So that an Agent can't change its own configuration unasked.
-      settingsFolder: folders.settingsFolder,
+      systemFolder: folders.systemFolder,
       guideFile: guideFile(folders.workspace),
       signal: controller.signal,
     })) {

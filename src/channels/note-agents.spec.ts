@@ -15,8 +15,8 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { SKELETON_NOTES } from '../config/workspace-skeleton.js';
 import { HostConfigModule } from '../host-config/host-config.module.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { Definitions } from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+import { Definitions } from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelRouter } from './channel-router.js';
@@ -51,27 +51,27 @@ describe('Topic routing by notes in a workspace', () => {
   };
 
   function write(file: string, text: string) {
-    const path = join(workspace, 'data', 'Settings', file);
+    const path = join(workspace, 'data', 'System', file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
     clock += 1_000;
     utimesSync(path, new Date(clock), new Date(clock));
   }
 
-  /** The text of `file` in the settings folder. */
+  /** The text of `file` in the system folder. */
   function read(file: string): string {
-    return readFileSync(join(workspace, 'data', 'Settings', file), 'utf8');
+    return readFileSync(join(workspace, 'data', 'System', file), 'utf8');
   }
 
   /** The notes in `Agents/`, sorted. */
   function agentNotes(): string[] {
-    return readdirSync(join(workspace, 'data', 'Settings', 'Agents')).sort();
+    return readdirSync(join(workspace, 'data', 'System', 'Agents')).sort();
   }
 
   /** Writes `file` and has Pero read the notes again. */
   async function edit(file: string, text: string) {
     write(file, text);
-    await moduleRef.get(SettingsNotes).rescan();
+    await moduleRef.get(SystemNotes).rescan();
   }
 
   beforeEach(async () => {
@@ -260,8 +260,8 @@ describe('Topic routing by notes in a workspace', () => {
 
     expect(answeredBy()).toEqual([]);
     expect(sentTexts()).toEqual([
-      'No one answers in this topic: data/Settings/Agents/Health.md and ' +
-        'data/Settings/Agents/Runner.md set topic: Health. ' +
+      'No one answers in this topic: data/System/Agents/Health.md and ' +
+        'data/System/Agents/Runner.md set topic: Health. ' +
         'Keep it in only one of them.',
     ]);
 
@@ -281,7 +281,7 @@ describe('Topic routing by notes in a workspace', () => {
     expect(answeredBy()).toEqual([]);
     expect(sentTexts()).toEqual([
       'Agent retired is disabled, so no one answers here. To turn it back ' +
-        'on, set enabled: true in data/Settings/Agents/Retired.md.',
+        'on, set enabled: true in data/System/Agents/Retired.md.',
     ]);
   });
 
@@ -291,7 +291,7 @@ describe('Topic routing by notes in a workspace', () => {
     expect(answeredBy()).toEqual([]);
     expect(sentTexts()).toEqual([
       expect.stringContaining(
-        'data/Settings/Agents/Sleep.md claims "Sleep" but has errors',
+        'data/System/Agents/Sleep.md claims "Sleep" but has errors',
       ),
     ]);
   });
@@ -322,7 +322,7 @@ describe('Topic routing by notes in a workspace', () => {
     expect(answeredBy()).toEqual([]);
     expect(sentTexts()).toEqual([
       'No one answers here: no note defines the main Agent, sleep. ' +
-        'Add data/Settings/Agents/Sleep.md.',
+        'Add data/System/Agents/Sleep.md.',
     ]);
   });
 

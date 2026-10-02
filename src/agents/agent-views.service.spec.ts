@@ -12,8 +12,8 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { SessionService } from '../sessions/session.service.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
-import { Definitions, requireAgent } from '../settings/definitions.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { Definitions, requireAgent } from '../system/definitions.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { AgentViews } from './agent-views.service.js';
 import { AgentsModule } from './agents.module.js';
 
@@ -169,7 +169,7 @@ describe('AgentViews', () => {
     // A new data folder applies on restart; the notes stay where they are.
     writeFileSync(
       join(ws.stateFolder, 'config.yaml'),
-      'data: own\nsettings: data/Settings\n',
+      'data: own\nsystem: data/System\n',
     );
     await moduleRef.close();
     await boot();

@@ -10,7 +10,7 @@ import {
 } from '../config/provider-options.js';
 import { toolPolicySchema } from '../config/tool-policy.js';
 import { HISTORY_MESSAGES } from '../config/workflow-input.js';
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 
 /**
  * The window of Channel history a run reads, fixed when the executor

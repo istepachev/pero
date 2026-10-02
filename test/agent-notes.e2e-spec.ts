@@ -27,7 +27,7 @@ import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
 import { BrokenNoteReports } from '../src/notifications/broken-note-reports.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,
@@ -78,9 +78,9 @@ describe('Agents from notes (e2e)', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  /** Writes `text` to the note at `file` in the settings folder. */
+  /** Writes `text` to the note at `file` in the system folder. */
   function write(file: string, text: string) {
-    const path = join(workspace, 'data', 'Settings', file);
+    const path = join(workspace, 'data', 'System', file);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text);
     clock += 1_000;
@@ -90,7 +90,7 @@ describe('Agents from notes (e2e)', () => {
   /** Writes a note and has Pero read it, as its next scan would. */
   async function edit(file: string, text: string) {
     write(file, text);
-    await daemon!.app.get(SettingsNotes).rescan();
+    await daemon!.app.get(SystemNotes).rescan();
   }
 
   /** A daemon serving the forum group, whose Agents answer with an echo. */
@@ -149,7 +149,7 @@ describe('Agents from notes (e2e)', () => {
       { title, file: `Agents/${title}.md` },
       {
         dataFolder: join(workspace, 'data'),
-        settingsFolder: join(workspace, 'data', 'Settings'),
+        systemFolder: join(workspace, 'data', 'System'),
         guideFile: guideFile(workspace),
       },
     );
@@ -271,16 +271,16 @@ describe('Agents from notes (e2e)', () => {
     expect(api.sent().at(-1)).toMatchObject({
       message_thread_id: TOPIC,
       text: [
-        'Errors in data/Settings/Agents/Groceries.md:',
+        'Errors in data/System/Agents/Groceries.md:',
         'topic: "Groceries" is also claimed by Agents/Pantry.md, so neither answers there',
         '',
-        'Errors in data/Settings/Agents/Pantry.md:',
+        'Errors in data/System/Agents/Pantry.md:',
         'topic: "Groceries" is also claimed by Agents/Groceries.md, so neither answers there',
       ].join('\n'),
     });
     expect(await say('Eggs')).toBe(
-      'No one answers in this topic: data/Settings/Agents/Groceries.md and ' +
-        'data/Settings/Agents/Pantry.md set topic: Groceries. ' +
+      'No one answers in this topic: data/System/Agents/Groceries.md and ' +
+        'data/System/Agents/Pantry.md set topic: Groceries. ' +
         'Keep it in only one of them.',
     );
     const told = api.sent().length;

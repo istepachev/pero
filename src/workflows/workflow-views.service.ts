@@ -15,10 +15,10 @@ import {
   scheduleStatesWithin,
   stateOf,
 } from '../scheduler/schedule-state.js';
-import { findWorkflowNote, shownPath } from '../settings-files/note-paths.js';
-import type { Agent, ResolvedWorkflow } from '../settings-files/snapshot.js';
-import { Definitions } from '../settings/definitions.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
+import { findWorkflowNote, shownPath } from '../system-files/note-paths.js';
+import type { Agent, ResolvedWorkflow } from '../system-files/snapshot.js';
+import { Definitions } from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 
 /**
  * Workflows as the CLI shows them: their note, their Agent, when they run
@@ -29,7 +29,7 @@ export class WorkflowViews {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
   ) {}
 
   /** Every Workflow, by name. */
@@ -130,10 +130,7 @@ export class WorkflowViews {
     const note = snapshot?.workflows.get(name);
     if (snapshot === null || note === undefined) return null;
     return {
-      file: shownPath(
-        folders.workspace,
-        join(folders.settingsFolder, note.file),
-      ),
+      file: shownPath(folders.workspace, join(folders.systemFolder, note.file)),
       errors: snapshot.errors
         .filter((error) => error.file === note.file)
         .map(({ property, message }) => ({ property, message })),
@@ -146,7 +143,7 @@ export class WorkflowViews {
  * loaded, or there is no such note.
  */
 export function missingWorkflow(
-  notes: SettingsNotes,
+  notes: SystemNotes,
   name: string,
 ): NotFoundError {
   const snapshot = notes.snapshot();
@@ -159,7 +156,7 @@ export function missingWorkflow(
     if (broken !== null) {
       const file = shownPath(
         folders.workspace,
-        join(folders.settingsFolder, broken),
+        join(folders.systemFolder, broken),
       );
       return new NotFoundError(
         `Workflow ${name} isn't loaded: ${file} has errors; pero check lists them`,

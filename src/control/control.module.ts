@@ -6,8 +6,8 @@ import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import { HealthModule } from '../health/health.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
-import { SettingsModule } from '../settings/settings.module.js';
-import { WorkspaceChecks } from '../settings/workspace-checks.service.js';
+import { SystemModule } from '../system/system.module.js';
+import { WorkspaceChecks } from '../system/workspace-checks.service.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { CONTROL_LAYOUT, ControlService } from './control.service.js';
 
@@ -31,7 +31,7 @@ export class ControlModule {
         ChannelsModule,
         WorkflowsModule,
         NotificationsModule,
-        SettingsModule,
+        SystemModule,
         BackupModule.forRoot({ layout: options.layout }),
       ],
       providers: [

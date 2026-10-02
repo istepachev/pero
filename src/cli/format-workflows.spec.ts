@@ -28,7 +28,7 @@ const direct: WorkflowChannelView = {
 const review: WorkflowView = {
   name: 'evening-review',
   title: 'Evening review',
-  file: 'data/Settings/Workflows/Evening review.md',
+  file: 'data/System/Workflows/Evening review.md',
   agent: 'coach',
   agentEnabled: true,
   inputTemplate: "Review today's chats.\nSuggest one improvement.",
@@ -63,7 +63,7 @@ describe('Workflow formatting', () => {
         {
           ...review,
           name: 'brief',
-          file: 'data/Settings/Workflows/Brief.md',
+          file: 'data/System/Workflows/Brief.md',
           agentEnabled: false,
           schedule: null,
           channels: [],
@@ -75,9 +75,9 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'NAME            AGENT             SCHEDULE                    NEXT RUN          CHANNELS            STATE     NOTE',
-        'brief !         coach (disabled)  by hand                     —                 —                   enabled   data/Settings/Workflows/Brief.md',
-        'evening-review  coach             0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English, Channel 9  enabled   data/Settings/Workflows/Evening review.md',
-        'paused          coach             0 21 * * * (Europe/Berlin)  —                 English             disabled  data/Settings/Workflows/Evening review.md',
+        'brief !         coach (disabled)  by hand                     —                 —                   enabled   data/System/Workflows/Brief.md',
+        'evening-review  coach             0 21 * * * (Europe/Berlin)  2026-09-29 00:00  English, Channel 9  enabled   data/System/Workflows/Evening review.md',
+        'paused          coach             0 21 * * * (Europe/Berlin)  —                 English             disabled  data/System/Workflows/Evening review.md',
         '',
         '! its note has errors, so its last good version is in use; pero check lists them',
       ].join('\n'),
@@ -86,7 +86,7 @@ describe('Workflow formatting', () => {
 
   it('says where to add the first Workflow', () => {
     expect(formatWorkflowList([])).toBe(
-      'No Workflows yet. Add a note to the Workflows folder in the settings folder.',
+      'No Workflows yet. Add a note to the Workflows folder in the system folder.',
     );
   });
 
@@ -103,7 +103,7 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'Workflow evening-review "Evening review"',
-        '  note      data/Settings/Workflows/Evening review.md',
+        '  note      data/System/Workflows/Evening review.md',
         '  agent     coach',
         "  input     Review today's chats. (2 lines)",
         '  schedule  0 21 * * * (Europe/Berlin)',
@@ -145,7 +145,7 @@ describe('Workflow formatting', () => {
     ).toBe(
       [
         'Workflow evening-review "Evening review"',
-        '  note      data/Settings/Workflows/Evening review.md',
+        '  note      data/System/Workflows/Evening review.md',
         '  agent     coach (disabled)',
         "  input     Review today's chats. (2 lines)",
         '  schedule  none: it runs by hand, with pero workflows run',

@@ -9,7 +9,7 @@ import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { HistoryRetention, RETENTION_BATCH_SIZE } from './history-retention.js';
 import { HistoryRetentionModule } from './history-retention.module.js';

@@ -5,9 +5,9 @@ import { isIgnoredPath } from './note-files.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
-/** A note found in the settings folder, with what shows it changed. */
+/** A note found in the system folder, with what shows it changed. */
 export interface NoteEntry {
-  /** Its `/`-separated path inside the settings folder. */
+  /** Its `/`-separated path inside the system folder. */
   file: string;
   size: number;
   mtimeMs: number;
@@ -20,13 +20,13 @@ export interface NoteFile {
 }
 
 /**
- * Every note in the settings folder `dir`, sorted by path: `.md` files in
+ * Every note in the system folder `dir`, sorted by path: `.md` files in
  * any subfolder, leaving out names that start with `_` or `.` and never
  * entering such folders, so `.obsidian/` and `.trash/` cost nothing.
  * Linked files are read; linked folders are not entered. A missing folder
  * has no notes.
  */
-export async function scanSettingsFolder(dir: string): Promise<NoteEntry[]> {
+export async function scanSystemFolder(dir: string): Promise<NoteEntry[]> {
   const entries: NoteEntry[] = [];
   await walk(dir, '', entries);
   return entries.sort((a, b) => compare(a.file, b.file));

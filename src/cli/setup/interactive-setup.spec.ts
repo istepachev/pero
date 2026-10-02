@@ -32,7 +32,7 @@ class FakeDaemon {
     timezone: 'UTC',
     maxConcurrentRuns: 2,
     telegramBotToken: { set: false, source: null },
-    files: { pero: 'data/Settings/Pero.md', config: '.pero/config.yaml' },
+    files: { pero: 'data/System/Pero.md', config: '.pero/config.yaml' },
     setInPero: [],
   };
   signedIn = new Set<string>();
@@ -305,7 +305,7 @@ describe('runInteractiveSetup', () => {
       'Bot token (Enter to skip) (hidden)',
     ]);
     expect(printed[0]).toBe(
-      'Default provider: claude (change with provider: codex in data/Settings/Pero.md)',
+      'Default provider: claude (change with provider: codex in data/System/Pero.md)',
     );
   });
 

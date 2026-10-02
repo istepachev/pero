@@ -1,11 +1,11 @@
 import type { Channel } from '../persistence/entities/channel.entity.js';
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 import {
   type Definitions,
   type Route,
   routeQuery,
   type Unanswered,
-} from '../settings/definitions.js';
+} from '../system/definitions.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
 import type {
   ChannelEvent,

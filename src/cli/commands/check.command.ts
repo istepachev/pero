@@ -4,7 +4,7 @@ import { ControlError } from '../../control/protocol.js';
 import {
   checkWorkspace,
   type WorkspaceCheck,
-} from '../../settings-files/check.js';
+} from '../../system-files/check.js';
 import { formatCheck } from '../format-check.js';
 import { PeroCommand } from '../pero-command.js';
 
@@ -15,7 +15,7 @@ interface CheckOptions {
 @Command({
   name: 'check',
   description:
-    "Check the workspace's configuration: config.yaml, .env, and the settings notes",
+    "Check the workspace's configuration: config.yaml, .env, and the system notes",
 })
 export class CheckCommand extends PeroCommand {
   async run(_args: string[], options: CheckOptions = {}): Promise<void> {

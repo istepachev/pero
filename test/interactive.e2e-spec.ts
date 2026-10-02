@@ -24,7 +24,7 @@ import { Session } from '../src/persistence/entities/session.entity.js';
 import type { RuntimeRequest } from '../src/runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../src/runtimes/agent-runtimes.js';
 import type { FakeAgentRuntime } from '../src/runtimes/testing/fake-agent-runtime.js';
-import { SettingsNotes } from '../src/settings/settings-notes.service.js';
+import { SystemNotes } from '../src/system/system-notes.service.js';
 import {
   FakeBotApi,
   type UpdateBody,
@@ -99,11 +99,11 @@ describe('Interactive path end to end (e2e)', () => {
 
   /** Writes the Agent note `Agents/<title>.md` and has Pero read it. */
   async function note(title: string, properties: string[], body: string) {
-    const path = join(vault, 'Settings', 'Agents', `${title}.md`);
+    const path = join(vault, 'System', 'Agents', `${title}.md`);
     writeFileSync(path, ['---', ...properties, '---', body, ''].join('\n'));
     clock += 1_000;
     utimesSync(path, new Date(clock), new Date(clock));
-    await daemon!.app.get(SettingsNotes).rescan();
+    await daemon!.app.get(SystemNotes).rescan();
   }
 
   /** A daemon on the fake Bot API whose Agents answer with an echo. */

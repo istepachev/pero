@@ -33,8 +33,8 @@ pero/
 │   ├── cli/             # nest-commander CliModule and commands; main.ts is the `pero` entry
 │   ├── daemon/          # daemon main.ts and AppModule bootstrap
 │   ├── config/          # workspace discovery, .env, config.yaml, shared schemas; no Nest or TypeORM
-│   ├── settings-files/  # the note parser, schemas, snapshot, and pero check; no Nest or TypeORM
-│   ├── settings/        # the daemon's rescanning snapshot, note writes, and Definitions
+│   ├── system-files/    # the note parser, schemas, snapshot, and pero check; no Nest or TypeORM
+│   ├── system/          # the daemon's rescanning snapshot, note writes, and Definitions
 │   ├── host-config/     # config.yaml in the daemon
 │   ├── common/          # errors, shutdown, and the package version
 │   ├── logging/         # Pino logger
@@ -143,7 +143,7 @@ Keep every Agent's working directory and resumable session state on persistent l
 
 ## 8. Configuration and observability
 
-Keep provider subscription credentials in the CLIs' protected credential stores. Every command works on one workspace, found from `--workspace`, `PERO_WORKSPACE`, the current folder, or `~/workspace`, before anything opens SQLite. First-run setup creates the database. The installation defaults and the Agents and Workflows are notes in the workspace's settings folder (`Pero.md`, `Agents/`, `Workflows/`), and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Channels are state, in SQLite. The defaults include the default provider, default options (model and effort) for each provider, timezone, and concurrency limits. A null option means the provider's own default; a string pins a provider-specific model name or effort level. The files are the only live configuration: Pero never keeps a second copy that could drift from them.
+Keep provider subscription credentials in the CLIs' protected credential stores. Every command works on one workspace, found from `--workspace`, `PERO_WORKSPACE`, the current folder, or `~/workspace`, before anything opens SQLite. First-run setup creates the database. The installation defaults and the Agents and Workflows are notes in the workspace's system folder (`Pero.md`, `Agents/`, `Workflows/`), and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Channels are state, in SQLite. The defaults include the default provider, default options (model and effort) for each provider, timezone, and concurrency limits. A null option means the provider's own default; a string pins a provider-specific model name or effort level. The files are the only live configuration: Pero never keeps a second copy that could drift from them.
 
 The Telegram token is in the workspace's `.env`, owner-only and Git-ignored, or in the service environment. Provider credentials and Telegram tokens do not belong in notes or SQLite. Validate notes, `config.yaml`, CLI input, and any environment-supplied bootstrap values with Zod; fail early with a clear error that names the file and property.
 

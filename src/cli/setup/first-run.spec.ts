@@ -108,7 +108,7 @@ describe('configOrNewWorkspace', () => {
   }
 
   const peroNote = (workspace: string, data = 'data') =>
-    readFileSync(join(workspace, data, 'Settings', 'Pero.md'), 'utf8');
+    readFileSync(join(workspace, data, 'System', 'Pero.md'), 'utf8');
 
   it('makes ~/workspace when started from home and asked', async () => {
     const { result, confirm } = run({ cwd: home, interactive: true });
@@ -190,7 +190,7 @@ describe('configOrNewWorkspace', () => {
     });
     const config = readFileSync(join(here, '.pero', 'config.yaml'), 'utf8');
     expect(config).toMatch(/^data: Vault$/m);
-    expect(config).toMatch(/^# settings: Vault\/Settings$/m);
+    expect(config).toMatch(/^# system: Vault\/System$/m);
     expect(existsSync(join(here, 'data'))).toBe(false);
     expect(peroNote(here, 'Vault')).toMatch(
       /^provider: claude +# claude or codex$/m,
@@ -317,7 +317,7 @@ describe('configOrNewWorkspace', () => {
   it('keeps the provider Pero.md sets, checking its sign-in', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, home);
-    const note = join(ws, 'data', 'Settings', 'Pero.md');
+    const note = join(ws, 'data', 'System', 'Pero.md');
     writeFileSync(note, '---\nprovider: codex\n---\nBe brief.\n');
 
     const { result, select } = run({

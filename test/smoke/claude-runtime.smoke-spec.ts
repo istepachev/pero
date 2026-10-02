@@ -154,20 +154,20 @@ describe.skipIf(!ENABLED)(
       expect(existsSync(join(folder, 'ran.txt'))).toBe(false);
     });
 
-    it('lets an ask Agent edit its folder but not the settings folder when no one can answer', async () => {
-      const settings = join(folder, 'Settings');
-      mkdirSync(join(settings, 'Agents'), { recursive: true });
-      writeFileSync(join(settings, 'Agents', 'Health.md'), 'Be kind.\n');
+    it('lets an ask Agent edit its folder but not the system folder when no one can answer', async () => {
+      const system = join(folder, 'System');
+      mkdirSync(join(system, 'Agents'), { recursive: true });
+      writeFileSync(join(system, 'Agents', 'Health.md'), 'Be kind.\n');
 
       const events = await collect(
         runtime,
         request(folder, {
           input:
             'With the Write tool, write exactly "pero-note" to note.md and ' +
-            'exactly "pero-settings" to Settings/Agents/Health.md, both in ' +
+            'exactly "pero-system" to System/Agents/Health.md, both in ' +
             'the current folder. Use no other tool.',
           toolPolicy: { permissions: 'ask' },
-          settingsFolder: settings,
+          systemFolder: system,
         }),
       );
 
@@ -175,7 +175,7 @@ describe.skipIf(!ENABLED)(
       expect(readFileSync(join(folder, 'note.md'), 'utf8').trim()).toBe(
         'pero-note',
       );
-      expect(readFileSync(join(settings, 'Agents', 'Health.md'), 'utf8')).toBe(
+      expect(readFileSync(join(system, 'Agents', 'Health.md'), 'utf8')).toBe(
         'Be kind.\n',
       );
     });

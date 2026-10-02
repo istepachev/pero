@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { HealthModule } from '../health/health.module.js';
 import { AgentNotes } from './agent-notes.service.js';
 import { Definitions } from './definitions.js';
-import { SettingsNotes } from './settings-notes.service.js';
+import { SystemNotes } from './system-notes.service.js';
 
 /**
- * The settings notes, rescanned while Pero runs, and `Definitions`, which
+ * The system notes, rescanned while Pero runs, and `Definitions`, which
  * runtime code reads them through. The rescan runs only where
  * `ScheduleModule.forRoot()` is imported, which is the daemon's AppModule;
  * the notes are found through the global `HostConfigModule`, and without
@@ -13,7 +13,7 @@ import { SettingsNotes } from './settings-notes.service.js';
  */
 @Module({
   imports: [HealthModule],
-  providers: [SettingsNotes, AgentNotes, Definitions],
-  exports: [SettingsNotes, AgentNotes, Definitions],
+  providers: [SystemNotes, AgentNotes, Definitions],
+  exports: [SystemNotes, AgentNotes, Definitions],
 })
-export class SettingsModule {}
+export class SystemModule {}

@@ -65,7 +65,7 @@ PERO_SMOKE_CLAUDE=1 npm run test:smoke
 PERO_SMOKE_CODEX=1 npm run test:smoke   # PERO_SMOKE_CODEX_MODEL changes the resumed turn's model (gpt-5.5 by default)
 ```
 
-The Claude test creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` Agent's command is refused and that it writes in its folder but not in the settings folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, and checks that a signed-out Codex is reported as such.
+The Claude test creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` Agent's command is refused and that it writes in its folder but not in the system folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, and checks that a signed-out Codex is reported as such.
 
 ## Releasing
 

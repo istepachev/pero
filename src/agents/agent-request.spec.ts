@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Agent } from '../settings-files/snapshot.js';
+import type { Agent } from '../system-files/snapshot.js';
 import {
   agentContext,
   agentRequest,
   composeInstructions,
   dataFolderNote,
-  settingsNote,
+  systemFolderNote,
 } from './agent-request.js';
 
 const FOLDERS = {
   dataFolder: '/ws/data',
-  settingsFolder: '/ws/data/Settings',
+  systemFolder: '/ws/data/System',
   guideFile: '/ws/.pero/guide.md',
 };
 const HEALTH = { title: 'Health', file: 'Agents/Health.md' };
@@ -31,7 +31,7 @@ describe('composeInstructions', () => {
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
-      `${dataFolderNote('/ws/data')}\n\n${settingsNote(HEALTH, FOLDERS)}`,
+      `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}`,
     );
   });
 
@@ -87,18 +87,18 @@ describe('composeInstructions', () => {
   });
 });
 
-describe('settingsNote', () => {
+describe('systemFolderNote', () => {
   it('names the Agent, its note, Pero.md, the Workflows, and the guide', () => {
-    const note = settingsNote(
+    const note = systemFolderNote(
       { title: 'Weekly Health', file: 'Agents/Coaches/Weekly Health.md' },
       FOLDERS,
     );
     expect(note).toContain('the Agent Weekly Health of Pero');
     expect(note).toContain(
-      'the note /ws/data/Settings/Agents/Coaches/Weekly Health.md.',
+      'the note /ws/data/System/Agents/Coaches/Weekly Health.md.',
     );
-    expect(note).toContain('/ws/data/Settings/Pero.md');
-    expect(note).toContain('notes in /ws/data/Settings/Workflows.');
+    expect(note).toContain('/ws/data/System/Pero.md');
+    expect(note).toContain('notes in /ws/data/System/Workflows.');
     expect(note).toMatch(/read \/ws\/\.pero\/guide\.md\.$/);
   });
 });
@@ -135,7 +135,7 @@ describe('agentRequest', () => {
     };
     const folders = {
       dataFolder: '/vault',
-      settingsFolder: '/vault/Settings',
+      systemFolder: '/vault/System',
       guideFile: '/ws/.pero/guide.md',
     };
     expect(

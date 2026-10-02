@@ -46,7 +46,7 @@ describe('allowing and denying in config.yaml', () => {
     });
     expect(readHostConfig(layout.configFile)).toEqual({
       data: 'data',
-      settings: null,
+      system: null,
       allowedChats: [{ chatKey: '-1001234567890', title: null }],
     });
   });

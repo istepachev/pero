@@ -1,4 +1,4 @@
-import type { CheckProblem, WorkspaceCheck } from '../settings-files/check.js';
+import type { CheckProblem, WorkspaceCheck } from '../system-files/check.js';
 
 /**
  * What `pero check` found: each file's problems under its path, as in
@@ -18,17 +18,17 @@ export function formatCheck(result: WorkspaceCheck): string {
   }
   if (lines.length > 0) lines.push('');
 
-  const { problems, agents, workflows, settingsFolder } = result;
+  const { problems, agents, workflows, systemFolder } = result;
   if (problems.length > 0) {
     lines.push(
       `${count(problems.length, 'problem')} in ${count(byFile.size, 'file')}.`,
     );
   } else {
     lines.push(
-      `Checked ${count(agents, 'Agent')} and ${count(workflows, 'Workflow')} in ${settingsFolder}: no problems.`,
+      `Checked ${count(agents, 'Agent')} and ${count(workflows, 'Workflow')} in ${systemFolder}: no problems.`,
     );
   }
-  if (!result.topicsChecked && settingsFolder !== null) {
+  if (!result.topicsChecked && systemFolder !== null) {
     lines.push(
       "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
     );

@@ -174,7 +174,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   /**
    * Makes `tmp/ws` a workspace with `pero init`'s skeleton, with `notes`
-   * by their path in its settings folder; returns the arguments that run
+   * by their path in its system folder; returns the arguments that run
    * `pero` there.
    */
   function useWorkspace(
@@ -182,7 +182,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   ): (...args: string[]) => string[] {
     initWorkspace(layout.workspace, tmp);
     for (const [file, text] of Object.entries(notes)) {
-      writeFileSync(join(layout.workspace, 'data', 'Settings', file), text);
+      writeFileSync(join(layout.workspace, 'data', 'System', file), text);
     }
     return inWorkspace;
   }
@@ -526,22 +526,22 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
   it('shows the Agents and settings the notes hold, as they change', async () => {
     const workspace = join(realpathSync(tmp), 'ws');
-    const settingsFolder = join(workspace, 'data', 'Settings');
+    const systemFolder = join(workspace, 'data', 'System');
     const state = workspaceLayout(workspace);
     others.push(state);
     expect((await pero(['init', workspace])).code).toBe(0);
     writeFileSync(
-      join(settingsFolder, 'Pero.md'),
+      join(systemFolder, 'Pero.md'),
       '---\nclaude-effort: high\ntimezone: Europe/Berlin\n---\n',
     );
-    mkdirSync(join(settingsFolder, 'Agents', 'Home'));
+    mkdirSync(join(systemFolder, 'Agents', 'Home'));
     writeFileSync(
-      join(settingsFolder, 'Agents', 'Home', 'Coach.md'),
+      join(systemFolder, 'Agents', 'Home', 'Coach.md'),
       '---\ntopic: Health\nmodel: sonnet\npermissions: bypass\nworking-directory: data/Health\n---\nYou coach.\n',
     );
     mkdirSync(join(workspace, 'data', 'Health'));
     writeFileSync(
-      join(settingsFolder, 'Agents', 'Broken.md'),
+      join(systemFolder, 'Agents', 'Broken.md'),
       '---\nmodle: opus\n---\n',
     );
     const ws = (...args: string[]) => pero(['-w', workspace, ...args]);
@@ -551,13 +551,13 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(ls).toMatchObject({ code: 0, stderr: '' });
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^coach +claude +sonnet +high +${escape(join(workspace, 'data', 'Health'))} +bypass +enabled +Health +data/Settings/Agents/Home/Coach\\.md$`,
+        `^coach +claude +sonnet +high +${escape(join(workspace, 'data', 'Health'))} +bypass +enabled +Health +data/System/Agents/Home/Coach\\.md$`,
         'm',
       ),
     );
     expect(ls.stdout).toMatch(
       new RegExp(
-        `^main \\* +claude +default +high +${escape(workspace)} \\(workspace\\) +ask +enabled +— +data/Settings/Agents/Main\\.md$`,
+        `^main \\* +claude +default +high +${escape(workspace)} \\(workspace\\) +ask +enabled +— +data/System/Agents/Main\\.md$`,
         'm',
       ),
     );
@@ -566,7 +566,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(show.stdout).toBe(
       [
         'Agent coach "Coach"',
-        '  note               data/Settings/Agents/Home/Coach.md',
+        '  note               data/System/Agents/Home/Coach.md',
         '  topic              Health',
         '  provider           claude (default)',
         '  model              sonnet',
@@ -586,7 +586,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await ws('agents', 'show', 'broken')).toMatchObject({
       code: 1,
       stderr:
-        "Agent broken isn't loaded: data/Settings/Agents/Broken.md has errors; pero check lists them\n",
+        "Agent broken isn't loaded: data/System/Agents/Broken.md has errors; pero check lists them\n",
     });
     expect(await ws('agents', 'show', 'nobody')).toMatchObject({
       code: 1,
@@ -597,7 +597,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(settings).toMatchObject({ code: 0, stderr: '' });
     expect(settings.stdout).toContain(
       [
-        'data/Settings/Pero.md',
+        'data/System/Pero.md',
         '  provider                claude (default)',
         '  claude-model            (provider default)',
         '  claude-effort           high',
@@ -610,7 +610,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     // An edit to Pero.md applies within a rescan.
     writeFileSync(
-      join(settingsFolder, 'Pero.md'),
+      join(systemFolder, 'Pero.md'),
       '---\nclaude-model: opus\nclaude-effort: high\n---\n',
     );
     await vi.waitFor(
@@ -696,7 +696,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     // A Workflow note posts its runs to the topic, by its title.
     writeFileSync(
-      join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'Brief.md'),
+      join(tmp, 'ws', 'data', 'System', 'Workflows', 'Brief.md'),
       '---\nagent: chef\nchannel: Groceries\n---\nGo\n',
     );
     await restart(ws);
@@ -720,11 +720,11 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await workflows()).toMatchObject({
       code: 0,
       stdout:
-        'No Workflows yet. Add a note to the Workflows folder in the settings folder.\n',
+        'No Workflows yet. Add a note to the Workflows folder in the system folder.\n',
     });
 
     writeFileSync(
-      join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'Evening review.md'),
+      join(tmp, 'ws', 'data', 'System', 'Workflows', 'Evening review.md'),
       "---\nhour: 21\nagent: coach\n---\nReview today's chats.\n",
     );
     await restart(ws);
@@ -734,7 +734,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       new RegExp(
         [
           'NAME +AGENT +SCHEDULE +NEXT RUN +CHANNELS +STATE +NOTE',
-          'evening-review +coach +0 21 \\* \\* \\* \\(Europe/Berlin\\) +\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d +— +enabled +data/Settings/Workflows/Evening review\\.md',
+          'evening-review +coach +0 21 \\* \\* \\* \\(Europe/Berlin\\) +\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d +— +enabled +data/System/Workflows/Evening review\\.md',
           '',
         ].join('\n'),
       ),
@@ -745,7 +745,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
       new RegExp(
         [
           '^Workflow evening-review "Evening review"',
-          '  note      data/Settings/Workflows/Evening review\\.md',
+          '  note      data/System/Workflows/Evening review\\.md',
           '  agent     coach',
           "  input     Review today's chats\\.",
           '  schedule  0 21 \\* \\* \\* \\(Europe/Berlin\\)',
@@ -763,7 +763,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
 
     writeFileSync(
-      join(tmp, 'ws', 'data', 'Settings', 'Agents', 'Coach.md'),
+      join(tmp, 'ws', 'data', 'System', 'Agents', 'Coach.md'),
       '---\nenabled: false\n---\nYou coach.\n',
     );
     await restart(ws);
@@ -939,7 +939,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
   it('shows the Channel history a Workflow reads, and skips a run with none', async () => {
     const english = (properties: string) =>
       writeFileSync(
-        join(tmp, 'ws', 'data', 'Settings', 'Workflows', 'English.md'),
+        join(tmp, 'ws', 'data', 'System', 'Workflows', 'English.md'),
         `---\nagent: coach\n${properties}---\nSuggest improvements: {{history}}\n`,
       );
     const ws = useWorkspace({ 'Agents/Coach.md': 'You coach.\n' });
@@ -951,7 +951,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await workflows('show', 'english')).toMatchObject({
       code: 1,
       stderr:
-        "Workflow english isn't loaded: data/Settings/Workflows/English.md has errors; pero check lists them\n",
+        "Workflow english isn't loaded: data/System/Workflows/English.md has errors; pero check lists them\n",
     });
     expect((await pero(ws('check'))).stdout).toContain(
       'history-channels: no Channel has the ID 7',
@@ -1029,7 +1029,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
 
     // Codex becomes the provider in use; Claude no longer counts.
     writeFileSync(
-      join(tmp, 'ws', 'data', 'Settings', 'Pero.md'),
+      join(tmp, 'ws', 'data', 'System', 'Pero.md'),
       '---\nprovider: codex\n---\n',
     );
     expect((await pero(ws('stop'))).code).toBe(0);
@@ -1287,9 +1287,9 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
         '  created  .gitignore',
         '  created  .pero/.gitignore',
         '  created  .pero/config.yaml',
-        '  created  data/Settings/Pero.md',
-        '  created  data/Settings/Agents/Main.md',
-        '  created  data/Settings/Workflows/',
+        '  created  data/System/Pero.md',
+        '  created  data/System/Agents/Main.md',
+        '  created  data/System/Workflows/',
         '',
         `Start Pero there with: cd ${workspace} && pero run`,
         '',

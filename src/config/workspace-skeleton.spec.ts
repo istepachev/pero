@@ -12,8 +12,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseNote } from '../settings-files/note.js';
-import { readAgentNote, readPeroNote } from '../settings-files/schemas.js';
+import { parseNote } from '../system-files/note.js';
+import { readAgentNote, readPeroNote } from '../system-files/schemas.js';
 import { STATE_GITIGNORE } from './workspace-layout.js';
 import { defaultHostConfig, readHostConfig } from './host-config.js';
 import {
@@ -48,37 +48,34 @@ describe('initWorkspace', () => {
       { path: '.gitignore', action: 'created' },
       { path: '.pero/.gitignore', action: 'created' },
       { path: '.pero/config.yaml', action: 'created' },
-      { path: 'data/Settings/Pero.md', action: 'created' },
-      { path: 'data/Settings/Agents/Main.md', action: 'created' },
-      { path: 'data/Settings/Workflows/', action: 'created' },
+      { path: 'data/System/Pero.md', action: 'created' },
+      { path: 'data/System/Agents/Main.md', action: 'created' },
+      { path: 'data/System/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('.env\n');
     expect(read('.pero/.gitignore')).toBe(STATE_GITIGNORE);
     expect(read('.pero/config.yaml')).toBe(defaultHostConfig());
     expect(statSync(join(dir, '.pero')).mode & 0o777).toBe(0o700);
-    expect(readdirSync(join(dir, 'data/Settings/Workflows'))).toEqual([]);
-    expect(readdirSync(join(dir, 'data/Settings/Agents'))).toEqual(['Main.md']);
+    expect(readdirSync(join(dir, 'data/System/Workflows'))).toEqual([]);
+    expect(readdirSync(join(dir, 'data/System/Agents'))).toEqual(['Main.md']);
   });
 
   it('changes nothing the second time', () => {
     initWorkspace(dir, home);
-    const before = read('data/Settings/Pero.md');
+    const before = read('data/System/Pero.md');
 
     const { entries } = initWorkspace(dir, home);
 
     expect(entries.every((entry) => entry.action === 'kept')).toBe(true);
-    expect(read('data/Settings/Pero.md')).toBe(before);
+    expect(read('data/System/Pero.md')).toBe(before);
   });
 
   it('fills in only what a cloned workspace is missing', () => {
     mkdirSync(join(dir, '.pero'), { recursive: true });
-    mkdirSync(join(dir, 'vault', 'Settings', 'Agents'), { recursive: true });
+    mkdirSync(join(dir, 'vault', 'System', 'Agents'), { recursive: true });
     writeFileSync(join(dir, '.gitignore'), 'node_modules/');
     writeFileSync(join(dir, '.pero', 'config.yaml'), 'data: vault\n');
-    writeFileSync(
-      join(dir, 'vault', 'Settings', 'Agents', 'Main.md'),
-      'Mine.\n',
-    );
+    writeFileSync(join(dir, 'vault', 'System', 'Agents', 'Main.md'), 'Mine.\n');
 
     const { entries } = initWorkspace(dir, home);
 
@@ -86,34 +83,34 @@ describe('initWorkspace', () => {
       { path: '.gitignore', action: 'updated' },
       { path: '.pero/.gitignore', action: 'created' },
       { path: '.pero/config.yaml', action: 'kept' },
-      { path: 'vault/Settings/Pero.md', action: 'created' },
-      { path: 'vault/Settings/Agents/Main.md', action: 'kept' },
-      { path: 'vault/Settings/Workflows/', action: 'created' },
+      { path: 'vault/System/Pero.md', action: 'created' },
+      { path: 'vault/System/Agents/Main.md', action: 'kept' },
+      { path: 'vault/System/Workflows/', action: 'created' },
     ]);
     expect(read('.gitignore')).toBe('node_modules/\n.env\n');
     expect(read('.pero/config.yaml')).toBe('data: vault\n');
-    expect(read('vault/Settings/Agents/Main.md')).toBe('Mine.\n');
+    expect(read('vault/System/Agents/Main.md')).toBe('Mine.\n');
     expect(existsSync(join(dir, 'data'))).toBe(false);
   });
 
-  it('puts the notes where config.yaml names the settings folder', () => {
+  it('puts the notes where config.yaml names the system folder', () => {
     mkdirSync(join(dir, '.pero'), { recursive: true });
-    writeFileSync(join(dir, '.pero', 'config.yaml'), 'settings: pero\n');
+    writeFileSync(join(dir, '.pero', 'config.yaml'), 'system: pero\n');
 
     initWorkspace(dir, home);
 
     expect(existsSync(join(dir, 'pero', 'Pero.md'))).toBe(true);
-    expect(readHostConfig(join(dir, '.pero', 'config.yaml'))?.settings).toBe(
+    expect(readHostConfig(join(dir, '.pero', 'config.yaml'))?.system).toBe(
       'pero',
     );
   });
 
-  it('writes notes the settings loader reads, with every default', () => {
+  it('writes notes the system notes loader reads, with every default', () => {
     initWorkspace(dir, home);
 
     for (const [file, readNote] of [
-      ['data/Settings/Pero.md', readPeroNote],
-      ['data/Settings/Agents/Main.md', readAgentNote],
+      ['data/System/Pero.md', readPeroNote],
+      ['data/System/Agents/Main.md', readAgentNote],
     ] as const) {
       const parsed = parseNote(file, read(file));
       if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));

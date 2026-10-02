@@ -1,7 +1,7 @@
 import { formatDuration } from '../../cli/format-status.js';
 import type { AgentView, ComponentStatus } from '../../control/protocol.js';
 import { localTime } from '../../history/transcript.js';
-import type { ValueOrigin } from '../../settings-files/origins.js';
+import type { ValueOrigin } from '../../system-files/origins.js';
 import {
   type ButtonRows,
   MAX_BUTTON_ID_BYTES,

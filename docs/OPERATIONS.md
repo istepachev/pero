@@ -106,7 +106,7 @@ telegram:
 - **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` (or the folder picked when `pero run` makes the workspace) and no allowed chats. The default `data/` folder is created when missing.
 - **Edited with comments kept.** `pero telegram allow` and `deny`, and a chat's new ID when a group turns on topics, change only their own lines, read the file again right before, and replace it in one step.
 - **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason, and so does a `data` folder other than the default that doesn't exist.
-- **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `settings` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
+- **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `system` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
 - **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
 
 The database holds only state; Agents, Workflows, and the defaults are notes:
@@ -150,7 +150,7 @@ It needs Pero running. To back up every night, add a line to the crontab of the 
 ```
 
 Back up the rest yourself, with the tool you already use for your files:
-- **The workspace:** commit it to a private Git repository. That keeps `config.yaml` and the data folder, including its `Settings/`, and never the token or the database.
+- **The workspace:** commit it to a private Git repository. That keeps `config.yaml` and the data folder, including its `System/`, and never the token or the database.
 - **Working folders:** each Agent's own folder that `pero agents` lists, and a data folder outside the workspace. The manifest inside each backup, `pero-backup.json`, lists them too.
 - **Provider conversations:** `~/.claude/projects` and `~/.codex` (without `auth.json` when you would rather sign in again), so every Session can resume after a restore. Without them, Pero still restores, and each Channel continues in a fresh Session that starts from its recent messages (see below).
 - **Provider sign-ins:** optional. Signing in again after a restore is simpler and keeps the credentials out of your backups; if you do back them up, encrypt that backup.

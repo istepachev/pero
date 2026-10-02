@@ -21,7 +21,7 @@ const PERO = join(import.meta.dirname, '../bin/pero.js');
 
 const HOME_CHAT = '-1001234567890';
 
-describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
+describe('System notes in the daemon (e2e)', { timeout: 60_000 }, () => {
   let tmp: string;
   let workspace: string;
   let app: Daemon | undefined;
@@ -103,17 +103,17 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
       ]);
   }
 
-  const settingsOf = async (client: ControlClient) =>
+  const systemOf = async (client: ControlClient) =>
     (await client.status()).components.find(
-      (component) => component.name === 'settings',
+      (component) => component.name === 'system',
     );
 
-  it('reports the notes as a settings component, following edits', async () => {
-    const note = join(workspace, 'data', 'Settings', 'Agents', 'Coach.md');
+  it('reports the notes as a system component, following edits', async () => {
+    const note = join(workspace, 'data', 'System', 'Agents', 'Coach.md');
     writeFileSync(note, '---\nmodle: sonnet\n---\nCoach');
     const client = await start();
 
-    expect(await settingsOf(client)).toMatchObject({
+    expect(await systemOf(client)).toMatchObject({
       state: 'degraded',
       detail: '1 note has errors; run pero check',
       required: true,
@@ -121,27 +121,27 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
 
     writeFileSync(note, '---\nmodel: sonnet\n---\nCoach');
     await vi.waitFor(
-      async () => expect((await settingsOf(client))?.state).toBe('ok'),
+      async () => expect((await systemOf(client))?.state).toBe('ok'),
       { timeout: 25_000, interval: 500 },
     );
   });
 
   it('checks Workflow topics against the topics Pero has seen', async () => {
-    const settings = join(workspace, 'data', 'Settings');
+    const system = join(workspace, 'data', 'System');
     writeFileSync(
       join(workspace, '.pero', 'config.yaml'),
       `data: data\ntelegram:\n  allowed-chats:\n    - id: ${HOME_CHAT}\n      title: Home\n`,
     );
     writeFileSync(
-      join(settings, 'Agents', 'Health.md'),
+      join(system, 'Agents', 'Health.md'),
       '---\ntopic: Health\n---\nCoach',
     );
     writeFileSync(
-      join(settings, 'Workflows', 'Report.md'),
+      join(system, 'Workflows', 'Report.md'),
       '---\nhour: 12\nchannel: Health\n---\nReport',
     );
     writeFileSync(
-      join(settings, 'Workflows', 'Typo.md'),
+      join(system, 'Workflows', 'Typo.md'),
       '---\nhour: 12\nchannel: [Helth, Home/General]\nhistory: true\nhistory-channels: Finance\n---\nReport',
     );
     await start();
@@ -151,7 +151,7 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     expect(running.code).toBe(1);
     expect(running.stdout).toBe(
       [
-        'data/Settings/Workflows/Typo.md',
+        'data/System/Workflows/Typo.md',
         '  channel: no topic titled "Helth"; seen topics: General, Health',
         '  history-channels: no topic titled "Finance"; seen topics: General, Health',
         '',
@@ -170,7 +170,7 @@ describe('Settings notes in the daemon (e2e)', { timeout: 60_000 }, () => {
     expect(stopped).toEqual({
       code: 0,
       stdout: [
-        'Checked 2 Agents and 2 Workflows in data/Settings: no problems.',
+        'Checked 2 Agents and 2 Workflows in data/System: no problems.',
         "Topic titles weren't checked against Telegram's topics, since Pero isn't running.",
         '',
       ].join('\n'),

@@ -82,7 +82,7 @@ export function topicNoteTitle(title: string, topicId: string): string {
 
 /**
  * A path for a new Agent note titled `title`, among `files`, the notes in
- * the settings folder: `Agents/<title>.md`, or `<title> 2.md` and so on,
+ * the system folder: `Agents/<title>.md`, or `<title> 2.md` and so on,
  * past files that exist and titles whose name an Agent note already has.
  */
 export function freeAgentNote(title: string, files: readonly string[]): string {

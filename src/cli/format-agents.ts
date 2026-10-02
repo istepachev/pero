@@ -1,5 +1,5 @@
 import type { AgentDetails, AgentView, NextTurn } from '../control/protocol.js';
-import type { ValueOrigin } from '../settings-files/origins.js';
+import type { ValueOrigin } from '../system-files/origins.js';
 import { table } from './format-status.js';
 import { preview } from './preview.js';
 
@@ -8,7 +8,7 @@ const DEFAULT = 'default';
 /** `pero agents ls`: one row per Agent, the main one marked. */
 export function formatAgentList(agents: readonly AgentView[]): string {
   if (agents.length === 0) {
-    return 'No Agents yet. Add a note to the Agents folder in the settings folder.';
+    return 'No Agents yet. Add a note to the Agents folder in the system folder.';
   }
   const lines = table([
     [

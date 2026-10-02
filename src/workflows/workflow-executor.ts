@@ -14,8 +14,8 @@ import {
   WorkflowRun,
 } from '../persistence/entities/workflow-run.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
-import type { Agent, ResolvedWorkflow } from '../settings-files/snapshot.js';
-import { Definitions } from '../settings/definitions.js';
+import type { Agent, ResolvedWorkflow } from '../system-files/snapshot.js';
+import { Definitions } from '../system/definitions.js';
 import {
   type ExecutionSnapshot,
   executionSnapshot,

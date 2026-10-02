@@ -8,8 +8,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { ScheduleState } from '../persistence/entities/schedule-state.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { reconcileSchedulesWithin } from '../scheduler/schedule-state.js';
-import { SettingsNotes } from '../settings/settings-notes.service.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { SystemNotes } from '../system/system-notes.service.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { WorkflowViews } from './workflow-views.service.js';
 import { WorkflowsModule } from './workflows.module.js';
 
@@ -90,7 +90,7 @@ describe('WorkflowViews', () => {
     expect(view).toEqual({
       name: 'weekly-report',
       title: 'Weekly report',
-      file: 'data/Settings/Workflows/Weekly report.md',
+      file: 'data/System/Workflows/Weekly report.md',
       agent: 'health',
       agentEnabled: true,
       inputTemplate: 'Write the weekly report.',
@@ -155,10 +155,10 @@ describe('WorkflowViews', () => {
     expect(await views.list()).toEqual([]);
     await expect(views.details('report')).rejects.toThrow(
       new NotFoundError(
-        "Workflow report isn't loaded: data/Settings/Workflows/Report.md has errors; pero check lists them",
+        "Workflow report isn't loaded: data/System/Workflows/Report.md has errors; pero check lists them",
       ),
     );
-    expect(moduleRef.get(SettingsNotes).snapshot()!.errors).toEqual([
+    expect(moduleRef.get(SystemNotes).snapshot()!.errors).toEqual([
       {
         file: 'Workflows/Report.md',
         property: 'channel',
@@ -173,7 +173,7 @@ describe('WorkflowViews', () => {
       agent: 'health',
       channels: [expect.objectContaining({ id: health.id })],
     });
-    expect(moduleRef.get(SettingsNotes).snapshot()!.errors).toEqual([]);
+    expect(moduleRef.get(SystemNotes).snapshot()!.errors).toEqual([]);
   });
 
   it('refuses a Workflow no note defines', async () => {

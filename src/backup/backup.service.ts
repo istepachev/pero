@@ -21,7 +21,7 @@ import { ConflictError, InvalidInputError } from '../common/errors.js';
 import { PACKAGE_VERSION } from '../common/package-version.js';
 import type { WorkspaceLayout } from '../config/workspace-layout.js';
 import type { BackupResult } from '../control/protocol.js';
-import { Definitions } from '../settings/definitions.js';
+import { Definitions } from '../system/definitions.js';
 import {
   BACKUP_FORMAT,
   type BackupManifest,

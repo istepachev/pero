@@ -80,7 +80,7 @@ git add -A
 staged="$(git diff --cached --name-only)"
 printf '%s\n' "$staged"
 grep -qx '.pero/config.yaml' <<<"$staged" || fail 'config.yaml is not staged'
-grep -qx 'data/Settings/Pero.md' <<<"$staged" || fail 'Pero.md is not staged'
+grep -qx 'data/System/Pero.md' <<<"$staged" || fail 'Pero.md is not staged'
 if grep -Eq '^\.env$|pero\.sqlite|^\.pero/(logs|run|guide\.md)' <<<"$staged"; then
   fail 'Git would commit a secret or Pero state'
 fi
@@ -104,7 +104,7 @@ cd "$HOME"
 git clone --quiet "$HOME/workspace" "$HOME/clone"
 rm -rf "$HOME/clone/data"
 pero restore "$work/backup.tgz" -w "$HOME/clone"
-[ -f "$HOME/clone/data/Settings/Agents/Main.md" ] || fail 'The data folder was not restored'
+[ -f "$HOME/clone/data/System/Agents/Main.md" ] || fail 'The data folder was not restored'
 pero run -w "$HOME/clone" </dev/null
 pero status -w "$HOME/clone"
 pero stop -w "$HOME/clone"

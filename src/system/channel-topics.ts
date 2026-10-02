@@ -1,10 +1,10 @@
-import type { ChannelRef } from '../settings-files/schemas.js';
+import type { ChannelRef } from '../system-files/schemas.js';
 import {
   GENERAL_TOPIC,
   type ResolvedChannel,
   type TopicLookup,
   type TopicResolution,
-} from '../settings-files/snapshot.js';
+} from '../system-files/snapshot.js';
 
 /** A Channel Pero has seen, as the `channels` table keeps it. */
 export interface KnownChannel {

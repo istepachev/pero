@@ -27,7 +27,7 @@ import {
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { MIGRATIONS } from '../persistence/migrations/index.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { DATABASE_ENTRY, extractBackupArchive } from './archive.js';
 import { BackupModule } from './backup.module.js';
 import { BackupService } from './backup.service.js';
@@ -142,8 +142,8 @@ describe('BackupService', () => {
 
   it('includes the data folder when asked, without links or the state directory', async () => {
     await withDataFolder(vault);
-    mkdirSync(join(vault, 'Settings'));
-    writeFileSync(join(vault, 'Settings', 'Pero.md'), 'Be brief.\n');
+    mkdirSync(join(vault, 'System'));
+    writeFileSync(join(vault, 'System', 'Pero.md'), 'Be brief.\n');
     symlinkSync('/etc', join(vault, 'etc'));
     const file = join(tmp, 'backup.tgz');
 
@@ -160,8 +160,8 @@ describe('BackupService', () => {
     expect(result).toMatchObject({ includesData: true });
     const { dir, manifest } = await extract(file);
     expect(manifest).toMatchObject({ format: 1, includesData: true });
-    expect(readdirSync(join(dir, 'data'))).toEqual(['Settings']);
-    expect(readFileSync(join(dir, 'data', 'Settings', 'Pero.md'), 'utf8')).toBe(
+    expect(readdirSync(join(dir, 'data'))).toEqual(['System']);
+    expect(readFileSync(join(dir, 'data', 'System', 'Pero.md'), 'utf8')).toBe(
       'Be brief.\n',
     );
     expect(readdirSync(tmp).filter((name) => name.startsWith('.'))).toEqual([]);

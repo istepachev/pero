@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import type { Exec } from './provider-auth.js';
 import {
   PROVIDER_AUTH_EXEC,

@@ -46,11 +46,11 @@ export interface RuntimeRequest {
   /** Tools the Agent may use; the adapter maps it to its provider's controls. */
   toolPolicy: ToolPolicy;
   /**
-   * Pero's settings folder; absent outside a workspace. Claude only: an
+   * Pero's system folder; absent outside a workspace. Claude only: an
    * `ask` Agent's edits under it always ask, even in its own folder.
    * Codex's sandbox can't leave a folder out, so Codex ignores it.
    */
-  settingsFolder?: string;
+  systemFolder?: string;
   /**
    * The guide to Pero's settings, which the instructions name; absent
    * outside a workspace. Claude only: an `ask` Agent reads it without

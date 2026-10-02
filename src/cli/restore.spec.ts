@@ -82,7 +82,7 @@ describe('restoreBackup', () => {
   it('restores into a new workspace, with its config.yaml and data folder', async () => {
     const file = await backup({
       config: 'data: notes\n',
-      data: { 'Settings/Pero.md': 'Hi', 'a.md': 'A' },
+      data: { 'System/Pero.md': 'Hi', 'a.md': 'A' },
     });
 
     const result = await restoreBackup(file, ws);
@@ -103,7 +103,7 @@ describe('restoreBackup', () => {
     ]);
     expect(statSync(root).mode & 0o777).toBe(0o700);
     expect(readFileSync(join(root, DATABASE_ENTRY))).toEqual(DATABASE);
-    expect(read('notes/Settings/Pero.md')).toBe('Hi');
+    expect(read('notes/System/Pero.md')).toBe('Hi');
     expect(readdirSync(ws).sort()).toEqual(['.pero', 'notes']);
   });
 

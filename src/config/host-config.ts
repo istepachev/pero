@@ -31,8 +31,8 @@ export const HOST_CONFIG_FILE = 'config.yaml';
 /** The data folder of a workspace whose `config.yaml` names none. */
 export const DEFAULT_DATA_FOLDER = 'data';
 
-/** The settings folder inside the data folder, unless `settings` names one. */
-export const SETTINGS_FOLDER = 'Settings';
+/** The system folder inside the data folder, unless `system` names one. */
+export const SYSTEM_FOLDER = 'System';
 
 /**
  * A Telegram chat ID: negative for a group, the user's ID for a direct
@@ -62,12 +62,12 @@ export interface HostAllowedChat {
 export interface HostConfig {
   /** `data` as written; null when the file doesn't set it. */
   data: string | null;
-  /** `settings` as written; null when the file doesn't set it. */
-  settings: string | null;
+  /** `system` as written; null when the file doesn't set it. */
+  system: string | null;
   allowedChats: HostAllowedChat[];
 }
 
-const EMPTY: HostConfig = { data: null, settings: null, allowedChats: [] };
+const EMPTY: HostConfig = { data: null, system: null, allowedChats: [] };
 
 const folder = z
   .string({ error: 'must be a folder path' })
@@ -85,7 +85,7 @@ const chatId = z
 
 const schema = z.strictObject({
   data: folder.nullish(),
-  settings: folder.nullish(),
+  system: folder.nullish(),
   telegram: z
     .strictObject({
       'allowed-chats': z
@@ -235,8 +235,8 @@ export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
     '# Changing it takes a restart.',
     `data: ${yamlScalar(data)}`,
     '',
-    '# Settings folder. Relative to the workspace. Default: <data>/Settings',
-    `# settings: ${yamlScalar(`${data}/${SETTINGS_FOLDER}`)}`,
+    '# System folder. Relative to the workspace. Default: <data>/System',
+    `# system: ${yamlScalar(`${data}/${SYSTEM_FOLDER}`)}`,
     '',
     'telegram:',
     '  # The chats Pero serves. Anyone who can post in an allowed group',
@@ -268,18 +268,18 @@ export function resolveDataFolder(
 }
 
 /**
- * The settings folder of `workspace` as an absolute path: the one
- * `config` names, relative to the workspace, or else `<data>/Settings`.
+ * The system folder of `workspace` as an absolute path: the one
+ * `config` names, relative to the workspace, or else `<data>/System`.
  */
-export function resolveSettingsFolder(
-  config: Pick<HostConfig, 'data' | 'settings'>,
+export function resolveSystemFolder(
+  config: Pick<HostConfig, 'data' | 'system'>,
   workspace: string,
   home: string = homedir(),
 ): string {
-  if (config.settings !== null) {
-    return resolvePath(config.settings, workspace, home);
+  if (config.system !== null) {
+    return resolvePath(config.system, workspace, home);
   }
-  return join(resolveDataFolder(config, workspace, home), SETTINGS_FOLDER);
+  return join(resolveDataFolder(config, workspace, home), SYSTEM_FOLDER);
 }
 
 /** `config.yaml` in state directory `stateDir`. */
@@ -336,13 +336,13 @@ function check(
     throw new ConfigError(`Invalid ${file}:\n${lines.join('\n')}`);
   }
 
-  const { data, settings, telegram } = parsed.data;
+  const { data, system, telegram } = parsed.data;
   return {
     document,
     config: {
       ...EMPTY,
       data: data ?? null,
-      settings: settings ?? null,
+      system: system ?? null,
       allowedChats: (telegram?.['allowed-chats'] ?? []).map((chat) => ({
         chatKey: chat.id,
         title: chat.title ?? null,

@@ -15,7 +15,7 @@ import { Session } from '../persistence/entities/session.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
-import { TestWorkspace } from '../settings/testing/test-workspace.js';
+import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { TelegramChats } from './telegram-chats.service.js';
 import { TelegramModule } from './telegram.module.js';
 import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
@@ -86,7 +86,7 @@ describe('TelegramChats', () => {
 
   /** The Agent notes, by file name. */
   function agentNotes(): string[] {
-    return readdirSync(join(ws.settingsFolder, 'Agents')).sort();
+    return readdirSync(join(ws.systemFolder, 'Agents')).sort();
   }
 
   function chats(): TelegramChats {

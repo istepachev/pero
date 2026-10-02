@@ -13,7 +13,7 @@ import {
   resolveDataFolder,
 } from '../config/host-config.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
-import { loadSettings } from './load.js';
+import { loadSystemFolder } from './load.js';
 import type { TopicLookup } from './snapshot.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -30,10 +30,10 @@ export interface CheckProblem {
 /** What `pero check` found in a workspace. */
 export interface WorkspaceCheck {
   /**
-   * The settings folder, relative to the workspace when inside it; null
+   * The system folder, relative to the workspace when inside it; null
    * when `config.yaml` is invalid, and the notes were not checked.
    */
-  settingsFolder: string | null;
+  systemFolder: string | null;
   /** How many Agents and Workflows loaded. */
   agents: number;
   workflows: number;
@@ -55,7 +55,7 @@ export interface CheckWorkspaceInput {
 /**
  * Checks everything Pero reads from `workspace` without opening its
  * database: `config.yaml`, how `.env` is protected, and every note in the
- * settings folder. It changes nothing.
+ * system folder. It changes nothing.
  */
 export async function checkWorkspace(
   input: CheckWorkspaceInput,
@@ -73,7 +73,7 @@ export async function checkWorkspace(
   try {
     config = readHostConfig(configFile) ?? {
       data: null,
-      settings: null,
+      system: null,
       allowedChats: [],
     };
   } catch (error) {
@@ -125,14 +125,14 @@ export async function checkWorkspace(
 
   if (config === null) {
     return {
-      settingsFolder: null,
+      systemFolder: null,
       agents: 0,
       workflows: 0,
       topicsChecked: false,
       problems,
     };
   }
-  const { settingsFolder, snapshot } = await loadSettings({
+  const { systemFolder, snapshot } = await loadSystemFolder({
     workspace,
     config,
     homeDir,
@@ -140,10 +140,10 @@ export async function checkWorkspace(
     ...(input.topics === undefined ? {} : { topics: input.topics }),
   });
   for (const error of snapshot.errors) {
-    problems.push({ ...error, file: shown(join(settingsFolder, error.file)) });
+    problems.push({ ...error, file: shown(join(systemFolder, error.file)) });
   }
   return {
-    settingsFolder: shown(settingsFolder),
+    systemFolder: shown(systemFolder),
     agents: snapshot.agents.size,
     workflows: snapshot.workflows.size,
     topicsChecked: input.topics !== undefined,

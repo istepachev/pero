@@ -25,7 +25,7 @@ import {
 import type { ParsedNote } from './note.js';
 import { checkPropertyNames } from './properties.js';
 import { DAYS, toCron } from './schedule.js';
-import { fromZodIssues, type SettingsError } from './settings-error.js';
+import { fromZodIssues, type NoteError } from './note-error.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
@@ -114,7 +114,7 @@ export interface WorkflowNote {
 }
 
 export type NoteResult<T> =
-  { ok: true; value: T } | { ok: false; errors: SettingsError[] };
+  { ok: true; value: T } | { ok: false; errors: NoteError[] };
 
 // Values, with messages that say what to write.
 

@@ -1,7 +1,7 @@
 import type { EntityManager } from 'typeorm';
 import { NotFoundError } from '../common/errors.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
-import type { Definitions } from '../settings/definitions.js';
+import type { Definitions } from '../system/definitions.js';
 
 /**
  * The name runs of the Workflow named `name`, in any case, are recorded

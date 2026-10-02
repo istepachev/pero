@@ -9,23 +9,23 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readNotes, scanSettingsFolder } from './scan.js';
+import { readNotes, scanSystemFolder } from './scan.js';
 
-describe('scanSettingsFolder', () => {
+describe('scanSystemFolder', () => {
   let root: string;
-  let settings: string;
+  let system: string;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'pero-scan-'));
-    settings = join(root, 'Settings');
-    await mkdir(settings);
+    system = join(root, 'System');
+    await mkdir(system);
   });
 
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function write(file: string, text: string, base = settings) {
+  async function write(file: string, text: string, base = system) {
     await mkdir(dirname(join(base, file)), { recursive: true });
     await writeFile(join(base, file), text);
   }
@@ -35,7 +35,7 @@ describe('scanSettingsFolder', () => {
     await write('Workflows/Weekly.md', 'Go');
     await write('Agents/Main.md', 'Hi');
     await write('Agents/Coaches/Running.md', 'Run');
-    const entries = await scanSettingsFolder(settings);
+    const entries = await scanSystemFolder(system);
     expect(entries.map((entry) => entry.file)).toEqual([
       'Agents/Coaches/Running.md',
       'Agents/Main.md',
@@ -52,8 +52,8 @@ describe('scanSettingsFolder', () => {
   it('reports size and modification time', async () => {
     await write('Agents/Main.md', 'Hello');
     const when = new Date('2026-01-02T03:04:05Z');
-    await utimes(join(settings, 'Agents/Main.md'), when, when);
-    expect(await scanSettingsFolder(settings)).toEqual([
+    await utimes(join(system, 'Agents/Main.md'), when, when);
+    expect(await scanSystemFolder(system)).toEqual([
       { file: 'Agents/Main.md', size: 5, mtimeMs: when.getTime() },
     ]);
   });
@@ -66,9 +66,9 @@ describe('scanSettingsFolder', () => {
     await write('_Drafts/Agents/Old.md', 'Old');
     await write('.obsidian/workspace.md', 'Obsidian');
     await write('.trash/Agents/Gone.md', 'Gone');
-    expect(
-      (await scanSettingsFolder(settings)).map((entry) => entry.file),
-    ).toEqual(['Agents/Main.md']);
+    expect((await scanSystemFolder(system)).map((entry) => entry.file)).toEqual(
+      ['Agents/Main.md'],
+    );
   });
 
   it('reads linked notes but does not enter linked folders', async () => {
@@ -76,28 +76,25 @@ describe('scanSettingsFolder', () => {
     await write('Agents/Main.md', 'Hi');
     await symlink(
       join(root, 'Shared/Coach.md'),
-      join(settings, 'Agents/Coach.md'),
+      join(system, 'Agents/Coach.md'),
     );
-    await symlink(join(root, 'Shared'), join(settings, 'Agents/Linked'));
-    await symlink(
-      join(root, 'missing.md'),
-      join(settings, 'Agents/Dangling.md'),
+    await symlink(join(root, 'Shared'), join(system, 'Agents/Linked'));
+    await symlink(join(root, 'missing.md'), join(system, 'Agents/Dangling.md'));
+    expect((await scanSystemFolder(system)).map((entry) => entry.file)).toEqual(
+      ['Agents/Coach.md', 'Agents/Main.md'],
     );
-    expect(
-      (await scanSettingsFolder(settings)).map((entry) => entry.file),
-    ).toEqual(['Agents/Coach.md', 'Agents/Main.md']);
   });
 
   it('finds no notes in a missing folder', async () => {
-    expect(await scanSettingsFolder(join(root, 'Missing'))).toEqual([]);
+    expect(await scanSystemFolder(join(root, 'Missing'))).toEqual([]);
   });
 
   it('reads the notes, leaving out one removed since the scan', async () => {
     await write('Agents/Main.md', 'Hi');
     await write('Agents/Health.md', 'Coach');
-    const entries = await scanSettingsFolder(settings);
-    await rm(join(settings, 'Agents/Main.md'));
-    expect(await readNotes(settings, entries)).toEqual([
+    const entries = await scanSystemFolder(system);
+    await rm(join(system, 'Agents/Main.md'));
+    expect(await readNotes(system, entries)).toEqual([
       { file: 'Agents/Health.md', text: 'Coach' },
     ]);
   });
@@ -109,8 +106,8 @@ describe('scanSettingsFolder', () => {
       ),
     );
     const started = performance.now();
-    const entries = await scanSettingsFolder(settings);
-    await readNotes(settings, entries);
+    const entries = await scanSystemFolder(system);
+    await readNotes(system, entries);
     expect(entries).toHaveLength(500);
     // Generous, so a slow CI machine stays green; typically tens of ms.
     expect(performance.now() - started).toBeLessThan(2_000);

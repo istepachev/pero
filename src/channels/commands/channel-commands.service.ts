@@ -22,9 +22,9 @@ import { Message } from '../../persistence/entities/message.entity.js';
 import { Session } from '../../persistence/entities/session.entity.js';
 import { inTransaction } from '../../persistence/transaction.js';
 import { SessionService } from '../../sessions/session.service.js';
-import { AgentNotes } from '../../settings/agent-notes.service.js';
-import { Definitions, type Route } from '../../settings/definitions.js';
-import { SettingsNotes } from '../../settings/settings-notes.service.js';
+import { AgentNotes } from '../../system/agent-notes.service.js';
+import { Definitions, type Route } from '../../system/definitions.js';
+import { SystemNotes } from '../../system/system-notes.service.js';
 import type {
   ActionResult,
   InboundAction,
@@ -81,7 +81,7 @@ export class ChannelCommands {
     private readonly history: MessageHistory,
     private readonly health: ComponentHealth,
     private readonly definitions: Definitions,
-    private readonly notes: SettingsNotes,
+    private readonly notes: SystemNotes,
     private readonly agentNotes: AgentNotes,
     private readonly workflows: WorkflowCommands,
   ) {}

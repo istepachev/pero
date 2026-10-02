@@ -15,7 +15,7 @@ import {
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
-  resolveSettingsFolder,
+  resolveSystemFolder,
 } from '../config/host-config.js';
 import { validateWorkingDirectory } from '../config/working-directory.js';
 import { ComponentHealth } from '../health/component-health.js';
@@ -44,18 +44,18 @@ export interface HostConfigOptions {
  * chats, following a chat's new ID) are written back to the file, keeping
  * its comments. Every 10 seconds it looks for edits
  * made by hand: a changed chat list applies at once, a changed `data` or
- * `settings` waits for a restart, and an invalid edit is reported while
+ * `system` waits for a restart, and an invalid edit is reported while
  * the last valid version stays in use. The `config` component says which.
  * A missing file is created from the template.
  */
 @Injectable()
 export class HostConfigService implements OnModuleInit {
   private readonly logger = new Logger('Config');
-  private config: HostConfig = { data: null, settings: null, allowedChats: [] };
-  /** `data` and `settings` as Pero uses them: from startup, or set by Pero. */
-  private running: Pick<HostConfig, 'data' | 'settings'> = {
+  private config: HostConfig = { data: null, system: null, allowedChats: [] };
+  /** `data` and `system` as Pero uses them: from startup, or set by Pero. */
+  private running: Pick<HostConfig, 'data' | 'system'> = {
     data: null,
-    settings: null,
+    system: null,
   };
   /** Size and modification time of the version last read or written. */
   private seen: { size: number; mtimeMs: number } | null = null;
@@ -71,7 +71,7 @@ export class HostConfigService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     this.config = readHostConfig(this.options.file) ?? this.create();
     await this.checkDataFolder();
-    this.running = { data: this.config.data, settings: this.config.settings };
+    this.running = { data: this.config.data, system: this.config.system };
     this.remember();
     this.reportHealth();
   }
@@ -135,19 +135,19 @@ export class HostConfigService implements OnModuleInit {
   }
 
   /**
-   * Where the running Pero's workspace, data folder, and settings folder
+   * Where the running Pero's workspace, data folder, and system folder
    * are: as they were at startup, since changing them takes a restart.
    */
   folders(): {
     workspace: string;
     dataFolder: string;
-    settingsFolder: string;
+    systemFolder: string;
   } {
     const { workspace } = this.options;
     return {
       workspace,
       dataFolder: this.dataFolder(),
-      settingsFolder: resolveSettingsFolder(this.running, workspace),
+      systemFolder: resolveSystemFolder(this.running, workspace),
     };
   }
 
@@ -254,7 +254,7 @@ export class HostConfigService implements OnModuleInit {
 
   /** `config`: `ok`, or which changes are waiting for a restart. */
   private reportHealth(): void {
-    const waiting = (['data', 'settings'] as const).filter(
+    const waiting = (['data', 'system'] as const).filter(
       (key) => this.config[key] !== this.running[key],
     );
     if (waiting.length === 0) {

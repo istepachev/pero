@@ -7,8 +7,8 @@ describe('note paths', () => {
     expect(shownPath(workspace, `${workspace}/.pero/config.yaml`)).toBe(
       '.pero/config.yaml',
     );
-    expect(shownPath(workspace, '/srv/vault/Settings/Pero.md')).toBe(
-      '/srv/vault/Settings/Pero.md',
+    expect(shownPath(workspace, '/srv/vault/System/Pero.md')).toBe(
+      '/srv/vault/System/Pero.md',
     );
   });
 

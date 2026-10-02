@@ -14,7 +14,7 @@ import {
   defaultHostConfig,
   HOST_CONFIG_FILE,
   readHostConfig,
-  resolveSettingsFolder,
+  resolveSystemFolder,
 } from './host-config.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -72,7 +72,7 @@ You help with everyday questions and keep my notes tidy.
 `;
 
 /**
- * The notes `pero init` writes as they are, by their path in the settings
+ * The notes `pero init` writes as they are, by their path in the system
  * folder; `Pero.md`, which holds the host's time zone, is `peroNote`'s.
  */
 export const SKELETON_NOTES: Readonly<Record<string, string>> = {
@@ -83,10 +83,10 @@ export const SKELETON_NOTES: Readonly<Record<string, string>> = {
  * Makes `dir` a workspace, writing what is missing of the skeleton and
  * never overwriting a file: `.gitignore` listing `.env`, `.pero/` with its
  * `.gitignore` and a commented `config.yaml` naming `data` as the data
- * folder (`data/` by default), and in the settings folder `Pero.md`,
+ * folder (`data/` by default), and in the system folder `Pero.md`,
  * `Agents/Main.md`, and `Workflows/`.
  * In a cloned workspace it only fills in what is missing, and an existing
- * `config.yaml` decides where the settings folder is.
+ * `config.yaml` decides where the system folder is.
  */
 export function initWorkspace(
   dir: string,
@@ -131,18 +131,18 @@ export function initWorkspace(
   const configFile = join(state, HOST_CONFIG_FILE);
   file(configFile, defaultHostConfig(data));
 
-  const settings = resolveSettingsFolder(
-    readHostConfig(configFile) ?? { data: null, settings: null },
+  const system = resolveSystemFolder(
+    readHostConfig(configFile) ?? { data: null, system: null },
     dir,
     home,
   );
   file(
-    join(settings, 'Pero.md'),
+    join(system, 'Pero.md'),
     peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
-  folder(join(settings, 'Agents'));
-  file(join(settings, 'Agents', 'Main.md'), MAIN_NOTE);
-  const workflows = join(settings, 'Workflows');
+  folder(join(system, 'Agents'));
+  file(join(system, 'Agents', 'Main.md'), MAIN_NOTE);
+  const workflows = join(system, 'Workflows');
   entries.push({
     path: `${shown(workflows)}/`,
     action: folder(workflows) ? 'created' : 'kept',
