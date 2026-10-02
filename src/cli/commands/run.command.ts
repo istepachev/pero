@@ -3,7 +3,9 @@ import { FAKE_RUNTIME_ENV } from '../../config/daemon-env.js';
 import { ensureWorkspaceLayout } from '../../config/workspace-layout.js';
 import { ControlError } from '../../control/protocol.js';
 import { execCommand } from '../../providers/provider-auth.js';
+import { fillWorkspace } from '../../system-files/fill-workspace.js';
 import { CliError } from '../errors.js';
+import { formatFilled } from '../format-init.js';
 import { PeroCommand } from '../pero-command.js';
 import {
   isInteractive,
@@ -60,8 +62,15 @@ export class RunCommand extends PeroCommand {
     });
     if (options.foreground) {
       // Loaded only here: the daemon brings Nest, TypeORM, and SQLite.
+      // It fills in the workspace itself, logging it, as stdout is the log.
       const { runDaemonProcess } = await import('../../daemon/process.js');
       await runDaemonProcess({ config, foreground: true });
+    }
+
+    const filled = formatFilled(await fillWorkspace(config.workspace));
+    if (filled !== null) {
+      output.block();
+      output.print(filled);
     }
 
     const layout = ensureWorkspaceLayout(config.workspace);

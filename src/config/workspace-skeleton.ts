@@ -151,7 +151,7 @@ export function initWorkspace(
 }
 
 /** Writes `text` to `path`, creating its folder; false when it existed. */
-function writeIfMissing(path: string, text: string): boolean {
+export function writeIfMissing(path: string, text: string): boolean {
   mkdirSync(join(path, '..'), { recursive: true });
   let fd;
   try {

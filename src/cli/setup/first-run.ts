@@ -20,7 +20,7 @@ import {
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
 import { workspaceLayout } from '../../config/workspace-layout.js';
-import { initWorkspace } from '../../config/workspace-skeleton.js';
+import { initWorkspace, peroNote } from '../../config/workspace-skeleton.js';
 import {
   checkProviderAuth,
   cliLabel,
@@ -331,13 +331,18 @@ async function settleProvider(
   return provider;
 }
 
-/** Sets `provider` in the note at `path` unless it sets one already. */
+/**
+ * Sets `provider` in the note at `path` unless it sets one already; a
+ * missing note starts as `pero init` writes it.
+ */
 function writeProvider(
   path: string,
   provider: Provider,
   print: (text: string) => void,
 ): void {
-  const text = readText(path) ?? '';
+  const text =
+    readText(path) ??
+    peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const updated = setNoteProperty(text, 'provider', provider);
   if (updated === null) return;
   mkdirSync(dirname(path), { recursive: true });

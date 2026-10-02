@@ -21,3 +21,14 @@ export function formatInit(
     ...(next ? ['', `Start Pero there with: cd ${workspace} && pero run`] : []),
   ].join('\n');
 }
+
+/** What `pero run` filled in of a workspace missing it; null when nothing. */
+export function formatFilled(entries: SkeletonEntry[]): string | null {
+  if (entries.length === 0) return null;
+  return [
+    'Filled in what the workspace was missing:',
+    ...table(entries.map(({ action, path }) => [action, path])).map(
+      (row) => `  ${row}`,
+    ),
+  ].join('\n');
+}

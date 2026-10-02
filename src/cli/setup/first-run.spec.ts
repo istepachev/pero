@@ -342,6 +342,24 @@ describe('configOrNewWorkspace', () => {
     );
   });
 
+  it('writes the provider into a whole Pero.md when it is missing', async () => {
+    const ws = join(tmp, 'ws');
+    initWorkspace(ws, home);
+    const note = join(ws, 'data', 'System', 'Pero.md');
+    rmSync(note);
+
+    const { result } = run({
+      cwd: ws,
+      interactive: true,
+      clis: { claude: 'signed-in', codex: 'missing' },
+    });
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    const text = readFileSync(note, 'utf8');
+    expect(text).toMatch(/^provider: claude /m);
+    expect(text).toMatch(/^timezone: /m);
+    expect(text).toMatch(/^# main-agent: Main /m);
+  });
+
   it('asks nothing once the workspace has a database, or off a terminal', async () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, home);
