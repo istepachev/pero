@@ -51,7 +51,7 @@ A running Pero keeps the version it started with until it is restarted.
 
 ## Configuration
 
-Agents, Workflows, and the installation defaults are notes in the workspace, and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Pero applies edits to them while it runs. A few settings are read when Pero starts, from its command line and environment:
+Pero's personality and instructions, the Channel notes, Workflows, and the installation defaults are notes in the workspace, and the data folder and allowed chats are in `.pero/config.yaml`, as [Configuring Pero](./CONFIGURATION.md) describes; Pero applies edits to them while it runs. A few settings are read when Pero starts, from its command line and environment:
 
 | Setting | Source | Default |
 |---|---|---|
@@ -59,7 +59,7 @@ Agents, Workflows, and the installation defaults are notes in the workspace, and
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then the workspace's `.env` | none |
 | Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
-| Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every Agent answers `echo: <message>` instead of running Claude or Codex | unset |
+| Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every turn answers `echo: <message>` instead of running Claude or Codex | unset |
 
 A workspace keeps Pero's state in its `.pero/` folder; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.
 
@@ -92,10 +92,10 @@ Everything Pero owns is in the workspace's `.pero/`:
 └── config.yaml          # the data folder and the chats Pero serves; commit it
 ```
 
-`config.yaml` holds what describes the installation, and that an Agent must not change:
+`config.yaml` holds what describes the installation, and what Pero itself must not change:
 
 ```yaml
-data: data               # the data folder Agents keep notes in; relative to the workspace
+data: data               # the data folder Pero keeps notes in; relative to the workspace
 telegram:
   allowed-chats:
     - id: -1001234567890 # a group; negative
@@ -103,31 +103,31 @@ telegram:
     - id: 123456789      # a direct chat: your user ID
 ```
 
-- **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` (or the folder picked when `pero run` makes the workspace) and no allowed chats. The default `data/` folder is created when missing. Every start also fills in what the system folder is missing of what `pero init` writes: `Pero.md`, `Workflows/`, and the main Agent's note, never changing a note that is there.
+- **Created when missing.** `pero init` writes it, and so does Pero's first start when it is missing, with `data: data` (or the folder picked when `pero run` makes the workspace) and no allowed chats. The default `data/` folder is created when missing. Every start also fills in what the system folder is missing of what `pero init` writes: `Pero.md`, `Persona.md`, `Instructions.md`, `Channels/Default.md`, and `Workflows/`, never changing a note that is there.
 - **Edited with comments kept.** `pero telegram allow` and `deny`, and a chat's new ID when a group turns on topics, change only their own lines, read the file again right before, and replace it in one step.
 - **Checked at startup.** An invalid file stops Pero with the file, line, key, and reason, and so does a `data` folder other than the default that doesn't exist.
 - **Edits by hand apply while Pero runs.** Pero looks at the file every 10 seconds. A chat added or removed by hand is served, or turned away, from its next message. A changed `data` or `system` needs a restart, and until then `pero status` shows the `config` component `degraded` saying so. An invalid edit is logged once and shown by `config` too, while the last valid version stays in use.
 - **`pero telegram allow` and `deny` work without Pero running:** they then edit the file themselves, and Pero serves the new list from its next start.
 
-The database holds only state; Agents, Workflows, and the defaults are notes:
+The database holds only state; personality, instructions, Channel notes, Workflows, and the defaults are notes:
 - **Telegram:** the inbound updates already handled.
 - **Channels and Sessions:** each Channel Pero has seen, with its topic's title, and the provider session ID each Session resumes.
 - **Message history:** the text of each Channel (see below).
 - **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
 
 Outside `.pero/`:
-- **Working folders:** the data folder and each Agent's own folder. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
+- **Working folders:** the data folder and each folder a Channel note names in `working-directory`. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
 - **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
 - **Provider sign-ins:** listed under [Credentials](#credentials).
 
 ## Message history
 
-Pero records the text of each allowed Channel: what people wrote there, what its Agents answered, Pero's own notices (such as the onboarding welcome and failure messages), and the Workflow Notifications delivered there. It uses it to start a fresh Session from the recent conversation, to give an Agent the Workflow messages posted since the last message, and as input for Workflows that review chats. `pero channels history <channel>` shows it.
+Pero records the text of each allowed Channel: what people wrote there, what Pero answered, Pero's own notices (such as the onboarding welcome and failure messages), and the Workflow Notifications delivered there. It uses it to start a fresh Session from the recent conversation, to give a turn the Workflow messages posted since the last message, and as input for Workflows that review chats. `pero channels history <channel>` shows it.
 
 It does not record:
 - messages from chats that are not allowed;
-- the Agents' reasoning, tool use, or tool approval requests;
-- messages in a Channel no Agent answers, such as a topic two notes claim or a disabled Agent's topic, and Pero's reply saying why.
+- Pero's reasoning, tool use, or tool approval requests;
+- messages in a Channel Pero doesn't answer, such as a topic whose note is disabled or has errors and never loaded, and Pero's reply saying why.
 
 Logs never hold message text.
 
@@ -151,7 +151,7 @@ It needs Pero running. To back up every night, add a line to the crontab of the 
 
 Back up the rest yourself, with the tool you already use for your files:
 - **The workspace:** commit it to a private Git repository. That keeps `config.yaml` and the data folder, including its `System/`, and never the token or the database.
-- **Working folders:** each Agent's own folder that `pero agents` lists, and a data folder outside the workspace. The manifest inside each backup, `pero-backup.json`, lists them too.
+- **Working folders:** each folder a Channel note names in `working-directory`, which `pero channels show` shows, and a data folder outside the workspace. The manifest inside each backup, `pero-backup.json`, lists them too.
 - **Provider conversations:** `~/.claude/projects` and `~/.codex` (without `auth.json` when you would rather sign in again), so every Session can resume after a restore. Without them, Pero still restores, and each Channel continues in a fresh Session that starts from its recent messages (see below).
 - **Provider sign-ins:** optional. Signing in again after a restore is simpler and keeps the credentials out of your backups; if you do back them up, encrypt that backup.
 
@@ -164,7 +164,7 @@ It restores into a workspace (the one found from the current folder, or `-w <fol
 - The workspace's own `config.yaml` is kept, and the restore lists the chats the backup's file allowed that it doesn't; `--replace-config` takes the backup's instead. Without one, the backup's is used.
 - A backup made with `--include-data` restores its data folder into the one the workspace's `config.yaml` names, keeping every file already there.
 
-It warns about each folder the workspace uses that does not exist here: the data folder, and each Agent's own. A file that is not a backup this version of Pero reads is refused before anything changes.
+It warns about each folder the workspace uses that does not exist here: the data folder, and each Channel note's own. A file that is not a backup this version of Pero reads is refused before anything changes.
 
 To go back to a backup on the same machine, stop Pero and move its database aside first:
 
@@ -201,12 +201,12 @@ The drill below brings back the workspace from Git and Pero's state from its bac
    pero channels show <channel>   # "resumes Session …" for each Channel
    ```
 
-Then write in a topic: its Agent answers in the same conversation.
+Then write in a topic: Pero answers there in the same conversation.
 
 What to expect afterwards:
 - **Schedules** that came due while Pero was down run once, as one catch-up run that records how many times it stands for.
 - **Notifications** still waiting to be delivered are delivered, and a Workflow that reads history goes on from where its last successful run stopped.
 - **A workspace at a new path** keeps working: its data folder is relative to it. Each Channel then starts a fresh Session that begins with its recent messages, since a provider conversation belongs to its folder.
-- **Folders at new paths:** point Pero at them with `data` in `.pero/config.yaml`, then restart it, or `working-directory` in the note of an Agent with its own. A provider conversation belongs to its folder, so each Channel of an Agent with a moved `working-directory` then starts a fresh Session that begins with its recent messages; a moved data folder only changes where the Agents' instructions say their notes go.
+- **Folders at new paths:** point Pero at them with `data` in `.pero/config.yaml`, then restart it, or `working-directory` in each Channel note that names its own. A provider conversation belongs to its folder, so each Channel whose `working-directory` moved then starts a fresh Session that begins with its recent messages; a moved data folder only changes where every turn's instructions say notes go.
 - **Provider conversations not restored:** when a provider no longer has a Session's conversation, Pero closes that Session and answers the same message in a fresh one that begins with the Channel's recent messages, so the Channel keeps working. The same happens when a provider has deleted an old transcript.
 - **A newer Pero** applies its migrations to the restored database as it starts.

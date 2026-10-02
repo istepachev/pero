@@ -39,7 +39,7 @@ npm run cli -- status -w .             # process, health, and components
 npm run cli -- logs -f -w .            # recent log entries, then new ones
 npm run cli -- stop -w .               # graceful stop; waits until it exits
 npm run cli -- run --foreground -w .   # attached; logs to stdout
-PERO_FAKE_RUNTIME=echo npm run cli -- run -w .   # Agents echo instead of calling a provider
+PERO_FAKE_RUNTIME=echo npm run cli -- run -w .   # turns echo instead of calling a provider
 ```
 
 Every command from the [user guide](./USER_GUIDE.md) works the same way. The environment variables Pero reads at startup are listed under [Configuration](./OPERATIONS.md#configuration).
@@ -52,7 +52,7 @@ One daemon runs per workspace. It holds a lock on `run/pero.lock` for as long as
 
 The `shutdown` operation, SIGTERM, and SIGINT (Ctrl-C) stop the daemon the same way: it stops intake, waits up to 30 s for active work, closes the database, removes the socket and `run/pero.json`, and exits. `run/pero.lock` stays in place. A second signal exits immediately.
 
-At startup the daemon writes `src/guide/guide.md`, the guide every Agent's instructions point to, to `.pero/guide.md` when that file differs. It ships as a build asset (`nest-cli.json`). Keep it in step with [Configuring Pero](./CONFIGURATION.md) when a property or behavior an Agent might change or explain changes; `src/guide/agent-guide.spec.ts` fails when its property tables or effort levels drift from the note schemas.
+At startup the daemon writes `src/guide/guide.md`, the guide every turn's instructions point to, to `.pero/guide.md` when that file differs. It ships as a build asset (`nest-cli.json`). Keep it in step with [Configuring Pero](./CONFIGURATION.md) when a property or behavior Pero might change or explain changes; `src/guide/agent-guide.spec.ts` fails when its property tables or effort levels drift from the note schemas.
 
 With a bot token set, the daemon long-polls Telegram; readiness never waits for it. [Architecture](./ARCHITECTURE.md) and [CLI and service lifecycle](./CLI.md#process-and-command-boundaries) cover the design in depth.
 
@@ -65,7 +65,7 @@ PERO_SMOKE_CLAUDE=1 npm run test:smoke
 PERO_SMOKE_CODEX=1 npm run test:smoke   # PERO_SMOKE_CODEX_MODEL changes the resumed turn's model (gpt-5.5 by default)
 ```
 
-The Claude test creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` Agent's command is refused and that it writes in its folder but not in the system folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the Agent skips the check, checks the `ask` sandbox where it runs, and checks that a signed-out Codex is reported as such.
+The Claude test creates a session that writes a file, resumes it from another process with a different model and effort, checks that a conversation Claude Code no longer has is reported as lost, checks that an `ask` turn's command is refused and that it writes in its folder but not in the system folder, and aborts a turn. The Codex test does the same with a thread, and also checks that a folder outside Git is refused unless the turn skips the check, checks the `ask` sandbox where it runs, and checks that a signed-out Codex is reported as such.
 
 ## Releasing
 
