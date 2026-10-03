@@ -39,10 +39,14 @@ export const PIPER_VOICE: readonly ModelFile[] = [
   },
 ];
 
-/** ElevenLabs' defaults: its transcription model, a stock voice, and a model. */
+/**
+ * ElevenLabs' defaults: its transcription model, a stock voice, and a model.
+ * The voice is George, one of ElevenLabs' default voices; setup saves the
+ * voice the owner picks, so this only speaks when none was picked.
+ */
 export const ELEVENLABS_DEFAULTS = {
   transcribeModel: 'scribe_v1',
-  voice: '21m00Tcm4TlvDq8EAWfZT',
+  voice: 'JBFqnCBsd6RMkjVDRZzb',
   speakModel: 'eleven_multilingual_v2',
 } as const;
 

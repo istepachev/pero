@@ -119,6 +119,71 @@ describe('the ElevenLabs engine', () => {
     );
   });
 
+  it('names the permission a restricted key lacks, never with the key', async () => {
+    const refusing = () =>
+      Promise.resolve(
+        Response.json(
+          {
+            detail: {
+              status: 'missing_permissions',
+              message: `The API key ${KEY} is missing the permission voices_read.`,
+            },
+          },
+          { status: 401 },
+        ),
+      );
+    const lacks = (permission: string) =>
+      new SpeechError(
+        `the ElevenLabs API key lacks the "${permission}" permission; edit the key at https://elevenlabs.io/app/settings/api-keys`,
+      );
+
+    await expect(
+      listElevenLabsVoices(KEY, { fetch: refusing }),
+    ).rejects.toThrow(lacks('Voices: Read'));
+    await expect(
+      new ElevenLabsSynthesizer({
+        key: () => KEY,
+        voice: 'v',
+        model: 'm',
+        fetch: refusing,
+      }).synthesize('Hi.', signal),
+    ).rejects.toThrow(lacks('Text to Speech'));
+    await expect(
+      new ElevenLabsTranscriber({
+        key: () => KEY,
+        model: 'scribe_v1',
+        language: null,
+        fetch: refusing,
+      }).transcribe({ path: voice, type: 'audio/ogg' }, signal),
+    ).rejects.toThrow(lacks('Speech to Text'));
+  });
+
+  it('says how to pick another voice when the account has no such voice', async () => {
+    await expect(
+      new ElevenLabsSynthesizer({
+        key: () => KEY,
+        voice: 'gone',
+        model: 'm',
+        fetch: () =>
+          Promise.resolve(
+            Response.json(
+              {
+                detail: {
+                  status: 'voice_not_found',
+                  message: "A voice with voice_id 'gone' was not found.",
+                },
+              },
+              { status: 404 },
+            ),
+          ),
+      }).synthesize('Hi.', signal),
+    ).rejects.toThrow(
+      new SpeechError(
+        'ElevenLabs has no voice gone on this account; pero speech voice picks one',
+      ),
+    );
+  });
+
   it('needs a key', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     await expect(
@@ -172,7 +237,7 @@ describe('the ElevenLabs engine', () => {
           ),
         ),
       ),
-    ).resolves.toBe('unknown');
+    ).resolves.toBe('restricted');
     await expect(
       checkElevenLabsKey(KEY, answering(new TypeError('offline'))),
     ).resolves.toBe('unknown');

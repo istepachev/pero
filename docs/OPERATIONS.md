@@ -59,7 +59,7 @@ Pero's personality and instructions, the Channel notes, Workflows, and the insta
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then the workspace's `.env` | none |
 | Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
-| ElevenLabs API key | `ELEVENLABS_API_KEY` in the daemon's environment, then the workspace's `.env`; used only by an `elevenlabs` speech engine | none |
+| ElevenLabs API key | `ELEVENLABS_API_KEY` in the daemon's environment, then the workspace's `.env`; used only by an `elevenlabs` speech engine; the [permissions it needs](./USER_GUIDE.md#elevenlabs-api-key-permissions) | none |
 | Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every turn answers `echo: <message>` instead of running Claude or Codex | unset |
 
 A workspace keeps Pero's state in its `.pero/` folder; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.

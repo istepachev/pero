@@ -12,6 +12,9 @@ import type { WorkspaceLayout } from '../../config/workspace-layout.js';
 import {
   checkElevenLabsKey,
   ELEVENLABS_KEY_ENV,
+  ELEVENLABS_KEYS_URL,
+  ELEVENLABS_PERMISSIONS,
+  type ElevenLabsVoice,
   listElevenLabsVoices,
 } from '../../speech/elevenlabs-engine.js';
 import {
@@ -23,10 +26,6 @@ import { ELEVENLABS_DEFAULTS } from '../../speech/speech-models.js';
 import { downloadModel, speechSetupPlan } from '../../speech/speech-setup.js';
 import { CliError } from '../errors.js';
 import type { Prompts } from '../prompts.js';
-
-/** Where to get an ElevenLabs API key. */
-export const ELEVENLABS_KEYS_URL =
-  'https://elevenlabs.io/app/settings/api-keys';
 
 /** Where speech is set up, and how to talk to the owner. */
 export interface SpeechSetupContext {
@@ -169,7 +168,12 @@ export async function configureSpeech(
   let voice: string | undefined;
   if (transcribe === 'elevenlabs' || speak === 'elevenlabs') {
     block();
-    key = await askKey(context, key, Boolean(env[ELEVENLABS_KEY_ENV]?.trim()));
+    key = await askKey(
+      context,
+      key,
+      Boolean(env[ELEVENLABS_KEY_ENV]?.trim()),
+      keyPermissions(transcribe, speak),
+    );
     if (speak === 'elevenlabs' && key !== null && prompts !== null) {
       voice = await pickVoice(
         context,
@@ -222,6 +226,7 @@ async function askKey(
   context: SpeechSetupContext,
   existing: string | null,
   fromEnvironment: boolean,
+  permissions: string,
 ): Promise<string | null> {
   const { layout, prompts, print } = context;
   if (fromEnvironment) {
@@ -257,6 +262,7 @@ async function askKey(
   }
   print(
     `ElevenLabs gives you an API key at ${ELEVENLABS_KEYS_URL}. ` +
+      `Give it these permissions: ${permissions}. ` +
       'Pero stores it in .env, readable only by you.',
   );
   for (;;) {
@@ -272,12 +278,27 @@ async function askKey(
       print("ElevenLabs doesn't accept that key; try again.");
       continue;
     }
-    if (check === 'unknown') {
+    if (check === 'restricted') {
+      print(
+        `The key lacks the optional "${ELEVENLABS_PERMISSIONS.user}" permission, so Pero couldn't check it; storing it anyway.`,
+      );
+    } else if (check === 'unknown') {
       print("Couldn't check the key with ElevenLabs; storing it anyway.");
     }
     storeKey(layout, key, print);
     return key;
   }
+}
+
+/** The permissions a key needs for the engines chosen, for the owner. */
+function keyPermissions(transcribe: SpeechEngine, speak: SpeechEngine): string {
+  const needed = [
+    ...(speak === 'elevenlabs'
+      ? [ELEVENLABS_PERMISSIONS.speak, ELEVENLABS_PERMISSIONS.voices]
+      : []),
+    ...(transcribe === 'elevenlabs' ? [ELEVENLABS_PERMISSIONS.transcribe] : []),
+  ];
+  return `${needed.join(', ')}, and optionally ${ELEVENLABS_PERMISSIONS.user} so Pero can check the key`;
 }
 
 function storeKey(
@@ -305,26 +326,165 @@ async function pickVoice(
     voices = await listElevenLabsVoices(key, client(context));
   } catch (error) {
     context.print(
-      `Couldn't list your ElevenLabs voices (${describe(error)}); ` +
-        'Pero keeps the voice it has.',
+      `Couldn't list your ElevenLabs voices: ${describe(error)}. ` +
+        'Pero keeps the voice it has; once they can be listed, ' +
+        'pero speech voice picks one, or sets one by ID: pero speech voice <voice-id>.',
     );
     return undefined;
   }
   if (voices.length === 0) return undefined;
-  const wanted = current ?? ELEVENLABS_DEFAULTS.voice;
+  return askVoice(prompts, voices, current ?? ELEVENLABS_DEFAULTS.voice);
+}
+
+/** One of `voices`, starting at `current` when it is among them. */
+function askVoice(
+  prompts: Prompts,
+  voices: ElevenLabsVoice[],
+  current: string,
+): Promise<string> {
   return prompts.select({
     message: 'Which voice should Pero speak with?',
     choices: voices.map((voice) => ({
       value: voice.id,
-      name:
-        voice.description === ''
-          ? voice.name
-          : `${voice.name}: ${voice.description}`,
+      name: voiceLabel(voice),
     })),
-    initial: voices.some((voice) => voice.id === wanted)
-      ? wanted
+    initial: voices.some((voice) => voice.id === current)
+      ? current
       : voices[0]!.id,
   });
+}
+
+/** A voice's name, and its description when it has one. */
+function voiceLabel(voice: ElevenLabsVoice): string {
+  return voice.description === ''
+    ? voice.name
+    : `${voice.name}: ${voice.description}`;
+}
+
+/** What `pero speech voice` is asked: a voice to set, or to list them. */
+export interface VoiceChoice {
+  /** A voice's ID or name; when absent, the owner picks one on a terminal. */
+  voice?: string;
+  /** Only list the voices. */
+  list?: boolean;
+}
+
+/**
+ * Lists the ElevenLabs voices Pero may speak with, or sets the one it
+ * speaks with: `choice.voice` by ID or name, else the owner's pick on a
+ * terminal. Without a terminal and a voice, it lists them. A voice ID is
+ * taken as given when the voices can't be listed, such as for a key not
+ * allowed to read them.
+ */
+export async function chooseVoice(
+  context: SpeechSetupContext,
+  choice: VoiceChoice = {},
+): Promise<void> {
+  const { layout, prompts, print } = context;
+  const speak = readSpeech(layout).speak;
+  if (speak.engine === 'local') {
+    throw new CliError(
+      'Pero speaks with the local engine, whose voice is a Piper model file set as speech.speak.voice in .pero/config.yaml; listing voices works with ElevenLabs, which pero speech configure switches to',
+    );
+  }
+  if (speak.engine === 'off') {
+    throw new CliError(
+      'Voice messages Pero sends are turned off; pero speech configure turns them on',
+    );
+  }
+  const key = elevenLabsKey(layout.workspace, context.env ?? process.env);
+  if (key === null) {
+    throw new CliError(
+      'No ElevenLabs API key is set; pero speech configure stores one',
+    );
+  }
+  const current = speak.voice ?? ELEVENLABS_DEFAULTS.voice;
+  let voices: ElevenLabsVoice[] | null = null;
+  let problem = '';
+  try {
+    voices = await listElevenLabsVoices(key, client(context));
+  } catch (error) {
+    problem = describe(error);
+  }
+
+  if (choice.voice !== undefined && choice.list !== true) {
+    const wanted = choice.voice.trim();
+    if (voices === null) {
+      print(
+        `Couldn't list your ElevenLabs voices to check it: ${problem}. Setting voice ID ${wanted} as given.`,
+      );
+      saveVoice(context, wanted, wanted);
+      return;
+    }
+    const found = findVoice(voices, wanted);
+    saveVoice(context, found.id, found.name);
+    return;
+  }
+
+  if (voices === null) {
+    throw new CliError(
+      `Couldn't list your ElevenLabs voices: ${problem}. pero speech voice <voice-id> sets one by its ID`,
+    );
+  }
+  if (voices.length === 0) {
+    throw new CliError(
+      'Your ElevenLabs account has no voices; add one at https://elevenlabs.io/app/voice-library',
+    );
+  }
+  if (prompts === null || choice.list === true) {
+    print(formatVoices(voices, current));
+    return;
+  }
+  const id = await askVoice(prompts, voices, current);
+  saveVoice(context, id, voices.find((voice) => voice.id === id)!.name);
+}
+
+/** The voice `wanted` names, by ID or else by name, ignoring case. */
+function findVoice(voices: ElevenLabsVoice[], wanted: string): ElevenLabsVoice {
+  const byId = voices.find((voice) => voice.id === wanted);
+  if (byId !== undefined) return byId;
+  const named = voices.filter(
+    (voice) => voice.name.toLowerCase() === wanted.toLowerCase(),
+  );
+  if (named.length === 1) return named[0]!;
+  if (named.length > 1) {
+    throw new CliError(
+      `Several of your ElevenLabs voices are named ${wanted}; give one's ID: ${named.map((voice) => voice.id).join(', ')}`,
+    );
+  }
+  throw new CliError(
+    `None of your ElevenLabs voices is ${wanted}; pero speech voice --list lists them`,
+  );
+}
+
+/** Each voice, its ID first, with `*` at the one Pero speaks with. */
+function formatVoices(voices: ElevenLabsVoice[], current: string): string {
+  const width = Math.max(...voices.map((voice) => voice.id.length));
+  const lines = voices.map(
+    (voice) =>
+      `${voice.id === current ? '*' : ' '} ${voice.id.padEnd(width)}  ${voiceLabel(voice)}`,
+  );
+  const note = voices.some((voice) => voice.id === current)
+    ? '* the voice Pero speaks with.'
+    : `Pero speaks with ${current}, which isn't among them.`;
+  return [
+    ...lines,
+    '',
+    `${note} pero speech voice <id or name> changes it.`,
+  ].join('\n');
+}
+
+function saveVoice(
+  context: SpeechSetupContext,
+  id: string,
+  name: string,
+): void {
+  editHostConfig(context.layout.configFile, (document) => {
+    setSpeech(document, 'speak', 'elevenlabs', id);
+  });
+  context.print(
+    `Pero now speaks with ${name}; a running Pero uses it from the next voice message.`,
+  );
 }
 
 /**
