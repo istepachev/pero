@@ -42,4 +42,19 @@ describe('splitText', () => {
       true,
     );
   });
+
+  it('cuts before a kept block that fits in a part, and inside one that does not', () => {
+    const text = 'intro line\nTABLE1\nTABLE2\nend';
+    const block = { start: 11, end: 24 };
+    expect(text.slice(block.start, block.end)).toBe('TABLE1\nTABLE2');
+    expect(splitText(text, 20, [block])).toEqual([
+      'intro line\n',
+      'TABLE1\nTABLE2\nend',
+    ]);
+    expect(splitText(text, 12, [block])).toEqual([
+      'intro line\n',
+      'TABLE1\n',
+      'TABLE2\nend',
+    ]);
+  });
 });
