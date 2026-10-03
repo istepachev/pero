@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelNote } from '../system-files/snapshot.js';
 import {
   agentContext,
+  VOICE_NOTE,
   agentRequest,
   composeInstructions,
   dataFolderNote,
@@ -60,6 +61,16 @@ describe('composeInstructions', () => {
         { ...FOLDERS, persona: null, instructions: 'Answer in English.\n\n' },
       ),
     ).toBe(`${CONTEXT}\n\nAnswer in English.\n\nTrack spending.`);
+  });
+});
+
+describe('agentContext', () => {
+  it('says how to send a voice message only when Pero can record one', () => {
+    expect(CONTEXT).not.toContain('<voice>');
+    expect(agentContext(HEALTH, { ...FOLDERS, voice: true })).toBe(
+      `${CONTEXT}\n\n${VOICE_NOTE}`,
+    );
+    expect(VOICE_NOTE).toContain('<voice>…</voice>');
   });
 });
 

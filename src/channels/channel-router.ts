@@ -21,6 +21,7 @@ import type {
 } from './channel-adapter.js';
 import {
   ChannelAttachments,
+  recordingNoun,
   type SavedAttachment,
   withAttachmentLines,
 } from './channel-attachments.js';
@@ -138,7 +139,9 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
       }
-      const attachments = await this.saveAttachments(channel, message);
+      const saved = await this.saveAttachments(channel, message);
+      const attachments =
+        saved && (await this.transcribeRecordings(channel, message, saved));
       if (attachments === null) {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
@@ -163,7 +166,10 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         channel,
         { ...message, content: { ...message.content, text } },
         messageId,
-        attachments.map((attachment) => attachment.path),
+        // A recording reaches the turn as its transcript; no model hears it.
+        attachments
+          .filter((attachment) => attachment.media === undefined)
+          .map((attachment) => attachment.path),
       );
     } catch (error) {
       this.logger.error(
@@ -200,20 +206,64 @@ export class ChannelRouter implements BeforeApplicationShutdown {
       )
         ? 'image'
         : 'file';
-      try {
-        await this.sender.post(
-          channel,
-          `Pero couldn't get the ${noun}${one ? '' : 's'} you sent ` +
-            `(${describe(error).replace(/\.$/, '')}). Send ` +
-            `${one ? 'it' : 'them'} again.`,
-          { origin: 'pero' },
-        );
-      } catch (sendError) {
-        this.logger.warn(
-          `Failed to say so in Channel ${channel.id}: ${describe(sendError)}`,
-        );
-      }
+      await this.tell(
+        channel,
+        `Pero couldn't get the ${noun}${one ? '' : 's'} you sent ` +
+          `(${describe(error).replace(/\.$/, '')}). Send ` +
+          `${one ? 'it' : 'them'} again.`,
+      );
       return null;
+    }
+  }
+
+  /**
+   * `attachments` with each recording's transcript. Where one couldn't be
+   * transcribed, Pero says why; the message is still answered when
+   * something else in it is, and dropped, as null, when nothing is.
+   */
+  private async transcribeRecordings(
+    channel: RoutedChannel,
+    message: InboundMessage,
+    attachments: SavedAttachment[],
+  ): Promise<SavedAttachment[] | null> {
+    if (attachments.every((attachment) => attachment.media === undefined)) {
+      return attachments;
+    }
+    const transcribed = await this.attachments.transcribe(attachments);
+    const failed = transcribed.find(
+      (attachment) => attachment.notTranscribed !== undefined,
+    );
+    if (failed === undefined) return transcribed;
+    this.logger.warn(
+      `Failed to transcribe a ${recordingNoun(failed)} sent in ` +
+        `${channel.integrationKind} Channel ${channel.id}: ${failed.notTranscribed}`,
+    );
+    const answerable =
+      message.content.text.trim() !== '' ||
+      transcribed.some(
+        (attachment) =>
+          attachment.media === undefined || attachment.transcript !== undefined,
+      );
+    const reason = failed.notTranscribed!.replace(/\.$/, '');
+    await this.tell(
+      channel,
+      `Pero couldn't transcribe the ${recordingNoun(failed)} you sent ` +
+        `(${reason}). ` +
+        (answerable
+          ? 'It answers the rest of your message without it.'
+          : 'Send it again, or write it as text.'),
+    );
+    return answerable ? transcribed : null;
+  }
+
+  /** Posts Pero's own notice `text` in `channel`; failures are only logged. */
+  private async tell(channel: RoutedChannel, text: string): Promise<void> {
+    try {
+      await this.sender.post(channel, text, { origin: 'pero' });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to say so in Channel ${channel.id}: ${describe(error)}`,
+      );
     }
   }
 

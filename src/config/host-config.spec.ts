@@ -12,6 +12,7 @@ import { ConfigError } from './bootstrap-config.js';
 import {
   allowChat,
   chatKindOf,
+  DEFAULT_SPEECH,
   defaultHostConfig,
   denyChat,
   editHostConfig,
@@ -47,6 +48,7 @@ describe('parseHostConfig', () => {
         { chatKey: BIG, title: 'Home' },
         { chatKey: '123456789', title: null },
       ],
+      speech: DEFAULT_SPEECH,
     });
   });
 
@@ -55,17 +57,77 @@ describe('parseHostConfig', () => {
       data: null,
       system: null,
       allowedChats: [],
+      speech: DEFAULT_SPEECH,
     });
     expect(parseHostConfig('config.yaml', defaultHostConfig())).toEqual({
       data: 'data',
       system: null,
       allowedChats: [],
+      speech: DEFAULT_SPEECH,
     });
     expect(parseHostConfig('config.yaml', defaultHostConfig('2024'))).toEqual({
       data: '2024',
       system: null,
       allowedChats: [],
+      speech: DEFAULT_SPEECH,
     });
+  });
+
+  it('reads speech, with a default for each setting left out', () => {
+    const config = parseHostConfig(
+      'config.yaml',
+      [
+        'speech:',
+        '  transcribe:',
+        '    engine: elevenlabs',
+        '    language: de',
+        '    max-minutes: 2.5',
+        '  speak:',
+        '    engine: off',
+        '  programs:',
+        '    whisper: /opt/whisper/whisper-cli',
+      ].join('\n'),
+    );
+
+    expect(config.speech).toEqual({
+      transcribe: {
+        engine: 'elevenlabs',
+        model: null,
+        language: 'de',
+        maxMinutes: 2.5,
+      },
+      speak: { engine: 'off', voice: null, model: null },
+      programs: {
+        ffmpeg: 'ffmpeg',
+        whisper: '/opt/whisper/whisper-cli',
+        piper: 'piper',
+      },
+    });
+  });
+
+  it('names a speech setting that is not valid', () => {
+    expect(() =>
+      parseHostConfig(
+        'config.yaml',
+        [
+          'speech:',
+          '  transcribe:',
+          '    engine: openai',
+          '    max-minutes: 0',
+          '  speak:',
+          '    pitch: high',
+        ].join('\n'),
+      ),
+    ).toThrow(
+      new ConfigError(
+        [
+          'Invalid config.yaml:',
+          '  line 3: speech.transcribe.engine: must be one of local, elevenlabs, off',
+          '  line 4: speech.transcribe.max-minutes: must be more than 0',
+          '  line 6: speech.speak.pitch: unknown key',
+        ].join('\n'),
+      ),
+    );
   });
 
   it('names the file, line, and key of each problem', () => {

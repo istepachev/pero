@@ -111,6 +111,8 @@ describe('Control endpoint (e2e)', () => {
       { name: 'claude', state: 'unconfigured', required: true },
       { name: 'codex', state: 'unconfigured', required: false },
       { name: 'config', state: 'ok', required: true },
+      // A fresh workspace has no speech models yet; speech is optional.
+      { name: 'speech', state: 'unconfigured', required: false },
       { name: 'system', state: 'ok', required: true },
       { name: 'telegram', state: 'unconfigured', required: true },
     ]);

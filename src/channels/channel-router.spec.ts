@@ -10,6 +10,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { InboundUpdate } from '../persistence/entities/inbound-update.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
+import { SpeechService } from '../speech/speech.service.js';
+import { FakeSpeech } from '../speech/testing/fake-speech.js';
 import { Definitions } from '../system/definitions.js';
 import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
@@ -46,6 +48,7 @@ describe('ChannelRouter', () => {
     handle: vi.fn(() => Promise.resolve()),
     drain: vi.fn(() => Promise.resolve()),
   };
+  let speech: FakeSpeech;
   const onboarding = {
     onUnknownChannel: vi.fn((): Promise<Channel | null> =>
       Promise.resolve(null),
@@ -59,6 +62,7 @@ describe('ChannelRouter', () => {
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-channels-');
+    speech = new FakeSpeech();
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: ws.database }),
@@ -71,6 +75,8 @@ describe('ChannelRouter', () => {
       .useValue(turns)
       .overrideProvider(ChannelOnboarding)
       .useValue(onboarding)
+      .overrideProvider(SpeechService)
+      .useValue(speech)
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
@@ -450,6 +456,72 @@ describe('ChannelRouter', () => {
 
       const [recorded] = await ds.getRepository(Message).find();
       expect(recorded!.text).toMatch(/^\[Image attached, saved at \S+\.jpg\]$/);
+    });
+
+    it('records a voice message as its transcript, and hands no recording to the turn', async () => {
+      await channel(GROUP.key, 'default');
+      adapter.files.set('voice', new TextEncoder().encode('Buy milk.'));
+      const message = inboundMessage(GROUP, {
+        text: '',
+        attachments: [
+          {
+            ref: 'voice',
+            type: 'audio/ogg',
+            name: null,
+            size: 9,
+            media: 'voice',
+            durationS: 65,
+          },
+        ],
+      });
+
+      await adapter.deliver(message);
+
+      const [recorded] = await ds.getRepository(Message).find();
+      expect(recorded!.text).toMatch(
+        /^\[Voice message, 1:05, saved at \S+\.ogg\. Transcript:\]\nBuy milk\.$/,
+      );
+      expect(turns.handle).toHaveBeenCalledWith(
+        expect.anything(),
+        { ...message, content: { ...message.content, text: recorded!.text } },
+        recorded!.id,
+        [],
+      );
+    });
+
+    it('answers the caption of a recording it could not transcribe, saying why', async () => {
+      await channel(GROUP.key, 'default');
+      speech.maxS = 60;
+      adapter.files.set('talk', new Uint8Array([1]));
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await adapter.deliver(
+        inboundMessage(GROUP, {
+          text: 'Summarize this',
+          attachments: [
+            {
+              ref: 'talk',
+              type: 'audio/mpeg',
+              name: 'Talk.mp3',
+              size: 1,
+              media: 'audio',
+              durationS: 3_600,
+            },
+          ],
+        }),
+      );
+
+      expect(adapter.sent.map((sent) => sent.message.text)).toEqual([
+        "Pero couldn't transcribe the audio file you sent (it is longer " +
+          'than 1:00). It answers the rest of your message without it.',
+      ]);
+      const inbound = await ds
+        .getRepository(Message)
+        .findOneByOrFail({ direction: 'in' });
+      expect(inbound.text).toMatch(
+        /^\[Audio file, Talk\.mp3, 60:00, saved at \S+-Talk\.mp3; not transcribed: it is longer than 1:00\]\nSummarize this$/,
+      );
+      expect(turns.handle).toHaveBeenCalledTimes(1);
     });
 
     it('says when an image could not be fetched, and runs no turn', async () => {

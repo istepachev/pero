@@ -88,9 +88,35 @@ pero telegram deny -1001234567890     # its Channels and notes stay for when it 
 
 ### Images and files
 
-Send Pero a photo, or any file (a PDF, a spreadsheet, a CSV, code, a JPEG, PNG, GIF, or WebP image), with or without a caption, and it answers with the file in view: "What does this receipt add up to?", "Summarize this contract", "Save this whiteboard to my notes". An album of several photos or files sent at once is answered once, with every part and caption. Pero saves each owner-only in `.pero/attachments/<Channel ID>/`, a file under the name it was sent with, and starts the message with a line naming where, such as `[Image attached, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-512-1.jpg]` or `[File attached: Q3 report.pdf, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-513-1-Q3_report.pdf]`, so it can copy a file into your notes when you ask, and later turns can still find it. When Telegram can't hand a file over, such as one over the 20 MB bots may download, Pero says so and doesn't answer the message; send it again. Voice messages, audio, video, and stickers aren't read yet; their caption is answered as text.
+Send Pero a photo, or any file (a PDF, a spreadsheet, a CSV, code, a JPEG, PNG, GIF, or WebP image), with or without a caption, and it answers with the file in view: "What does this receipt add up to?", "Summarize this contract", "Save this whiteboard to my notes". An album of several photos or files sent at once is answered once, with every part and caption. Pero saves each owner-only in `.pero/attachments/<Channel ID>/`, a file under the name it was sent with, and starts the message with a line naming where, such as `[Image attached, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-512-1.jpg]` or `[File attached: Q3 report.pdf, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-513-1-Q3_report.pdf]`, so it can copy a file into your notes when you ask, and later turns can still find it. When Telegram can't hand a file over, such as one over the 20 MB bots may download, Pero says so and doesn't answer the message; send it again. Videos and stickers aren't read yet; their caption is answered as text. Voice messages are described next.
 
 Claude sees an image of up to 3.75 MB, and a PDF of up to 5 MB and 20 pages, with the message, and reads any other file, or a larger one, from where it is saved, without asking, whatever its permissions. Codex is handed every image and reads other files itself with its tools; for a PDF that takes a tool such as `pdftotext` or Python on the machine. Files aren't in the Git repository or in `pero backup`, and `history-retention-days` deletes them along with the messages.
+
+### Voice messages
+
+Send Pero a voice message, a round video message, or an audio file, and it answers what was said. Pero saves the recording in `.pero/attachments/<Channel ID>/` like any file, transcribes it, and the message's text becomes the transcript under a line naming the recording, such as:
+
+```text
+[Voice message, 0:42, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-514-1.ogg. Transcript:]
+Remind me to call Ana tomorrow at ten.
+```
+
+Later turns and Workflows that read the chat see those words. A recording that can't be transcribed (transcription is off or not set up, it fails, or the recording is longer than `max-minutes`) gets a reply saying why; Pero still answers a caption that came with it, and otherwise doesn't answer.
+
+Pero can answer by voice too. Ask for it ("answer by voice", or in a Workflow's note, "send the summary as a voice message") and Pero puts what to say in a `<voice>…</voice>` block of its answer; Pero records the block and sends it as a voice message, with the rest of the answer as text, in order. The history keeps the words, under `[Voice message]`. When a block can't be recorded, its words are sent as text, saying why. Pero only knows it can do this while recording works; `pero speech` shows whether it does.
+
+Speech is set up in `speech:` in `config.yaml` (see [Configuring Pero](./CONFIGURATION.md#peroconfigyaml)), separately for each direction:
+
+- **`local`**, the default: free and private, on your server. Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and recording [Piper](https://github.com/OHF-Voice/piper1-gpl), with [ffmpeg](https://ffmpeg.org) converting between formats. Install the three programs, then run `pero speech setup`: it checks they're on `PATH`, says how to install any that aren't, and downloads a whisper.cpp model and an English Piper voice to `.pero/models/` (about 210 MB).
+- **`elevenlabs`**: [ElevenLabs](https://elevenlabs.io)' speech-to-text and voices, billed by ElevenLabs. Set `engine: elevenlabs` and run `pero speech setup`, which asks for your API key and stores it in `.env` as `ELEVENLABS_API_KEY`.
+- **`off`**: voice messages get a reply saying so, and Pero never records one.
+
+```sh
+pero speech            # can Pero transcribe and record voice messages now?
+pero speech setup      # check the programs, fetch the local models, or store the key
+```
+
+`pero status` lists a `speech` component too. It's optional: Pero is healthy without it.
 
 ### Channels and history
 

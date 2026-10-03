@@ -312,7 +312,7 @@ export class WorkflowExecutor
       });
       const snapshot = executionSnapshot(
         agent,
-        defaults,
+        this.agentManager.instructionDefaults(),
         history?.input ?? workflow.input,
         history?.read,
       );

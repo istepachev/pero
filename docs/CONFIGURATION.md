@@ -83,12 +83,13 @@ Secrets, in the workspace root, next to `.pero/`:
 
 ```sh
 PERO_TELEGRAM_BOT_TOKEN=123456:ABC-DEF…
+ELEVENLABS_API_KEY=sk_…   # only with an elevenlabs speech engine
 ```
 
 - **Format:** one `KEY=value` per line; `#` starts a comment, and `export` and quotes are allowed. The same file works as a systemd `EnvironmentFile=`.
 - **Never committed.** `pero init` and storing the token add `.env` to the workspace's `.gitignore` when it isn't there yet. `pero check` and `pero status` report an error when the workspace is in a Git repository that tracks `.env` or wouldn't ignore it.
 - **Must be owner-only.** Pero refuses to read it when it is readable by group or others, and says which `chmod` fixes that, as `ssh` does for keys.
-- **Written for you:** an interactive `pero run` asks for a missing token and writes this file itself (mode `0600`), keeping any other lines in it. So does `pero telegram token`.
+- **Written for you:** an interactive `pero run` asks for a missing token and writes this file itself (mode `0600`), keeping any other lines in it. So does `pero telegram token`, and `pero speech setup` for the ElevenLabs key.
 - **Environment wins:** a variable already in Pero's environment overrides the file.
 - **Only Pero's own secrets.** Claude and Codex sign-ins stay where their CLIs keep them (`~/.claude`, `~/.codex`).
 
@@ -111,11 +112,28 @@ telegram:
     - id: -1001234567890   # a group; negative
       title: Home          # for you; Pero doesn't use it
     - id: 123456789        # a direct chat: your user ID
+
+# Voice messages; every setting is optional.
+speech:
+  transcribe:                # the voice messages you send
+    engine: local            # local, elevenlabs, or off. Default: local
+    model: .pero/models/ggml-base.bin   # local: a whisper.cpp model; elevenlabs: scribe_v1
+    language: en             # Default: detected
+    max-minutes: 10          # longer recordings aren't transcribed. Default: 10
+  speak:                     # the voice messages Pero sends
+    engine: local            # local, elevenlabs, or off. Default: local
+    voice: .pero/models/en_US-lessac-medium.onnx   # local: a Piper voice; elevenlabs: a voice ID
+    model: eleven_multilingual_v2                  # elevenlabs only
+  programs:                  # what the local engine runs, by name or path
+    ffmpeg: ffmpeg
+    whisper: whisper-cli
+    piper: piper
 ```
 
 - **Hand edits and `pero telegram allow`/`deny` are equivalent.** The commands edit this file and keep comments and ordering, and work without Pero running. Pero rereads the file within 10 seconds either way: a chat added or removed is served, or turned away, from its next message.
 - **Chat ID changes:** when turning on topics gives a group a new chat ID, Pero rewrites that entry itself.
 - **Changing `data` or `system` needs a restart.** Until then, `pero status` shows the `config` component `degraded` saying so. A folder that doesn't exist stops startup with a message naming the key.
+- **`speech` applies from the next voice message.** Each direction has its own engine. `local` runs whisper.cpp, Piper, and ffmpeg on the host, with the models `pero speech setup` downloads to `.pero/models/` unless `model` or `voice` names other files, relative to the workspace; a Piper voice needs its `.onnx.json` beside it. `elevenlabs` needs `ELEVENLABS_API_KEY` in `.env` or Pero's environment; its default voice is ElevenLabs' *Rachel*. These are host settings, since the programs run on the host: a turn can't change them.
 - **An invalid file** stops startup with the file, line, key, and reason. An invalid edit while Pero runs is logged and shown by `pero status`, and the last valid version stays in use.
 
 The data folder can be an existing vault anywhere, such as `data: ~/notes`. Pero works in the workspace, where your scripts, Git repository, and other tools are, unless a Channel note names another folder; every turn's instructions say where the data folder is, so that's where Pero keeps notes and other files it writes for you.

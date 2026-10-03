@@ -4,8 +4,10 @@ import { Injectable } from '@nestjs/common';
 import { IMAGE_TYPES, isImageType } from '../common/images.js';
 import { workspaceLayout } from '../config/workspace-layout.js';
 import type { Channel } from '../persistence/entities/channel.entity.js';
+import { SpeechError } from '../speech/speech-engine.js';
+import { SpeechService } from '../speech/speech.service.js';
 import { SystemNotes } from '../system/system-notes.service.js';
-import type { InboundAttachment } from './channel-adapter.js';
+import type { AudioMedia, InboundAttachment } from './channel-adapter.js';
 import { ChannelSender } from './channel-sender.js';
 
 /** The longest file name a saved file keeps from the one it was sent with. */
@@ -19,7 +21,33 @@ export interface SavedAttachment {
   name: string | null;
   /** Whether it is an image of a type in `IMAGE_TYPES`. */
   image: boolean;
+  /** Its media type as sent. */
+  type: string;
+  /** Set for a recording Pero transcribes. */
+  media?: AudioMedia;
+  /** How long a recording lasts, in seconds; null when unknown. */
+  durationS?: number | null;
+  /** The words a recording holds, once transcribed. */
+  transcript?: string;
+  /** Why a recording wasn't transcribed. */
+  notTranscribed?: string;
 }
+
+/** Where a recording's extension comes from when it has no file name. */
+const AUDIO_EXTENSIONS: Record<string, string> = {
+  'audio/ogg': 'ogg',
+  'audio/opus': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/flac': 'flac',
+  'video/mp4': 'mp4',
+};
 
 /**
  * Keeps the files people send, images and others: each is downloaded
@@ -31,6 +59,7 @@ export class ChannelAttachments {
   constructor(
     private readonly sender: ChannelSender,
     private readonly notes: SystemNotes,
+    private readonly speech: SpeechService,
   ) {}
 
   /**
@@ -58,16 +87,88 @@ export class ChannelAttachments {
       // The integration's message ID, kept to what a file name may hold.
       const id = messageId.replace(/[^\w-]/g, '_');
       const prefix = `${fileStamp(now)}-${id}-${index + 1}`;
-      const { type } = attachment;
+      const { type, media } = attachment;
       const image = isImageType(type);
       const name = image
         ? `${prefix}.${IMAGE_TYPES[type]}`
-        : `${prefix}-${withPdfExtension(safeName(attachment.name), type)}`;
+        : media !== undefined && attachment.name === null
+          ? `${prefix}.${AUDIO_EXTENSIONS[type.toLowerCase()] ?? 'bin'}`
+          : `${prefix}-${withPdfExtension(safeName(attachment.name), type)}`;
       const path = join(folder, name);
       await writeFile(path, data, { mode: 0o600 });
-      saved.push({ path, name: attachment.name, image });
+      saved.push({
+        path,
+        name: attachment.name,
+        image,
+        type,
+        ...(media === undefined
+          ? {}
+          : { media, durationS: attachment.durationS ?? null }),
+      });
     }
     return saved;
+  }
+
+  /**
+   * `attachments` with each recording transcribed, or with why it wasn't:
+   * transcription is off or failed, or the recording is too long. Never
+   * throws.
+   */
+  async transcribe(
+    attachments: readonly SavedAttachment[],
+  ): Promise<SavedAttachment[]> {
+    const result: SavedAttachment[] = [];
+    for (const attachment of attachments) {
+      if (attachment.media === undefined) {
+        result.push(attachment);
+        continue;
+      }
+      result.push({ ...attachment, ...(await this.transcribeOne(attachment)) });
+    }
+    return result;
+  }
+
+  private async transcribeOne(
+    attachment: SavedAttachment,
+  ): Promise<Pick<SavedAttachment, 'transcript' | 'notTranscribed'>> {
+    const max = this.speech.maxDurationS();
+    if ((attachment.durationS ?? 0) > max) {
+      return { notTranscribed: `it is longer than ${duration(max)}` };
+    }
+    try {
+      const transcript = await this.speech.transcribe({
+        path: attachment.path,
+        type: attachment.type,
+      });
+      return transcript === ''
+        ? { notTranscribed: 'Pero heard no words in it' }
+        : { transcript };
+    } catch (error) {
+      return {
+        notTranscribed:
+          error instanceof SpeechError
+            ? error.message
+            : `transcription failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+}
+
+/** How a recording of `seconds` is shown: `0:42`, `12:05`. */
+export function duration(seconds: number): string {
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+/** How a recording is named in the lines a message's text gets. */
+export function recordingNoun(attachment: SavedAttachment): string {
+  switch (attachment.media) {
+    case 'voice':
+      return 'voice message';
+    case 'video-note':
+      return 'video message';
+    default:
+      return 'audio file';
   }
 }
 
@@ -113,6 +214,7 @@ function withPdfExtension(name: string, type: string): string {
  */
 export function attachmentLine(attachment: SavedAttachment): string {
   if (attachment.image) return `[Image attached, saved at ${attachment.path}]`;
+  if (attachment.media !== undefined) return recordingLine(attachment);
   const name = attachment.name === null ? '' : `: ${attachment.name}`;
   return `[File attached${name}, saved at ${attachment.path}]`;
 }
@@ -126,4 +228,23 @@ export function withAttachmentLines(
     ...attachments.map(attachmentLine),
     ...(text === '' ? [] : [text]),
   ].join('\n');
+}
+
+/**
+ * A recording's line: what it is, how long, and where it is saved, then
+ * its transcript on the lines below, or why there is none.
+ */
+function recordingLine(attachment: SavedAttachment): string {
+  const noun = recordingNoun(attachment);
+  const parts = [
+    noun.charAt(0).toUpperCase() + noun.slice(1),
+    ...(attachment.name === null ? [] : [attachment.name]),
+    ...(attachment.durationS ? [duration(attachment.durationS)] : []),
+  ];
+  const head = `[${parts.join(', ')}, saved at ${attachment.path}`;
+  if (attachment.transcript !== undefined) {
+    return `${head}. Transcript:]\n${attachment.transcript}`;
+  }
+  const why = attachment.notTranscribed ?? 'not transcribed';
+  return `${head}; not transcribed: ${why.replace(/\.$/, '')}]`;
 }

@@ -167,8 +167,8 @@ function fromMessage(
   if (!fromPerson(message)) return null;
   const attachment = attachmentOf(message);
   const text = message.text ?? message.caption;
-  // Voice, audio, video, and stickers come later; without text or a file, a
-  // message has nothing to answer.
+  // Video and stickers come later; without text or a file, a message has
+  // nothing to answer.
   if (text === undefined && attachment === null) return null;
   const command = commandOf(message, me);
   // Another bot's command: Pero shouldn't answer it.
@@ -187,9 +187,10 @@ function fromMessage(
 }
 
 /**
- * The file `message` carries: a photo, at the largest size Telegram has, or
- * a file of any type, such as a PDF or a PNG sent uncompressed. Null for
- * none.
+ * The file `message` carries: a photo, at the largest size Telegram has; a
+ * voice message, audio file, or round video message, which Pero
+ * transcribes; or a file of any type, such as a PDF or a PNG sent
+ * uncompressed. Null for none.
  */
 function attachmentOf(message: Message): InboundAttachment | null {
   const photo = message.photo?.at(-1);
@@ -200,6 +201,38 @@ function attachmentOf(message: Message): InboundAttachment | null {
       type: 'image/jpeg',
       name: null,
       size: sizeOf(photo),
+    };
+  }
+  const { voice, audio, video_note: videoNote } = message;
+  if (voice !== undefined) {
+    return {
+      ref: voice.file_id,
+      // Telegram records voice messages as OGG with Opus.
+      type: voice.mime_type ?? 'audio/ogg',
+      name: null,
+      size: sizeOf(voice),
+      media: 'voice',
+      durationS: voice.duration,
+    };
+  }
+  if (audio !== undefined) {
+    return {
+      ref: audio.file_id,
+      type: audio.mime_type ?? 'audio/mpeg',
+      name: audio.file_name ?? null,
+      size: sizeOf(audio),
+      media: 'audio',
+      durationS: audio.duration,
+    };
+  }
+  if (videoNote !== undefined) {
+    return {
+      ref: videoNote.file_id,
+      type: 'video/mp4',
+      name: null,
+      size: sizeOf(videoNote),
+      media: 'video-note',
+      durationS: videoNote.duration,
     };
   }
   const document = message.document;

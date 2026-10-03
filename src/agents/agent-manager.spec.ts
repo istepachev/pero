@@ -26,8 +26,11 @@ import { ComponentHealth } from '../health/component-health.js';
 import { type AgentRuntime, RuntimeError } from '../runtimes/agent-runtime.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
+import { SpeechService } from '../speech/speech.service.js';
+import { FakeSpeech } from '../speech/testing/fake-speech.js';
 import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { AgentManager, type IsolatedTurn, TurnError } from './agent-manager.js';
+import { VOICE_NOTE } from './agent-request.js';
 import { AgentsModule } from './agents.module.js';
 
 const GROUP = groupChat('-1009007199254740993', 'Household');
@@ -41,6 +44,7 @@ describe('AgentManager', () => {
   let adapter: FakeChannelAdapter;
   let claude: FakeAgentRuntime;
   let codex: FakeAgentRuntime;
+  let speech: FakeSpeech;
 
   /** Starts Pero's Channel and Agent services on the test database. */
   async function boot(runtimes: AgentRuntime[] = [claude, codex]) {
@@ -54,6 +58,8 @@ describe('AgentManager', () => {
     })
       .overrideProvider(AGENT_RUNTIMES)
       .useValue(runtimes)
+      .overrideProvider(SpeechService)
+      .useValue(speech)
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
@@ -82,6 +88,9 @@ describe('AgentManager', () => {
     workspace = ws.root;
     await ws.pero();
     await ws.channel('Default');
+    speech = new FakeSpeech();
+    // Instructions stay as other tests expect them unless one speaks.
+    speech.speakFails = 'voice messages are off in config.yaml';
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
@@ -138,6 +147,54 @@ describe('AgentManager', () => {
       address: OWNER.address,
       message: { text: 'echo: Hello' },
     });
+  });
+
+  it('sends the voice blocks of a reply as voice messages, in order, and records their words', async () => {
+    speech.speakFails = null;
+    await say(OWNER, 'Hi <voice>Good morning.</voice> bye');
+
+    expect(adapter.sent.slice(-3)).toEqual([
+      { address: OWNER.address, message: { text: 'echo: Hi' } },
+      {
+        address: OWNER.address,
+        message: { text: '' },
+        voice: {
+          audio: new TextEncoder().encode('Good morning.'),
+          type: 'audio/ogg',
+          durationS: 1,
+        },
+      },
+      { address: OWNER.address, message: { text: 'bye' } },
+    ]);
+    const outbound = (await allMessages()).filter(
+      (message) => message.direction === 'out',
+    );
+    expect(outbound.at(-1)!.text).toBe(
+      'echo: Hi\n\n[Voice message]\nGood morning.\n\nbye',
+    );
+  });
+
+  it("sends a voice block as text when it can't be recorded, saying why", async () => {
+    await say(OWNER, '<voice>Hello.</voice>');
+
+    expect(sentTexts().slice(-2)).toEqual([
+      'echo:',
+      "Hello.\n\n(Pero couldn't send this as a voice message: voice " +
+        'messages are off in config.yaml.)',
+    ]);
+  });
+
+  it('tells the turn how to send a voice message only when Pero can record one', async () => {
+    speech.speakFails = null;
+    await say(OWNER, 'one');
+    speech.speakFails = 'voice messages are off in config.yaml';
+    await say(OWNER, 'two');
+
+    const [canSpeak, cannot] = claude.requests.map(
+      (request) => request.instructions,
+    );
+    expect(canSpeak).toContain(VOICE_NOTE);
+    expect(cannot).not.toContain(VOICE_NOTE);
   });
 
   it('runs turns within a Session one at a time, in order', async () => {

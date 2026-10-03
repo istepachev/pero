@@ -147,7 +147,7 @@ export class FakeBotApi {
     const match = /^\/bot([^/]+)\/(\w+)$/.exec(req.url ?? '');
     if (!match) return this.reply(res, 404, { ok: false, error_code: 404 });
     const [, token, method] = match as unknown as [string, string, string];
-    const payload = await readJson(req);
+    const payload = await readPayload(req);
     this.calls.push({ token, method, payload });
 
     if (this.rejected.has(token)) {
@@ -174,6 +174,9 @@ export class FakeBotApi {
       case 'getFile':
         return this.getFile(res, payload);
       case 'sendMessage':
+        return this.sendMessage(res, payload);
+      case 'sendVoice':
+      case 'sendAudio':
         return this.sendMessage(res, payload);
       case 'editMessageText':
         return this.ok(res, {
@@ -323,11 +326,61 @@ export class FakeBotApi {
   }
 }
 
-async function readJson(
+/** A file uploaded with a call, as `payload` records it. */
+export interface FakeUpload {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * A call's parameters: from JSON, or from a multipart upload, whose files
+ * become `FakeUpload`s and whose other fields stay the strings sent.
+ */
+async function readPayload(
   req: IncomingMessage,
 ): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
-  const text = Buffer.concat(chunks).toString('utf8');
+  const body = Buffer.concat(chunks);
+  const type = req.headers['content-type'] ?? '';
+  const boundary = /^multipart\/form-data;\s*boundary=(.+)$/.exec(type)?.[1];
+  if (boundary !== undefined) return readMultipart(body, boundary);
+  const text = body.toString('utf8');
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
+/**
+ * grammY's multipart upload, read leniently: its part headers are not
+ * quoted the way stricter parsers want. A field naming `attach://<part>`
+ * becomes that part's file.
+ */
+function readMultipart(
+  body: Buffer,
+  boundary: string,
+): Record<string, unknown> {
+  const fields = new Map<string, string>();
+  const files = new Map<string, FakeUpload>();
+  const delimiter = Buffer.from(`--${boundary}`);
+  let start = body.indexOf(delimiter);
+  while (start !== -1) {
+    const next = body.indexOf(delimiter, start + delimiter.length);
+    if (next === -1) break;
+    // Each part: CRLF, its headers, a blank line, its content, then CRLF.
+    const part = body.subarray(start + delimiter.length + 2, next - 2);
+    const split = part.indexOf('\r\n\r\n');
+    const headers = part.subarray(0, split).toString('utf8');
+    const content = part.subarray(split + 4);
+    const name = /name="?([^";\r\n]+)"?/i.exec(headers)?.[1] ?? '';
+    const filename = /filename="?([^";\r\n]+)"?/i.exec(headers)?.[1];
+    if (filename === undefined) fields.set(name, content.toString('utf8'));
+    else files.set(name, { name: filename, bytes: new Uint8Array(content) });
+    start = next;
+  }
+  const payload: Record<string, unknown> = {};
+  for (const [name, value] of fields) {
+    const attached = /^attach:\/\/(.+)$/.exec(value)?.[1];
+    payload[name] =
+      attached === undefined ? value : (files.get(attached) ?? value);
+  }
+  return payload;
 }

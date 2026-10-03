@@ -315,6 +315,90 @@ describe('toInbound', () => {
         });
       });
 
+      it('takes a voice message, an audio file, and a video message as recordings', () => {
+        const voice = toInbound(
+          update({
+            chat: DIRECT,
+            voice: {
+              file_id: 'v',
+              file_unique_id: 'v',
+              duration: 42,
+              mime_type: 'audio/ogg',
+              file_size: 9_000,
+            },
+          }),
+          ME,
+        );
+        const audio = toInbound(
+          update({
+            chat: DIRECT,
+            audio: {
+              file_id: 'a',
+              file_unique_id: 'a',
+              duration: 300,
+              file_name: 'Interview.m4a',
+              mime_type: 'audio/mp4',
+            },
+            caption: 'Summarize this',
+          }),
+          ME,
+        );
+        const videoNote = toInbound(
+          update({
+            chat: DIRECT,
+            video_note: {
+              file_id: 'n',
+              file_unique_id: 'n',
+              length: 240,
+              duration: 7,
+            },
+          }),
+          ME,
+        );
+
+        expect(voice).toMatchObject({
+          content: {
+            text: '',
+            attachments: [
+              {
+                ref: 'v',
+                type: 'audio/ogg',
+                name: null,
+                size: 9_000,
+                media: 'voice',
+                durationS: 42,
+              },
+            ],
+          },
+        });
+        expect(audio).toMatchObject({
+          content: {
+            text: 'Summarize this',
+            attachments: [
+              {
+                ref: 'a',
+                type: 'audio/mp4',
+                name: 'Interview.m4a',
+                media: 'audio',
+                durationS: 300,
+              },
+            ],
+          },
+        });
+        expect(videoNote).toMatchObject({
+          content: {
+            attachments: [
+              {
+                ref: 'n',
+                type: 'video/mp4',
+                media: 'video-note',
+                durationS: 7,
+              },
+            ],
+          },
+        });
+      });
+
       it('takes a file with its caption, and one Telegram gives no type', () => {
         const inbound = toInbound(
           update({

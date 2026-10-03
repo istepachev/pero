@@ -95,7 +95,9 @@ export class AgentChannelTurns extends ChannelTurns {
       author = { origin: 'pero' };
     }
     try {
-      await this.sender.post(channel, text, author);
+      await (author.origin === 'agent'
+        ? this.sender.postAnswer(channel, text, author)
+        : this.sender.post(channel, text, author));
     } catch (error) {
       this.logger.warn(
         `Failed to reply in ${channel.integrationKind} Channel ${channel.id}: ` +

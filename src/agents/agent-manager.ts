@@ -28,7 +28,12 @@ import {
 import type { ChannelNote } from '../system-files/snapshot.js';
 import { Definitions, routeQuery } from '../system/definitions.js';
 import { SystemNotes } from '../system/system-notes.service.js';
-import { type AgentRequest, agentRequest } from './agent-request.js';
+import { SpeechService } from '../speech/speech.service.js';
+import {
+  type AgentRequest,
+  agentRequest,
+  type InstructionDefaults,
+} from './agent-request.js';
 
 /** One message in a Channel, for Pero to answer. */
 export interface TurnInput {
@@ -149,7 +154,16 @@ export class AgentManager implements BeforeApplicationShutdown {
     private readonly history: MessageHistory,
     private readonly health: ComponentHealth,
     private readonly notes: SystemNotes,
+    private readonly speech: SpeechService,
   ) {}
+
+  /**
+   * What turns' and runs' instructions are composed with: the defaults,
+   * and whether Pero can record voice messages now.
+   */
+  instructionDefaults(): InstructionDefaults {
+    return { ...this.definitions.defaults(), voice: this.speech.canSpeak() };
+  }
 
   /**
    * Accepts a turn behind the Session's earlier ones and settles when it
@@ -297,7 +311,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         return null;
       }
       const { note: agent } = first;
-      const request = agentRequest(agent, this.definitions.defaults());
+      const request = agentRequest(agent, this.instructionDefaults());
       let { session } = first;
       provider = agent.provider;
       base = `Channel ${turn.channelId}, note ${agent.name}`;
@@ -328,7 +342,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         where = `${base}, Session ${session.id} (${agent.provider})`;
         text = await this.runInSession(
           retry,
-          agentRequest(retry.note, this.definitions.defaults()),
+          agentRequest(retry.note, this.instructionDefaults()),
           turn,
           where,
           controller,

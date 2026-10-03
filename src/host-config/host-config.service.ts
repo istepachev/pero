@@ -6,12 +6,14 @@ import { ConfigError } from '../config/bootstrap-config.js';
 import {
   allowChat,
   DEFAULT_DATA_FOLDER,
+  DEFAULT_SPEECH,
   defaultHostConfig,
   denyChat,
   editHostConfig,
   type HostAllowedChat,
   type HostConfig,
   moveChatId,
+  type SpeechConfig,
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
@@ -51,7 +53,12 @@ export interface HostConfigOptions {
 @Injectable()
 export class HostConfigService implements OnModuleInit {
   private readonly logger = new Logger('Config');
-  private config: HostConfig = { data: null, system: null, allowedChats: [] };
+  private config: HostConfig = {
+    data: null,
+    system: null,
+    allowedChats: [],
+    speech: DEFAULT_SPEECH,
+  };
   /** `data` and `system` as Pero uses them: from startup, or set by Pero. */
   private running: Pick<HostConfig, 'data' | 'system'> = {
     data: null,
@@ -159,6 +166,11 @@ export class HostConfigService implements OnModuleInit {
   /** The chats Pero serves, in the file's order. */
   allowedChats(): readonly HostAllowedChat[] {
     return this.config.allowedChats;
+  }
+
+  /** `speech`, as last read; an edit applies from the next voice message. */
+  speech(): SpeechConfig {
+    return this.config.speech;
   }
 
   /** Adds chat `chatKey`, labelled `title`; false when it was allowed. */

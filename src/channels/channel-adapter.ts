@@ -63,7 +63,17 @@ export interface InboundAttachment {
   name: string | null;
   /** Its size in bytes; null when the integration doesn't say. */
   size: number | null;
+  /**
+   * Set for recorded sound Pero transcribes: a voice message, an audio
+   * file, or a round video message.
+   */
+  media?: AudioMedia;
+  /** How long the recording lasts, in seconds; null when unknown. */
+  durationS?: number | null;
 }
+
+/** The kinds of recording Pero transcribes. */
+export type AudioMedia = 'voice' | 'audio' | 'video-note';
 
 /** A message normalized by its adapter. */
 export interface InboundMessage {
@@ -157,6 +167,15 @@ export interface OutboundMessage {
   buttons?: ButtonRows;
 }
 
+/** Recorded speech to send as a voice message. */
+export interface OutboundVoice {
+  audio: Uint8Array;
+  /** `audio/ogg` (Opus) or `audio/mpeg`. */
+  type: string;
+  /** Its length in seconds; null when unknown. */
+  durationS: number | null;
+}
+
 /**
  * The integration's ID for a message it sent; the first part's ID when it
  * had to split the message into several.
@@ -173,6 +192,14 @@ export interface ChannelAdapter {
   /** Ends intake. Sending may still work until the process exits. */
   stop(): Promise<void>;
   send(address: ChannelAddress, message: OutboundMessage): Promise<SentMessage>;
+  /**
+   * Sends `voice` as a voice message, or as an audio file where the chat
+   * doesn't take voice messages.
+   */
+  sendVoice(
+    address: ChannelAddress,
+    voice: OutboundVoice,
+  ): Promise<SentMessage>;
   /**
    * The key of the chat `address` belongs to, as `InboundChat.key` gives
    * it, so the allowlist can be checked before sending unprompted.

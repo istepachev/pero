@@ -58,6 +58,39 @@ export interface HostAllowedChat {
   title: string | null;
 }
 
+/** What turns speech into text, or text into speech; `off` for nothing. */
+export const SPEECH_ENGINES = ['local', 'elevenlabs', 'off'] as const;
+export type SpeechEngine = (typeof SPEECH_ENGINES)[number];
+
+/** `speech` in `config.yaml`: how Pero hears voice messages and speaks. */
+export interface SpeechConfig {
+  transcribe: {
+    engine: SpeechEngine;
+    /** The engine's model, a file for `local`; null for its default. */
+    model: string | null;
+    /** The spoken language, such as `en`; null to detect it. */
+    language: string | null;
+    /** Longer voice messages aren't transcribed. */
+    maxMinutes: number;
+  };
+  speak: {
+    engine: SpeechEngine;
+    /** The engine's voice, a file for `local`; null for its default. */
+    voice: string | null;
+    /** The engine's model; null for its default. */
+    model: string | null;
+  };
+  /** The programs the `local` engine runs, by name or path. */
+  programs: { ffmpeg: string; whisper: string; piper: string };
+}
+
+/** `speech` when `config.yaml` sets none of it. */
+export const DEFAULT_SPEECH: SpeechConfig = {
+  transcribe: { engine: 'local', model: null, language: null, maxMinutes: 10 },
+  speak: { engine: 'local', voice: null, model: null },
+  programs: { ffmpeg: 'ffmpeg', whisper: 'whisper-cli', piper: 'piper' },
+};
+
 /** `config.yaml` as Pero uses it. */
 export interface HostConfig {
   /** `data` as written; null when the file doesn't set it. */
@@ -65,9 +98,15 @@ export interface HostConfig {
   /** `system` as written; null when the file doesn't set it. */
   system: string | null;
   allowedChats: HostAllowedChat[];
+  speech: SpeechConfig;
 }
 
-const EMPTY: HostConfig = { data: null, system: null, allowedChats: [] };
+const EMPTY: HostConfig = {
+  data: null,
+  system: null,
+  allowedChats: [],
+  speech: DEFAULT_SPEECH,
+};
 
 const folder = z
   .string({ error: 'must be a folder path' })
@@ -82,6 +121,49 @@ const chatId = z
   })
   .transform(String)
   .pipe(telegramChatIdSchema);
+
+const engine = z.enum(SPEECH_ENGINES, {
+  error: `must be one of ${SPEECH_ENGINES.join(', ')}`,
+});
+
+const setting = z
+  .string({ error: 'must be text' })
+  .trim()
+  .min(1, 'must not be empty');
+
+const speech = z.strictObject({
+  transcribe: z
+    .strictObject({
+      engine: engine.nullish(),
+      model: setting.nullish(),
+      language: setting.nullish(),
+      'max-minutes': z
+        .union([z.bigint(), z.number()], { error: 'must be a number' })
+        .transform(Number)
+        .pipe(
+          z
+            .number()
+            .positive('must be more than 0')
+            .max(60, 'must be at most 60'),
+        )
+        .nullish(),
+    })
+    .nullish(),
+  speak: z
+    .strictObject({
+      engine: engine.nullish(),
+      voice: setting.nullish(),
+      model: setting.nullish(),
+    })
+    .nullish(),
+  programs: z
+    .strictObject({
+      ffmpeg: setting.nullish(),
+      whisper: setting.nullish(),
+      piper: setting.nullish(),
+    })
+    .nullish(),
+});
 
 const schema = z.strictObject({
   data: folder.nullish(),
@@ -112,6 +194,7 @@ const schema = z.strictObject({
         }),
     })
     .nullish(),
+  speech: speech.nullish(),
 });
 
 const PARSE_OPTIONS = {
@@ -247,6 +330,21 @@ export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
     '  #   - id: 123456789        # a direct chat: your user ID',
     '  allowed-chats: []',
     '',
+    '# Voice messages: transcribing the ones you send, and the ones Pero',
+    '# records. Each engine is local (whisper.cpp, Piper, and ffmpeg; set',
+    '# them up with pero speech setup), elevenlabs (ELEVENLABS_API_KEY in',
+    '# .env), or off. Default: local for both.',
+    '# speech:',
+    '#   transcribe:',
+    '#     engine: local',
+    '#     model: .pero/models/ggml-base.bin   # elevenlabs: scribe_v1',
+    '#     language: en                        # default: detected',
+    '#     max-minutes: 10',
+    '#   speak:',
+    '#     engine: elevenlabs',
+    '#     voice: 21m00Tcm4TlvDq8EAWfZT        # local: a Piper .onnx voice',
+    '#     model: eleven_multilingual_v2',
+    '',
   ].join('\n');
 }
 
@@ -336,7 +434,7 @@ function check(
     throw new ConfigError(`Invalid ${file}:\n${lines.join('\n')}`);
   }
 
-  const { data, system, telegram } = parsed.data;
+  const { data, system, telegram, speech } = parsed.data;
   return {
     document,
     config: {
@@ -347,6 +445,32 @@ function check(
         chatKey: chat.id,
         title: chat.title ?? null,
       })),
+      speech: speechConfig(speech),
+    },
+  };
+}
+
+/** `speech` as parsed, with a default for each setting left out. */
+function speechConfig(
+  parsed: z.infer<typeof speech> | null | undefined,
+): SpeechConfig {
+  const { transcribe, speak, programs } = DEFAULT_SPEECH;
+  return {
+    transcribe: {
+      engine: parsed?.transcribe?.engine ?? transcribe.engine,
+      model: parsed?.transcribe?.model ?? transcribe.model,
+      language: parsed?.transcribe?.language ?? transcribe.language,
+      maxMinutes: parsed?.transcribe?.['max-minutes'] ?? transcribe.maxMinutes,
+    },
+    speak: {
+      engine: parsed?.speak?.engine ?? speak.engine,
+      voice: parsed?.speak?.voice ?? speak.voice,
+      model: parsed?.speak?.model ?? speak.model,
+    },
+    programs: {
+      ffmpeg: parsed?.programs?.ffmpeg ?? programs.ffmpeg,
+      whisper: parsed?.programs?.whisper ?? programs.whisper,
+      piper: parsed?.programs?.piper ?? programs.piper,
     },
   };
 }

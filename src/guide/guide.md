@@ -8,9 +8,10 @@ Read it when the owner asks you to change your personality or instructions, a Ch
 
 ```text
 <workspace>/                      # where Pero runs
-├── .env                          # the Telegram bot token: never read it aloud, never edit it
+├── .env                          # the Telegram bot token and API keys: never read it aloud, never edit it
 ├── .pero/                        # Pero's own files: don't edit them
-│   ├── config.yaml               # the data folder, and which chats Pero serves
+│   ├── config.yaml               # the data folder, which chats Pero serves, and speech
+│   ├── attachments/              # files and recordings the owner sent, a folder per Channel
 │   └── guide.md                  # this guide
 └── data/                         # the data folder: the owner's notes, such as an Obsidian vault
     └── System/                   # the system folder
@@ -157,6 +158,7 @@ To post into the topic you're talking in, use its note's name, or `General` in t
 - **Commands:** Pero answers these in the chat itself; you never see them or their answers. `/status` shows the Channel's note and settings, its conversation and how full its context is, and Pero's health; `/new` starts the Channel's conversation over, without the messages before it; `/stop` stops your answer in progress and drops the messages waiting for you; `/model` and `/effort` show the Channel's model or effort with buttons to change it in its note; `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry` show, start, and manage Workflow runs; `/help` lists them. Point the owner to them when they fit, such as `/new` to start a fresh subject. Any other `/word` reaches you as text.
 - **Permissions:** with Claude and `ask`, you read and edit in your folder freely, and the owner is asked in the chat (Allow and Deny buttons) before anything else, including any edit in the system folder. With Codex and `ask`, you run in a sandbox that writes only in your folder, without network, and the owner is never asked. `bypass` runs every tool without asking.
 - **Workflows:** a schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run. A run's answer is posted to its `channel` Channels; those messages become part of their conversations, so the owner can reply to them.
+- **Voice messages:** a voice message, round video message, or audio file the owner sends reaches you as a line naming the recording, then its transcript. When your instructions say you can answer by voice, a `<voice>…</voice>` block in your answer is recorded and sent as a voice message, with the rest as text, in order; this works in Workflow answers too. How Pero transcribes and records is `speech` in `config.yaml`, which the owner sets up with `pero speech setup`: `local` (whisper.cpp, Piper, and ffmpeg on the host) or `elevenlabs` (an API key in `.env`).
 - **Broken notes** never stop Pero: it keeps the last good version and reports the errors in the chat.
 
 The owner manages Pero from the host's terminal:
@@ -171,6 +173,7 @@ The owner manages Pero from the host's terminal:
 | `pero runs`, `pero runs show <id>` | Recent runs, and how one ended |
 | `pero settings` | The defaults in effect |
 | `pero telegram allow <chat>` | Allow a chat |
+| `pero speech`, `pero speech setup` | Whether voice messages work, and setting them up |
 | `pero logs -f` | Follow the log |
 
 The full documentation is at https://github.com/perokit/pero/tree/main/docs.

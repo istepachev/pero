@@ -4,7 +4,7 @@ import {
   Logger,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
-import { Bot, GrammyError, HttpError } from 'grammy';
+import { Bot, GrammyError, HttpError, InputFile } from 'grammy';
 import type { InlineKeyboardMarkup, Update, UserFromGetMe } from 'grammy/types';
 import type { ChatKind } from '../persistence/entities/sql.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
@@ -17,6 +17,7 @@ import {
   type InboundMessage,
   MAX_BUTTON_ID_BYTES,
   type OutboundMessage,
+  type OutboundVoice,
   type SentMessage,
 } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
@@ -177,6 +178,54 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       throw error;
     }
     return { messageId: first! };
+  }
+
+  /**
+   * Sends `voice` as a voice message; as an audio file to a person who
+   * doesn't take voice messages from bots, a Telegram privacy setting.
+   */
+  async sendVoice(
+    address: ChannelAddress,
+    voice: OutboundVoice,
+  ): Promise<SentMessage> {
+    const bot = this.connection?.bot;
+    if (!bot) throw new Error('Telegram bot token is not set');
+    const target = parseAddress(address);
+    const options = {
+      ...(target.messageThreadId === undefined
+        ? {}
+        : { message_thread_id: Number(target.messageThreadId) }),
+      ...(voice.durationS === null ? {} : { duration: voice.durationS }),
+    };
+    const file = () =>
+      new InputFile(
+        voice.audio,
+        voice.type === 'audio/mpeg' ? 'voice.mp3' : 'voice.ogg',
+      );
+    try {
+      try {
+        const sent = await this.withRetries(target.chatId, (id) =>
+          bot.api.sendVoice(id, file(), options),
+        );
+        return { messageId: String(sent.message_id) };
+      } catch (error) {
+        if (
+          !(error instanceof GrammyError) ||
+          !error.description.includes('VOICE_MESSAGES_FORBIDDEN')
+        ) {
+          throw error;
+        }
+        const sent = await this.withRetries(target.chatId, (id) =>
+          bot.api.sendAudio(id, file(), { ...options, title: 'Pero' }),
+        );
+        return { messageId: String(sent.message_id) };
+      }
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw new Error(`Telegram is unreachable: ${this.describe(error)}`);
+      }
+      throw error;
+    }
   }
 
   chatKey(address: ChannelAddress): string {

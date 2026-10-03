@@ -20,6 +20,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message } from '../persistence/entities/message.entity.js';
 import { Notification } from '../persistence/entities/notification.entity.js';
 import { WorkflowRun } from '../persistence/entities/workflow-run.entity.js';
+import { SpeechService } from '../speech/speech.service.js';
+import { FakeSpeech } from '../speech/testing/fake-speech.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
@@ -50,6 +52,7 @@ describe('NotificationDelivery', () => {
   let adapter: FakeChannelAdapter;
   let claude: FakeAgentRuntime;
   let codex: FakeAgentRuntime;
+  let speech: FakeSpeech;
 
   beforeEach(async () => {
     ws = TestWorkspace.create('pero-delivery-');
@@ -57,6 +60,7 @@ describe('NotificationDelivery', () => {
     await ws.channel('Default');
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
+    speech = new FakeSpeech();
     moduleRef = await Test.createTestingModule({
       imports: [
         PersistenceModule.forRoot({ database: ws.database }),
@@ -68,6 +72,8 @@ describe('NotificationDelivery', () => {
     })
       .overrideProvider(AGENT_RUNTIMES)
       .useValue([claude, codex])
+      .overrideProvider(SpeechService)
+      .useValue(speech)
       .compile();
     await moduleRef.init();
     ds = moduleRef.get<DataSource>(getDataSourceToken());
@@ -158,6 +164,38 @@ describe('NotificationDelivery', () => {
       }),
     ]);
     expect(await ds.getRepository(WorkflowRun).count()).toBe(1);
+  });
+
+  it("sends a run's voice blocks as voice messages, recording their words", async () => {
+    const channel = await target();
+    await ws.editWorkflow(
+      'Brief',
+      { channel: channel.id },
+      'Say <voice>Good morning.</voice>',
+    );
+    const notification = await finishedRun();
+
+    await delivery.tick(after(notification.nextAttemptAt!, 1));
+
+    expect(adapter.sent).toEqual([
+      { address: OWNER.address, message: { text: 'Brief\n\necho: Say' } },
+      {
+        address: OWNER.address,
+        message: { text: '' },
+        voice: {
+          audio: new TextEncoder().encode('Good morning.'),
+          type: 'audio/ogg',
+          durationS: 1,
+        },
+      },
+    ]);
+    expect(speech.spoken).toEqual(['Good morning.']);
+    expect(await workflowMessages()).toEqual([
+      expect.objectContaining({
+        externalMessageId: '1',
+        text: 'Brief\n\necho: Say\n\n[Voice message]\nGood morning.',
+      }),
+    ]);
   });
 
   it('sends nothing before a Notification is due', async () => {
@@ -447,7 +485,10 @@ describe('NotificationDelivery', () => {
       // An integration that is not connected cannot tell.
       const unconnected = new NotificationViews(
         ds,
-        new ChannelSender(moduleRef.get(MessageHistory)),
+        new ChannelSender(
+          moduleRef.get(MessageHistory),
+          moduleRef.get(SpeechService),
+        ),
         moduleRef.get(AllowedChatsService),
         delivery,
         moduleRef.get(ComponentHealth),
