@@ -30,15 +30,23 @@ export interface EditRecord {
   message: OutboundMessage;
 }
 
+/** A mark the fake adapter was asked to set or clear on a message. */
+export interface WorkingRecord {
+  address: ChannelAddress;
+  messageId: string;
+  working: boolean;
+}
+
 /**
  * An in-memory Channel adapter for tests. `deliver`, `emit`, and `press`
- * play an update into the router and wait until it has been routed; `sent`
- * and `edited` record everything sent back. The message `sent[i]` has the
- * ID `String(i + 1)`.
+ * play an update into the router and wait until it has been routed; `sent`,
+ * `edited`, and `working` record everything sent back. The message
+ * `sent[i]` has the ID `String(i + 1)`.
  */
 export class FakeChannelAdapter implements ChannelAdapter {
   readonly sent: SentRecord[] = [];
   readonly edited: EditRecord[] = [];
+  readonly working: WorkingRecord[] = [];
   running = false;
   /** Makes the next sends fail, as an unreachable service would. */
   failSends = false;
@@ -121,6 +129,16 @@ export class FakeChannelAdapter implements ChannelAdapter {
   ): Promise<void> {
     if (this.failSends) return Promise.reject(new Error('Service unreachable'));
     this.edited.push({ address, messageId, message });
+    return Promise.resolve();
+  }
+
+  showWorking(
+    address: ChannelAddress,
+    messageId: string,
+    working: boolean,
+  ): Promise<void> {
+    if (this.failSends) return Promise.reject(new Error('Service unreachable'));
+    this.working.push({ address, messageId, working });
     return Promise.resolve();
   }
 

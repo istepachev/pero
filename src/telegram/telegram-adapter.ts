@@ -64,6 +64,12 @@ const ALLOWED_UPDATES = [
 /** Calls whose failure means Telegram can't be reached. */
 const CONNECTION_METHODS = new Set(['getMe', 'deleteWebhook', 'getUpdates']);
 
+/**
+ * The reaction on a message while Pero answers it; Telegram lets bots
+ * react only with its standard emoji, and has no read status for them.
+ */
+const WORKING_REACTION = '👀';
+
 /** How often a send waits out Telegram's flood limit before giving up. */
 const MAX_FLOOD_RETRIES = 3;
 const MAX_FLOOD_WAIT_S = 60;
@@ -293,6 +299,25 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       }
       throw error;
     }
+  }
+
+  /**
+   * Reacts to message `messageId` with `WORKING_REACTION`, or removes the
+   * reaction. Not retried: a mark that comes late is no use.
+   */
+  async showWorking(
+    address: ChannelAddress,
+    messageId: string,
+    working: boolean,
+  ): Promise<void> {
+    const bot = this.connection?.bot;
+    if (!bot) throw new Error('Telegram bot token is not set');
+    const { chatId } = parseAddress(address);
+    await bot.api.setMessageReaction(
+      chatId,
+      Number(messageId),
+      working ? [{ type: 'emoji', emoji: WORKING_REACTION }] : [],
+    );
   }
 
   /**

@@ -27,7 +27,9 @@ export function failureText(error: unknown): string {
 
 /**
  * Hands each routed message to the Agent manager and posts the answer, or
- * a short failure notice, back to the Channel and its history.
+ * a short failure notice, back to the Channel and its history. The message
+ * is marked as being answered from when its turn is accepted until the
+ * turn has ended and anything it produced is posted.
  */
 @Injectable()
 export class AgentChannelTurns extends ChannelTurns {
@@ -56,7 +58,12 @@ export class AgentChannelTurns extends ChannelTurns {
       attachments,
       approve: this.approvals.approverFor(channel),
     });
-    const task = this.reply(channel, turn);
+    // Not awaited: intake never waits on the integration.
+    const shown = this.sender.showWorking(channel, message.messageId, true);
+    const task = this.reply(channel, turn).finally(async () => {
+      await shown;
+      await this.sender.showWorking(channel, message.messageId, false);
+    });
     this.active.add(task);
     void task.then(() => this.active.delete(task));
     return Promise.resolve();

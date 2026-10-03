@@ -160,6 +160,29 @@ export class ChannelSender {
   }
 
   /**
+   * Marks received message `messageId` in `channel` as being answered, or
+   * clears the mark. Best-effort: a failure is only logged.
+   */
+  async showWorking(
+    channel: Pick<Channel, 'id' | 'integrationKind' | 'address'>,
+    messageId: string,
+    working: boolean,
+  ): Promise<void> {
+    try {
+      await this.adapter(channel.integrationKind).showWorking(
+        channel.address,
+        messageId,
+        working,
+      );
+    } catch (error) {
+      this.logger.debug(
+        `Failed to ${working ? 'mark' : 'unmark'} message ${messageId} ` +
+          `in Channel ${channel.id}: ${describe(error)}`,
+      );
+    }
+  }
+
+  /**
    * Sends `text` to `channel`, then records it in the Channel's history. A
    * failed send throws and records nothing; a failed record is only logged,
    * since the message is out by then.
