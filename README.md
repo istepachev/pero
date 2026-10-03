@@ -111,6 +111,7 @@ Suggest better English for: {{history}}
 ```sh
 pero backup ~/backups/pero.tgz     # while Pero runs; --include-data adds the data folder
 pero restore ~/backups/pero.tgz    # into a workspace without a database, such as a fresh clone, while Pero is stopped
+pero upgrade                       # install the latest version and restart Pero on it
 ```
 
 ## Learn more

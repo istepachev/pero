@@ -44,6 +44,7 @@ import {
   TelegramDenyCommand,
   TelegramTokenCommand,
 } from './commands/telegram.command.js';
+import { UpgradeCommand } from './commands/upgrade.command.js';
 import {
   WorkflowsCommand,
   WorkflowsListCommand,
@@ -98,6 +99,7 @@ import { StrictArguments } from './strict-arguments.js';
     SpeechConfigureCommand,
     BackupCommand,
     RestoreCommand,
+    UpgradeCommand,
   ],
 })
 export class CliModule {}

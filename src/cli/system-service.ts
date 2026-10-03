@@ -192,6 +192,49 @@ export async function uninstallService(
   await run(exec, 'systemctl', ['--user', 'daemon-reload']);
 }
 
+/**
+ * The pid of the process `service` runs now; null when it runs none, or
+ * when the service manager does not say.
+ */
+export async function servicePid(
+  service: SystemService,
+  exec: Exec,
+): Promise<number | null> {
+  const outcome =
+    service.manager === 'launchd'
+      ? await exec('launchctl', ['list', LAUNCHD_LABEL], {
+          timeoutMs: COMMAND_TIMEOUT_MS,
+        })
+      : await exec(
+          'systemctl',
+          ['--user', 'show', '--property', 'MainPID', '--value', SYSTEMD_UNIT],
+          { timeoutMs: COMMAND_TIMEOUT_MS },
+        );
+  if (outcome.code !== 0) return null;
+  const pid = Number(
+    service.manager === 'launchd'
+      ? /"PID" = (\d+);/.exec(outcome.stdout)?.[1]
+      : outcome.stdout.trim(),
+  );
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+/**
+ * Starts the installed `service` again, as after `pero stop`: Pero exits
+ * cleanly then, so the service manager left it stopped.
+ */
+export async function startService(
+  service: SystemService,
+  exec: Exec,
+  uid: number = process.getuid?.() ?? 0,
+): Promise<void> {
+  if (service.manager === 'launchd') {
+    await run(exec, 'launchctl', ['kickstart', `gui/${uid}/${LAUNCHD_LABEL}`]);
+    return;
+  }
+  await run(exec, 'systemctl', ['--user', 'start', SYSTEMD_UNIT]);
+}
+
 /** Where to look when the service does not start. */
 export function serviceLogsHint(service: SystemService): string {
   return service.manager === 'systemd'

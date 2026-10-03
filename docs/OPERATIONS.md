@@ -39,15 +39,15 @@ loginctl enable-linger "$USER"   # keep it running while you are logged out
 
 `env` must find the same `node` and `pero` your shell does; with a Node version manager, write their full paths in `ExecStart` instead. Other `pero` commands work as usual while the service runs. Pero exits cleanly on `pero stop` as on `systemctl --user stop pero`, so `Restart=on-failure` restarts it only after a crash; `systemctl --user start pero` starts it again.
 
-To upgrade, back up first, install the new version, and restart Pero, which applies any new database migrations as it starts:
+To upgrade, back up first, then run `pero upgrade`. It installs the latest version with npm and restarts Pero, through its service when it runs as one, which applies any new database migrations as it starts:
 
 ```sh
 pero backup ~/backups/pero-before-upgrade.tgz
-npm install -g @perokit/pero
-pero stop && pero run
+pero upgrade --check   # only says whether a newer version is available
+pero upgrade
 ```
 
-A running Pero keeps the version it started with until it is restarted.
+`pero upgrade` installs with the npm that comes with the Node.js running Pero. When npm's global packages belong to another account, such as root, it says so; install as that account, `sudo npm install -g @perokit/pero`, then run `pero upgrade` again to restart Pero. By hand, the same upgrade is `npm install -g @perokit/pero`, then `pero stop && pero run` (or `systemctl --user start pero` for the service). A running Pero keeps the version it started with until it is restarted.
 
 ## Configuration
 

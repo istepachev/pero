@@ -14,6 +14,8 @@ import type { Exec, ExecOutcome } from '../providers/provider-auth.js';
 import {
   detectServiceManager,
   installService,
+  servicePid,
+  startService,
   systemService,
   uninstallService,
 } from './system-service.js';
@@ -169,5 +171,44 @@ describe('system service', () => {
     ]);
     await uninstallService(service, exec, 501);
     expect(existsSync(service.file)).toBe(false);
+  });
+
+  it('finds the pid the systemd unit runs, and starts it again', async () => {
+    const service = systemService('systemd', target());
+    const running = recorder(() => ({ code: 0, stdout: '4242\n' }));
+
+    await expect(servicePid(service, running.exec)).resolves.toBe(4242);
+    expect(running.calls).toEqual([
+      'systemctl --user show --property MainPID --value pero.service',
+    ]);
+    await expect(
+      servicePid(service, recorder(() => ({ code: 0, stdout: '0\n' })).exec),
+    ).resolves.toBeNull();
+
+    const { exec, calls } = recorder(() => ok);
+    await startService(service, exec);
+    expect(calls).toEqual(['systemctl --user start pero.service']);
+  });
+
+  it('finds the pid the launchd agent runs, and starts it again', async () => {
+    const service = systemService('launchd', target());
+    const running = recorder(() => ({
+      code: 0,
+      stdout: '{\n\t"Label" = "com.perokit.pero";\n\t"PID" = 4242;\n};\n',
+    }));
+
+    await expect(servicePid(service, running.exec)).resolves.toBe(4242);
+    expect(running.calls).toEqual(['launchctl list com.perokit.pero']);
+    const stopped = recorder(() => ({
+      code: 0,
+      stdout: '{\n\t"LastExitStatus" = 0;\n};\n',
+    }));
+    await expect(servicePid(service, stopped.exec)).resolves.toBeNull();
+    const unloaded = recorder(() => ({ code: 113, stdout: '' }));
+    await expect(servicePid(service, unloaded.exec)).resolves.toBeNull();
+
+    const { exec, calls } = recorder(() => ok);
+    await startService(service, exec, 501);
+    expect(calls).toEqual(['launchctl kickstart gui/501/com.perokit.pero']);
   });
 });
