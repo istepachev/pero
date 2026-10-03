@@ -105,16 +105,18 @@ Later turns and Workflows that read the chat see those words. A recording that c
 
 Pero can answer by voice too. Ask for it ("answer by voice", or in a Workflow's note, "send the summary as a voice message") and Pero puts what to say in a `<voice>…</voice>` block of its answer; Pero records the block and sends it as a voice message, with the rest of the answer as text, in order. The history keeps the words, under `[Voice message]`. When a block can't be recorded, its words are sent as text, saying why. Pero only knows it can do this while recording works; `pero speech` shows whether it does.
 
-Speech is set up in `speech:` in `config.yaml` (see [Configuring Pero](./CONFIGURATION.md#peroconfigyaml)), separately for each direction:
+Set speech up with `pero speech`. It says whether Pero can transcribe and record voice messages, and when it can't yet, offers to set them up there and then. The first `pero run` offers it too. Setup asks how to handle each direction:
 
-- **`local`**, the default: free and private, on your server. Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and recording [Piper](https://github.com/OHF-Voice/piper1-gpl), with [ffmpeg](https://ffmpeg.org) converting between formats. Install the three programs, then run `pero speech setup`: it checks they're on `PATH`, says how to install any that aren't, and downloads a whisper.cpp model and an English Piper voice to `.pero/models/` (about 210 MB).
-- **`elevenlabs`**: [ElevenLabs](https://elevenlabs.io)' speech-to-text and voices, billed by ElevenLabs. Set `engine: elevenlabs` and run `pero speech setup`, which asks for your API key and stores it in `.env` as `ELEVENLABS_API_KEY`.
-- **`off`**: voice messages get a reply saying so, and Pero never records one.
+- **Local**, the default: free and private, on your server. Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and recording [Piper](https://github.com/OHF-Voice/piper1-gpl), with [ffmpeg](https://ffmpeg.org) converting between formats. Setup checks that the three programs are installed and says how to install any that aren't; install them in another terminal and choose *check again*. It then downloads a whisper.cpp model and an English Piper voice to `.pero/models/` (about 210 MB).
+- **ElevenLabs**: [ElevenLabs](https://elevenlabs.io)' speech-to-text and voices, billed by ElevenLabs. Setup asks for your API key, hidden as you type, checks it with ElevenLabs, and stores it in `.env`; then it lists your account's voices for Pero to speak with.
+- **Off**: voice messages get a reply saying so, and Pero never records one.
 
 ```sh
-pero speech            # can Pero transcribe and record voice messages now?
-pero speech setup      # check the programs, fetch the local models, or store the key
+pero speech              # can Pero transcribe and record voice messages? offers setup when it can't
+pero speech configure    # change how: local or ElevenLabs for each direction, the key, the voice
 ```
+
+`pero speech configure` asks the same questions whenever you want to change something, such as moving from local to ElevenLabs. It writes `speech:` in `.pero/config.yaml` and the key in `.env` for you, and a running Pero uses the change from the next voice message. Without a terminal, give the answers as options: `pero speech configure --transcribe local --speak elevenlabs --yes`, with the key piped in.
 
 `pero status` lists a `speech` component too. It's optional: Pero is healthy without it.
 

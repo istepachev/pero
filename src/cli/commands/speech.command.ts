@@ -1,118 +1,128 @@
-import { homedir } from 'node:os';
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import { ensureGitignoreLine, setEnvValue } from '../../config/env-file.js';
-import {
-  DEFAULT_SPEECH,
-  readHostConfig,
-  type SpeechConfig,
-} from '../../config/host-config.js';
-import { ELEVENLABS_KEY_ENV } from '../../speech/elevenlabs-engine.js';
-import { downloadModel, speechSetupPlan } from '../../speech/speech-setup.js';
-import {
-  elevenLabsKey,
-  speakProblem,
-  transcribeProblem,
-} from '../../speech/speech-readiness.js';
+import { InvalidInputError } from '../../common/errors.js';
+import { SPEECH_ENGINES, type SpeechEngine } from '../../config/host-config.js';
+import { elevenLabsKey } from '../../speech/speech-readiness.js';
 import { CliError } from '../errors.js';
 import { PeroCommand } from '../pero-command.js';
-import { isInteractive, isPromptExit, terminalPrompts } from '../prompts.js';
+import {
+  isInteractive,
+  isPromptExit,
+  readStdin,
+  terminalPrompts,
+} from '../prompts.js';
+import { BlockOutput } from '../setup/block-output.js';
+import {
+  configureSpeech,
+  formatSpeechStatus,
+  readSpeech,
+  type SpeechChoices,
+  speechNeedsSetup,
+} from '../setup/configure-speech.js';
 
 @SubCommand({
   name: 'status',
-  description: 'Show whether Pero can transcribe and record voice messages',
+  description:
+    'Show whether Pero can transcribe and record voice messages, offering to set them up',
   options: { isDefault: true },
 })
 export class SpeechStatusCommand extends PeroCommand {
-  run(): Promise<void> {
-    const { workspace, configFile } = this.layout();
-    console.log(formatSpeechStatus(readSpeech(configFile), workspace));
-    return Promise.resolve();
+  async run(): Promise<void> {
+    const layout = this.layout();
+    const output = new BlockOutput((text) => console.log(text));
+    output.print(
+      formatSpeechStatus(
+        readSpeech(layout),
+        layout.workspace,
+        elevenLabsKey(layout.workspace),
+      ),
+    );
+    if (!speechNeedsSetup(layout)) return;
+    if (!isInteractive()) {
+      output.print('On a terminal, pero speech configure sets this up.');
+      return;
+    }
+    const prompts = output.prompts(await terminalPrompts());
+    output.block();
+    await cancellable(async () => {
+      if (
+        await prompts.confirm({
+          message: 'Set up voice messages now?',
+          initial: true,
+        })
+      ) {
+        await configureSpeech({
+          layout,
+          prompts,
+          print: output.print,
+          block: output.block,
+        });
+      }
+    });
   }
 }
 
 @SubCommand({
-  name: 'setup',
+  name: 'configure',
+  aliases: ['setup'],
   description:
-    'Check the programs voice messages need, fetch the local models, and store an ElevenLabs key',
+    'Choose how Pero transcribes voice messages and records its own, and set that up',
 })
-export class SpeechSetupCommand extends PeroCommand {
-  async run(
-    _arguments: string[],
-    options: { yes?: boolean } = {},
-  ): Promise<void> {
+export class SpeechConfigureCommand extends PeroCommand {
+  async run(_arguments: string[], options: SpeechChoices = {}): Promise<void> {
     const layout = this.layout();
-    const speech = readSpeech(layout.configFile);
-    const plan = speechSetupPlan(speech, layout.workspace);
-    const interactive = isInteractive();
-    console.log(
-      `Transcribe: ${speech.transcribe.engine}\nSpeak: ${speech.speak.engine}`,
+    const output = new BlockOutput((text) => console.log(text));
+    if (isInteractive()) {
+      const prompts = output.prompts(await terminalPrompts());
+      await cancellable(() =>
+        configureSpeech(
+          { layout, prompts, print: output.print, block: output.block },
+          options,
+        ),
+      );
+      return;
+    }
+    if (
+      options.transcribe === undefined &&
+      options.speak === undefined &&
+      options.yes !== true
+    ) {
+      throw new CliError(
+        'Without a terminal, say what to set: --transcribe and --speak (local, elevenlabs, or off), and --yes to download the local models',
+      );
+    }
+    await configureSpeech(
+      {
+        layout,
+        prompts: null,
+        print: output.print,
+        block: output.block,
+        readKey: readStdin,
+      },
+      options,
     );
+  }
 
-    if (plan.programs.length > 0) {
-      console.log('\nPrograms:');
-      for (const { program, path, hint } of plan.programs) {
-        console.log(
-          path === null
-            ? `  ✗ ${program} isn't installed: ${hint}`
-            : `  ✓ ${program} (${path})`,
-        );
-      }
-    }
-    for (const file of plan.missing) {
-      console.log(`\n✗ ${file} is missing; config.yaml names it.`);
-    }
+  @Option({
+    flags: '--transcribe <engine>',
+    description:
+      'how to transcribe voice messages you send: local, elevenlabs, or off',
+  })
+  parseTranscribe(value: string): SpeechEngine {
+    return engine('transcribe', value);
+  }
 
-    if (plan.downloads.length > 0) {
-      const total = plan.downloads.reduce((sum, file) => sum + file.sizeMb, 0);
-      const names = plan.downloads.map((file) => file.name).join(', ');
-      const download =
-        options.yes === true ||
-        (interactive &&
-          (await ask((prompts) =>
-            prompts.confirm({
-              message: `Download ${names} (about ${Math.round(total)} MB) to ${layout.models}?`,
-              initial: true,
-            }),
-          )));
-      if (download) {
-        for (const file of plan.downloads) {
-          process.stdout.write(`\nDownloading ${file.name}… `);
-          await downloadModel(file, layout.models);
-          process.stdout.write('done');
-        }
-        console.log('');
-      } else {
-        console.log(
-          `\nModels to download: ${names}. Run pero speech setup --yes to fetch them.`,
-        );
-      }
-    }
-
-    if (plan.elevenLabs && elevenLabsKey(layout.workspace) === null) {
-      if (interactive) {
-        const key = (
-          await ask((prompts) =>
-            prompts.password({ message: 'ElevenLabs API key' }),
-          )
-        ).trim();
-        if (key !== '') {
-          setEnvValue(layout.envFile, ELEVENLABS_KEY_ENV, key);
-          ensureGitignoreLine(layout.workspaceGitignore, '.env');
-          console.log(`Stored ${ELEVENLABS_KEY_ENV} in .env`);
-        }
-      } else {
-        console.log(
-          `\nSet ${ELEVENLABS_KEY_ENV} in ${layout.envFile} to use ElevenLabs.`,
-        );
-      }
-    }
-
-    console.log(`\n${formatSpeechStatus(speech, layout.workspace)}`);
+  @Option({
+    flags: '--speak <engine>',
+    description:
+      'how to record voice messages Pero sends: local, elevenlabs, or off',
+  })
+  parseSpeak(value: string): SpeechEngine {
+    return engine('speak', value);
   }
 
   @Option({
     flags: '-y, --yes',
-    description: 'download the models without asking',
+    description: 'download the local models without asking',
   })
   parseYes(): boolean {
     return true;
@@ -122,8 +132,8 @@ export class SpeechSetupCommand extends PeroCommand {
 @Command({
   name: 'speech',
   description:
-    'Show and set up how Pero transcribes voice messages and records its own',
-  subCommands: [SpeechStatusCommand, SpeechSetupCommand],
+    'Show, set up, and change how Pero transcribes voice messages and records its own',
+  subCommands: [SpeechStatusCommand, SpeechConfigureCommand],
 })
 export class SpeechCommand extends CommandRunner {
   // `status` is the default subcommand, so this only runs if that changes.
@@ -132,42 +142,19 @@ export class SpeechCommand extends CommandRunner {
   }
 }
 
-/** `speech` from `config.yaml`, or the defaults when there is none. */
-function readSpeech(configFile: string): SpeechConfig {
-  return readHostConfig(configFile)?.speech ?? DEFAULT_SPEECH;
+function engine(option: string, value: string): SpeechEngine {
+  if ((SPEECH_ENGINES as readonly string[]).includes(value)) {
+    return value as SpeechEngine;
+  }
+  throw new InvalidInputError(
+    `${option}: must be one of ${SPEECH_ENGINES.join(', ')}`,
+  );
 }
 
-/** Whether each direction works, and why not when it doesn't. */
-export function formatSpeechStatus(
-  speech: SpeechConfig,
-  workspace: string,
-  key: string | null = elevenLabsKey(workspace),
-  home: string = homedir(),
-): string {
-  const line = (name: string, engine: string, problem: string | null): string =>
-    `${name}: ${engine}, ${problem === null ? 'ready' : problem.replaceAll(home, '~')}`;
-  return [
-    line(
-      'Voice messages you send',
-      speech.transcribe.engine,
-      transcribeProblem(speech, workspace, key),
-    ),
-    line(
-      'Voice messages Pero sends',
-      speech.speak.engine,
-      speakProblem(speech, workspace, key),
-    ),
-  ].join('\n');
-}
-
-/** Asks with the terminal's prompts; Ctrl-C cancels the command. */
-async function ask<T>(
-  question: (
-    prompts: Awaited<ReturnType<typeof terminalPrompts>>,
-  ) => Promise<T>,
-): Promise<T> {
+/** Runs `ask`; Ctrl-C or Ctrl-D at a question cancels the command. */
+async function cancellable(ask: () => Promise<void>): Promise<void> {
   try {
-    return await question(await terminalPrompts());
+    await ask();
   } catch (error) {
     if (isPromptExit(error)) throw new CliError('Cancelled', 130);
     throw error;

@@ -28,7 +28,7 @@ export interface ProgramCheck {
   hint: string;
 }
 
-/** What `pero speech setup` finds to do for `speech`. */
+/** What `pero speech configure` finds to do for `speech`. */
 export interface SpeechSetupPlan {
   /** The programs the `local` engine needs, in the order they're named. */
   programs: ProgramCheck[];

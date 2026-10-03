@@ -8,6 +8,7 @@ import {
   isSeq,
   LineCounter,
   parseDocument,
+  Scalar,
   type YAMLMap,
   stringify,
   type YAMLSeq,
@@ -268,6 +269,55 @@ export function allowChat(
 }
 
 /** Removes chat `chatKey` from the allowed chats; false when it wasn't there. */
+/** The two directions of speech. */
+export type SpeechDirection = 'transcribe' | 'speak';
+
+/**
+ * Sets `direction`'s engine in `speech`, creating the maps it needs. When
+ * the engine changes, its `model` and `voice` go, since they name another
+ * engine's files or voices. A `voice` given is set; null removes it.
+ * True when anything changed.
+ */
+export function setSpeech(
+  document: Document,
+  direction: SpeechDirection,
+  engine: SpeechEngine,
+  voice?: string | null,
+): boolean {
+  const path = ['speech', direction];
+  for (let depth = 1; depth <= path.length; depth++) {
+    const at = path.slice(0, depth);
+    // `speech:` with nothing after it is a null, not a map.
+    if (!isMap(document.getIn(at, true))) {
+      const map = document.createNode({}) as YAMLMap;
+      map.flow = false;
+      document.setIn(at, map);
+    }
+  }
+  // A `speech` added to a file of its own sits apart from what is above.
+  const items = isMap(document.contents) ? document.contents.items : [];
+  const top = items.find(
+    (pair) => (isScalar(pair.key) ? pair.key.value : pair.key) === 'speech',
+  );
+  if (top !== undefined && top !== items[0]) {
+    const key = isScalar(top.key) ? top.key : new Scalar('speech');
+    key.spaceBefore = true;
+    top.key = key;
+  }
+  let changed = false;
+  if (document.getIn([...path, 'engine']) !== engine) {
+    document.setIn([...path, 'engine'], engine);
+    for (const key of ['model', 'voice']) document.deleteIn([...path, key]);
+    changed = true;
+  }
+  if (voice !== undefined && document.getIn([...path, 'voice']) !== voice) {
+    if (voice === null) document.deleteIn([...path, 'voice']);
+    else document.setIn([...path, 'voice'], voice);
+    changed = true;
+  }
+  return changed;
+}
+
 export function denyChat(document: Document, chatKey: string): boolean {
   const chats = document.getIn(['telegram', 'allowed-chats'], true);
   if (!isSeq(chats)) return false;
@@ -330,20 +380,15 @@ export function defaultHostConfig(data: string = DEFAULT_DATA_FOLDER): string {
     '  #   - id: 123456789        # a direct chat: your user ID',
     '  allowed-chats: []',
     '',
-    '# Voice messages: transcribing the ones you send, and the ones Pero',
-    '# records. Each engine is local (whisper.cpp, Piper, and ffmpeg; set',
-    '# them up with pero speech setup), elevenlabs (ELEVENLABS_API_KEY in',
-    '# .env), or off. Default: local for both.',
-    '# speech:',
-    '#   transcribe:',
-    '#     engine: local',
-    '#     model: .pero/models/ggml-base.bin   # elevenlabs: scribe_v1',
-    '#     language: en                        # default: detected',
-    '#     max-minutes: 10',
-    '#   speak:',
-    '#     engine: elevenlabs',
-    '#     voice: 21m00Tcm4TlvDq8EAWfZT        # local: a Piper .onnx voice',
-    '#     model: eleven_multilingual_v2',
+    '# Voice messages: how Pero transcribes the ones you send and records',
+    '# its own. Each engine is local (whisper.cpp, Piper, and ffmpeg on',
+    '# this machine), elevenlabs, or off. pero speech configure sets them',
+    '# up and changes them.',
+    'speech:',
+    '  transcribe:',
+    '    engine: local',
+    '  speak:',
+    '    engine: local',
     '',
   ].join('\n');
 }

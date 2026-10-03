@@ -23,7 +23,7 @@ export interface LocalPrograms {
   piper: string;
 }
 
-/** What `pero speech setup` suggests for a program that is missing. */
+/** What `pero speech configure` suggests for a program that is missing. */
 export const INSTALL_HINTS: Record<keyof LocalPrograms, string> = {
   ffmpeg:
     'install ffmpeg with your package manager, such as apt install ffmpeg',
@@ -44,12 +44,12 @@ export function localProblem(
 ): string | null {
   for (const program of programs) {
     if (findProgram(program) === null) {
-      return `${program} isn't installed; run pero speech setup`;
+      return `${program} isn't installed; run pero speech`;
     }
   }
   for (const file of files) {
     if (!existsSync(file)) {
-      return `${file} is missing; run pero speech setup`;
+      return `${file} is missing; run pero speech`;
     }
   }
   return null;

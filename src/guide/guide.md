@@ -27,7 +27,7 @@ Read it when the owner asks you to change your personality or instructions, a Ch
 The data folder and system folder can be elsewhere: your instructions give their real paths.
 
 - **Notes are Markdown with YAML frontmatter,** the block between `---` lines at the top. The body is everything after it. Property names are lowercase and hyphenated. An unknown property is an error; `tags`, `aliases`, and `cssclasses` are allowed and ignored.
-- **The file name is the name.** `Channels/Weekly Health.md` is the Channel note titled *Weekly Health*, named `weekly-health`, and Workflows name it so. Subfolders under `Channels/` and `Workflows/` are fine for grouping. Renaming a Workflow note makes a new Workflow, and renaming a Channel note changes what Workflows must call it, so don't rename to "fix" a title unless asked.
+- **The file name is the name.** `Channels/Weekly Health.md` is the Channel note titled _Weekly Health_, named `weekly-health`, and Workflows name it so. Subfolders under `Channels/` and `Workflows/` are fine for grouping. Renaming a Workflow note makes a new Workflow, and renaming a Channel note changes what Workflows must call it, so don't rename to "fix" a title unless asked.
 - **A Channel note is bound to its topic by `channel-id`,** which Pero writes when it creates the note. Never change or copy it: it is how the note stays with its topic when the topic is renamed in Telegram.
 - **Files starting with `_` or `.` are ignored,** such as `Channels/_Template.md`, the template for the notes of new topics.
 - **Pero reads only `Pero.md`, `Persona.md`, `Instructions.md`, `Channels/`, and `Workflows/`.** Other folders and files in the system folder are the owner's, such as `Templates/`; a note elsewhere, even in a misspelled `Channel/`, is not read.
@@ -72,62 +72,62 @@ A run starts a fresh conversation, apart from the chat. It can't ask the owner a
 
 ### `Pero.md`
 
-| Property | Values | Default | Meaning |
-|---|---|---|---|
-| `provider` | `claude`, `codex` | `claude` | Provider of Channels that don't name one |
-| `claude-model`, `codex-model` | model name | provider's default | Model for that provider's Channels |
-| `claude-effort`, `codex-effort` | that provider's levels | provider's default | Effort for that provider's Channels |
-| `permissions` | `ask`, `bypass` | `ask` | How tools are approved |
-| `timezone` | IANA zone, such as `Europe/Berlin` | the host's | Time zone for schedules |
-| `history-carryover` | 0 or more | 50 | Messages a fresh conversation starts with |
-| `history-retention-days` | whole days, or empty | keep everything | Delete older message history |
-| `max-concurrent-runs` | 1–10 | 2 | Workflow runs at once |
+| Property                        | Values                             | Default            | Meaning                                   |
+| ------------------------------- | ---------------------------------- | ------------------ | ----------------------------------------- |
+| `provider`                      | `claude`, `codex`                  | `claude`           | Provider of Channels that don't name one  |
+| `claude-model`, `codex-model`   | model name                         | provider's default | Model for that provider's Channels        |
+| `claude-effort`, `codex-effort` | that provider's levels             | provider's default | Effort for that provider's Channels       |
+| `permissions`                   | `ask`, `bypass`                    | `ask`              | How tools are approved                    |
+| `timezone`                      | IANA zone, such as `Europe/Berlin` | the host's         | Time zone for schedules                   |
+| `history-carryover`             | 0 or more                          | 50                 | Messages a fresh conversation starts with |
+| `history-retention-days`        | whole days, or empty               | keep everything    | Delete older message history              |
+| `max-concurrent-runs`           | 1–10                               | 2                  | Workflow runs at once                     |
 
 It holds settings only: text after its frontmatter is an error. Changing a default changes every Channel that doesn't set its own value.
 
 ### Channel notes
 
-| Property | Values | Default | Meaning |
-|---|---|---|---|
-| `channel-id` | written by Pero | none | The Channel the note is bound to; not on `Default.md` |
-| `provider` | `claude`, `codex` | `Pero.md` | Which provider answers there |
-| `model` | model name | `Pero.md` `<provider>-model` | Its model |
-| `effort` | provider's levels | `Pero.md` `<provider>-effort` | Its effort |
-| `permissions` | `ask`, `bypass` | `Pero.md` | How its tools are approved |
-| `working-directory` | path | the workspace | The folder its turns work in |
-| `skip-git-repo-check` | `true`, `false` | `false` | Let Codex work outside a Git repository |
-| `enabled` | `true`, `false` | `true` | `false` silences its Channel and stops the schedules of Workflows that use it |
+| Property              | Values            | Default                       | Meaning                                                                       |
+| --------------------- | ----------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `channel-id`          | written by Pero   | none                          | The Channel the note is bound to; not on `Default.md`                         |
+| `provider`            | `claude`, `codex` | `Pero.md`                     | Which provider answers there                                                  |
+| `model`               | model name        | `Pero.md` `<provider>-model`  | Its model                                                                     |
+| `effort`              | provider's levels | `Pero.md` `<provider>-effort` | Its effort                                                                    |
+| `permissions`         | `ask`, `bypass`   | `Pero.md`                     | How its tools are approved                                                    |
+| `working-directory`   | path              | the workspace                 | The folder its turns work in                                                  |
+| `skip-git-repo-check` | `true`, `false`   | `false`                       | Let Codex work outside a Git repository                                       |
+| `enabled`             | `true`, `false`   | `true`                        | `false` silences its Channel and stops the schedules of Workflows that use it |
 
 Claude efforts are `low`, `medium`, `high`, `xhigh`, and `max`; Codex efforts are `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`, and `persistent`. Changing `provider` or `working-directory` starts a fresh conversation that carries over the topic's recent messages; other changes keep it.
 
 ### Workflow notes
 
-| Property | Values | Default | Meaning |
-|---|---|---|---|
-| `day` | `monday`…`sunday`, `daily`, `weekdays`, `weekends`, or a list of weekdays | `daily` | Days it runs |
-| `hour` | 0–23, or a list | none: runs only by hand | Hours it runs |
-| `minute` | 0–59 | 0 | Minute of those hours |
-| `cron` | five-field cron, or `@daily` etc. | none | Instead of `day`/`hour`/`minute`, never with them |
-| `timezone` | IANA zone | `Pero.md` `timezone` | Time zone of the schedule |
-| `channel` | Channel note name, or a list | none | Where each run's answer is posted; the first gives its settings |
-| `history` | `true`, `false` | `false` | Read chat history as input |
-| `history-channels` | Channel note names | all | Only these Channels' history |
-| `history-messages` | `people`, `all` | `people` | `all` adds Pero's replies |
-| `history-hours` | 1–720 | since the last successful run | A fixed window instead |
-| `run-when-empty` | `true`, `false` | `false` | Run even when there's no history to read |
-| `max-attempts` | 1–10 | 1 | Times a run may start, counting restarts after Pero stopped mid-run |
-| `enabled` | `true`, `false` | `true` | `false` stops its schedule; it can still run by hand |
+| Property           | Values                                                                    | Default                       | Meaning                                                             |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| `day`              | `monday`…`sunday`, `daily`, `weekdays`, `weekends`, or a list of weekdays | `daily`                       | Days it runs                                                        |
+| `hour`             | 0–23, or a list                                                           | none: runs only by hand       | Hours it runs                                                       |
+| `minute`           | 0–59                                                                      | 0                             | Minute of those hours                                               |
+| `cron`             | five-field cron, or `@daily` etc.                                         | none                          | Instead of `day`/`hour`/`minute`, never with them                   |
+| `timezone`         | IANA zone                                                                 | `Pero.md` `timezone`          | Time zone of the schedule                                           |
+| `channel`          | Channel note name, or a list                                              | none                          | Where each run's answer is posted; the first gives its settings     |
+| `history`          | `true`, `false`                                                           | `false`                       | Read chat history as input                                          |
+| `history-channels` | Channel note names                                                        | all                           | Only these Channels' history                                        |
+| `history-messages` | `people`, `all`                                                           | `people`                      | `all` adds Pero's replies                                           |
+| `history-hours`    | 1–720                                                                     | since the last successful run | A fixed window instead                                              |
+| `run-when-empty`   | `true`, `false`                                                           | `false`                       | Run even when there's no history to read                            |
+| `max-attempts`     | 1–10                                                                      | 1                             | Times a run may start, counting restarts after Pero stopped mid-run |
+| `enabled`          | `true`, `false`                                                           | `true`                        | `false` stops its schedule; it can still run by hand                |
 
 One schedule per Workflow; for two different schedules, write two notes. Examples:
 
-| Wanted | Properties |
-|---|---|
-| Every day at 21:00 | `hour: 21` |
-| Weekdays at 9:00 and 18:00 | `day: weekdays`, `hour: [9, 18]` |
-| Sundays at 12:30 | `day: sunday`, `hour: 12`, `minute: 30` |
-| Monday and Thursday at 8:00 | `day: [monday, thursday]`, `hour: 8` |
-| The 1st of each month at 10:00 | `cron: 0 10 1 * *` |
-| Every 15 minutes | `cron: "*/15 * * * *"` (quoted: YAML can't start a value with `*`) |
+| Wanted                         | Properties                                                         |
+| ------------------------------ | ------------------------------------------------------------------ |
+| Every day at 21:00             | `hour: 21`                                                         |
+| Weekdays at 9:00 and 18:00     | `day: weekdays`, `hour: [9, 18]`                                   |
+| Sundays at 12:30               | `day: sunday`, `hour: 12`, `minute: 30`                            |
+| Monday and Thursday at 8:00    | `day: [monday, thursday]`, `hour: 8`                               |
+| The 1st of each month at 10:00 | `cron: 0 10 1 * *`                                                 |
+| Every 15 minutes               | `cron: "*/15 * * * *"` (quoted: YAML can't start a value with `*`) |
 
 A Workflow note:
 
@@ -138,6 +138,7 @@ hour: 8
 minute: 30
 channel: Health
 ---
+
 Read Health/Log.md and post a short plan for today's workout, based on the last week.
 ```
 
@@ -158,22 +159,22 @@ To post into the topic you're talking in, use its note's name, or `General` in t
 - **Commands:** Pero answers these in the chat itself; you never see them or their answers. `/status` shows the Channel's note and settings, its conversation and how full its context is, and Pero's health; `/new` starts the Channel's conversation over, without the messages before it; `/stop` stops your answer in progress and drops the messages waiting for you; `/model` and `/effort` show the Channel's model or effort with buttons to change it in its note; `/workflows`, `/run`, `/runs`, `/cancel`, and `/retry` show, start, and manage Workflow runs; `/help` lists them. Point the owner to them when they fit, such as `/new` to start a fresh subject. Any other `/word` reaches you as text.
 - **Permissions:** with Claude and `ask`, you read and edit in your folder freely, and the owner is asked in the chat (Allow and Deny buttons) before anything else, including any edit in the system folder. With Codex and `ask`, you run in a sandbox that writes only in your folder, without network, and the owner is never asked. `bypass` runs every tool without asking.
 - **Workflows:** a schedule queues a run within about 10 seconds of each time it comes due. Times missed while Pero was down become one catch-up run. A run's answer is posted to its `channel` Channels; those messages become part of their conversations, so the owner can reply to them.
-- **Voice messages:** a voice message, round video message, or audio file the owner sends reaches you as a line naming the recording, then its transcript. When your instructions say you can answer by voice, a `<voice>…</voice>` block in your answer is recorded and sent as a voice message, with the rest as text, in order; this works in Workflow answers too. How Pero transcribes and records is `speech` in `config.yaml`, which the owner sets up with `pero speech setup`: `local` (whisper.cpp, Piper, and ffmpeg on the host) or `elevenlabs` (an API key in `.env`).
+- **Voice messages:** a voice message, round video message, or audio file the owner sends reaches you as a line naming the recording, then its transcript. When your instructions say you can answer by voice, a `<voice>…</voice>` block in your answer is recorded and sent as a voice message, with the rest as text, in order; this works in Workflow answers too. How Pero transcribes and records is `speech` in `config.yaml`, which the owner sets up and changes with `pero speech` on the host, never by editing files: `local` (whisper.cpp, Piper, and ffmpeg on the host) or `elevenlabs` (an API key in `.env`).
 - **Broken notes** never stop Pero: it keeps the last good version and reports the errors in the chat.
 
 The owner manages Pero from the host's terminal:
 
-| Command | What it does |
-|---|---|
-| `pero status` | Whether Pero runs, and the health of each part |
-| `pero check` | Validate every note |
-| `pero channels`, `pero channels show <id>` | Topics and chats with their notes, and one Channel's settings and where each comes from |
-| `pero workflows`, `pero workflows show <name>` | Workflows with their next run, and one Workflow |
-| `pero workflows run <name>` | Run a Workflow now |
-| `pero runs`, `pero runs show <id>` | Recent runs, and how one ended |
-| `pero settings` | The defaults in effect |
-| `pero telegram allow <chat>` | Allow a chat |
-| `pero speech`, `pero speech setup` | Whether voice messages work, and setting them up |
-| `pero logs -f` | Follow the log |
+| Command                                        | What it does                                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `pero status`                                  | Whether Pero runs, and the health of each part                                          |
+| `pero check`                                   | Validate every note                                                                     |
+| `pero channels`, `pero channels show <id>`     | Topics and chats with their notes, and one Channel's settings and where each comes from |
+| `pero workflows`, `pero workflows show <name>` | Workflows with their next run, and one Workflow                                         |
+| `pero workflows run <name>`                    | Run a Workflow now                                                                      |
+| `pero runs`, `pero runs show <id>`             | Recent runs, and how one ended                                                          |
+| `pero settings`                                | The defaults in effect                                                                  |
+| `pero telegram allow <chat>`                   | Allow a chat                                                                            |
+| `pero speech`, `pero speech configure`         | Whether voice messages work, setting them up, and changing engines                      |
+| `pero logs -f`                                 | Follow the log                                                                          |
 
 The full documentation is at https://github.com/perokit/pero/tree/main/docs.

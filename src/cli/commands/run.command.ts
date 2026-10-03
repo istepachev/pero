@@ -19,6 +19,7 @@ import {
   startAsService,
 } from '../run-as-service.js';
 import { BlockOutput } from '../setup/block-output.js';
+import { offerSpeechSetup } from '../setup/configure-speech.js';
 import { configOrNewWorkspace } from '../setup/first-run.js';
 import {
   fetchTelegramChats,
@@ -95,6 +96,15 @@ export class RunCommand extends PeroCommand {
             `(pid ${status.pid}, workspace ${status.workspace})`,
         );
         return;
+      }
+
+      if (firstRun) {
+        await offerSpeechSetup({
+          layout,
+          prompts: await prompts(),
+          print: output.print,
+          block: output.block,
+        });
       }
 
       // Where it stands now, so the owner knows setup left it working.

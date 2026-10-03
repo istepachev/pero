@@ -54,7 +54,7 @@ export interface WorkspaceLayout {
   stateGitignore: string;
   /** The files people send in chats, one folder per Channel. */
   attachments: string;
-  /** The `local` speech engine's models, as `pero speech setup` fetches them. */
+  /** The `local` speech engine's models, as `pero speech configure` fetches them. */
   models: string;
   /** `config.yaml`: the data folder and the chats Pero serves. */
   configFile: string;
