@@ -265,7 +265,7 @@ Create a weekly report in the Reports folder from Health/Log.md…
 | `minute` | 0–59 | 0 | Minute of those hours |
 | `cron` | five-field cron, or `@daily` etc. | none | For anything `day`/`hour`/`minute` can't say; not together with them |
 | `timezone` | IANA zone | `Pero.md` `timezone` | Time zone of the schedule |
-| `channel` | Channel note name, or a list | none | Where each run's answer is posted; the first gives the run its note |
+| `channel` | Channel note name, or a list | none | Where each run's answer is posted, unless it is just `NO_REPLY`; the first gives the run its note |
 | `history` | `true`, `false` | `false` | Read chat history as input ([user guide](./USER_GUIDE.md#reading-chat-history)) |
 | `history-channels` | Channel note names | all | Only these Channels' history |
 | `history-messages` | `people`, `all` | `people` | `all` adds Pero's replies |

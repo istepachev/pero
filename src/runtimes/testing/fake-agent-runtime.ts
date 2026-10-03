@@ -17,13 +17,14 @@ export interface HeldTurn {
 type Script =
   | { kind: 'hold'; held: Deferred<void>; started: Deferred<RuntimeRequest> }
   | { kind: 'fail'; error: RuntimeError }
-  | { kind: 'ask'; tool: string; summary: string };
+  | { kind: 'ask'; tool: string; summary: string }
+  | { kind: 'answer'; text: string };
 
 /**
  * An in-memory runtime for tests. Each turn reports a session (the resumed
  * one, or a new `fake-<kind>-<n>`) and answers `echo: <input>`. `hold`,
- * `failNext`, and `askNext` script the next turns in order; `requests`
- * records every one.
+ * `failNext`, `askNext`, and `answerNext` script the next turns in order;
+ * `requests` records every one.
  */
 export class FakeAgentRuntime implements AgentRuntime {
   readonly requests: RuntimeRequest[] = [];
@@ -56,6 +57,11 @@ export class FakeAgentRuntime implements AgentRuntime {
     this.scripts.push({ kind: 'ask', tool, summary });
   }
 
+  /** Makes the next unscripted turn answer `text` instead of the echo. */
+  answerNext(text: string) {
+    this.scripts.push({ kind: 'answer', text });
+  }
+
   async *execute(request: RuntimeRequest): AsyncIterable<RuntimeEvent> {
     this.requests.push(request);
     const script = this.scripts.shift();
@@ -84,7 +90,13 @@ export class FakeAgentRuntime implements AgentRuntime {
         : ` (${script.tool} denied: ${answer.reason})`;
     }
     if (this.usage !== null) yield { type: 'usage', ...this.usage };
-    yield { type: 'result', text: `echo: ${request.input}${asked}` };
+    yield {
+      type: 'result',
+      text:
+        script?.kind === 'answer'
+          ? script.text
+          : `echo: ${request.input}${asked}`,
+    };
   }
 }
 
