@@ -14,6 +14,8 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import { Message as HistoryMessage } from '../persistence/entities/message.entity.js';
 import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
+import { SpeechService } from '../speech/speech.service.js';
+import { FakeSpeech } from '../speech/testing/fake-speech.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../system/testing/test-workspace.js';
 import { MEDIA_GROUP_WAIT_MS } from './media-groups.js';
@@ -21,7 +23,11 @@ import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramCredentials } from './telegram-credentials.service.js';
 import { TelegramStatus } from './telegram-status.js';
 import { TelegramModule } from './telegram.module.js';
-import { FakeBotApi, type UpdateBody } from './testing/fake-bot-api.js';
+import {
+  FakeBotApi,
+  type FakeUpload,
+  type UpdateBody,
+} from './testing/fake-bot-api.js';
 
 const TOKEN = '123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs';
 const OTHER = '987654321:BBEhBOweik6ad9r_QXMENQjcrGbqCr4K-xy';
@@ -48,6 +54,7 @@ describe('TelegramAdapter', () => {
   let ws: TestWorkspace;
   let api: FakeBotApi;
   let runtime: FakeAgentRuntime;
+  let speech: FakeSpeech;
   let moduleRef: TestingModule | undefined;
   let nextMessageId: number;
 
@@ -57,6 +64,7 @@ describe('TelegramAdapter', () => {
     api = new FakeBotApi();
     await api.listen();
     runtime = new FakeAgentRuntime('claude');
+    speech = new FakeSpeech();
     nextMessageId = 1000;
   });
 
@@ -90,6 +98,8 @@ describe('TelegramAdapter', () => {
     })
       .overrideProvider(AGENT_RUNTIMES)
       .useValue([runtime])
+      .overrideProvider(SpeechService)
+      .useValue(speech)
       .compile();
     // The database opens during compilation; set up before intake starts.
     for (const chat of options.allow ?? [DIRECT]) await allow(chat);
@@ -818,6 +828,58 @@ describe('TelegramAdapter', () => {
       );
     });
 
+    it('answers a voice message as its transcript', async () => {
+      await start();
+      api.files.set('voice', new TextEncoder().encode('Remind me at ten.'));
+
+      api.push(
+        message(DIRECT, {
+          text: undefined,
+          voice: {
+            file_id: 'voice',
+            file_unique_id: 'v',
+            duration: 3,
+            mime_type: 'audio/ogg',
+          },
+        }),
+      );
+
+      await sentCount(2);
+      const [request] = runtime.requests;
+      const [file] = speech.transcribed;
+      expect(file!.path).toMatch(
+        new RegExp(`^${join(ws.stateFolder, 'attachments')}/\\d+/.+\\.ogg$`),
+      );
+      expect(request!.input).toBe(
+        `[Voice message, 0:03, saved at ${file!.path}. Transcript:]\n` +
+          'Remind me at ten.',
+      );
+      // No model hears the recording itself.
+      expect(request!.attachments).toBeUndefined();
+    });
+
+    it('says why a voice message was not transcribed, and runs no turn', async () => {
+      await start();
+      speech.transcribeFails =
+        "whisper-cli isn't installed; run pero speech setup";
+      api.files.set('voice', new Uint8Array([1]));
+
+      api.push(
+        message(DIRECT, {
+          text: undefined,
+          voice: { file_id: 'voice', file_unique_id: 'v', duration: 3 },
+        }),
+      );
+
+      const [, notice] = await sentCount(2);
+      expect(notice?.text).toBe(
+        "Pero couldn't transcribe the voice message you sent (whisper-cli " +
+          "isn't installed; run pero speech setup). Send it again, or write " +
+          'it as text.',
+      );
+      expect(runtime.requests).toEqual([]);
+    });
+
     it('says when Telegram has no file for a photo, and runs no turn', async () => {
       await start();
 
@@ -843,6 +905,67 @@ describe('TelegramAdapter', () => {
 
       expect(failure).toBeInstanceOf(Error);
       expect((failure as Error).message).not.toContain(TOKEN);
+    });
+  });
+
+  describe('voice messages', () => {
+    it('sends a voice message, in its topic and with its length', async () => {
+      await start();
+      await connected();
+
+      const sent = await get(TelegramAdapter).sendVoice(
+        { chatId: '-1001234567890', messageThreadId: '5' },
+        { audio: new Uint8Array([1, 2]), type: 'audio/ogg', durationS: 4 },
+      );
+
+      const [call] = api.callsOf('sendVoice');
+      expect(sent.messageId).toMatch(/^\d+$/);
+      expect(call!.payload).toMatchObject({
+        chat_id: '-1001234567890',
+        message_thread_id: '5',
+        duration: '4',
+      });
+      const voice = call!.payload.voice as FakeUpload;
+      expect(voice.name).toBe('voice.ogg');
+      expect([...voice.bytes]).toEqual([1, 2]);
+    });
+
+    it('sends an audio file to someone who takes no voice messages', async () => {
+      await start();
+      await connected();
+      api.failNext('sendVoice', {
+        error_code: 400,
+        description: 'Bad Request: VOICE_MESSAGES_FORBIDDEN',
+      });
+
+      await get(TelegramAdapter).sendVoice(
+        { chatId: '1234' },
+        { audio: new Uint8Array([3]), type: 'audio/mpeg', durationS: null },
+      );
+
+      const [call] = api.callsOf('sendAudio');
+      expect(call!.payload).toMatchObject({ chat_id: '1234', title: 'Pero' });
+      expect((call!.payload.audio as FakeUpload).name).toBe('voice.mp3');
+    });
+
+    it("records an answer's voice block and sends it between its text", async () => {
+      await start();
+
+      api.push(
+        message(DIRECT, { text: 'Say <voice>Good morning.</voice> please' }),
+      );
+
+      await vi.waitFor(() => expect(api.callsOf('sendVoice')).toHaveLength(1));
+      await vi.waitFor(() =>
+        expect(api.sent().map((sent) => sent.text)).toContain('please'),
+      );
+      expect(speech.spoken).toEqual(['Good morning.']);
+      expect(
+        api.calls
+          .filter((call) => /^send(Message|Voice)$/.test(call.method))
+          .slice(-3)
+          .map((call) => call.payload.text ?? call.method),
+      ).toEqual(['echo: Say', 'sendVoice', 'please']);
     });
   });
 

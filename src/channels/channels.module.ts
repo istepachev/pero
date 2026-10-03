@@ -3,6 +3,7 @@ import { AgentsModule } from '../agents/agents.module.js';
 import { HealthModule } from '../health/health.module.js';
 import { HistoryModule } from '../history/history.module.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
+import { SpeechModule } from '../speech/speech.module.js';
 import { SystemModule } from '../system/system.module.js';
 import { WorkflowsModule } from '../workflows/workflows.module.js';
 import { AgentChannelTurns } from './agent-channel-turns.js';
@@ -37,6 +38,7 @@ import {
     SessionsModule,
     HealthModule,
     WorkflowsModule,
+    SpeechModule,
   ],
   providers: [
     ChannelRouter,

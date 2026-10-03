@@ -11,6 +11,7 @@ import type {
   InboundMessage,
   InboundAction,
   OutboundMessage,
+  OutboundVoice,
   SentMessage,
 } from '../channel-adapter.js';
 
@@ -18,6 +19,8 @@ import type {
 export interface SentRecord {
   address: ChannelAddress;
   message: OutboundMessage;
+  /** Set for a voice message, whose `message.text` is then empty. */
+  voice?: OutboundVoice;
 }
 
 /** An edit the fake adapter was asked to make. */
@@ -71,6 +74,15 @@ export class FakeChannelAdapter implements ChannelAdapter {
     }
     if (this.failSends) throw new Error('Service unreachable');
     this.sent.push({ address, message });
+    return { messageId: String(this.nextMessageId++) };
+  }
+
+  async sendVoice(
+    address: ChannelAddress,
+    voice: OutboundVoice,
+  ): Promise<SentMessage> {
+    if (this.failSends) throw new Error('Service unreachable');
+    this.sent.push({ address, message: { text: '' }, voice });
     return { messageId: String(this.nextMessageId++) };
   }
 

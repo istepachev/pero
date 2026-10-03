@@ -3,6 +3,7 @@ import { HealthModule } from '../health/health.module.js';
 import { HistoryModule } from '../history/history.module.js';
 import { RuntimesModule } from '../runtimes/runtimes.module.js';
 import { SessionsModule } from '../sessions/sessions.module.js';
+import { SpeechModule } from '../speech/speech.module.js';
 import { SystemModule } from '../system/system.module.js';
 import { AgentManager } from './agent-manager.js';
 
@@ -13,6 +14,7 @@ import { AgentManager } from './agent-manager.js';
     RuntimesModule,
     HistoryModule,
     HealthModule,
+    SpeechModule,
   ],
   providers: [AgentManager],
   exports: [AgentManager],

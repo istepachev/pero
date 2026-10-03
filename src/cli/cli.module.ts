@@ -30,6 +30,11 @@ import {
   ServiceUninstallCommand,
 } from './commands/service.command.js';
 import { SettingsCommand } from './commands/settings.command.js';
+import {
+  SpeechCommand,
+  SpeechSetupCommand,
+  SpeechStatusCommand,
+} from './commands/speech.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
 import {
@@ -88,6 +93,9 @@ import { StrictArguments } from './strict-arguments.js';
     TelegramAllowCommand,
     TelegramDenyCommand,
     TelegramTokenCommand,
+    SpeechCommand,
+    SpeechStatusCommand,
+    SpeechSetupCommand,
     BackupCommand,
     RestoreCommand,
   ],

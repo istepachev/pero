@@ -225,6 +225,7 @@ export class NotificationDelivery implements BeforeApplicationShutdown {
       return;
     }
     let sent: SentMessage;
+    let text: string;
     try {
       const chatKey = this.sender.chatKey(
         channel.integrationKind,
@@ -237,14 +238,18 @@ export class NotificationDelivery implements BeforeApplicationShutdown {
         await this.fail(claim, NOT_ALLOWED, true);
         return;
       }
-      sent = await this.sender.send(channel.integrationKind, channel.address, {
-        text: claim.text,
-      });
+      // A failure after a voice message went out sends that again with
+      // the retry; the parts of an answer aren't tracked one by one.
+      ({ sent, text } = await this.sender.sendAnswer(
+        channel.integrationKind,
+        channel.address,
+        claim.text,
+      ));
     } catch (error) {
       await this.fail(claim, describe(error), false);
       return;
     }
-    await this.delivered(claim, claim.text, sent);
+    await this.delivered(claim, text, sent);
   }
 
   /**

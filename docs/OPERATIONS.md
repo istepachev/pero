@@ -59,6 +59,7 @@ Pero's personality and instructions, the Channel notes, Workflows, and the insta
 | Log level | `PERO_LOG_LEVEL` (`fatal` … `trace`) | `info` |
 | Telegram bot token | `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment, then the workspace's `.env` | none |
 | Telegram Bot API server | `PERO_TELEGRAM_API_ROOT`, such as a [local Bot API server](https://github.com/tdlib/telegram-bot-api) | `https://api.telegram.org` |
+| ElevenLabs API key | `ELEVENLABS_API_KEY` in the daemon's environment, then the workspace's `.env`; used only by an `elevenlabs` speech engine | none |
 | Echo runtime, for testing only | `PERO_FAKE_RUNTIME=echo`: every turn answers `echo: <message>` instead of running Claude or Codex | unset |
 
 A workspace keeps Pero's state in its `.pero/` folder; Pero writes `.pero/.gitignore` there so that committing the workspace commits only `.pero/config.yaml`. `pero status` shows the workspace. An explicit option or variable always wins over a workspace found from the current folder. When a workspace path is too long for a Unix socket, the control socket moves to `$XDG_RUNTIME_DIR` (or the temp folder), in a folder named after a hash of the path; commands find it through `run/pero.json`.
@@ -76,7 +77,7 @@ Pero keeps no provider credentials of its own. It runs Claude Code and Codex wit
 
 Pero never passes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, or `CODEX_API_KEY` on, so a key in its environment cannot switch you to API billing. When a sign-in expires, `pero status` shows that provider `degraded`; sign in again as the same account and run `pero run` to check again.
 
-The Telegram bot token is Pero's one secret. It comes from `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment when that is set, otherwise from the workspace's `.env` (`PERO_TELEGRAM_BOT_TOKEN=…`, a file a systemd `EnvironmentFile=` can read too). It is owner-only and never shown or logged; Pero refuses to read a `.env` that group or others can read, and `pero status` says which `chmod` fixes it. Storing the token writes `.env` atomically, keeping its other lines, and adds `.env` to the workspace's `.gitignore`. When the workspace is in a Git repository, `pero status` reports an error if Git tracks `.env` or would not ignore it. To change it, including after revoking it with @BotFather `/revoke`, run `printf '%s' "$TOKEN" | pero telegram token`; a running Pero switches without a restart. Telegram delivers a bot's updates to one poller at a time, so never run two Peros with the same token: the second shows Telegram `degraded` because another process polls the bot.
+The Telegram bot token is Pero's one required secret; the ElevenLabs API key, when a speech engine uses ElevenLabs, is kept the same way in `.env`, and `pero speech setup` stores it. It comes from `PERO_TELEGRAM_BOT_TOKEN` in the daemon's environment when that is set, otherwise from the workspace's `.env` (`PERO_TELEGRAM_BOT_TOKEN=…`, a file a systemd `EnvironmentFile=` can read too). It is owner-only and never shown or logged; Pero refuses to read a `.env` that group or others can read, and `pero status` says which `chmod` fixes it. Storing the token writes `.env` atomically, keeping its other lines, and adds `.env` to the workspace's `.gitignore`. When the workspace is in a Git repository, `pero status` reports an error if Git tracks `.env` or would not ignore it. To change it, including after revoking it with @BotFather `/revoke`, run `printf '%s' "$TOKEN" | pero telegram token`; a running Pero switches without a restart. Telegram delivers a bot's updates to one poller at a time, so never run two Peros with the same token: the second shows Telegram `degraded` because another process polls the bot.
 
 ## Data layout
 
@@ -89,6 +90,8 @@ Everything Pero owns is in the workspace's `.pero/`:
 │   ├── pero.log         # daemon logs, JSON lines, without message text
 │   └── daemon.out       # raw output of a daemon started by `pero run`
 ├── run/                 # control socket, lock, and process metadata while Pero runs
+├── attachments/         # files and recordings people send, a folder per Channel
+├── models/              # the local speech engine's models, from pero speech setup
 └── config.yaml          # the data folder and the chats Pero serves; commit it
 ```
 
@@ -115,12 +118,28 @@ The database holds only state; personality, instructions, Channel notes, Workflo
 - **Message history:** the text of each Channel (see below).
 - **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
 
-The images and other files people send in chats are kept in `.pero/attachments/`, a folder per Channel, outside the database, so they are not in `pero backup`.
+The images, recordings, and other files people send in chats are kept in `.pero/attachments/`, a folder per Channel, outside the database, so they are not in `pero backup`; neither are the speech models in `.pero/models/`.
 
 Outside `.pero/`:
 - **Working folders:** the data folder and each folder a Channel note names in `working-directory`. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
 - **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
 - **Provider sign-ins:** listed under [Credentials](#credentials).
+
+## Voice messages
+
+The `local` speech engine runs three programs on the host, as the account Pero runs as, so the service's `PATH` must find them (`pero service install` records the `PATH` of the shell it runs in):
+
+| Program | For | Install |
+|---|---|---|
+| `ffmpeg` | converting recordings to and from the formats below | `apt install ffmpeg`, `brew install ffmpeg` |
+| `whisper-cli` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | transcribing | `brew install whisper-cpp`, or build it: `cmake -B build && cmake --build build --target whisper-cli`, then put `build/bin/whisper-cli` on `PATH` or name it in `speech.programs.whisper` |
+| `piper` from [Piper](https://github.com/OHF-Voice/piper1-gpl) | recording | `pipx install piper-tts` |
+
+Then `pero speech setup` downloads `ggml-base.bin` (whisper.cpp's multilingual base model, 148 MB) and the `en_US-lessac-medium` Piper voice (63 MB) from Hugging Face into `.pero/models/`; `pero speech setup --yes` does it without asking, for scripts. A larger whisper.cpp model transcribes better and more slowly: download it and name it in `speech.transcribe.model`. Piper has [voices in many languages](https://huggingface.co/rhasspy/piper-voices); name the `.onnx` file in `speech.speak.voice`, with its `.onnx.json` beside it.
+
+Pero converts each recording to 16 kHz mono WAV for whisper.cpp, and Piper's WAV to OGG with Opus, which Telegram shows as a voice message. Recordings longer than `speech.transcribe.max-minutes` (10 by default) aren't transcribed. Each program run is limited in time, and temporary files are deleted after it.
+
+`pero status` shows the `speech` component: `ok` with each direction's engine, `unconfigured` when neither works (with the first thing missing), or `degraded` when only one does. It's optional, so it never makes Pero's health `degraded`. Models aren't in `pero backup`; run `pero speech setup` again on a new machine.
 
 ## Message history
 

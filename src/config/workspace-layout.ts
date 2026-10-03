@@ -52,8 +52,10 @@ export interface WorkspaceLayout {
   metadataFile: string;
   /** `.pero/.gitignore`. */
   stateGitignore: string;
-  /** The images people send in chats, one folder per Channel. */
+  /** The files people send in chats, one folder per Channel. */
   attachments: string;
+  /** The `local` speech engine's models, as `pero speech setup` fetches them. */
+  models: string;
   /** `config.yaml`: the data folder and the chats Pero serves. */
   configFile: string;
   /** The workspace's `.env`, which holds the bot token. */
@@ -84,6 +86,7 @@ export function workspaceLayout(workspace: string): WorkspaceLayout {
     metadataFile: join(run, 'pero.json'),
     stateGitignore: join(stateDir, '.gitignore'),
     attachments: join(stateDir, 'attachments'),
+    models: join(stateDir, 'models'),
     configFile: join(stateDir, 'config.yaml'),
     envFile: join(workspace, '.env'),
     workspaceGitignore: join(workspace, '.gitignore'),

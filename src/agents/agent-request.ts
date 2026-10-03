@@ -32,6 +32,8 @@ export interface InstructionDefaults {
   persona: string | null;
   /** `Instructions.md`'s text; null for none. */
   instructions: string | null;
+  /** Whether Pero can record voice messages, which the context then says. */
+  voice?: boolean;
 }
 
 /** The runtime request of a turn with `note`, with its instructions composed. */
@@ -78,11 +80,29 @@ export function agentContext(
   note: Pick<ChannelNote, 'title' | 'file'>,
   defaults: Pick<
     InstructionDefaults,
-    'dataFolder' | 'systemFolder' | 'guideFile'
+    'dataFolder' | 'systemFolder' | 'guideFile' | 'voice'
   >,
 ): string {
-  return `${dataFolderNote(defaults.dataFolder)}\n\n${systemFolderNote(note, defaults)}`;
+  return [
+    dataFolderNote(defaults.dataFolder),
+    systemFolderNote(note, defaults),
+    ...(defaults.voice ? [VOICE_NOTE] : []),
+  ].join('\n\n');
 }
+
+/**
+ * Tells Pero, when it can record voice messages, how to send one: the
+ * words in a `<voice>` block, which the Channel adapter records.
+ */
+export const VOICE_NOTE =
+  'You can answer with a voice message: put what to say in a ' +
+  '<voice>…</voice> block in your answer. Pero records it and sends it as ' +
+  'a voice message, and the rest of your answer as text, in order. Send ' +
+  'one when the owner asks for it, or when their note or Workflow asks for ' +
+  'it; otherwise answer in text. Write what you say to be heard: plain ' +
+  'sentences without Markdown, links, lists, tables, or code, and under ' +
+  '4,000 characters. Voice messages the owner sends reach you as their ' +
+  'transcript.';
 
 /**
  * Tells Pero, which works in the workspace unless a note names a folder,

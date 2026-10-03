@@ -34,6 +34,7 @@ describe('workspaceLayout', () => {
       controlSocket: '/srv/ws/.pero/run/pero.sock',
       lockFile: '/srv/ws/.pero/run/pero.lock',
       metadataFile: '/srv/ws/.pero/run/pero.json',
+      models: '/srv/ws/.pero/models',
       stateGitignore: '/srv/ws/.pero/.gitignore',
       attachments: '/srv/ws/.pero/attachments',
       configFile: '/srv/ws/.pero/config.yaml',
