@@ -131,7 +131,7 @@ describe('initWorkspace', () => {
       'claude-effort': null,
       'codex-model': null,
       'codex-effort': null,
-      permissions: 'ask',
+      permissions: null,
       timezone,
       'history-carryover': 50,
       'history-retention-days': null,

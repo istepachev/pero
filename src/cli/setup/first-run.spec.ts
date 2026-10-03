@@ -15,6 +15,7 @@ import {
   resolveBootstrapConfig,
 } from '../../config/bootstrap-config.js';
 import type { Provider } from '../../config/provider-options.js';
+import type { PermissionMode } from '../../config/tool-policy.js';
 import { initWorkspace } from '../../config/workspace-skeleton.js';
 import type { Exec, ExecOutcome } from '../../providers/provider-auth.js';
 import type { Prompts } from '../prompts.js';
@@ -64,6 +65,7 @@ describe('configOrNewWorkspace', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -73,6 +75,10 @@ describe('configOrNewWorkspace', () => {
     answer?: boolean;
     clis?: Record<Provider, CliState>;
     pick?: Provider;
+    /** The permission mode picked; the one selected first when not given. */
+    permissions?: PermissionMode;
+    /** Whether Pero runs as root. */
+    root?: boolean;
     /** The data folder picked; the one selected first when not given. */
     folder?: string;
     inputs?: string[];
@@ -83,7 +89,9 @@ describe('configOrNewWorkspace', () => {
       Promise.resolve(
         question.message.includes('vault')
           ? (options.folder ?? question.initial)
-          : (options.pick ?? 'claude'),
+          : question.message.includes('approve')
+            ? (options.permissions ?? question.initial)
+            : (options.pick ?? 'claude'),
       ),
     );
     const inputs = [...(options.inputs ?? [])];
@@ -100,6 +108,7 @@ describe('configOrNewWorkspace', () => {
       print: (text) => printed.push(text),
       home,
       exec: (command, args, opts) => fakeClis(clis)(command, args, opts),
+      root: options.root ?? false,
       ...(options.checkProviders === undefined
         ? {}
         : { checkProviders: options.checkProviders }),
@@ -109,6 +118,15 @@ describe('configOrNewWorkspace', () => {
 
   const peroNote = (workspace: string, data = 'data') =>
     readFileSync(join(workspace, data, 'System', 'Pero.md'), 'utf8');
+
+  /** The questions `select` was asked, by message. */
+  const asked = (select: { mock: { calls: unknown[][] } }) =>
+    select.mock.calls.map(
+      ([question]) => (question as { message: string }).message,
+    );
+
+  const PROVIDER_QUESTION = 'Which provider should Pero use?';
+  const PERMISSIONS_QUESTION = 'How should Pero approve its tools by default?';
 
   it('makes ~/workspace when started from home and asked', async () => {
     const { result, confirm } = run({ cwd: home, interactive: true });
@@ -235,7 +253,7 @@ describe('configOrNewWorkspace', () => {
 
     const { result, select } = run({ cwd: ws, interactive: true });
     await expect(result).resolves.toMatchObject({ firstRun: true });
-    expect(select).not.toHaveBeenCalled();
+    expect(asked(select)).toEqual([PERMISSIONS_QUESTION]);
   });
 
   it('stops with the pero init to run when declined or not on a terminal', async () => {
@@ -318,7 +336,10 @@ describe('configOrNewWorkspace', () => {
     const ws = join(tmp, 'ws');
     initWorkspace(ws, home);
     const note = join(ws, 'data', 'System', 'Pero.md');
-    writeFileSync(note, '---\nprovider: codex\n---\nBe brief.\n');
+    writeFileSync(
+      note,
+      '---\nprovider: codex\npermissions: bypass\n---\nBe brief.\n',
+    );
 
     const { result, select } = run({
       cwd: ws,
@@ -328,8 +349,9 @@ describe('configOrNewWorkspace', () => {
     await expect(result).resolves.toMatchObject({ firstRun: true });
     expect(select).not.toHaveBeenCalled();
     expect(printed).toContain('Provider: codex, as Pero.md sets it');
+    expect(printed).toContain('Permissions: bypass, as Pero.md sets it');
     expect(readFileSync(note, 'utf8')).toBe(
-      '---\nprovider: codex\n---\nBe brief.\n',
+      '---\nprovider: codex\npermissions: bypass\n---\nBe brief.\n',
     );
 
     const missing = run({
@@ -394,8 +416,9 @@ describe('configOrNewWorkspace', () => {
       clis: { claude: 'signed-in', codex: 'missing' },
     });
     await expect(one.result).resolves.toMatchObject({ firstRun: false });
-    expect(one.select).not.toHaveBeenCalled();
+    expect(asked(one.select)).toEqual([PERMISSIONS_QUESTION]);
     expect(peroNote(ws)).toMatch(/^provider: claude /m);
+    expect(peroNote(ws)).toMatch(/^permissions: ask /m);
     expect(peroNote(ws)).toMatch(/^max-concurrent-runs: 2$/m);
 
     rmSync(note);
@@ -404,12 +427,15 @@ describe('configOrNewWorkspace', () => {
       interactive: true,
       clis: { claude: 'signed-in', codex: 'signed-in' },
       pick: 'codex',
+      permissions: 'bypass',
     });
     await expect(both.result).resolves.toMatchObject({ firstRun: false });
-    expect(both.select).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Which provider should Pero use?' }),
-    );
+    expect(asked(both.select)).toEqual([
+      PROVIDER_QUESTION,
+      PERMISSIONS_QUESTION,
+    ]);
     expect(peroNote(ws)).toMatch(/^provider: codex /m);
+    expect(peroNote(ws)).toMatch(/^permissions: bypass /m);
   });
 
   it('leaves a missing Pero.md to pero run off a terminal or with its vault not mounted', async () => {
@@ -431,6 +457,91 @@ describe('configOrNewWorkspace', () => {
     expect(existsSync(join(ws, 'Vault'))).toBe(false);
   });
 
+  it('asks the default permission mode, ask selected first, and writes it', async () => {
+    const { result, select } = run({
+      cwd: home,
+      interactive: true,
+      permissions: 'bypass',
+    });
+
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(select).toHaveBeenCalledWith({
+      message: PERMISSIONS_QUESTION,
+      choices: [
+        {
+          value: 'ask',
+          name: 'ask — edits in its folder run freely; anything else asks you in Telegram (recommended)',
+        },
+        {
+          value: 'bypass',
+          name: 'bypass — every tool runs without asking, like claude --dangerously-skip-permissions',
+        },
+      ],
+      initial: 'ask',
+    });
+    const note = join(home, 'workspace', 'data', 'System', 'Pero.md');
+    expect(peroNote(join(home, 'workspace'))).toMatch(
+      /^permissions: bypass +# ask or bypass$/m,
+    );
+    expect(printed).toContain(
+      `Pero.md now sets provider: claude, permissions: bypass; change them in ${note}`,
+    );
+    expect(printed.join('\n')).not.toContain('IS_SANDBOX');
+  });
+
+  it('describes the permission modes as Codex applies them', async () => {
+    const { result, select } = run({
+      cwd: home,
+      interactive: true,
+      clis: { claude: 'missing', codex: 'signed-in' },
+    });
+
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: PERMISSIONS_QUESTION,
+        choices: [
+          {
+            value: 'ask',
+            name: 'ask — Codex sandbox: writes and runs commands only in its folder, without network (recommended)',
+          },
+          {
+            value: 'bypass',
+            name: 'bypass — no sandbox, like codex --dangerously-bypass-approvals-and-sandbox',
+          },
+        ],
+      }),
+    );
+    expect(peroNote(join(home, 'workspace'))).toMatch(/^permissions: ask /m);
+  });
+
+  it('warns that Claude Code refuses bypass as root, unless IS_SANDBOX=1', async () => {
+    vi.stubEnv('IS_SANDBOX', '');
+    const { result } = run({
+      cwd: home,
+      interactive: true,
+      permissions: 'bypass',
+      root: true,
+    });
+
+    await expect(result).resolves.toMatchObject({ firstRun: true });
+    expect(printed).toContain(
+      'Claude Code refuses bypass when it runs as root unless IS_SANDBOX=1 is set; run Pero as an ordinary account.',
+    );
+
+    rmSync(join(home, 'workspace'), { recursive: true });
+    printed.length = 0;
+    vi.stubEnv('IS_SANDBOX', '1');
+    const sandbox = run({
+      cwd: home,
+      interactive: true,
+      permissions: 'bypass',
+      root: true,
+    });
+    await expect(sandbox.result).resolves.toMatchObject({ firstRun: true });
+    expect(printed.join('\n')).not.toContain('IS_SANDBOX');
+  });
+
   it('settles no provider for the echo runtime', async () => {
     const { result } = run({
       cwd: home,
@@ -441,5 +552,6 @@ describe('configOrNewWorkspace', () => {
 
     await expect(result).resolves.toMatchObject({ firstRun: true });
     expect(peroNote(join(home, 'workspace'))).toMatch(/^provider: +# claude/m);
+    expect(peroNote(join(home, 'workspace'))).toMatch(/^permissions: +# ask/m);
   });
 });
