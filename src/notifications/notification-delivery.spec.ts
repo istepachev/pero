@@ -142,7 +142,7 @@ describe('NotificationDelivery', () => {
     await delivery.tick(after(now, 24 * 60 * 60_000));
 
     expect(adapter.sent).toEqual([
-      { address: OWNER.address, message: { text: SUGGESTION } },
+      { address: OWNER.address, message: { text: SUGGESTION, markdown: true } },
     ]);
     expect(await reload(notification)).toMatchObject({
       status: 'delivered',
@@ -178,7 +178,10 @@ describe('NotificationDelivery', () => {
     await delivery.tick(after(notification.nextAttemptAt!, 1));
 
     expect(adapter.sent).toEqual([
-      { address: OWNER.address, message: { text: 'Brief\n\necho: Say' } },
+      {
+        address: OWNER.address,
+        message: { text: 'Brief\n\necho: Say', markdown: true },
+      },
       {
         address: OWNER.address,
         message: { text: '' },

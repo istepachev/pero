@@ -74,7 +74,7 @@ export function composeInstructions(
 
 /**
  * What every turn's instructions start with: where the data folder is,
- * and where the settings are.
+ * where the settings are, and how answers are shown.
  */
 export function agentContext(
   note: Pick<ChannelNote, 'title' | 'file'>,
@@ -86,13 +86,29 @@ export function agentContext(
   return [
     dataFolderNote(defaults.dataFolder),
     systemFolderNote(note, defaults),
+    FORMAT_NOTE,
     ...(defaults.voice ? [VOICE_NOTE] : []),
   ].join('\n\n');
 }
 
 /**
- * Tells Pero, when it can record voice messages, how to send one: the
- * words in a `<voice>` block, which the Channel adapter records.
+ * Tells the agent which Markdown Telegram shows as formatting, which the
+ * Channel adapter converts, and to use it where it helps.
+ */
+export const FORMAT_NOTE =
+  'Your answers are Telegram messages, and Pero shows this Markdown in ' +
+  'them as formatting: **bold**, *italic*, ~~strikethrough~~, ' +
+  '||spoiler||, `inline code`, code blocks fenced with ```, ' +
+  '[links](https://example.com), and > quotes. A # heading shows as a ' +
+  'bold line, and a - list item starts with a bullet. Use formatting when ' +
+  'it helps the owner read: to mark what matters, for code, commands, and ' +
+  'file paths, and to set off a quote; a short answer needs none. ' +
+  'Telegram has no tables or nested emphasis, so write a list instead of ' +
+  'a table, and keep each mark on one line.';
+
+/**
+ * Tells the agent, when Pero can record voice messages, how to send one:
+ * the words in a `<voice>` block, which the Channel adapter records.
  */
 export const VOICE_NOTE =
   'You can answer with a voice message: put what to say in a ' +
@@ -100,13 +116,13 @@ export const VOICE_NOTE =
   'a voice message, and the rest of your answer as text, in order. Send ' +
   'one when the owner asks for it, or when their note or Workflow asks for ' +
   'it; otherwise answer in text. Write what you say to be heard: plain ' +
-  'sentences without Markdown, links, lists, tables, or code, and under ' +
+  'sentences without formatting, links, lists, tables, or code, and under ' +
   '4,000 characters. Voice messages the owner sends reach you as their ' +
   'transcript.';
 
 /**
- * Tells Pero, which works in the workspace unless a note names a folder,
- * where the owner's notes are and where its own go.
+ * Tells the agent, which works in the workspace unless a note names a
+ * folder, where the owner's notes are and where its own go.
  */
 export function dataFolderNote(dataFolder: string): string {
   return (
@@ -117,9 +133,9 @@ export function dataFolderNote(dataFolder: string): string {
 }
 
 /**
- * Tells Pero where it answers and where its settings are, so that it can
- * change them when asked, and where the guide to them is, which it reads
- * before changing any or explaining how Pero works.
+ * Tells the agent where it answers and where its settings are, so that it
+ * can change them when asked, and where the guide to them is, which it
+ * reads before changing any or explaining how Pero works.
  */
 export function systemFolderNote(
   note: Pick<ChannelNote, 'title' | 'file'>,
@@ -133,7 +149,7 @@ export function systemFolderNote(
       ? `This Channel has no note of its own yet; Pero writes one in ${join(systemFolder, NOTE_FOLDERS.channel)}.`
       : `This Channel's own settings and instructions are the note ${join(systemFolder, note.file)}.`;
   return (
-    `You are Pero, the assistant that answers the owner in Telegram, ` +
+    `You run in Pero, which connects you to the owner in Telegram, ` +
     `here in the Channel ${note.title}. ${own} Your personality is in ` +
     `${join(systemFolder, PERSONA_NOTE)} and your general instructions in ` +
     `${join(systemFolder, INSTRUCTIONS_NOTE)}. Pero's defaults are in ` +

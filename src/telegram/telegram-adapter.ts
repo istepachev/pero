@@ -24,6 +24,7 @@ import { ChannelRouter } from '../channels/channel-router.js';
 import { COMMANDS } from '../channels/commands/command-list.js';
 import { MediaGroups } from './media-groups.js';
 import { splitText } from './split-text.js';
+import { markdownToTelegramHtml, splitMarkdown } from './telegram-markdown.js';
 import {
   TELEGRAM_OPTIONS,
   TelegramCredentials,
@@ -142,7 +143,8 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
 
   /**
    * Sends `message`, split into as many messages as Telegram needs, and
-   * returns the first one's ID. Buttons go under the last part.
+   * returns the first one's ID. Buttons go under the last part. Markdown
+   * is shown as Telegram's formatting.
    */
   async send(
     address: ChannelAddress,
@@ -155,7 +157,9 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       target.messageThreadId === undefined
         ? {}
         : { message_thread_id: Number(target.messageThreadId) };
-    const parts = splitText(message.text);
+    const parts = message.markdown
+      ? splitMarkdown(message.text)
+      : splitText(message.text);
     let chatId = target.chatId;
     let first: string | null = null;
     try {
@@ -164,10 +168,15 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
           index === parts.length - 1 && message.buttons?.length
             ? { ...thread, reply_markup: keyboard(message.buttons) }
             : thread;
-        const sent = await this.withRetries(chatId, (id) => {
-          chatId = id;
-          return bot.api.sendMessage(id, part, options);
-        });
+        const sent = await this.formatted(
+          part,
+          message.markdown,
+          (text, format) =>
+            this.withRetries(chatId, (id) => {
+              chatId = id;
+              return bot.api.sendMessage(id, text, { ...options, ...format });
+            }),
+        );
         first ??= String(sent.message_id);
       }
     } catch (error) {
@@ -266,10 +275,13 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
     if (!bot) throw new Error('Telegram bot token is not set');
     const { chatId } = parseAddress(address);
     try {
-      await this.withRetries(chatId, (id) =>
-        bot.api.editMessageText(id, Number(messageId), message.text, {
-          reply_markup: keyboard(message.buttons ?? []),
-        }),
+      await this.formatted(message.text, message.markdown, (text, format) =>
+        this.withRetries(chatId, (id) =>
+          bot.api.editMessageText(id, Number(messageId), text, {
+            ...format,
+            reply_markup: keyboard(message.buttons ?? []),
+          }),
+        ),
       );
     } catch (error) {
       // Editing a message into what it already says is no failure.
@@ -587,6 +599,33 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
         null,
       ),
     );
+  }
+
+  /**
+   * Runs `send` with `text`, Markdown as Telegram HTML. Should Telegram
+   * reject the HTML, sends the Markdown as it is written: the answer
+   * matters more than its formatting.
+   */
+  private async formatted<T>(
+    text: string,
+    markdown: boolean | undefined,
+    send: (text: string, format: { parse_mode?: 'HTML' }) => Promise<T>,
+  ): Promise<T> {
+    if (!markdown) return send(text, {});
+    try {
+      return await send(markdownToTelegramHtml(text), { parse_mode: 'HTML' });
+    } catch (error) {
+      if (
+        !(error instanceof GrammyError) ||
+        !/can't parse entities/i.test(error.description)
+      ) {
+        throw error;
+      }
+      this.logger.warn(
+        `Telegram rejected an answer's formatting, so it is sent as written: ${error.description}`,
+      );
+      return send(text, {});
+    }
   }
 
   /**

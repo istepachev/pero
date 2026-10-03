@@ -1004,6 +1004,47 @@ describe('TelegramAdapter', () => {
       api.up();
     });
 
+    it("shows an answer's Markdown as formatting, and Pero's own text as it is", async () => {
+      await start();
+      await connected();
+      const adapter = get(TelegramAdapter);
+
+      await adapter.send(
+        { chatId: '1234' },
+        { text: '**Done** for <you>', markdown: true },
+      );
+      await adapter.send({ chatId: '1234' }, { text: '**Status** <ok>' });
+
+      expect(api.sent()).toEqual([
+        expect.objectContaining({
+          text: '<b>Done</b> for &lt;you&gt;',
+          parse_mode: 'HTML',
+        }),
+        expect.not.objectContaining({ parse_mode: expect.anything() }),
+      ]);
+      expect(api.sent()[1]!.text).toBe('**Status** <ok>');
+    });
+
+    it('sends an answer as written when Telegram rejects its formatting', async () => {
+      await start();
+      await connected();
+      api.failNext('sendMessage', {
+        error_code: 400,
+        description: "Bad Request: can't parse entities: unsupported tag",
+      });
+
+      await get(TelegramAdapter).send(
+        { chatId: '1234' },
+        { text: '**Done**', markdown: true },
+      );
+
+      expect(api.sent()).toEqual([
+        expect.objectContaining({ text: '<b>Done</b>', parse_mode: 'HTML' }),
+        expect.not.objectContaining({ parse_mode: expect.anything() }),
+      ]);
+      expect(api.sent()[1]!.text).toBe('**Done**');
+    });
+
     it("names the chat of a topic's and a chat's address", async () => {
       await start();
       const adapter = get(TelegramAdapter);

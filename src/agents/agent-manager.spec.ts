@@ -146,7 +146,7 @@ describe('AgentManager', () => {
 
     expect(adapter.sent.at(-1)).toEqual({
       address: OWNER.address,
-      message: { text: 'echo: Hello' },
+      message: { text: 'echo: Hello', markdown: true },
     });
   });
 
@@ -155,7 +155,7 @@ describe('AgentManager', () => {
     await say(OWNER, 'Hi <voice>Good morning.</voice> bye');
 
     expect(adapter.sent.slice(-3)).toEqual([
-      { address: OWNER.address, message: { text: 'echo: Hi' } },
+      { address: OWNER.address, message: { text: 'echo: Hi', markdown: true } },
       {
         address: OWNER.address,
         message: { text: '' },
@@ -165,7 +165,7 @@ describe('AgentManager', () => {
           durationS: 1,
         },
       },
-      { address: OWNER.address, message: { text: 'bye' } },
+      { address: OWNER.address, message: { text: 'bye', markdown: true } },
     ]);
     const outbound = (await allMessages()).filter(
       (message) => message.direction === 'out',
