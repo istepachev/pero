@@ -418,6 +418,7 @@ describe('TelegramAdapter', () => {
         ],
       });
       expect(runtime.requests).toEqual([]);
+      expect(api.callsOf('setMessageReaction')).toEqual([]);
     });
 
     it('passes a command Pero does not know on as a message', async () => {
@@ -965,6 +966,61 @@ describe('TelegramAdapter', () => {
           .slice(-3)
           .map((call) => call.payload.text ?? call.method),
       ).toEqual(['echo: Say', 'sendVoice', 'please']);
+    });
+  });
+
+  describe('working reaction', () => {
+    it('reacts to a message while answering it, and clears the reaction after the answer', async () => {
+      await start({ allow: [FORUM] });
+      api.push(
+        inTopic(FORUM, 42, {
+          text: undefined,
+          forum_topic_created: { name: 'Health', icon_color: 0 },
+        }),
+      );
+      await sentCount(1);
+      const held = runtime.hold();
+
+      api.push(inTopic(FORUM, 42, { text: 'Hello' }));
+      await held.started;
+
+      await vi.waitFor(() =>
+        expect(api.callsOf('setMessageReaction')[0]?.payload).toEqual({
+          chat_id: '-1001234567890',
+          message_id: nextMessageId - 1,
+          reaction: [{ type: 'emoji', emoji: '👀' }],
+        }),
+      );
+
+      held.release();
+      await vi.waitFor(() =>
+        expect(api.callsOf('setMessageReaction')).toHaveLength(2),
+      );
+      const methods = api.calls.map((call) => call.method);
+      expect(methods.lastIndexOf('setMessageReaction')).toBeGreaterThan(
+        methods.lastIndexOf('sendMessage'),
+      );
+      expect(api.callsOf('setMessageReaction')[1]?.payload).toEqual({
+        chat_id: '-1001234567890',
+        message_id: nextMessageId - 1,
+        reaction: [],
+      });
+      expect(api.sent().at(-1)?.text).toBe('echo: Hello');
+    });
+
+    it('answers all the same in a chat that refuses the reaction', async () => {
+      await start();
+      await connected();
+      api.failNext('setMessageReaction', {
+        error_code: 400,
+        description: 'Bad Request: REACTION_INVALID',
+      });
+
+      api.push(message(DIRECT, { text: 'Hello' }));
+
+      // After the first steps a newly allowed chat gets.
+      const [, reply] = await sentCount(2);
+      expect(reply?.text).toBe('echo: Hello');
     });
   });
 

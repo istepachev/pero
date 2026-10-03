@@ -221,4 +221,14 @@ export interface ChannelAdapter {
     messageId: string,
     message: OutboundMessage,
   ): Promise<void>;
+  /**
+   * Marks the received message `messageId` as one Pero is answering, or
+   * clears that mark; Telegram shows it as a reaction. The integration may
+   * refuse it, as a group that doesn't allow the reaction does.
+   */
+  showWorking(
+    address: ChannelAddress,
+    messageId: string,
+    working: boolean,
+  ): Promise<void>;
 }

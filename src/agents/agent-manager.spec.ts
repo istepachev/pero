@@ -397,6 +397,76 @@ describe('AgentManager', () => {
     expect(claude.requests[1]!.providerSessionId).toBe('fake-claude-1');
   });
 
+  describe('marking the message being answered', () => {
+    /** The marks set (true) and cleared (false) on message `messageId`. */
+    function marks(messageId: string): boolean[] {
+      return adapter.working
+        .filter((mark) => mark.messageId === messageId)
+        .map((mark) => mark.working);
+    }
+
+    it('marks a message from when its turn is accepted until its answer is sent', async () => {
+      const held = claude.hold();
+      const message = inboundMessage(OWNER, { text: 'Hello' });
+      await adapter.deliver(message);
+      await held.started;
+
+      expect(adapter.working).toEqual([
+        { address: OWNER.address, messageId: message.messageId, working: true },
+      ]);
+
+      const send = adapter.holdSends();
+      held.release();
+      await send.started;
+      expect(marks(message.messageId)).toEqual([true]);
+
+      send.release();
+      await idle();
+      expect(sentTexts().at(-1)).toBe('echo: Hello');
+      expect(adapter.working.at(-1)).toEqual({
+        address: OWNER.address,
+        messageId: message.messageId,
+        working: false,
+      });
+    });
+
+    it('clears the mark after a failure notice', async () => {
+      claude.failNext();
+      const message = inboundMessage(OWNER, { text: 'Hello' });
+
+      await adapter.deliver(message);
+      await idle();
+
+      expect(sentTexts().at(-1)).toMatch(/^Pero couldn't answer/);
+      expect(marks(message.messageId)).toEqual([true, false]);
+    });
+
+    it('clears the marks of a stopped turn and the turns dropped behind it', async () => {
+      const held = claude.hold();
+      const one = inboundMessage(OWNER, { text: 'one' });
+      const two = inboundMessage(OWNER, { text: 'two' });
+      await adapter.deliver(one);
+      await held.started;
+      await adapter.deliver(two);
+
+      moduleRef.get(AgentManager).stop((await channelFor(OWNER.key)).id);
+      await idle();
+
+      expect(marks(one.messageId)).toEqual([true, false]);
+      expect(marks(two.messageId)).toEqual([true, false]);
+    });
+
+    it('answers all the same when the mark is refused', async () => {
+      vi.spyOn(adapter, 'showWorking').mockRejectedValue(
+        new Error('Bad Request: REACTION_INVALID'),
+      );
+
+      await say(OWNER, 'Hello');
+
+      expect(sentTexts().at(-1)).toBe('echo: Hello');
+    });
+  });
+
   describe('when the provider no longer has the conversation', () => {
     const lost = () =>
       new RuntimeError(

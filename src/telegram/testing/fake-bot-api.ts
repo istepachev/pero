@@ -191,6 +191,7 @@ export class FakeBotApi {
         });
       case 'answerCallbackQuery':
       case 'setMyCommands':
+      case 'setMessageReaction':
         return this.ok(res, true);
       default:
         return this.fail(res, {
