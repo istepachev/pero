@@ -80,13 +80,15 @@ function together(files: readonly string[]): string {
 export abstract class ChannelTurns {
   /**
    * Accepts `message`, recorded in the Channel's history as `messageId`, as
-   * the Channel's next turn. Resolves once the turn is accepted, not when
-   * it finishes, so intake never waits on a turn.
+   * the Channel's next turn, with the images it came with saved at `images`
+   * and named in its text. Resolves once the turn is accepted, not when it
+   * finishes, so intake never waits on a turn.
    */
   abstract handle(
     channel: RoutedChannel,
     message: InboundMessage,
     messageId: number,
+    images: readonly string[],
   ): Promise<void>;
 
   /**

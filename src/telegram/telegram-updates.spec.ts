@@ -236,13 +236,83 @@ describe('toInbound', () => {
       });
     });
 
-    it('ignores a message without text', () => {
+    it('ignores a message with neither text nor an image', () => {
       expect(
         toInbound(
           update({ chat: DIRECT, sticker: {} as Message['sticker'] }),
           ME,
         ),
       ).toBeNull();
+    });
+
+    describe('images', () => {
+      const sizes = [
+        { file_id: 'small', file_unique_id: 's', width: 90, height: 60 },
+        {
+          file_id: 'large',
+          file_unique_id: 'l',
+          width: 1280,
+          height: 853,
+          file_size: 120_000,
+        },
+      ];
+
+      it('takes a photo at its largest size, with its caption', () => {
+        const inbound = toInbound(
+          update({ chat: DIRECT, photo: sizes, caption: 'The receipt' }),
+          ME,
+        );
+
+        expect(inbound).toMatchObject({
+          content: {
+            text: 'The receipt',
+            images: [{ ref: 'large', type: 'image/jpeg', size: 120_000 }],
+          },
+        });
+      });
+
+      it('takes a photo without a caption, with no text', () => {
+        const inbound = toInbound(update({ chat: DIRECT, photo: sizes }), ME);
+
+        expect(inbound).toMatchObject({
+          content: { text: '', images: [{ ref: 'large' }] },
+        });
+      });
+
+      it('takes an image sent as a file, of a type Pero accepts', () => {
+        const file = (mime_type: string) =>
+          update({
+            chat: DIRECT,
+            document: { file_id: 'doc', file_unique_id: 'd', mime_type },
+          });
+
+        expect(toInbound(file('image/png'), ME)).toMatchObject({
+          content: {
+            text: '',
+            images: [{ ref: 'doc', type: 'image/png', size: null }],
+          },
+        });
+        expect(toInbound(file('image/heic'), ME)).toBeNull();
+        expect(toInbound(file('application/pdf'), ME)).toBeNull();
+      });
+
+      it("answers another file's caption as text", () => {
+        const inbound = toInbound(
+          update({
+            chat: DIRECT,
+            document: {
+              file_id: 'doc',
+              file_unique_id: 'd',
+              mime_type: 'application/pdf',
+            },
+            caption: 'Read this',
+          }),
+          ME,
+        );
+
+        expect(inbound).toMatchObject({ content: { text: 'Read this' } });
+        expect(inbound).not.toHaveProperty('content.images');
+      });
     });
 
     it('ignores other bots, which also stops loops', () => {

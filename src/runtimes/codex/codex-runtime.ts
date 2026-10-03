@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import {
   Codex,
   type CodexOptions,
+  type Input,
   type ModelReasoningEffort,
   type ThreadOptions,
 } from '@openai/codex-sdk';
@@ -84,7 +85,7 @@ export class CodexRuntime implements AgentRuntime {
               request.providerSessionId,
               threadOptions(request),
             );
-      const { events } = await thread.runStreamed(request.input, {
+      const { events } = await thread.runStreamed(codexInput(request), {
         signal: abort.signal,
       });
       for await (const event of events) {
@@ -153,4 +154,14 @@ function codexEffort(effort: string): ModelReasoningEffort {
     throw new RuntimeError('failed', `Codex has no effort level ${effort}`);
   }
   return effort as ModelReasoningEffort;
+}
+
+/** The turn's input, followed by the images sent with it, if any. */
+function codexInput(request: RuntimeRequest): Input {
+  const images = request.images ?? [];
+  if (images.length === 0) return request.input;
+  return [
+    { type: 'text', text: request.input },
+    ...images.map((path) => ({ type: 'local_image' as const, path })),
+  ];
 }

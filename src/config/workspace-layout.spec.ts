@@ -35,6 +35,7 @@ describe('workspaceLayout', () => {
       lockFile: '/srv/ws/.pero/run/pero.lock',
       metadataFile: '/srv/ws/.pero/run/pero.json',
       stateGitignore: '/srv/ws/.pero/.gitignore',
+      attachments: '/srv/ws/.pero/attachments',
       configFile: '/srv/ws/.pero/config.yaml',
       envFile: '/srv/ws/.env',
       workspaceGitignore: '/srv/ws/.gitignore',

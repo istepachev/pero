@@ -14,7 +14,11 @@ import { Channel } from '../persistence/entities/channel.entity.js';
 import type { Session } from '../persistence/entities/session.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
 import { signInHint } from '../providers/provider-auth.js';
-import { RuntimeError, type ToolApprover } from '../runtimes/agent-runtime.js';
+import {
+  RuntimeError,
+  type RuntimeRequest,
+  type ToolApprover,
+} from '../runtimes/agent-runtime.js';
 import { AgentRuntimes } from '../runtimes/agent-runtimes.js';
 import {
   type ContextUsage,
@@ -31,6 +35,8 @@ export interface TurnInput {
   /** The message as recorded in the Channel's history. */
   messageId: number;
   input: string;
+  /** Where the images the message came with are saved; none when absent. */
+  images?: readonly string[];
   /** Asks the owner about tools the note's permissions leave open. */
   approve?: ToolApprover;
 }
@@ -397,6 +403,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         ...(session.providerSessionId === null
           ? {}
           : { providerSessionId: session.providerSessionId }),
+        ...(turn.images?.length ? { images: turn.images } : {}),
         ...(turn.approve ? { approve: turn.approve } : {}),
       },
       controller,
@@ -484,7 +491,7 @@ export class AgentManager implements BeforeApplicationShutdown {
   private async run(
     provider: Provider,
     request: AgentRequest & { input: string },
-    options: { providerSessionId?: string; approve?: ToolApprover },
+    options: Pick<RuntimeRequest, 'providerSessionId' | 'images' | 'approve'>,
     controller: AbortController,
     on: {
       session: (providerSessionId: string) => unknown;

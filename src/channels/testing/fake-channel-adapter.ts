@@ -7,6 +7,7 @@ import type {
   ChannelHandlers,
   InboundChannel,
   InboundChat,
+  InboundImage,
   InboundMessage,
   InboundAction,
   OutboundMessage,
@@ -38,6 +39,8 @@ export class FakeChannelAdapter implements ChannelAdapter {
   running = false;
   /** Makes the next sends fail, as an unreachable service would. */
   failSends = false;
+  /** What `download` answers, by ref; any other ref fails. */
+  readonly files = new Map<string, Uint8Array>();
   private handlers: ChannelHandlers | null = null;
   private nextMessageId = 1;
   /** The hold the next send waits on, if any. */
@@ -90,6 +93,13 @@ export class FakeChannelAdapter implements ChannelAdapter {
 
   chatKey(address: ChannelAddress): string {
     return String(address.chatId);
+  }
+
+  download(ref: string): Promise<Uint8Array> {
+    const file = this.files.get(ref);
+    return file === undefined
+      ? Promise.reject(new Error(`No file ${ref}`))
+      : Promise.resolve(file);
   }
 
   edit(
@@ -195,6 +205,7 @@ export function inboundMessage(
     topic?: string;
     title?: string | null;
     text?: string;
+    images?: readonly InboundImage[];
     updateId?: string;
   } = {},
 ): InboundMessage {
@@ -205,7 +216,10 @@ export function inboundMessage(
     channel: inboundChannel(chat, options.topic, options.title),
     messageId: String(nextMessageId++),
     senderId: '42',
-    content: { text: options.text ?? 'Hello' },
+    content: {
+      text: options.text ?? 'Hello',
+      ...(options.images === undefined ? {} : { images: options.images }),
+    },
   };
 }
 

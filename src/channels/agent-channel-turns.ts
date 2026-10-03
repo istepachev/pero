@@ -47,11 +47,13 @@ export class AgentChannelTurns extends ChannelTurns {
     channel: RoutedChannel,
     message: InboundMessage,
     messageId: number,
+    images: readonly string[],
   ): Promise<void> {
     const turn = this.agents.runTurn({
       channelId: channel.id,
       messageId,
       input: message.content.text,
+      images,
       approve: this.approvals.approverFor(channel),
     });
     const task = this.reply(channel, turn);

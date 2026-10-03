@@ -290,6 +290,7 @@ describe('Channel onboarding', () => {
           expect.objectContaining({ id: before.id }),
           expect.anything(),
           expect.any(Number),
+          [],
         );
       });
 

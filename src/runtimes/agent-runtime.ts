@@ -30,6 +30,12 @@ export type ToolApprover = (
 /** One turn of an Agent, with its settings already resolved. */
 export interface RuntimeRequest {
   input: string;
+  /**
+   * Images the owner sent with the input, as absolute paths of saved files
+   * of a type in `IMAGE_TYPES`; the input names each one too. The adapter
+   * shows them to the model with the input.
+   */
+  images?: readonly string[];
   /** `Persona.md`, `Instructions.md`, then the Channel note's own. */
   instructions: string;
   /** Model and effort; the adapter omits each null one. */

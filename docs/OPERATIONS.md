@@ -115,6 +115,8 @@ The database holds only state; personality, instructions, Channel notes, Workflo
 - **Message history:** the text of each Channel (see below).
 - **Workflow Runs, schedules, and Notifications:** each run with its answer or error, where each schedule stands, and each Notification with its delivery state.
 
+The images people send in chats are files in `.pero/attachments/`, a folder per Channel, outside the database, so they are not in `pero backup`.
+
 Outside `.pero/`:
 - **Working folders:** the data folder and each folder a Channel note names in `working-directory`. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
 - **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
@@ -122,7 +124,7 @@ Outside `.pero/`:
 
 ## Message history
 
-Pero records the text of each allowed Channel: what people wrote there, what Pero answered, Pero's own notices (such as the onboarding welcome and failure messages), and the Workflow Notifications delivered there. It uses it to start a fresh Session from the recent conversation, to give a turn the Workflow messages posted since the last message, and as input for Workflows that review chats. `pero channels history <channel>` shows it.
+Pero records the text of each allowed Channel: what people wrote there (for an image, a line naming where it is saved), what Pero answered, Pero's own notices (such as the onboarding welcome and failure messages), and the Workflow Notifications delivered there. It uses it to start a fresh Session from the recent conversation, to give a turn the Workflow messages posted since the last message, and as input for Workflows that review chats. `pero channels history <channel>` shows it.
 
 It does not record:
 - messages from chats that are not allowed;
@@ -131,7 +133,7 @@ It does not record:
 
 Logs never hold message text.
 
-History is kept until you set `history-retention-days`; then messages older than that many days are deleted within the hour, every hour, and when Pero starts. Workflow Runs and Notifications keep their own text (the answer a run gave, the message a Notification carried) whatever the setting. Backups contain the history as it was when they were taken, and retention never reaches into them: delete old backups to be rid of it. The providers keep their own transcripts of each Session, with the reasoning and tool activity Pero leaves out, in the stores above. `history-retention-days` does not touch them; Claude Code deletes old ones on its own schedule (its `cleanupPeriodDays` setting).
+History is kept until you set `history-retention-days`; then messages older than that many days, and the images saved before then, are deleted within the hour, every hour, and when Pero starts. Workflow Runs and Notifications keep their own text (the answer a run gave, the message a Notification carried) whatever the setting. Backups contain the history as it was when they were taken, and retention never reaches into them: delete old backups to be rid of it. The providers keep their own transcripts of each Session, with the reasoning and tool activity Pero leaves out, in the stores above. `history-retention-days` does not touch them; Claude Code deletes old ones on its own schedule (its `cleanupPeriodDays` setting).
 
 ## Backup
 

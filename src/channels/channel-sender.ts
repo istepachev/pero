@@ -44,6 +44,11 @@ export class ChannelSender {
     return this.adapter(kind).chatKey(address);
   }
 
+  /** The contents of an image a message from `kind` came with. */
+  download(kind: IntegrationKind, ref: string): Promise<Uint8Array> {
+    return this.adapter(kind).download(ref);
+  }
+
   /** Replaces the text and buttons of a message sent through `kind`. */
   async edit(
     kind: IntegrationKind,

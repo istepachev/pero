@@ -417,6 +417,27 @@ describe('AgentManager', () => {
     });
   });
 
+  it('passes the images a message came with to the runtime, also on a retry', async () => {
+    await say(OWNER, 'Hello');
+    const channel = await channelFor(OWNER.key);
+    const [message] = await allMessages();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    claude.failNext(new RuntimeError('session_lost', 'No conversation found'));
+
+    await moduleRef.get(AgentManager).runTurn({
+      channelId: channel.id,
+      messageId: message!.id,
+      input: '[Image attached, saved at /ws/a.jpg]',
+      images: ['/ws/a.jpg'],
+    });
+
+    expect(claude.requests[0]).not.toHaveProperty('images');
+    expect(claude.requests.slice(1).map((request) => request.images)).toEqual([
+      ['/ws/a.jpg'],
+      ['/ws/a.jpg'],
+    ]);
+  });
+
   it("passes the turn's approver to the runtime", async () => {
     await say(OWNER, 'Hello');
     const channel = await channelFor(OWNER.key);

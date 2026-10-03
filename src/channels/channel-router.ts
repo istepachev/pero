@@ -18,6 +18,7 @@ import type {
   InboundChat,
   InboundMessage,
 } from './channel-adapter.js';
+import { ChannelImages, withImageLines } from './channel-images.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelCommands } from './commands/channel-commands.service.js';
 import { buttonCommand, isCommand } from './commands/command-list.js';
@@ -71,6 +72,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly approvals: ToolApprovals,
     private readonly unanswered: UnansweredReplies,
     private readonly commands: ChannelCommands,
+    private readonly images: ChannelImages,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -131,6 +133,13 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
       }
+      const images = await this.saveImages(channel, message);
+      if (images === null) {
+        await this.inboundUpdates.markProcessed(kind, updateId);
+        return;
+      }
+      // The text names where each image is, for this turn and later ones.
+      const text = withImageLines(message.content.text, images);
       // Recorded as its update is handed on, so a message a turn gets is
       // in the history, and a redelivered one never is twice.
       const messageId = await this.inboundUpdates.markProcessed(
@@ -142,14 +151,54 @@ export class ChannelRouter implements BeforeApplicationShutdown {
             agentName: channel.note.name,
             externalMessageId: message.messageId,
             senderId: message.senderId,
-            text: message.content.text,
+            text,
           }),
       );
-      await this.turns.handle(channel, message, messageId);
+      await this.turns.handle(
+        channel,
+        { ...message, content: { ...message.content, text } },
+        messageId,
+        images,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to route ${kind} update ${updateId}: ${describe(error)}`,
       );
+    }
+  }
+
+  /**
+   * Saves the images `message` came with and resolves to where they are;
+   * null, after telling the Channel, when one couldn't be saved, since an
+   * answer without it would miss what was asked.
+   */
+  private async saveImages(
+    channel: RoutedChannel,
+    message: InboundMessage,
+  ): Promise<string[] | null> {
+    const images = message.content.images ?? [];
+    if (images.length === 0) return [];
+    try {
+      return await this.images.save(channel, message.messageId, images);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to save an image sent in ${channel.integrationKind} ` +
+          `Channel ${channel.id}: ${describe(error)}`,
+      );
+      try {
+        await this.sender.post(
+          channel,
+          `Pero couldn't get the ${images.length === 1 ? 'image' : 'images'} ` +
+            `you sent (${describe(error).replace(/\.$/, '')}). Send ` +
+            `${images.length === 1 ? 'it' : 'them'} again.`,
+          { origin: 'pero' },
+        );
+      } catch (sendError) {
+        this.logger.warn(
+          `Failed to say so in Channel ${channel.id}: ${describe(sendError)}`,
+        );
+      }
+      return null;
     }
   }
 
