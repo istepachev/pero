@@ -1347,7 +1347,8 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     expect(await pero(['migrate', join(tmp, 'workspace')])).toEqual({
       code: 1,
       stdout: '',
-      stderr: "error: unknown command 'migrate'\n",
+      // pero upgrade is what runs new migrations.
+      stderr: "error: unknown command 'migrate'\n(Did you mean upgrade?)\n",
     });
     expect(existsSync(join(tmp, 'workspace'))).toBe(false);
   });
