@@ -236,7 +236,7 @@ describe('toInbound', () => {
       });
     });
 
-    it('ignores a message with neither text nor an image', () => {
+    it('ignores a message with neither text nor a file', () => {
       expect(
         toInbound(
           update({ chat: DIRECT, sticker: {} as Message['sticker'] }),
@@ -245,7 +245,7 @@ describe('toInbound', () => {
       ).toBeNull();
     });
 
-    describe('images', () => {
+    describe('files', () => {
       const sizes = [
         { file_id: 'small', file_unique_id: 's', width: 90, height: 60 },
         {
@@ -266,7 +266,9 @@ describe('toInbound', () => {
         expect(inbound).toMatchObject({
           content: {
             text: 'The receipt',
-            images: [{ ref: 'large', type: 'image/jpeg', size: 120_000 }],
+            attachments: [
+              { ref: 'large', type: 'image/jpeg', name: null, size: 120_000 },
+            ],
           },
         });
       });
@@ -275,43 +277,72 @@ describe('toInbound', () => {
         const inbound = toInbound(update({ chat: DIRECT, photo: sizes }), ME);
 
         expect(inbound).toMatchObject({
-          content: { text: '', images: [{ ref: 'large' }] },
+          content: { text: '', attachments: [{ ref: 'large' }] },
         });
       });
 
-      it('takes an image sent as a file, of a type Pero accepts', () => {
-        const file = (mime_type: string) =>
+      it('takes a file of any type, with its name', () => {
+        const file = (mime_type: string, file_name?: string) =>
           update({
             chat: DIRECT,
-            document: { file_id: 'doc', file_unique_id: 'd', mime_type },
+            document: {
+              file_id: 'doc',
+              file_unique_id: 'd',
+              mime_type,
+              ...(file_name === undefined ? {} : { file_name }),
+            },
           });
 
         expect(toInbound(file('image/png'), ME)).toMatchObject({
           content: {
             text: '',
-            images: [{ ref: 'doc', type: 'image/png', size: null }],
+            attachments: [
+              { ref: 'doc', type: 'image/png', name: null, size: null },
+            ],
           },
         });
-        expect(toInbound(file('image/heic'), ME)).toBeNull();
-        expect(toInbound(file('application/pdf'), ME)).toBeNull();
+        expect(toInbound(file('image/heic', 'IMG_1.HEIC'), ME)).toMatchObject({
+          content: {
+            attachments: [{ type: 'image/heic', name: 'IMG_1.HEIC' }],
+          },
+        });
+        expect(toInbound(file('application/pdf', 'a.pdf'), ME)).toMatchObject({
+          content: {
+            attachments: [
+              { ref: 'doc', type: 'application/pdf', name: 'a.pdf' },
+            ],
+          },
+        });
       });
 
-      it("answers another file's caption as text", () => {
+      it('takes a file with its caption, and one Telegram gives no type', () => {
         const inbound = toInbound(
           update({
             chat: DIRECT,
             document: {
               file_id: 'doc',
               file_unique_id: 'd',
-              mime_type: 'application/pdf',
+              file_name: 'notes',
+              file_size: 12,
             },
             caption: 'Read this',
           }),
           ME,
         );
 
-        expect(inbound).toMatchObject({ content: { text: 'Read this' } });
-        expect(inbound).not.toHaveProperty('content.images');
+        expect(inbound).toMatchObject({
+          content: {
+            text: 'Read this',
+            attachments: [
+              {
+                ref: 'doc',
+                type: 'application/octet-stream',
+                name: 'notes',
+                size: 12,
+              },
+            ],
+          },
+        });
       });
     });
 

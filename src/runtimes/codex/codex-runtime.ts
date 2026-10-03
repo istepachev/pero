@@ -6,6 +6,7 @@ import {
   type ModelReasoningEffort,
   type ThreadOptions,
 } from '@openai/codex-sdk';
+import { imageTypeOf } from '../../common/images.js';
 import { CODEX_EFFORTS } from '../../config/provider-options.js';
 import {
   type AgentRuntime,
@@ -156,9 +157,14 @@ function codexEffort(effort: string): ModelReasoningEffort {
   return effort as ModelReasoningEffort;
 }
 
-/** The turn's input, followed by the images sent with it, if any. */
+/**
+ * The turn's input, followed by the images sent with it, if any; Codex
+ * takes no other file, so it reads those from where the input names them.
+ */
 function codexInput(request: RuntimeRequest): Input {
-  const images = request.images ?? [];
+  const images = (request.attachments ?? []).filter(
+    (path) => imageTypeOf(path) !== null,
+  );
   if (images.length === 0) return request.input;
   return [
     { type: 'text', text: request.input },

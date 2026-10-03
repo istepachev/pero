@@ -397,9 +397,9 @@ describe('ChannelRouter', () => {
       const message = inboundMessage(GROUP, {
         topic: '7',
         text: 'Which is cheaper?',
-        images: [
-          { ref: 'photo-1', type: 'image/jpeg', size: 3 },
-          { ref: 'photo-2', type: 'image/png', size: null },
+        attachments: [
+          { ref: 'photo-1', type: 'image/jpeg', name: null, size: 3 },
+          { ref: 'photo-2', type: 'image/png', name: 'b.png', size: null },
         ],
       });
 
@@ -442,7 +442,9 @@ describe('ChannelRouter', () => {
       await adapter.deliver(
         inboundMessage(GROUP, {
           text: '',
-          images: [{ ref: 'photo', type: 'image/jpeg', size: 1 }],
+          attachments: [
+            { ref: 'photo', type: 'image/jpeg', name: null, size: 1 },
+          ],
         }),
       );
 
@@ -454,7 +456,7 @@ describe('ChannelRouter', () => {
       await channel(GROUP.key, 'default');
       const message = inboundMessage(GROUP, {
         text: 'What is this?',
-        images: [{ ref: 'gone', type: 'image/jpeg', size: 1 }],
+        attachments: [{ ref: 'gone', type: 'image/jpeg', name: null, size: 1 }],
       });
       vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
@@ -474,6 +476,94 @@ describe('ChannelRouter', () => {
           externalUpdateId: message.updateId,
         }),
       ).toMatchObject({ status: 'processed' });
+    });
+
+    it('saves other files under the names they were sent with and names them in its text', async () => {
+      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+      adapter.files.set('pdf', new Uint8Array([1, 2]));
+      adapter.files.set('csv', new Uint8Array([3]));
+      adapter.files.set('blob', new Uint8Array([4]));
+      adapter.files.set('scan', new Uint8Array([5]));
+      const message = inboundMessage(GROUP, {
+        topic: '7',
+        text: 'Compare them',
+        attachments: [
+          {
+            ref: 'pdf',
+            type: 'application/pdf',
+            name: 'Receipt May.pdf',
+            size: 2,
+          },
+          { ref: 'csv', type: 'text/csv', name: '../../prices.csv', size: 1 },
+          {
+            ref: 'blob',
+            type: 'application/octet-stream',
+            name: null,
+            size: 1,
+          },
+          { ref: 'scan', type: 'application/pdf', name: 'scan', size: 1 },
+        ],
+      });
+
+      await adapter.deliver(message);
+
+      const folder = join(ws.stateFolder, 'attachments', String(topic.id));
+      const [, , , paths] = turns.handle.mock.calls[0] as unknown as [
+        unknown,
+        unknown,
+        unknown,
+        string[],
+      ];
+      expect(paths).toEqual([
+        expect.stringMatching(
+          new RegExp(
+            `^${folder}/\\d{8}-\\d{6}-${message.messageId}-1-Receipt_May\\.pdf$`,
+          ),
+        ),
+        expect.stringMatching(
+          new RegExp(`^${folder}/\\S+-${message.messageId}-2-prices\\.csv$`),
+        ),
+        expect.stringMatching(
+          new RegExp(`^${folder}/\\S+-${message.messageId}-3-file$`),
+        ),
+        expect.stringMatching(
+          new RegExp(`^${folder}/\\S+-${message.messageId}-4-scan\\.pdf$`),
+        ),
+      ]);
+      expect(paths.map((path) => [...readFileSync(path)])).toEqual([
+        [1, 2],
+        [3],
+        [4],
+        [5],
+      ]);
+      const [recorded] = await ds.getRepository(Message).find();
+      expect(recorded!.text).toBe(
+        `[File attached: Receipt May.pdf, saved at ${paths[0]}]\n` +
+          `[File attached: ../../prices.csv, saved at ${paths[1]}]\n` +
+          `[File attached, saved at ${paths[2]}]\n` +
+          `[File attached: scan, saved at ${paths[3]}]\n` +
+          'Compare them',
+      );
+    });
+
+    it('says when files could not be fetched', async () => {
+      await channel(GROUP.key, 'default');
+      adapter.files.set('photo', new Uint8Array([1]));
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await adapter.deliver(
+        inboundMessage(GROUP, {
+          attachments: [
+            { ref: 'photo', type: 'image/jpeg', name: null, size: 1 },
+            { ref: 'gone', type: 'application/pdf', name: 'a.pdf', size: 1 },
+          ],
+        }),
+      );
+
+      expect(turns.handle).not.toHaveBeenCalled();
+      expect(adapter.sent.map((sent) => sent.message.text)).toEqual([
+        "Pero couldn't get the files you sent (No file gone). Send them again.",
+      ]);
     });
 
     it('forwards its events to onboarding, each once', async () => {

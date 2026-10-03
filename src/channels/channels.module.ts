@@ -9,7 +9,7 @@ import { AgentChannelTurns } from './agent-channel-turns.js';
 import { AllowedChatsService } from './allowed-chats.service.js';
 import { ChannelOnboardingService } from './channel-onboarding.service.js';
 import { ChannelRouter } from './channel-router.js';
-import { ChannelImages } from './channel-images.js';
+import { ChannelAttachments } from './channel-attachments.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelViews } from './channel-views.service.js';
 import { ChannelCommands } from './commands/channel-commands.service.js';
@@ -43,7 +43,7 @@ import {
     ChannelCommands,
     WorkflowCommands,
     ChannelSender,
-    ChannelImages,
+    ChannelAttachments,
     ChannelViews,
     AllowedChatsService,
     InboundUpdates,

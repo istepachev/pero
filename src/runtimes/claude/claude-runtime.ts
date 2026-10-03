@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises';
+import { extname } from 'node:path';
 import { Logger } from '@nestjs/common';
 import {
   type CanUseTool,
@@ -23,6 +24,7 @@ import {
   normalizeClaudeMessage,
 } from './claude-events.js';
 import { editDecision } from './edit-policy.js';
+import { isPdf, pdfPageCount } from './pdf-pages.js';
 
 /** Starts a Claude Code turn; the SDK's `query`, or a fake in tests. */
 export type ClaudeQuery = (params: {
@@ -45,6 +47,22 @@ const STDERR_LINES = 20;
  * left for Claude to read from where the input says it is saved.
  */
 export const MAX_INLINE_IMAGE_BYTES = 3_750_000;
+
+/**
+ * The largest PDF Claude is shown with the input, and the most pages it
+ * may have, as far as they can be counted: as many as Claude Code's `Read`
+ * takes at once, since every page stays in the conversation. A larger one
+ * is left for Claude to read, a few pages at a time.
+ */
+export const MAX_INLINE_PDF_BYTES = 5_000_000;
+export const MAX_INLINE_PDF_PAGES = 20;
+
+/**
+ * How much Claude is shown with one input in all, which keeps a message
+ * with many files, in base64, within the API's 32 MB request; the files
+ * past it are left for Claude to read.
+ */
+export const MAX_INLINE_TOTAL_BYTES = 20_000_000;
 
 /** How much of a tool's input an approval request shows. */
 const MAX_SUMMARY_INPUT = 200;
@@ -169,23 +187,25 @@ export class ClaudeRuntime implements AgentRuntime {
   }
 }
 
+type ContentBlock = Exclude<
+  SDKUserMessage['message']['content'],
+  string
+>[number];
+
 /**
- * The turn's prompt: its input, after the images sent with it when there
- * are any Claude can be shown.
+ * The turn's prompt: its input, after the images and PDFs sent with it
+ * when there are any Claude can be shown.
  */
 async function claudePrompt(
   request: RuntimeRequest,
 ): Promise<string | AsyncIterable<SDKUserMessage>> {
-  const blocks: Exclude<SDKUserMessage['message']['content'], string> = [];
-  for (const path of request.images ?? []) {
-    const type = imageTypeOf(path);
-    if (type === null) continue;
-    if ((await stat(path)).size > MAX_INLINE_IMAGE_BYTES) continue;
-    const data = (await readFile(path)).toString('base64');
-    blocks.push({
-      type: 'image',
-      source: { type: 'base64', media_type: type, data },
-    });
+  const blocks: ContentBlock[] = [];
+  let budget = MAX_INLINE_TOTAL_BYTES;
+  for (const path of request.attachments ?? []) {
+    const shown = await inlineBlock(path, budget);
+    if (shown === null) continue;
+    blocks.push(shown.block);
+    budget -= shown.size;
   }
   if (blocks.length === 0) return request.input;
   const message: SDKUserMessage = {
@@ -201,6 +221,41 @@ async function claudePrompt(
   })();
 }
 
+/**
+ * The file saved at `path` as a block Claude is shown with the input, and
+ * its size; null for a file it reads instead: one of another type, larger
+ * than its type's limit or the `budget` left, or a PDF of too many pages.
+ */
+async function inlineBlock(
+  path: string,
+  budget: number,
+): Promise<{ block: ContentBlock; size: number } | null> {
+  const image = imageTypeOf(path);
+  const pdf = extname(path).toLowerCase() === '.pdf';
+  if (image === null && !pdf) return null;
+  const limit = image === null ? MAX_INLINE_PDF_BYTES : MAX_INLINE_IMAGE_BYTES;
+  const { size } = await stat(path);
+  if (size > Math.min(limit, budget)) return null;
+  const data = await readFile(path);
+  if (image !== null) {
+    const source = {
+      type: 'base64' as const,
+      media_type: image,
+      data: data.toString('base64'),
+    };
+    return { block: { type: 'image', source }, size };
+  }
+  if (!isPdf(data) || (pdfPageCount(data) ?? 0) > MAX_INLINE_PDF_PAGES) {
+    return null;
+  }
+  const source = {
+    type: 'base64' as const,
+    media_type: 'application/pdf' as const,
+    data: data.toString('base64'),
+  };
+  return { block: { type: 'document', source }, size };
+}
+
 /** `effort`, which the Agent service has checked against Claude's levels. */
 function claudeEffort(effort: string): EffortLevel {
   if (!(CLAUDE_EFFORTS as readonly string[]).includes(effort)) {
@@ -212,16 +267,24 @@ function claudeEffort(effort: string): EffortLevel {
 /**
  * Decides about each tool Claude Code leaves open: an edit in the Agent's
  * folder runs, except under the system folder, which asks like any other
- * tool, and so does reading Pero's guide. Without an approver, or when asking fails, the tool is refused and
+ * tool, and so does reading Pero's guide or the files people sent.
+ * Without an approver, or when asking fails, the tool is refused and
  * Claude is told why.
  */
 function askOwner(request: RuntimeRequest): CanUseTool {
-  const { approve, workingDirectory, systemFolder, guideFile } = request;
+  const {
+    approve,
+    workingDirectory,
+    systemFolder,
+    guideFile,
+    attachmentsFolder,
+  } = request;
   return async (tool, input, { signal, title }) => {
     const decision = await editDecision(tool, input, {
       workingDirectory,
       ...(systemFolder === undefined ? {} : { systemFolder }),
       ...(guideFile === undefined ? {} : { guideFile }),
+      ...(attachmentsFolder === undefined ? {} : { attachmentsFolder }),
     });
     if (decision === 'allow') return { behavior: 'allow', updatedInput: input };
     const system = decision === 'system';

@@ -12,10 +12,9 @@ import type {
   InboundChannel,
   InboundChat,
   InboundCommand,
-  InboundImage,
+  InboundAttachment,
   InboundMessage,
 } from '../channels/channel-adapter.js';
-import { isImageType } from '../common/images.js';
 import type { ChatKind } from '../persistence/entities/sql.js';
 
 /*
@@ -60,7 +59,7 @@ export interface BotIdentity {
  * `update` as a message for Pero to answer, an event about a chat, or a pressed
  * button, or null when Pero ignores it: another bot's message, a channel
  * post, a service message with no meaning here, or a message with neither
- * text nor an image.
+ * text nor a file.
  */
 export function toInbound(
   update: Update,
@@ -166,11 +165,11 @@ function fromMessage(
   }
 
   if (!fromPerson(message)) return null;
-  const image = imageOf(message);
+  const attachment = attachmentOf(message);
   const text = message.text ?? message.caption;
-  // Other attachments come later; without text or an image, a message has
-  // nothing to answer.
-  if (text === undefined && image === null) return null;
+  // Voice, audio, video, and stickers come later; without text or a file, a
+  // message has nothing to answer.
+  if (text === undefined && attachment === null) return null;
   const command = commandOf(message, me);
   // Another bot's command: Pero shouldn't answer it.
   if (command === 'elsewhere') return null;
@@ -182,27 +181,33 @@ function fromMessage(
     content: {
       text: text ?? '',
       ...(command === null ? {} : { command }),
-      ...(image === null ? {} : { images: [image] }),
+      ...(attachment === null ? {} : { attachments: [attachment] }),
     },
   };
 }
 
 /**
- * The image `message` carries: a photo, at the largest size Telegram has,
- * or a file of a type Pero accepts, such as a PNG sent uncompressed. Null
- * for none.
+ * The file `message` carries: a photo, at the largest size Telegram has, or
+ * a file of any type, such as a PDF or a PNG sent uncompressed. Null for
+ * none.
  */
-function imageOf(message: Message): InboundImage | null {
+function attachmentOf(message: Message): InboundAttachment | null {
   const photo = message.photo?.at(-1);
   if (photo !== undefined) {
     // Telegram recompresses every photo as a JPEG.
-    return { ref: photo.file_id, type: 'image/jpeg', size: sizeOf(photo) };
+    return {
+      ref: photo.file_id,
+      type: 'image/jpeg',
+      name: null,
+      size: sizeOf(photo),
+    };
   }
   const document = message.document;
-  if (document !== undefined && isImageType(document.mime_type)) {
+  if (document !== undefined) {
     return {
       ref: document.file_id,
-      type: document.mime_type,
+      type: document.mime_type ?? 'application/octet-stream',
+      name: document.file_name ?? null,
       size: sizeOf(document),
     };
   }

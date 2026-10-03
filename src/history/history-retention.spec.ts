@@ -126,20 +126,25 @@ describe('HistoryRetention', () => {
     expect(await retention.prune(NOW)).toBe(0);
   });
 
-  it('deletes the saved images older than the setting, and only those', async () => {
+  it('deletes the saved files older than the setting, and only those', async () => {
     const folder = join(ws.stateFolder, 'attachments', String(channelId));
     mkdirSync(folder, { recursive: true });
     const saved = (name: string, daysAgo: number) => {
       const path = join(folder, name);
-      writeFileSync(path, 'image');
+      writeFileSync(path, 'file');
       const at = new Date(NOW.getTime() - daysAgo * DAY_MS);
       utimesSync(path, at, at);
     };
     saved('old.jpg', 31);
+    saved('old-report.pdf', 31);
     saved('recent.png', 29);
 
     expect(await retention.prune(NOW)).toBe(0);
-    expect(readdirSync(folder).sort()).toEqual(['old.jpg', 'recent.png']);
+    expect(readdirSync(folder).sort()).toEqual([
+      'old-report.pdf',
+      'old.jpg',
+      'recent.png',
+    ]);
 
     await ws.editPero({ 'history-retention-days': 30 });
     await retention.prune(NOW);
@@ -147,7 +152,7 @@ describe('HistoryRetention', () => {
     expect(readdirSync(folder)).toEqual(['recent.png']);
   });
 
-  it('prunes without a folder of saved images', async () => {
+  it('prunes without a folder of saved files', async () => {
     await ws.editPero({ 'history-retention-days': 30 });
 
     expect(await retention.prune(NOW)).toBe(0);

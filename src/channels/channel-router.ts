@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import { isImageType } from '../common/images.js';
 import { MessageHistory } from '../history/message-history.service.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import type { IntegrationKind } from '../persistence/entities/sql.js';
@@ -18,7 +19,11 @@ import type {
   InboundChat,
   InboundMessage,
 } from './channel-adapter.js';
-import { ChannelImages, withImageLines } from './channel-images.js';
+import {
+  ChannelAttachments,
+  type SavedAttachment,
+  withAttachmentLines,
+} from './channel-attachments.js';
 import { ChannelSender } from './channel-sender.js';
 import { ChannelCommands } from './commands/channel-commands.service.js';
 import { buttonCommand, isCommand } from './commands/command-list.js';
@@ -72,7 +77,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
     private readonly approvals: ToolApprovals,
     private readonly unanswered: UnansweredReplies,
     private readonly commands: ChannelCommands,
-    private readonly images: ChannelImages,
+    private readonly attachments: ChannelAttachments,
   ) {}
 
   /** Starts `adapter`'s intake into this router and sends through it. */
@@ -133,13 +138,13 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
       }
-      const images = await this.saveImages(channel, message);
-      if (images === null) {
+      const attachments = await this.saveAttachments(channel, message);
+      if (attachments === null) {
         await this.inboundUpdates.markProcessed(kind, updateId);
         return;
       }
-      // The text names where each image is, for this turn and later ones.
-      const text = withImageLines(message.content.text, images);
+      // The text names where each file is, for this turn and later ones.
+      const text = withAttachmentLines(message.content.text, attachments);
       // Recorded as its update is handed on, so a message a turn gets is
       // in the history, and a redelivered one never is twice.
       const messageId = await this.inboundUpdates.markProcessed(
@@ -158,7 +163,7 @@ export class ChannelRouter implements BeforeApplicationShutdown {
         channel,
         { ...message, content: { ...message.content, text } },
         messageId,
-        images,
+        attachments.map((attachment) => attachment.path),
       );
     } catch (error) {
       this.logger.error(
@@ -168,29 +173,39 @@ export class ChannelRouter implements BeforeApplicationShutdown {
   }
 
   /**
-   * Saves the images `message` came with and resolves to where they are;
+   * Saves the files `message` came with and resolves to where they are;
    * null, after telling the Channel, when one couldn't be saved, since an
    * answer without it would miss what was asked.
    */
-  private async saveImages(
+  private async saveAttachments(
     channel: RoutedChannel,
     message: InboundMessage,
-  ): Promise<string[] | null> {
-    const images = message.content.images ?? [];
-    if (images.length === 0) return [];
+  ): Promise<SavedAttachment[] | null> {
+    const attachments = message.content.attachments ?? [];
+    if (attachments.length === 0) return [];
     try {
-      return await this.images.save(channel, message.messageId, images);
+      return await this.attachments.save(
+        channel,
+        message.messageId,
+        attachments,
+      );
     } catch (error) {
       this.logger.warn(
-        `Failed to save an image sent in ${channel.integrationKind} ` +
+        `Failed to save a file sent in ${channel.integrationKind} ` +
           `Channel ${channel.id}: ${describe(error)}`,
       );
+      const one = attachments.length === 1;
+      const noun = attachments.every((attachment) =>
+        isImageType(attachment.type),
+      )
+        ? 'image'
+        : 'file';
       try {
         await this.sender.post(
           channel,
-          `Pero couldn't get the ${images.length === 1 ? 'image' : 'images'} ` +
-            `you sent (${describe(error).replace(/\.$/, '')}). Send ` +
-            `${images.length === 1 ? 'it' : 'them'} again.`,
+          `Pero couldn't get the ${noun}${one ? '' : 's'} you sent ` +
+            `(${describe(error).replace(/\.$/, '')}). Send ` +
+            `${one ? 'it' : 'them'} again.`,
           { origin: 'pero' },
         );
       } catch (sendError) {

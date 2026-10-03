@@ -118,16 +118,17 @@ describe('CodexRuntime', () => {
     expect(calls[0]!.resumed).toBeUndefined();
   });
 
-  it('sends the images that came with the input after it', async () => {
+  it('sends the images that came with the input after it, and no other file', async () => {
     const { codex, calls } = fakeCodex();
 
     await collect(
       new CodexRuntime(codex, ENV).execute(
         request({
           input: 'What are these?',
-          images: [
+          attachments: [
             '/ws/.pero/attachments/1/a.jpg',
-            '/ws/.pero/attachments/1/b.png',
+            '/ws/.pero/attachments/1/b-receipt.pdf',
+            '/ws/.pero/attachments/1/c.png',
           ],
         }),
       ),
@@ -136,8 +137,23 @@ describe('CodexRuntime', () => {
     expect(calls[0]!.input).toEqual([
       { type: 'text', text: 'What are these?' },
       { type: 'local_image', path: '/ws/.pero/attachments/1/a.jpg' },
-      { type: 'local_image', path: '/ws/.pero/attachments/1/b.png' },
+      { type: 'local_image', path: '/ws/.pero/attachments/1/c.png' },
     ]);
+  });
+
+  it('sends the input alone with files that are not images', async () => {
+    const { codex, calls } = fakeCodex();
+
+    await collect(
+      new CodexRuntime(codex, ENV).execute(
+        request({
+          input: 'Sum it up',
+          attachments: ['/ws/.pero/attachments/1/b-receipt.pdf'],
+        }),
+      ),
+    );
+
+    expect(calls[0]!.input).toBe('Sum it up');
   });
 
   it('works in the folder, leaving out unset options', async () => {
