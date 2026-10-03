@@ -59,7 +59,7 @@ export class MediaGroups {
 /**
  * One message of an album's `parts`, in the order Telegram sent them: the
  * first part's IDs, which make redelivery of the album a duplicate, every
- * caption, and every image.
+ * caption, and every file.
  */
 export function joinParts(parts: readonly InboundMessage[]): InboundMessage {
   const sorted = [...parts].sort(
@@ -73,7 +73,7 @@ export function joinParts(parts: readonly InboundMessage[]): InboundMessage {
         .map((part) => part.content.text)
         .filter((text) => text !== '')
         .join('\n\n'),
-      images: sorted.flatMap((part) => part.content.images ?? []),
+      attachments: sorted.flatMap((part) => part.content.attachments ?? []),
     },
   };
 }

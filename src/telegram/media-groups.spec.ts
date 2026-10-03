@@ -12,7 +12,7 @@ const CHAT = privateChat('1234');
 function photo(ref: string, text = ''): InboundMessage {
   return inboundMessage(CHAT, {
     text,
-    images: [{ ref, type: 'image/jpeg', size: null }],
+    attachments: [{ ref, type: 'image/jpeg', name: null, size: null }],
   });
 }
 
@@ -48,9 +48,9 @@ describe('MediaGroups', () => {
         ...first,
         content: {
           text: 'Which one?',
-          images: [
-            { ref: 'a', type: 'image/jpeg', size: null },
-            { ref: 'b', type: 'image/jpeg', size: null },
+          attachments: [
+            { ref: 'a', type: 'image/jpeg', name: null, size: null },
+            { ref: 'b', type: 'image/jpeg', name: null, size: null },
           ],
         },
       },
@@ -63,7 +63,7 @@ describe('MediaGroups', () => {
       'album',
       inboundMessage(groupChat('-100'), {
         text: '',
-        images: [{ ref: 'b', type: 'image/jpeg', size: null }],
+        attachments: [{ ref: 'b', type: 'image/jpeg', name: null, size: null }],
       }),
     );
 
@@ -96,12 +96,33 @@ describe('joinParts', () => {
       ...first,
       content: {
         text: 'Left\n\nRight',
-        images: [
-          { ref: 'a', type: 'image/jpeg', size: null },
-          { ref: 'b', type: 'image/jpeg', size: null },
-          { ref: 'c', type: 'image/jpeg', size: null },
+        attachments: [
+          { ref: 'a', type: 'image/jpeg', name: null, size: null },
+          { ref: 'b', type: 'image/jpeg', name: null, size: null },
+          { ref: 'c', type: 'image/jpeg', name: null, size: null },
         ],
       },
+    });
+  });
+
+  it('joins an album of files', () => {
+    const first = inboundMessage(CHAT, {
+      text: '',
+      attachments: [
+        { ref: 'a', type: 'application/pdf', name: 'a.pdf', size: 1 },
+      ],
+    });
+    const second = inboundMessage(CHAT, {
+      text: 'Both',
+      attachments: [{ ref: 'b', type: 'text/csv', name: 'b.csv', size: 2 }],
+    });
+
+    expect(joinParts([second, first]).content).toEqual({
+      text: 'Both',
+      attachments: [
+        { ref: 'a', type: 'application/pdf', name: 'a.pdf', size: 1 },
+        { ref: 'b', type: 'text/csv', name: 'b.csv', size: 2 },
+      ],
     });
   });
 });

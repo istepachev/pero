@@ -26,7 +26,7 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * Deletes the messages the `history-retention-days` setting no longer
- * keeps, and the images people sent with them: once at startup and every
+ * keeps, and the files people sent with them: once at startup and every
  * hour, so a changed setting applies within the hour. Unset, it keeps all
  * of them. Only message history is deleted; runs and Notifications keep
  * their text.
@@ -93,20 +93,21 @@ export class HistoryRetention
         `Deleted ${deleted} ${deleted === 1 ? 'message' : 'messages'} older than ${days} ${days === 1 ? 'day' : 'days'}`,
       );
     }
-    const images = this.stopping ? 0 : await this.pruneImages(cutoff);
-    if (images > 0) {
+    const files = this.stopping ? 0 : await this.pruneAttachments(cutoff);
+    if (files > 0) {
       this.logger.log(
-        `Deleted ${images} saved ${images === 1 ? 'image' : 'images'} older than ${days} ${days === 1 ? 'day' : 'days'}`,
+        `Deleted ${files} saved ${files === 1 ? 'file' : 'files'} older than ${days} ${days === 1 ? 'day' : 'days'}`,
       );
     }
     return deleted;
   }
 
   /**
-   * Deletes the images people sent, saved under `.pero/attachments/`,
-   * that were saved before `cutoff`, and resolves to how many.
+   * Deletes the files people sent, images and others, saved under
+   * `.pero/attachments/`, that were saved before `cutoff`, and resolves to
+   * how many.
    */
-  private async pruneImages(cutoff: Date): Promise<number> {
+  private async pruneAttachments(cutoff: Date): Promise<number> {
     const root = workspaceLayout(this.notes.folders().workspace).attachments;
     let folders: Dirent[];
     try {

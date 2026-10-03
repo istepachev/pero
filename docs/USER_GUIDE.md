@@ -86,11 +86,11 @@ pero telegram deny -1001234567890     # its Channels and notes stay for when it 
 
 `pero telegram chats` shows for each allowed group whether topics are on and whether the bot is an administrator, and warns of a public one. Once the token works, an interactive `pero run` explains how to set up a group or a direct chat, waits for the first message to the bot, and offers to allow that chat. For each allowed group where Telegram says the bot is not an administrator, it waits until the bot is made one; for each public group, it shows the danger and checks again once you have made it private. Enter or `s` skips either step, and the next `pero run` asks again. A non-interactive `pero run` lists all of these among what is missing.
 
-### Images
+### Images and files
 
-Send Pero a photo, or a JPEG, PNG, GIF, or WebP image as a file, with or without a caption, and it answers with the image in view: "What does this receipt add up to?", "Save this whiteboard to my notes". An album of several photos sent at once is answered once, with every photo and caption. Pero saves each image owner-only in `.pero/attachments/<Channel ID>/` and starts the message with a line naming where, such as `[Image attached, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-512-1.jpg]`, so it can copy an image into your notes when you ask, and later turns can still find it. When Telegram can't hand an image over, Pero says so and doesn't answer the message; send it again. Other files, voice messages, and stickers aren't read yet; a file's caption is answered as text.
+Send Pero a photo, or any file (a PDF, a spreadsheet, a CSV, code, a JPEG, PNG, GIF, or WebP image), with or without a caption, and it answers with the file in view: "What does this receipt add up to?", "Summarize this contract", "Save this whiteboard to my notes". An album of several photos or files sent at once is answered once, with every part and caption. Pero saves each owner-only in `.pero/attachments/<Channel ID>/`, a file under the name it was sent with, and starts the message with a line naming where, such as `[Image attached, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-512-1.jpg]` or `[File attached: Q3 report.pdf, saved at /home/me/workspace/.pero/attachments/3/20261003-061700-513-1-Q3_report.pdf]`, so it can copy a file into your notes when you ask, and later turns can still find it. When Telegram can't hand a file over, such as one over the 20 MB bots may download, Pero says so and doesn't answer the message; send it again. Voice messages, audio, video, and stickers aren't read yet; their caption is answered as text.
 
-Claude sees an image of up to 3.75 MB with the message, and reads a larger one from where it is saved; Codex is handed every image. Images aren't in the Git repository or in `pero backup`, and `history-retention-days` deletes them along with the messages.
+Claude sees an image of up to 3.75 MB, and a PDF of up to 5 MB and 20 pages, with the message, and reads any other file, or a larger one, from where it is saved, without asking, whatever its permissions. Codex is handed every image and reads other files itself with its tools; for a PDF that takes a tool such as `pdftotext` or Python on the machine. Files aren't in the Git repository or in `pero backup`, and `history-retention-days` deletes them along with the messages.
 
 ### Channels and history
 
@@ -104,7 +104,7 @@ pero channels history 3 -n 50  # its latest messages
 
 `/new` starts a Channel's conversation over without carrying anything over (see [Commands](#commands)).
 
-Pero keeps each Channel's message history until you set `history-retention-days` in `Pero.md`: then messages, and the images sent with them, older than that many days are deleted within the hour, and every hour after, including when Pero starts. Removing it keeps everything again. Workflow Runs and Notifications keep their own text, such as a run's answer, whatever the setting. [Operating Pero](./OPERATIONS.md#message-history) describes exactly what the history keeps.
+Pero keeps each Channel's message history until you set `history-retention-days` in `Pero.md`: then messages, and the images and files sent with them, older than that many days are deleted within the hour, and every hour after, including when Pero starts. Removing it keeps everything again. Workflow Runs and Notifications keep their own text, such as a run's answer, whatever the setting. [Operating Pero](./OPERATIONS.md#message-history) describes exactly what the history keeps.
 
 ## Personality, instructions, and Channel notes
 

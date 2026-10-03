@@ -1,4 +1,3 @@
-import type { ImageType } from '../common/images.js';
 import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
 
 /*
@@ -48,11 +47,20 @@ export interface InboundCommand {
   args: string;
 }
 
-/** An image sent with a message, which its adapter fetches on request. */
-export interface InboundImage {
+/**
+ * A file sent with a message, such as a photo or a PDF, which its adapter
+ * fetches on request.
+ */
+export interface InboundAttachment {
   /** What the adapter's `download` takes; opaque to the rest of Pero. */
   ref: string;
-  type: ImageType;
+  /**
+   * Its media type; `application/octet-stream` when the integration doesn't
+   * say. One in `IMAGE_TYPES` makes it an image.
+   */
+  type: string;
+  /** Its file name as sent; null for a photo or when there is none. */
+  name: string | null;
   /** Its size in bytes; null when the integration doesn't say. */
   size: number | null;
 }
@@ -67,14 +75,14 @@ export interface InboundMessage {
   messageId: string;
   senderId: string;
   /**
-   * The text, the command it starts with, if any, and the images sent with
+   * The text, the command it starts with, if any, and the files sent with
    * it, in order. A command Pero does not know is answered as text. A
-   * message with images may have no text.
+   * message with files may have no text.
    */
   content: {
     text: string;
     command?: InboundCommand;
-    images?: readonly InboundImage[];
+    attachments?: readonly InboundAttachment[];
   };
 }
 
@@ -170,7 +178,7 @@ export interface ChannelAdapter {
    * it, so the allowlist can be checked before sending unprompted.
    */
   chatKey(address: ChannelAddress): string;
-  /** The contents of an image a message came with, by its `ref`. */
+  /** The contents of a file a message came with, by its `ref`. */
   download(ref: string): Promise<Uint8Array>;
   /**
    * Replaces a sent message's text and buttons; a message without buttons

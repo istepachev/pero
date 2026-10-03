@@ -417,7 +417,7 @@ describe('AgentManager', () => {
     });
   });
 
-  it('passes the images a message came with to the runtime, also on a retry', async () => {
+  it('passes the files a message came with to the runtime, also on a retry', async () => {
     await say(OWNER, 'Hello');
     const channel = await channelFor(OWNER.key);
     const [message] = await allMessages();
@@ -427,14 +427,18 @@ describe('AgentManager', () => {
     await moduleRef.get(AgentManager).runTurn({
       channelId: channel.id,
       messageId: message!.id,
-      input: '[Image attached, saved at /ws/a.jpg]',
-      images: ['/ws/a.jpg'],
+      input:
+        '[Image attached, saved at /ws/a.jpg]\n' +
+        '[File attached: b.pdf, saved at /ws/b.pdf]',
+      attachments: ['/ws/a.jpg', '/ws/b.pdf'],
     });
 
-    expect(claude.requests[0]).not.toHaveProperty('images');
-    expect(claude.requests.slice(1).map((request) => request.images)).toEqual([
-      ['/ws/a.jpg'],
-      ['/ws/a.jpg'],
+    expect(claude.requests[0]).not.toHaveProperty('attachments');
+    expect(
+      claude.requests.slice(1).map((request) => request.attachments),
+    ).toEqual([
+      ['/ws/a.jpg', '/ws/b.pdf'],
+      ['/ws/a.jpg', '/ws/b.pdf'],
     ]);
   });
 
@@ -456,9 +460,10 @@ describe('AgentManager', () => {
     expect(claude.requests[1]!.approve).toBe(approve);
   });
 
-  it("passes the workspace's system folder and guide to the runtime, in Channels and Workflow runs", async () => {
+  it("passes the workspace's system folder, guide, and saved files to the runtime, in Channels and Workflow runs", async () => {
     const { systemFolder } = ws;
     const guide = join(ws.stateFolder, 'guide.md');
+    const attachments = join(ws.stateFolder, 'attachments');
     await say(OWNER, 'Hello');
     await say(OWNER, 'Again');
     await moduleRef.get(AgentManager).runIsolated({
@@ -483,6 +488,9 @@ describe('AgentManager', () => {
       guide,
       guide,
     ]);
+    expect(claude.requests.map((request) => request.attachmentsFolder)).toEqual(
+      [attachments, attachments, attachments],
+    );
     expect(claude.requests[2]).not.toHaveProperty('approve');
   });
 

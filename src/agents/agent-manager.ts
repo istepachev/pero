@@ -7,6 +7,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { SHUTDOWN_TIMEOUT_MS } from '../common/shutdown.js';
 import type { Provider } from '../config/provider-options.js';
+import { workspaceLayout } from '../config/workspace-layout.js';
 import { guideFile } from '../guide/agent-guide.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { MessageHistory } from '../history/message-history.service.js';
@@ -35,8 +36,8 @@ export interface TurnInput {
   /** The message as recorded in the Channel's history. */
   messageId: number;
   input: string;
-  /** Where the images the message came with are saved; none when absent. */
-  images?: readonly string[];
+  /** Where the files the message came with are saved; none when absent. */
+  attachments?: readonly string[];
   /** Asks the owner about tools the note's permissions leave open. */
   approve?: ToolApprover;
 }
@@ -403,7 +404,7 @@ export class AgentManager implements BeforeApplicationShutdown {
         ...(session.providerSessionId === null
           ? {}
           : { providerSessionId: session.providerSessionId }),
-        ...(turn.images?.length ? { images: turn.images } : {}),
+        ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
         ...(turn.approve ? { approve: turn.approve } : {}),
       },
       controller,
@@ -491,7 +492,10 @@ export class AgentManager implements BeforeApplicationShutdown {
   private async run(
     provider: Provider,
     request: AgentRequest & { input: string },
-    options: Pick<RuntimeRequest, 'providerSessionId' | 'images' | 'approve'>,
+    options: Pick<
+      RuntimeRequest,
+      'providerSessionId' | 'attachments' | 'approve'
+    >,
     controller: AbortController,
     on: {
       session: (providerSessionId: string) => unknown;
@@ -511,6 +515,7 @@ export class AgentManager implements BeforeApplicationShutdown {
       // So that a turn can't change Pero's configuration unasked.
       systemFolder: folders.systemFolder,
       guideFile: guideFile(folders.workspace),
+      attachmentsFolder: workspaceLayout(folders.workspace).attachments,
       signal: controller.signal,
     })) {
       switch (event.type) {

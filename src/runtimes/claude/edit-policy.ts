@@ -58,8 +58,9 @@ const CONFIG_FILES = new Set([
  * `workingDirectory`: an edit in its folder is allowed, except under
  * `systemFolder` and of the configuration files above, each resolved
  * through `../` and symlinks. So is reading `guideFile`, Pero's guide to
- * its settings, which an Agent's instructions name wherever its folder is.
- * Anything else asks, and so does a path that can't be resolved.
+ * its settings, which an Agent's instructions name wherever its folder is,
+ * and a file under `attachmentsFolder`, which the owner sent and the input
+ * names. Anything else asks, and so does a path that can't be resolved.
  */
 export async function editDecision(
   tool: string,
@@ -68,12 +69,11 @@ export async function editDecision(
     workingDirectory: string;
     systemFolder?: string;
     guideFile?: string;
+    attachmentsFolder?: string;
   },
 ): Promise<EditDecision> {
-  if (tool === 'Read' && folders.guideFile !== undefined) {
-    return (await readsFile(input, folders.workingDirectory, folders.guideFile))
-      ? 'allow'
-      : 'ask';
+  if (tool === 'Read') {
+    return (await readsSent(input, folders)) ? 'allow' : 'ask';
   }
   const key = EDIT_TOOLS[tool];
   const path = key === undefined ? undefined : input[key];
@@ -97,18 +97,29 @@ export async function editDecision(
   }
 }
 
-/** Whether a `Read` with `input` reads `file`, resolved as `editDecision` does. */
-async function readsFile(
+/**
+ * Whether a `Read` with `input` reads `guideFile` or a file under
+ * `attachmentsFolder`, resolved as `editDecision` does.
+ */
+async function readsSent(
   input: Record<string, unknown>,
-  workingDirectory: string,
-  file: string,
+  folders: {
+    workingDirectory: string;
+    guideFile?: string;
+    attachmentsFolder?: string;
+  },
 ): Promise<boolean> {
   const path = input.file_path;
   if (typeof path !== 'string' || path === '') return false;
   try {
+    const target = await realPath(
+      resolve(folders.workingDirectory, expandHome(path)),
+    );
     return (
-      (await realPath(resolve(workingDirectory, expandHome(path)))) ===
-      (await realPath(file))
+      (folders.guideFile !== undefined &&
+        target === (await realPath(folders.guideFile))) ||
+      (folders.attachmentsFolder !== undefined &&
+        inside(await realPath(folders.attachmentsFolder), target))
     );
   } catch {
     return false;

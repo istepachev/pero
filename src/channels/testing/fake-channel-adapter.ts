@@ -7,7 +7,7 @@ import type {
   ChannelHandlers,
   InboundChannel,
   InboundChat,
-  InboundImage,
+  InboundAttachment,
   InboundMessage,
   InboundAction,
   OutboundMessage,
@@ -205,7 +205,7 @@ export function inboundMessage(
     topic?: string;
     title?: string | null;
     text?: string;
-    images?: readonly InboundImage[];
+    attachments?: readonly InboundAttachment[];
     updateId?: string;
   } = {},
 ): InboundMessage {
@@ -218,7 +218,9 @@ export function inboundMessage(
     senderId: '42',
     content: {
       text: options.text ?? 'Hello',
-      ...(options.images === undefined ? {} : { images: options.images }),
+      ...(options.attachments === undefined
+        ? {}
+        : { attachments: options.attachments }),
     },
   };
 }

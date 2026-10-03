@@ -31,11 +31,12 @@ export type ToolApprover = (
 export interface RuntimeRequest {
   input: string;
   /**
-   * Images the owner sent with the input, as absolute paths of saved files
-   * of a type in `IMAGE_TYPES`; the input names each one too. The adapter
-   * shows them to the model with the input.
+   * Files the owner sent with the input, such as images and PDFs, as
+   * absolute paths of saved files; the input names each one too. The
+   * adapter shows the model those its provider takes with the input, and
+   * leaves the rest for it to read.
    */
-  images?: readonly string[];
+  attachments?: readonly string[];
   /** `Persona.md`, `Instructions.md`, then the Channel note's own. */
   instructions: string;
   /** Model and effort; the adapter omits each null one. */
@@ -63,6 +64,12 @@ export interface RuntimeRequest {
    * asking, even when it is outside its folder.
    */
   guideFile?: string;
+  /**
+   * Where the files people send are saved; absent outside a workspace.
+   * Claude only: an `ask` Agent reads them without asking, even when they
+   * are outside its folder.
+   */
+  attachmentsFolder?: string;
   /**
    * Answers for tools the policy leaves to the owner; absent when no one
    * can answer, so the adapter denies them.

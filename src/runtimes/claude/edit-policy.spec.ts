@@ -197,4 +197,52 @@ describe('editDecision', () => {
       ).toBe('ask');
     });
   });
+
+  describe('the files people sent', () => {
+    let attachments: string;
+    let receipt: string;
+
+    beforeEach(() => {
+      attachments = join(tmp, '.pero', 'attachments');
+      mkdirSync(join(attachments, '3'), { recursive: true });
+      receipt = join(attachments, '3', 'receipt.pdf');
+      writeFileSync(receipt, '%PDF-1.7');
+    });
+
+    function read(file_path: unknown, workingDirectory = vault) {
+      return editDecision(
+        'Read',
+        { file_path },
+        {
+          workingDirectory,
+          systemFolder: system,
+          attachmentsFolder: attachments,
+        },
+      );
+    }
+
+    it('are read without asking, from any folder and however the path is written', async () => {
+      expect(await read(receipt)).toBe('allow');
+      expect(await read('../.pero/attachments/3/receipt.pdf')).toBe('allow');
+      expect(await read(receipt, join(system, 'Agents'))).toBe('allow');
+      symlinkSync(attachments, join(vault, 'sent'));
+      expect(await read(join(vault, 'sent', '3', 'receipt.pdf'))).toBe('allow');
+    });
+
+    it('allow reading nothing beside them, nor editing them', async () => {
+      expect(await read(join(tmp, '.pero', 'config.yaml'))).toBe('ask');
+      expect(await read(join(attachments, '..', 'pero.sqlite'))).toBe('ask');
+      symlinkSync(join(tmp, '.pero'), join(attachments, '3', 'escape'));
+      expect(await read(join(attachments, '3', 'escape', 'config.yaml'))).toBe(
+        'ask',
+      );
+      expect(
+        await editDecision(
+          'Write',
+          { file_path: receipt },
+          { workingDirectory: tmp, attachmentsFolder: attachments },
+        ),
+      ).toBe('ask');
+    });
+  });
 });

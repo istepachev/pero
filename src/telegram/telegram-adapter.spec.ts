@@ -715,7 +715,7 @@ describe('TelegramAdapter', () => {
     });
   });
 
-  describe('images', () => {
+  describe('files', () => {
     const photo = (fileId: string) => [
       {
         file_id: `${fileId}-small`,
@@ -740,7 +740,7 @@ describe('TelegramAdapter', () => {
 
       await sentCount(2);
       const [request] = runtime.requests;
-      const [path] = request!.images!;
+      const [path] = request!.attachments!;
       expect(path).toMatch(
         new RegExp(`^${join(ws.stateFolder, 'attachments')}/\\d+/.+\\.jpg$`),
       );
@@ -775,15 +775,46 @@ describe('TelegramAdapter', () => {
         timeout: MEDIA_GROUP_WAIT_MS + 2_000,
       });
       expect(runtime.requests).toHaveLength(1);
-      const { images, input } = runtime.requests[0]!;
-      expect(images!.map((path) => [...readFileSync(path)])).toEqual([
+      const { attachments, input } = runtime.requests[0]!;
+      expect(attachments!.map((path) => [...readFileSync(path)])).toEqual([
         [1],
         [2],
       ]);
       expect(input).toBe(
-        `[Image attached, saved at ${images![0]}]\n` +
-          `[Image attached, saved at ${images![1]}]\n` +
+        `[Image attached, saved at ${attachments![0]}]\n` +
+          `[Image attached, saved at ${attachments![1]}]\n` +
           'Which is better?',
+      );
+    });
+
+    it('saves a file under its name and names it to the turn', async () => {
+      await start();
+      api.files.set('report', new Uint8Array([0x25, 0x50, 0x44, 0x46]));
+
+      api.push(
+        message(DIRECT, {
+          text: undefined,
+          document: {
+            file_id: 'report',
+            file_unique_id: 'r',
+            file_name: 'Q3 report.pdf',
+            mime_type: 'application/pdf',
+          },
+          caption: 'Sum it up',
+        }),
+      );
+
+      await sentCount(2);
+      const [request] = runtime.requests;
+      const [path] = request!.attachments!;
+      expect(path).toMatch(
+        new RegExp(
+          `^${join(ws.stateFolder, 'attachments')}/\\d+/.+-Q3_report\\.pdf$`,
+        ),
+      );
+      expect([...readFileSync(path!)]).toEqual([0x25, 0x50, 0x44, 0x46]);
+      expect(request!.input).toBe(
+        `[File attached: Q3 report.pdf, saved at ${path}]\nSum it up`,
       );
     });
 

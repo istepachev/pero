@@ -25,6 +25,9 @@ import {
   ClaudeRuntime,
   type ClaudeQuery,
   MAX_INLINE_IMAGE_BYTES,
+  MAX_INLINE_PDF_BYTES,
+  MAX_INLINE_PDF_PAGES,
+  MAX_INLINE_TOTAL_BYTES,
   NO_APPROVER,
   NO_SYSTEM_APPROVER,
   summarize,
@@ -117,22 +120,22 @@ describe('ClaudeRuntime', () => {
     expect(calls[0]!.prompt).toBe('Hello');
   });
 
-  describe('images sent with the input', () => {
+  describe('files sent with the input', () => {
     let dir: string;
 
     beforeEach(() => {
-      dir = mkdtempSync(join(tmpdir(), 'pero-claude-images-'));
+      dir = mkdtempSync(join(tmpdir(), 'pero-claude-files-'));
     });
 
     afterEach(() => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    async function prompt(images: string[]): Promise<SDKUserMessage[]> {
+    async function prompt(attachments: string[]): Promise<SDKUserMessage[]> {
       const { query, calls } = fakeQuery();
       await collect(
         new ClaudeRuntime(query, ENV).execute(
-          request({ input: '[Image attached]\nWhat is it?', images }),
+          request({ input: '[Image attached]\nWhat is it?', attachments }),
         ),
       );
       const sent = calls[0]!.prompt;
@@ -201,11 +204,106 @@ describe('ClaudeRuntime', () => {
 
       await collect(
         new ClaudeRuntime(query, ENV).execute(
-          request({ input: 'Look', images: [large] }),
+          request({ input: 'Look', attachments: [large] }),
         ),
       );
 
       expect(calls[0]!.prompt).toBe('Look');
+    });
+
+    /** A PDF whose page tree, in plain view, says it has `pages` pages. */
+    function pdf(pages: number): string {
+      return (
+        '%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
+        `2 0 obj\n<< /Type /Pages /Kids [] /Count ${pages} >>\nendobj\n%%EOF\n`
+      );
+    }
+
+    it('shows Claude a PDF of a few pages as a document, in order', async () => {
+      const photo = join(dir, 'photo.jpg');
+      const receipt = join(dir, 'receipt.pdf');
+      writeFileSync(photo, 'jpeg bytes');
+      writeFileSync(receipt, pdf(MAX_INLINE_PDF_PAGES));
+
+      const [message] = await prompt([receipt, photo]);
+
+      expect(message!.message.content).toEqual([
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: Buffer.from(pdf(MAX_INLINE_PDF_PAGES)).toString('base64'),
+          },
+        },
+        expect.objectContaining({ type: 'image' }),
+        { type: 'text', text: '[Image attached]\nWhat is it?' },
+      ]);
+    });
+
+    it('shows a PDF whose pages it cannot count by its size alone', async () => {
+      const compressed = join(dir, 'compressed.PDF');
+      writeFileSync(compressed, '%PDF-1.7\n1 0 obj\n<< /Type /ObjStm >>\n');
+
+      const [message] = await prompt([compressed]);
+
+      expect(message!.message.content).toEqual([
+        expect.objectContaining({ type: 'document' }),
+        { type: 'text', text: '[Image attached]\nWhat is it?' },
+      ]);
+    });
+
+    it('leaves a PDF too long or too large to show, or not a PDF, for Claude to read', async () => {
+      const long = join(dir, 'long.pdf');
+      const large = join(dir, 'large.pdf');
+      const fake = join(dir, 'fake.pdf');
+      const sheet = join(dir, 'prices.csv');
+      writeFileSync(long, pdf(MAX_INLINE_PDF_PAGES + 1));
+      writeFileSync(
+        large,
+        Buffer.concat([
+          Buffer.from('%PDF-1.7\n'),
+          Buffer.alloc(MAX_INLINE_PDF_BYTES),
+        ]),
+      );
+      writeFileSync(fake, 'not a pdf');
+      writeFileSync(sheet, 'milk,1\n');
+      const { query, calls } = fakeQuery();
+
+      await collect(
+        new ClaudeRuntime(query, ENV).execute(
+          request({ input: 'Look', attachments: [long, large, fake, sheet] }),
+        ),
+      );
+
+      expect(calls[0]!.prompt).toBe('Look');
+    });
+
+    it('shows no more than the request can carry in all', async () => {
+      const paths = Array.from({ length: 6 }, (_, index) =>
+        join(dir, `photo-${index}.jpg`),
+      );
+      for (const path of paths) {
+        writeFileSync(path, Buffer.alloc(MAX_INLINE_IMAGE_BYTES));
+      }
+      const small = join(dir, 'small.png');
+      writeFileSync(small, 'png bytes');
+      const shown = Math.floor(MAX_INLINE_TOTAL_BYTES / MAX_INLINE_IMAGE_BYTES);
+
+      const [message] = await prompt([...paths, small]);
+
+      const content = message!.message.content as { type: string }[];
+      expect(shown).toBeLessThan(paths.length);
+      expect(content.map((block) => block.type)).toEqual([
+        ...Array<string>(shown).fill('image'),
+        'image',
+        'text',
+      ]);
+      expect(content.at(-2)).toEqual(
+        expect.objectContaining({
+          source: expect.objectContaining({ media_type: 'image/png' }),
+        }),
+      );
     });
   });
 

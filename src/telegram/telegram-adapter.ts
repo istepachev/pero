@@ -75,7 +75,7 @@ const LOOKUP_TIMEOUT_MS = 3_000;
 /** How long stopping may wait for Telegram to confirm the last update. */
 const STOP_TIMEOUT_MS = 5_000;
 
-/** How long downloading an image a message came with may take. */
+/** How long downloading a file a message came with may take. */
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 interface Connection {
