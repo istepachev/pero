@@ -965,7 +965,7 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     });
   });
 
-  it('shows the Channel history a Workflow reads, and skips a run with none', async () => {
+  it('shows the Channel history a Workflow reads, and runs with none', async () => {
     const english = (properties: string) =>
       writeFileSync(
         join(tmp, 'ws', 'data', 'System', 'Workflows', 'English.md'),
@@ -987,22 +987,21 @@ describe('pero CLI (e2e)', { timeout: 60_000 }, () => {
     );
 
     english('history: true\n');
-    await restart(ws);
+    expect((await pero(ws('stop'))).code).toBe(0);
+    expect((await pero(ws('run'), echo)).code).toBe(0);
+    // Without a channel, it reads Default.md's Channels: none seen yet.
     expect((await workflows('show', 'english')).stdout).toContain(
-      "  history       people's messages in all Channels since the previous run; skipped when there are none\n",
+      '  history       messages in no Channels Pero has seen yet since the previous run\n',
     );
     expect(await workflows('run', 'english')).toMatchObject({
       code: 0,
-      stdout:
-        'Run 1 of Workflow english skipped: no messages in its history window\n',
+      stdout: 'echo: Suggest improvements: [No messages in this window]\n',
     });
 
-    english(
-      'history: true\nhistory-messages: all\nhistory-hours: 24\nrun-when-empty: true\n',
-    );
+    english('history: true\nhistory-channels: all\nhistory-hours: 24\n');
     await restart(ws);
     expect((await workflows('show', 'english')).stdout).toContain(
-      '  history       all messages in all Channels from the last 24 hours; runs even when there are none\n',
+      '  history       messages in all Channels from the last 24 hours\n',
     );
   });
 

@@ -8,10 +8,7 @@ import { telegramChatIdSchema } from '../config/host-config.js';
 import { telegramBotTokenSchema } from '../config/settings-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import { VALUE_ORIGINS } from '../system-files/origins.js';
-import {
-  HISTORY_MESSAGES,
-  workflowReferenceSchema,
-} from '../config/workflow-input.js';
+import { workflowReferenceSchema } from '../config/workflow-input.js';
 import {
   CHAT_KINDS,
   INTEGRATION_KINDS,
@@ -363,10 +360,8 @@ export const workflowViewSchema = z.object({
   history: z
     .object({
       channels: z.union([z.literal('all'), z.array(workflowChannelSchema)]),
-      messages: z.enum(HISTORY_MESSAGES),
       /** A fixed window in hours; null reads since the previous run. */
       hours: z.int().nullable(),
-      runWhenEmpty: z.boolean(),
     })
     .nullable(),
   /** Its note's errors, for which its last good version is in use. */
@@ -400,11 +395,6 @@ export const runViewSchema = z.object({
   finishedAt: z.iso.datetime().nullable(),
   /** What Pero answered; null until it completes. */
   result: z.string().nullable(),
-  /**
-   * Completed without a turn, since its history window had no
-   * messages; `result` is then null.
-   */
-  skipped: z.boolean(),
   /** Why it did not complete; null otherwise. */
   error: z.string().nullable(),
 });
@@ -473,7 +463,6 @@ export const runDetailsSchema = runViewSchema.extend({
   history: z
     .object({
       channels: z.union([z.literal('all'), z.array(z.int())]),
-      messages: z.enum(HISTORY_MESSAGES),
       /** How many messages its window held. */
       count: z.int(),
       /** How many of the oldest its input left out to fit its budget. */

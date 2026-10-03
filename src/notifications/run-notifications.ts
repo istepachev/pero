@@ -19,9 +19,8 @@ export const SILENT_ANSWER = 'NO_REPLY';
  * What a finished run tells the Channels its Workflow notifies: the
  * answer, headed by the Workflow's title, or why the run
  * failed. Null for a run that tells them nothing: one the owner cancelled,
- * one skipped for an empty history window, one that answered just
- * `NO_REPLY`, and an interrupted one that is retried, whose retry tells
- * them instead.
+ * one that answered just `NO_REPLY`, and an interrupted one that is
+ * retried, whose retry tells them instead.
  */
 export function notificationText(
   run: Pick<WorkflowRun, 'id' | 'status' | 'result' | 'errorText'>,
@@ -31,7 +30,6 @@ export function notificationText(
   const label = `Run ${run.id} of Workflow ${workflow.name}`;
   switch (run.status) {
     case 'completed': {
-      if (run.result?.skipped === true) return null;
       const text = run.result?.text;
       if (typeof text !== 'string' || text.trim() === '') {
         return `${label} completed without an answer`;

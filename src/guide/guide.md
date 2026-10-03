@@ -59,7 +59,7 @@ Agree on these before writing `Workflows/<Title>.md`:
 - **What each run does:** the note's body, sent as the run's input. It can't be empty. Write it as a complete request to someone who sees nothing else: name the files to read and write, and the shape of the answer. The answer is what gets posted. A run that should sometimes post nothing, such as a check that finds all in order, must say when to answer exactly `NO_REPLY`: that answer notifies no one.
 - **When:** days, hours, and minute, or `cron`, and the time zone if it differs from `Pero.md`'s `timezone`. Without any, it runs only by hand.
 - **Where the answer goes:** `channel`, a Channel note's name or a list of them. Its first Channel also gives the run its settings and instructions. Without it, the run's answer is only kept in `pero runs`, and it runs with `Default.md`'s.
-- **Chat history,** only if it should review conversations: `history: true`, and `{{history}}` in the body where the transcript goes.
+- **Chat history,** only if it should review conversations: `history: true`, and `{{history}}` in the body where the transcript goes. The transcript holds what people wrote and Pero's replies, in the Workflow's own Channels unless `history-channels` says otherwise: `current` (its `channel`s, or `Default.md`'s Channels without one), `default` (the General topics and direct chats `Default.md` answers), `all`, or Channel names, mixed in a list. A run with no messages still runs, with a note that there were none: say in the body to answer `NO_REPLY` then, if it should stay quiet.
 
 A run starts a fresh conversation, apart from the chat. It can't ask the owner anything: with `permissions: ask`, tools that would need approval, such as shell commands, web fetches, and settings edits, are refused. Say so if the task needs them; `permissions: bypass` in that Channel's note lifts this, but suggest it only if the owner wants it.
 
@@ -111,10 +111,8 @@ Claude efforts are `low`, `medium`, `high`, `xhigh`, and `max`; Codex efforts ar
 | `timezone`         | IANA zone                                                                 | `Pero.md` `timezone`          | Time zone of the schedule                                           |
 | `channel`          | Channel note name, or a list                                              | none                          | Where each run's answer is posted; the first gives its settings     |
 | `history`          | `true`, `false`                                                           | `false`                       | Read chat history as input                                          |
-| `history-channels` | Channel note names                                                        | all                           | Only these Channels' history                                        |
-| `history-messages` | `people`, `all`                                                           | `people`                      | `all` adds Pero's replies                                           |
+| `history-channels` | `all`, `current`, `default`, Channel note names                           | `current`                     | Only these Channels' history                                        |
 | `history-hours`    | 1–720                                                                     | since the last successful run | A fixed window instead                                              |
-| `run-when-empty`   | `true`, `false`                                                           | `false`                       | Run even when there's no history to read                            |
 | `max-attempts`     | 1–10                                                                      | 1                             | Times a run may start, counting restarts after Pero stopped mid-run |
 | `enabled`          | `true`, `false`                                                           | `true`                        | `false` stops its schedule; it can still run by hand                |
 
@@ -144,7 +142,7 @@ Read Health/Log.md and post a short plan for today's workout, based on the last 
 
 ### Naming Channels
 
-`channel` and `history-channels` name Channels three ways:
+`channel` and `history-channels` name Channels three ways (`history-channels` also takes `all`, `current`, and `default`):
 
 - **A Channel note's name,** such as `Health` for `Channels/Health.md`: the topic the note is bound to. This is the usual way, and keeps working when the topic is renamed in Telegram. A note without a `channel-id` yet can't be named until someone writes in its topic.
 - **`General`,** a group's General topic, which `Default.md` answers. When Pero serves several groups, write `<chat title>/General`, such as `Home/General`.

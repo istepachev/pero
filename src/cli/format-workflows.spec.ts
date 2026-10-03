@@ -133,9 +133,7 @@ describe('Workflow formatting', () => {
         channels: [],
         history: {
           channels: [english, direct],
-          messages: 'all',
           hours: 12,
-          runWhenEmpty: true,
         },
         errors: [
           { property: 'channel', message: 'no topic titled "Helth"' },
@@ -151,7 +149,7 @@ describe('Workflow formatting', () => {
         '  schedule      none: it runs by hand, with pero workflows run',
         '  runs          one at a time',
         '  attempts      up to 3 (a run Pero stops starts again when Pero does)',
-        '  history       all messages in English, Channel 9 from the last 12 hours; runs even when there are none',
+        '  history       messages in English, Channel 9 from the last 12 hours',
         '  state         disabled: it runs only by hand, with pero workflows run',
         '',
         'Its note has errors, so its last good version is in use:',
@@ -178,14 +176,9 @@ describe('Workflow formatting', () => {
       startedAt: '2026-09-28T19:00:01.000Z',
       finishedAt: '2026-09-28T19:00:09.000Z',
       result: 'Two suggestions.',
-      skipped: false,
       error: null,
     };
     expect(runOutcome(run)).toEqual({ ok: true, text: 'Two suggestions.' });
-    expect(runOutcome({ ...run, result: null, skipped: true })).toEqual({
-      ok: true,
-      text: 'Run 7 of Workflow evening-review skipped: no messages in its history window',
-    });
     expect(
       runOutcome({
         ...run,

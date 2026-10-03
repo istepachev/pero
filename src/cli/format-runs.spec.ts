@@ -13,7 +13,6 @@ const RUN: RunDetails = {
   startedAt: '2026-09-29T07:00:01.000Z',
   finishedAt: '2026-09-29T07:00:09.000Z',
   result: 'Drink water.\nWalk.',
-  skipped: false,
   error: null,
   retriedBy: null,
   history: null,
@@ -73,15 +72,15 @@ describe('run formatting', () => {
             attempt: 2,
             finishedAt: null,
           },
-          { ...RUN, skipped: true, result: null },
+          RUN,
         ],
         false,
       ),
     ).toBe(
       [
-        'ID  WORKFLOW  STATUS                            ATTEMPT  STARTED BY      CREATED           FINISHED',
-        '8   brief     running                           2        retry of run 7  2026-09-29 12:00  —',
-        '7   brief     completed (skipped: no messages)  1        manual          2026-09-29 12:00  2026-09-29 12:00',
+        'ID  WORKFLOW  STATUS     ATTEMPT  STARTED BY      CREATED           FINISHED',
+        '8   brief     running    2        retry of run 7  2026-09-29 12:00  —',
+        '7   brief     completed  1        manual          2026-09-29 12:00  2026-09-29 12:00',
       ].join('\n'),
     );
     expect(formatRunList([], false)).toBe(
@@ -96,7 +95,6 @@ describe('run formatting', () => {
         ...RUN,
         history: {
           channels: [2, 3],
-          messages: 'people',
           count: 12,
           dropped: 3,
         },
@@ -111,7 +109,7 @@ describe('run formatting', () => {
         '  created     2026-09-29 12:00',
         '  started     2026-09-29 12:00',
         '  finished    2026-09-29 12:00',
-        "  history     12 messages from Channels 2, 3, people's (3 oldest left out)",
+        '  history     12 messages from Channels 2, 3 (3 oldest left out)',
         '',
         'Answer',
         '  Drink water.',

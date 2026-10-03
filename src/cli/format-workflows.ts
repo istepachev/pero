@@ -114,9 +114,7 @@ export function runOutcome(run: RunView): { ok: boolean; text: string } {
   if (run.status === 'completed') {
     return {
       ok: true,
-      text: run.skipped
-        ? `Run ${run.id} of Workflow ${run.workflow} skipped: no messages in its history window`
-        : (run.result ?? ''),
+      text: run.result ?? '',
     };
   }
   return {
@@ -135,25 +133,22 @@ function attempts(maxAttempts: number): string {
 }
 
 /**
- * The Channel history a Workflow's runs read, such as `people's messages
- * in Channels 3, 5 since the previous run; skipped when there are none`.
+ * The Channel history a Workflow's runs read, such as `messages in
+ * Channels 3, 5 since the previous run`.
  */
 function history(config: WorkflowView['history']): string {
   if (config === null) return 'none';
-  const messages =
-    config.messages === 'people' ? "people's messages" : 'all messages';
   const channels =
     config.channels === 'all'
       ? 'all Channels'
-      : config.channels.map(channelLabel).join(', ');
+      : config.channels.length === 0
+        ? 'no Channels Pero has seen yet'
+        : config.channels.map(channelLabel).join(', ');
   const window =
     config.hours === null
       ? 'since the previous run'
       : `from the last ${config.hours === 1 ? 'hour' : `${config.hours} hours`}`;
-  const empty = config.runWhenEmpty
-    ? 'runs even when there are none'
-    : 'skipped when there are none';
-  return `${messages} in ${channels} ${window}; ${empty}`;
+  return `messages in ${channels} ${window}`;
 }
 
 /** Why the Workflow cannot run; null when it can. */

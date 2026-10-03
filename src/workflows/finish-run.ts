@@ -19,8 +19,8 @@ export interface RunFinish {
   startedAt?: Date;
   finishedAt?: Date;
   executionConfig?: ExecutionSnapshot;
-  /** The answer, or that the run was skipped without a turn. */
-  result?: { text: string; providerSessionId?: string } | { skipped: true };
+  /** The answer. */
+  result?: { text: string; providerSessionId?: string };
   errorText?: string;
 }
 

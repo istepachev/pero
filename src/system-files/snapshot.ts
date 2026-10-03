@@ -118,7 +118,10 @@ export function isResolved(workflow: Workflow): workflow is ResolvedWorkflow {
 export interface ResolvedChannels {
   /** Where each run's answer is posted, in the order `channel` names them. */
   targets: readonly number[];
-  /** Whose history runs read: `all`, or those `history-channels` names, by ID. */
+  /**
+   * Whose history runs read: `all`, or the Channels `history-channels`
+   * names, `current` and `default` included, by ID.
+   */
   history: 'all' | readonly number[];
 }
 
@@ -179,6 +182,8 @@ export interface TopicLookup {
   byChannelId(channelId: string): ResolvedChannel | null;
   /** The topics whose title, as a slug, is `name`. */
   topicsNamed(name: string): readonly ResolvedChannel[];
+  /** Every primary Channel, which `Default.md` answers. */
+  primaryChannels(): readonly ResolvedChannel[];
 }
 
 export interface SnapshotContext {
@@ -671,7 +676,7 @@ class WorkflowResolver {
     const history =
       historyChannels === undefined || historyChannels === 'all'
         ? 'all'
-        : historyChannels.map((ref) => this.check(ref));
+        : historyChannels.named.map((ref) => this.check(ref));
     if (history !== 'all') {
       for (const problem of history) {
         if (typeof problem === 'string') error('history-channels', problem);
@@ -695,6 +700,20 @@ class WorkflowResolver {
           ref.channel === undefined ? [] : [ref.channel.id],
         ),
       );
+    const historyIds = (topics: TopicLookup): number[] => {
+      if (historyChannels === undefined || historyChannels === 'all') return [];
+      // A Workflow without `channel` runs with Default.md, so its own
+      // Channels are Default.md's.
+      const current = historyChannels.current && refs.length > 0;
+      const primary =
+        historyChannels.default ||
+        (historyChannels.current && refs.length === 0);
+      return unique([
+        ...ids(history as ResolvedRef[]),
+        ...(current ? ids(refs) : []),
+        ...(primary ? topics.primaryChannels().map(({ id }) => id) : []),
+      ]).sort((a, b) => a - b);
+    };
 
     return {
       name: read.identity.name,
@@ -715,10 +734,7 @@ class WorkflowResolver {
           ? null
           : {
               targets: ids(refs),
-              history:
-                history === 'all'
-                  ? 'all'
-                  : ids(history as ResolvedRef[]).sort((a, b) => a - b),
+              history: history === 'all' ? 'all' : historyIds(this.topics),
             },
       maxAttempts: note.maxAttempts,
       enabled: note.enabled,

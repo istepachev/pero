@@ -26,7 +26,7 @@ export function formatRunList(
     ...runs.map((run) => [
       String(run.id),
       run.workflow,
-      status(run),
+      run.status,
       String(run.attempt),
       startedBy(run),
       localDateTime(new Date(run.createdAt)),
@@ -43,7 +43,7 @@ export function formatRunDetails(run: RunDetails): string {
   const lines = [
     `Run ${run.id} of Workflow ${run.workflow}`,
     ...table([
-      ['status', status(run)],
+      ['status', run.status],
       ['attempt', String(run.attempt)],
       ['started by', startedBy(run)],
       ...(run.skippedCount > 0
@@ -96,23 +96,18 @@ function retryable(run: RunDetails): boolean {
   );
 }
 
-function status(run: RunView): string {
-  return run.status === 'completed' && run.skipped
-    ? 'completed (skipped: no messages)'
-    : run.status;
-}
-
-/** `12 messages from all Channels, people only (3 oldest left out)`. */
+/** `12 messages from all Channels (3 oldest left out)`. */
 function history(read: NonNullable<RunDetails['history']>): string {
   const count = read.count === 1 ? '1 message' : `${read.count} messages`;
   const channels =
     read.channels === 'all'
       ? 'all Channels'
-      : `${read.channels.length === 1 ? 'Channel' : 'Channels'} ${read.channels.join(', ')}`;
-  const who = read.messages === 'people' ? "people's" : 'all';
+      : read.channels.length === 0
+        ? 'no Channels'
+        : `${read.channels.length === 1 ? 'Channel' : 'Channels'} ${read.channels.join(', ')}`;
   const dropped =
     read.dropped === 0 ? '' : ` (${read.dropped} oldest left out)`;
-  return `${count} from ${channels}, ${who}${dropped}`;
+  return `${count} from ${channels}${dropped}`;
 }
 
 function time(value: string | null): string {

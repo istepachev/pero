@@ -61,11 +61,6 @@ export const workflowMaxAttemptsSchema = z
 /** The longest fixed history window, in hours: 30 days. */
 export const MAX_HISTORY_HOURS = 720;
 
-/** Which messages a Workflow's history input reads. */
-export const HISTORY_MESSAGES = ['people', 'all'] as const;
-
-export type HistoryMessages = (typeof HISTORY_MESSAGES)[number];
-
 /** Names an existing Workflow, in any case. */
 export const workflowReferenceSchema = z
   .string()

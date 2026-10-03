@@ -891,11 +891,9 @@ describe('Workflow Runs and the executor', () => {
       ]);
     });
 
-    it('posts nothing for a cancelled or skipped run', async () => {
+    it('posts nothing for a cancelled run', async () => {
       await manualWorkflow('brief');
       await target('brief');
-      await ws.workflow('review', { history: true }, 'Review {{history}}');
-      await notify('review', await target('brief', '-100777'));
       const held = claude.hold();
       const running = await runs.start('brief');
       const pending = await runs.start('brief');
@@ -903,14 +901,9 @@ describe('Workflow Runs and the executor', () => {
 
       await runs.cancel(pending.id);
       await runs.cancel(running.id);
-      const skipped = await runs.start('review');
       await executor.idle();
 
       expect(await run(running.id)).toMatchObject({ status: 'cancelled' });
-      expect(await run(skipped.id)).toMatchObject({
-        status: 'completed',
-        skipped: true,
-      });
       expect(await ds.getRepository(Notification).count()).toBe(0);
     });
 
@@ -1012,15 +1005,15 @@ describe('Workflow Runs and the executor', () => {
     }
 
     /**
-     * `review`, which reads history with the `history-…` properties
-     * `history` gives, run by hand.
+     * `review`, which reads every Channel's history, or as the
+     * `history-…` properties `history` gives, run by hand.
      */
     async function historyWorkflow(
       history: TestNoteProperties = {},
     ): Promise<void> {
       await ws.workflow(
         'review',
-        { history: true, ...history },
+        { history: true, 'history-channels': 'all', ...history },
         'Review:\n{{history}}',
       );
     }
@@ -1067,14 +1060,15 @@ describe('Workflow Runs and the executor', () => {
       expect(lines[2]).toMatch(
         /^\d{4}-\d\d-\d\d \d\d:\d\d \[English\] User: I goed home$/,
       );
-      expect(lines[3]).toMatch(/ \[English\] User: She have two cats$/);
-      expect(lines[4]).toBe('[End of chat history]');
-      expect(lines).toHaveLength(5);
+      expect(lines[3]).toMatch(/ \[English\] Pero: echo: I goed home$/);
+      expect(lines[4]).toMatch(/ \[English\] User: She have two cats$/);
+      expect(lines[5]).toMatch(/ \[English\] Pero: echo: She have two cats$/);
+      expect(lines[6]).toBe('[End of chat history]');
+      expect(lines).toHaveLength(7);
       expect(first.window).toMatchObject({
         channels: 'all',
-        messages: 'people',
         afterId: null,
-        count: 2,
+        count: 4,
         dropped: 0,
       });
       expect(first.window.since).not.toBeNull();
@@ -1087,7 +1081,7 @@ describe('Workflow Runs and the executor', () => {
       expect(second.window).toMatchObject({
         afterId: first.window.untilId,
         since: null,
-        count: 1,
+        count: 2,
       });
     });
 
@@ -1097,22 +1091,28 @@ describe('Workflow Runs and the executor', () => {
       await runReview();
 
       await ws.removeWorkflow('review');
-      await ws.workflow('weekly', { history: true }, 'Review:\n{{history}}');
+      await ws.workflow(
+        'weekly',
+        { history: true, 'history-channels': 'all' },
+        'Review:\n{{history}}',
+      );
       const { id } = await runs.start('weekly');
       await executor.idle();
 
       expect(claude.requests.at(-1)!.input).toContain('User: I goed home');
-      expect(await windowOf(id)).toMatchObject({ afterId: null, count: 1 });
+      expect(await windowOf(id)).toMatchObject({ afterId: null, count: 2 });
     });
 
     it('reads the last 24 hours on its first run', async () => {
       await say('Yesterday morning');
       await say('Just now');
       const messages = ds.getRepository(Message);
-      const old = await messages.findOneByOrFail({ text: 'Yesterday morning' });
-      await messages.update(old.id, {
-        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
-      });
+      for (const text of ['Yesterday morning', 'echo: Yesterday morning']) {
+        const old = await messages.findOneByOrFail({ text });
+        await messages.update(old.id, {
+          createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+      }
       await historyWorkflow();
 
       const { input } = await runReview();
@@ -1128,17 +1128,14 @@ describe('Workflow Runs and the executor', () => {
       expect((await runReview()).input).toContain('User: Once');
       const second = await runReview();
       expect(second.input).toContain('User: Once');
-      expect(second.window).toMatchObject({ afterId: null, count: 1 });
+      expect(second.window).toMatchObject({ afterId: null, count: 2 });
     });
 
-    it("keeps to the Channels it names, and adds Pero's replies when asked", async () => {
+    it("keeps to the Channels it names, with Pero's replies", async () => {
       await say('In English');
       await say('Buy milk', '8');
       const english = await channelId(`${HOME.key}:7`);
-      await historyWorkflow({
-        'history-channels': [english],
-        'history-messages': 'all',
-      });
+      await historyWorkflow({ 'history-channels': [english] });
 
       const { input, window } = await runReview();
 
@@ -1147,37 +1144,50 @@ describe('Workflow Runs and the executor', () => {
       expect(input).not.toContain('Buy milk');
       // Pero's own notices, such as the welcome, are left out.
       expect(input).not.toContain('pero agents edit');
-      expect(window).toMatchObject({ channels: [english], messages: 'all' });
+      expect(window).toMatchObject({ channels: [english] });
       expect(window.count).toBe(2);
     });
 
+    it('reads the Channels it posts to unless it names others', async () => {
+      await say('In English');
+      await say('Buy milk', '8');
+      const english = await channelId(`${HOME.key}:7`);
+      await ws.workflow(
+        'review',
+        { history: true, channel: [english] },
+        'Review:\n{{history}}',
+      );
+
+      const { input, window } = await runReview();
+
+      expect(input).toContain('[English] User: In English');
+      expect(input).not.toContain('Buy milk');
+      expect(window).toMatchObject({ channels: [english], count: 2 });
+    });
+
     it('keeps the newest messages within the budget', async () => {
-      await say(`first ${'a'.repeat(30_000)}`);
-      await say(`second ${'b'.repeat(30_000)}`);
+      await say(`first ${'a'.repeat(20_000)}`);
+      await say(`second ${'b'.repeat(20_000)}`);
       await historyWorkflow();
 
       const { input, window } = await runReview();
 
-      expect(input).toContain('[1 earlier message left out to fit]');
+      expect(input).toContain('[2 earlier messages left out to fit]');
       expect(input).toContain('User: second');
-      expect(input).not.toContain('User: first');
-      expect(window).toMatchObject({ count: 2, dropped: 1 });
+      expect(input).toContain('Pero: echo: second');
+      expect(input).not.toContain('first');
+      expect(window).toMatchObject({ count: 4, dropped: 2 });
     });
 
-    it('completes a run with an empty window without its Agent, and reads after it next time', async () => {
+    it('runs its Agent on an empty window, and reads after it next time', async () => {
       await say('Before the Workflow');
       await historyWorkflow({ 'history-hours': null });
       // The first window is taken, so the next is empty.
       await runReview();
 
       const empty = await runReview();
-      expect(empty.view).toMatchObject({
-        status: 'completed',
-        skipped: true,
-        result: null,
-        error: null,
-      });
-      expect(empty.input).toBeUndefined();
+      expect(empty.view).toMatchObject({ status: 'completed', error: null });
+      expect(empty.input).toBe('Review:\n[No messages in this window]');
       expect(empty.window.count).toBe(0);
 
       await say('After it');
@@ -1185,15 +1195,6 @@ describe('Workflow Runs and the executor', () => {
       expect(next.input).toContain('User: After it');
       expect(next.input).not.toContain('Before the Workflow');
       expect(next.window.afterId).toBe(empty.window.untilId);
-    });
-
-    it('runs the Agent on an empty window when the Workflow asks to', async () => {
-      await historyWorkflow({ 'run-when-empty': true });
-
-      const { view, input } = await runReview();
-
-      expect(view).toMatchObject({ status: 'completed', skipped: false });
-      expect(input).toBe('Review:\n[No messages in this window]');
     });
 
     it('reads again the messages of a run that failed', async () => {
@@ -1214,7 +1215,7 @@ describe('Workflow Runs and the executor', () => {
       await edit('review', { 'max-attempts': 2 });
       const messages = ds.getRepository(Message);
       const crashedUntil = (
-        await messages.findOneByOrFail({ text: 'Before the crash' })
+        await messages.findOneByOrFail({ text: 'echo: Before the crash' })
       ).id;
       await say('After the crash');
       const repo = ds.getRepository(WorkflowRun);
@@ -1237,12 +1238,10 @@ describe('Workflow Runs and the executor', () => {
           executionConfig: {
             history: {
               channels: 'all',
-              messages: 'people',
-              runWhenEmpty: false,
               afterId: null,
               since: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
               untilId: crashedUntil,
-              count: 1,
+              count: 2,
               dropped: 0,
             },
           },
@@ -1262,7 +1261,7 @@ describe('Workflow Runs and the executor', () => {
       expect(retryWindow).toMatchObject({
         afterId: null,
         untilId: crashedUntil,
-        count: 1,
+        count: 2,
       });
       const [retryInput, queuedInput] = claude.requests
         .slice(asked)
@@ -1296,7 +1295,7 @@ describe('Workflow Runs and the executor', () => {
       expect(input).not.toContain('Two');
       expect(await windowOf(retry.id)).toMatchObject({
         untilId: failed.window.untilId,
-        count: 1,
+        count: 2,
       });
       // The next run starts after the latest window, not the retry's.
       await say('Three');
@@ -1319,13 +1318,12 @@ describe('Workflow Runs and the executor', () => {
     it('shows the history a run read', async () => {
       await say('One');
       await say('Two');
-      await historyWorkflow({ 'history-messages': 'all' });
+      await historyWorkflow();
 
       const { view } = await runReview();
 
       expect((await runs.get(view.id)).history).toEqual({
         channels: 'all',
-        messages: 'all',
         count: 4,
         dropped: 0,
       });

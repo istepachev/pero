@@ -93,5 +93,10 @@ export function channelTopicLookup(
         )
         .map(({ channel }) => channel);
     },
+    primaryChannels(): ResolvedChannel[] {
+      return entries
+        .filter(({ channel }) => channel.primary)
+        .map(({ channel }) => channel);
+    },
   };
 }
