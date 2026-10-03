@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { Command, Option } from 'nest-commander';
 import { NoWorkspaceError } from '../../config/bootstrap-config.js';
 import type { WorkspaceLayout } from '../../config/workspace-layout.js';
@@ -26,6 +27,12 @@ import {
   requireGlobalInstall,
   versionOnDisk,
 } from '../upgrade.js';
+
+/**
+ * How long a restarted Pero gets to check sign-ins and connect to Telegram
+ * before its status is shown.
+ */
+const SETTLE_MS = 3000;
 
 interface UpgradeOptions {
   check?: boolean;
@@ -125,6 +132,8 @@ export class UpgradeCommand extends PeroCommand {
     } else {
       ({ status } = await startDetachedDaemon(layout));
     }
+    await sleep(SETTLE_MS);
+    status = (await findRunningDaemon(layout.metadataFile))?.status ?? status;
     console.log(`\n${formatStatus(status, version)}`);
   }
 
