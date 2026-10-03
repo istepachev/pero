@@ -445,7 +445,8 @@ export class AgentManager implements BeforeApplicationShutdown {
       const text = await this.run(
         provider,
         { ...turn.request, input: turn.input },
-        {},
+        // Nothing resumes it, so the provider needn't keep it.
+        { ephemeral: true },
         controller,
         {
           session: (id) => {
@@ -508,7 +509,7 @@ export class AgentManager implements BeforeApplicationShutdown {
     request: AgentRequest & { input: string },
     options: Pick<
       RuntimeRequest,
-      'providerSessionId' | 'attachments' | 'approve'
+      'providerSessionId' | 'attachments' | 'approve' | 'ephemeral'
     >,
     controller: AbortController,
     on: {

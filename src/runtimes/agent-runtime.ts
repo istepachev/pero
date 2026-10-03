@@ -50,6 +50,12 @@ export interface RuntimeRequest {
   skipGitRepoCheck?: boolean;
   /** The conversation to resume; absent to start a new one. */
   providerSessionId?: string;
+  /**
+   * Claude only: keeps the conversation off disk, for a turn no one
+   * resumes, such as a Workflow run's. Absent means it is saved. Codex
+   * ignores it.
+   */
+  ephemeral?: boolean;
   /** Tools the Agent may use; the adapter maps it to its provider's controls. */
   toolPolicy: ToolPolicy;
   /**
