@@ -220,7 +220,6 @@ export class WorkflowRuns {
         history: history.success
           ? {
               channels: history.data.channels,
-              messages: history.data.messages,
               count: history.data.count,
               dropped: history.data.dropped,
             }
@@ -278,7 +277,6 @@ export function runView(run: WorkflowRun): RunView {
     startedAt: run.startedAt?.toISOString() ?? null,
     finishedAt: run.finishedAt?.toISOString() ?? null,
     result: typeof text === 'string' ? text : null,
-    skipped: run.result?.skipped === true,
     error: run.errorText,
   };
 }

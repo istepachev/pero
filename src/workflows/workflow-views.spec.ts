@@ -115,9 +115,7 @@ describe('WorkflowViews', () => {
           expect.objectContaining({ id: home.id, title: 'Home' }),
           expect.objectContaining({ id: health.id }),
         ],
-        messages: 'people',
         hours: null,
-        runWhenEmpty: false,
       },
       errors: [],
     });

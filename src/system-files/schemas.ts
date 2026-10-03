@@ -17,8 +17,6 @@ import {
 } from '../config/tool-policy.js';
 import {
   cronSchema,
-  HISTORY_MESSAGES,
-  type HistoryMessages,
   MAX_HISTORY_HOURS,
   workflowMaxAttemptsSchema,
 } from '../config/workflow-input.js';
@@ -85,12 +83,20 @@ export interface ChannelNoteProperties {
 /** A Channel note's name, `General`, `<chat title>/General`, or a Channel ID. */
 export type ChannelRef = string | number;
 
+/** Whose history a Workflow reads, unless it reads every Channel's. */
+export interface HistoryChannels {
+  /** The Channels its `channel` names; without one, `Default.md`'s. */
+  current: boolean;
+  /** Every Channel `Default.md` answers: General topics and direct chats. */
+  default: boolean;
+  /** Channels named as `channel` names them. */
+  named: ChannelRef[];
+}
+
 export interface WorkflowNoteHistory {
-  channels: 'all' | ChannelRef[];
-  messages: HistoryMessages;
+  channels: 'all' | HistoryChannels;
   /** Null: since the previous successful run. */
   hours: number | null;
-  runWhenEmpty: boolean;
 }
 
 /** A Workflow note's settings. */
@@ -177,6 +183,60 @@ const channelRef = z.union([z.int().positive(CHANNEL_EXPECTED), text], {
   error: CHANNEL_EXPECTED,
 });
 
+/** Words `history-channels` takes besides Channels, in any case. */
+const HISTORY_CHANNEL_KEYWORDS = ['all', 'current', 'default'] as const;
+
+type HistoryChannelKeyword = (typeof HISTORY_CHANNEL_KEYWORDS)[number];
+
+const HISTORY_CHANNEL_EXPECTED =
+  'must be all, current, default, a Channel note name, or a Channel ID';
+
+const historyChannelRef = z
+  .union([z.int().positive(HISTORY_CHANNEL_EXPECTED), text], {
+    error: HISTORY_CHANNEL_EXPECTED,
+  })
+  .transform((ref): ChannelRef | { keyword: HistoryChannelKeyword } => {
+    const word = typeof ref === 'string' ? ref.toLowerCase() : null;
+    return (HISTORY_CHANNEL_KEYWORDS as readonly (string | null)[]).includes(
+      word,
+    )
+      ? { keyword: word as HistoryChannelKeyword }
+      : ref;
+  });
+
+/** What `history-channels` names; it reads the Workflow's own by default. */
+const historyChannels = oneOrMore(
+  historyChannelRef,
+  1,
+  'must name at least one Channel; leave it out to read the current ones',
+).transform((refs, ctx): 'all' | HistoryChannels => {
+  const keywords = new Set(
+    refs.flatMap((ref) => (typeof ref === 'object' ? [ref.keyword] : [])),
+  );
+  if (keywords.has('all')) {
+    if (refs.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'all reads every Channel; leave the others out',
+      });
+      return z.NEVER;
+    }
+    return 'all';
+  }
+  return {
+    current: keywords.has('current'),
+    default: keywords.has('default'),
+    named: refs.filter((ref) => typeof ref !== 'object'),
+  };
+});
+
+/** What a Workflow reads without `history-channels`. */
+const CURRENT_CHANNELS: HistoryChannels = {
+  current: true,
+  default: false,
+  named: [],
+};
+
 const DAY_EXPECTED =
   'must be a weekday such as sunday, or daily, weekdays, or weekends';
 
@@ -235,14 +295,8 @@ const workflowProperties = z
     timezone: timeZone,
     channel: oneOrMore(channelRef),
     history: bool,
-    'history-channels': oneOrMore(
-      channelRef,
-      1,
-      'must name at least one Channel; leave it out to read them all',
-    ),
-    'history-messages': oneOf(HISTORY_MESSAGES),
+    'history-channels': historyChannels,
     'history-hours': wholeNumber(1, MAX_HISTORY_HOURS),
-    'run-when-empty': bool,
     'max-attempts': workflowMaxAttemptsSchema,
     enabled: bool,
   })
@@ -371,10 +425,8 @@ export function readWorkflowNote(
       channels: p.channel ?? [],
       history: p.history
         ? {
-            channels: p['history-channels'] ?? 'all',
-            messages: p['history-messages'] ?? 'people',
+            channels: p['history-channels'] ?? CURRENT_CHANNELS,
             hours: p['history-hours'] ?? null,
-            runWhenEmpty: p['run-when-empty'] ?? false,
           }
         : null,
       maxAttempts: p['max-attempts'] ?? 1,

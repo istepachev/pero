@@ -217,7 +217,11 @@ pero runs cancel 7   # cancel run 7
 
 ### Reading chat history
 
-A Workflow can read Channel history as its input, so Pero can review your chats on a schedule. With `history: true`, each run puts a transcript of what people wrote in every Channel since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `history-channels` reads only the Channels it names, `history-messages: all` adds Pero's replies, and `history-hours` reads a fixed window instead. A run with no messages to read completes without a turn unless `run-when-empty: true` is set. The longest transcripts keep their newest messages and say how many older ones they left out.
+A Workflow can read Channel history as its input, so Pero can review your chats on a schedule. With `history: true`, each run puts a transcript of the conversation, what people wrote and what Pero answered, since the previous successful run (the last 24 hours for the first) in place of `{{history}}` in its input, or after the input. The next run starts where that one ended, so each message is read once, and a retry reads the same messages as the run it retries. `history-hours` reads a fixed window instead.
+
+By default a run reads the Channels its `channel` names; a Workflow without `channel` runs with `Default.md`, so it reads the General topics and direct chats `Default.md` answers. `history-channels` reads others: `current` for those, `default` for every Channel `Default.md` answers, `all` for every Channel, or Channels named as `channel` names them. A list can mix them, such as `[current, Health]`; `all` stands alone.
+
+A run with no messages to read still runs, with `[No messages in this window]` as its transcript. To stay quiet then, say so in the note: *"If there are no messages, answer exactly NO_REPLY."* The longest transcripts keep their newest messages and say how many older ones they left out.
 
 ```markdown
 ---
@@ -230,7 +234,7 @@ Suggest better English for: {{history}}
 
 ### Notifications
 
-Each Channel a Workflow's `channel` names gets a Notification of each run that finishes, holding the run's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one, and so does a run whose whole answer is `NO_REPLY`. That lets a check stay quiet when all is well:
+Each Channel a Workflow's `channel` names gets a Notification of each run that finishes, holding the run's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs notify no one, and neither does a run whose whole answer is `NO_REPLY`. That lets a check stay quiet when all is well:
 
 ```markdown
 ---

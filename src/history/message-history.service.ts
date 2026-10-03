@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager, SelectQueryBuilder } from 'typeorm';
-import type { HistoryMessages } from '../config/workflow-input.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import {
   Message,
@@ -52,13 +51,11 @@ export interface DeliveredEntry {
 const CARRIED_ORIGINS: readonly MessageOrigin[] = ['user', 'agent', 'workflow'];
 
 /**
- * The origins each choice of a Workflow's history input reads. Workflow
- * messages are left out, so a Workflow never reads its own answers back.
+ * The origins a Workflow's history input reads: the dialog between people
+ * and Pero. Workflow messages are left out, so a Workflow never reads its
+ * own answers back.
  */
-const WINDOW_ORIGINS: Record<HistoryMessages, readonly MessageOrigin[]> = {
-  people: ['user'],
-  all: ['user', 'agent'],
-};
+const WINDOW_ORIGINS: readonly MessageOrigin[] = ['user', 'agent'];
 
 /**
  * A window of history a Workflow Run reads: messages after `afterId`, or
@@ -66,7 +63,6 @@ const WINDOW_ORIGINS: Record<HistoryMessages, readonly MessageOrigin[]> = {
  */
 export interface HistoryWindow {
   channels: 'all' | readonly number[];
-  messages: HistoryMessages;
   /** Exclusive; null starts at `since`. */
   afterId: number | null;
   /** ISO time; used only while `afterId` is null. */
@@ -214,7 +210,7 @@ export class MessageHistory {
       .innerJoinAndSelect('message.channel', 'channel')
       .where('message.id <= :untilId', { untilId: window.untilId })
       .andWhere('message.origin IN (:...origins)', {
-        origins: WINDOW_ORIGINS[window.messages],
+        origins: WINDOW_ORIGINS,
       });
     if (window.afterId !== null) {
       query.andWhere('message.id > :afterId', { afterId: window.afterId });

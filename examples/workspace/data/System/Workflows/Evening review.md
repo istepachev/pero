@@ -1,6 +1,7 @@
 ---
 hour: 21
 history: true
+history-channels: all
 channel: General
 ---
 Here is what was written in my chats today:

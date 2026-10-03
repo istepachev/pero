@@ -362,12 +362,12 @@ describe('Workflows from notes (e2e)', () => {
     });
   });
 
-  it('reads the history input its note asks for, and completes a run with none to read without a turn', async () => {
+  it('reads the history input its note asks for, and runs with none to read', async () => {
     await start();
     const english = (props: string[] = []) =>
       workflow(
         'English',
-        ['history: true', 'history-messages: people', ...props],
+        ['history: true', ...props],
         'Suggest improvements:\n{{history}}',
       );
     await english(['history-channels: 42']);
@@ -382,34 +382,23 @@ describe('Workflows from notes (e2e)', () => {
     ]);
 
     await english();
-    const queued = await client.call('workflows.run', { name: 'english' });
-    await vi.waitFor(async () => {
-      expect(await client.call('runs.get', { id: queued.id })).toMatchObject({
-        status: 'completed',
-        skipped: true,
-        result: null,
-      });
-    });
-    expect(claude().requests).toHaveLength(0);
-
-    await restart();
-    expect(
-      (await client.call('workflows.get', { name: 'english' })).history,
-    ).toEqual({
-      channels: 'all',
-      messages: 'people',
-      hours: null,
-      runWhenEmpty: false,
-    });
-    await english(['run-when-empty: true']);
     const ran = await client.call('workflows.run', { name: 'english' });
     await vi.waitFor(async () => {
       expect(await client.call('runs.get', { id: ran.id })).toMatchObject({
         status: 'completed',
-        skipped: false,
         result: 'echo: Suggest improvements:\n[No messages in this window]',
       });
     });
+    // Without a channel, it reads Default.md's Channels: none seen yet.
+    expect(
+      (await client.call('workflows.get', { name: 'english' })).history,
+    ).toEqual({ channels: [], hours: null });
+
+    await english(['history-channels: all', 'history-hours: 24']);
+    await restart();
+    expect(
+      (await client.call('workflows.get', { name: 'english' })).history,
+    ).toEqual({ channels: 'all', hours: 24 });
 
     await workflow('English', [], 'Suggest improvements.');
     expect(

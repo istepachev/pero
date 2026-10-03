@@ -267,10 +267,8 @@ Create a weekly report in the Reports folder from Health/Log.md…
 | `timezone` | IANA zone | `Pero.md` `timezone` | Time zone of the schedule |
 | `channel` | Channel note name, or a list | none | Where each run's answer is posted, unless it is just `NO_REPLY`; the first gives the run its note |
 | `history` | `true`, `false` | `false` | Read chat history as input ([user guide](./USER_GUIDE.md#reading-chat-history)) |
-| `history-channels` | Channel note names | all | Only these Channels' history |
-| `history-messages` | `people`, `all` | `people` | `all` adds Pero's replies |
+| `history-channels` | `all`, `current`, `default`, Channel note names, or a list | `current`: the Channels `channel` names, or `Default.md`'s without one | Whose history it reads; `default` is every Channel `Default.md` answers |
 | `history-hours` | 1–720 | since the last successful run | A fixed window instead |
-| `run-when-empty` | `true`, `false` | `false` | Run even when the window has no messages |
 | `max-attempts` | 1–10 | 1 | Times a run may start, counting restarts after Pero stopped mid-run |
 | `enabled` | `true`, `false` | `true` | `false` stops its schedule, which it keeps; it can still be run by hand |
 
@@ -280,7 +278,7 @@ A Workflow has at most one schedule. Any Workflow can be run by hand with `pero 
 
 **Which note a run uses:** the note of its first `channel`, so a run posted to Health has Health's instructions, model, and folder, after `Persona.md` and `Instructions.md`. Without `channel`, it uses `Default.md`. A run whose note is disabled doesn't start.
 
-**Channels in `channel` and `history-channels`** are named three ways:
+**Channels in `channel` and `history-channels`** are named three ways, and `history-channels` also takes `all`, `current`, and `default`:
 
 - **A Channel note's name,** such as `Health` for `Channels/Health.md`: the topic it is bound to by `channel-id`. This keeps working when the topic is renamed in Telegram. A note without `channel-id` yet means the topic of its title that no note is bound to, once Pero has seen it.
 - **`General`,** a group's General topic, answered from `Default.md`. When several allowed groups have one, write `<chat title>/General`, such as `Home/General`. `Default` itself is no Channel: it answers several.

@@ -364,25 +364,28 @@ describe('readWorkflowNote', () => {
 
   it('reads chat history as input only when history is true', () => {
     expect(read({ history: true }).history).toEqual({
-      channels: 'all',
-      messages: 'people',
+      channels: { current: true, default: false, named: [] },
       hours: null,
-      runWhenEmpty: false,
     });
     expect(
       read({
         history: true,
-        'history-channels': ['English', 7],
-        'history-messages': 'all',
+        'history-channels': ['English', 7, 'Default'],
         'history-hours': 24,
-        'run-when-empty': true,
       }).history,
     ).toEqual({
-      channels: ['English', 7],
-      messages: 'all',
+      channels: { current: false, default: true, named: ['English', 7] },
       hours: 24,
-      runWhenEmpty: true,
     });
+    expect(
+      read({ history: true, 'history-channels': 'current' }).history,
+    ).toEqual({
+      channels: { current: true, default: false, named: [] },
+      hours: null,
+    });
+    expect(
+      read({ history: true, 'history-channels': 'All' }).history?.channels,
+    ).toBe('all');
     expect(
       read({ history: false, 'history-hours': 24, 'history-channels': 'X' })
         .history,
@@ -459,15 +462,19 @@ describe('readWorkflowNote', () => {
     expect(invalid({ agent: 'Health' })).toBe('unknown property');
     expect(invalid({ history: 'yes' })).toBe('must be true or false');
     expect(invalid({ 'history-channels': [] })).toBe(
-      'must name at least one Channel; leave it out to read them all',
+      'must name at least one Channel; leave it out to read the current ones',
     );
-    expect(invalid({ 'history-messages': 'agents' })).toBe(
-      'must be people or all',
+    expect(invalid({ 'history-channels': ['all', 'Health'] })).toBe(
+      'all reads every Channel; leave the others out',
     );
+    expect(invalid({ 'history-channels': -5 })).toBe(
+      'must be all, current, default, a Channel note name, or a Channel ID',
+    );
+    expect(invalid({ 'history-messages': 'all' })).toBe('unknown property');
     expect(invalid({ 'history-hours': 721 })).toBe(
       'must be a whole number from 1 to 720',
     );
-    expect(invalid({ 'run-when-empty': 'no' })).toBe('must be true or false');
+    expect(invalid({ 'run-when-empty': true })).toBe('unknown property');
     expect(invalid({ 'max-attempts': 11 })).toBe('must be at most 10');
     expect(invalid({ enabled: 0 })).toBe('must be true or false');
   });

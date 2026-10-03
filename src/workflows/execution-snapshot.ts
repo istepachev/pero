@@ -9,7 +9,6 @@ import {
   providerOptionsSchema,
 } from '../config/provider-options.js';
 import { toolPolicySchema } from '../config/tool-policy.js';
-import { HISTORY_MESSAGES } from '../config/workflow-input.js';
 import type { ChannelNote } from '../system-files/snapshot.js';
 
 /**
@@ -20,8 +19,6 @@ import type { ChannelNote } from '../system-files/snapshot.js';
  */
 export const historyWindowSchema = z.object({
   channels: z.union([z.literal('all'), z.array(z.int())]),
-  messages: z.enum(HISTORY_MESSAGES),
-  runWhenEmpty: z.boolean(),
   /** The last message of the previous window; null for a first window. */
   afterId: z.int().nullable(),
   /** Where a first or fixed window starts; null after an earlier window. */

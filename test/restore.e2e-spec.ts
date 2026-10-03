@@ -300,7 +300,8 @@ describe('Restore drill (e2e)', () => {
     ).toEqual([
       expect.objectContaining({ id: await channelId(FORUM, ENGLISH) }),
     ]);
-    expect((await runEnglish()).history).toMatchObject({ count: 4 });
+    // It reads the Channel it posts to: Hello and its echo.
+    expect((await runEnglish()).history).toMatchObject({ count: 2 });
 
     const before = await definitions();
     expect(before.channels.map((channel) => channel.nextTurn!.kind)).toEqual([
@@ -380,7 +381,8 @@ describe('Restore drill (e2e)', () => {
     );
 
     // The Workflow reads on from where its last run stopped.
-    expect((await runEnglish()).history).toMatchObject({ count: 4 });
+    // It reads the Channel it posts to: Hello and its echo.
+    expect((await runEnglish()).history).toMatchObject({ count: 2 });
 
     // A provider that no longer has a conversation, as when its own session
     // store was not restored: the turn answers in a fresh Session that

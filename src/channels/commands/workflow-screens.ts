@@ -247,7 +247,6 @@ export function runScreen(
     `Run #${run.id} of ${title}: ${run.status}${run.attempt > 1 ? `, attempt ${run.attempt}` : ''}`,
     capitalized(times.join(' · ')),
   ];
-  if (run.skipped) lines.push('Skipped: its history window had no messages.');
   if (run.error !== null) lines.push(`Error: ${run.error}`);
   if (run.result !== null) {
     lines.push(

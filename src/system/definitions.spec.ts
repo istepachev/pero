@@ -226,10 +226,12 @@ describe('Definitions', () => {
       input: 'Write the weekly report.',
       channels: ['Health', 'Home/General', 4],
       history: {
-        channels: ['English', 'Health'],
-        messages: 'people',
+        channels: {
+          current: false,
+          default: false,
+          named: ['English', 'Health'],
+        },
         hours: 24,
-        runWhenEmpty: false,
       },
       resolved: { targets: [2, 1, 4], history: [2, 3] },
       maxAttempts: 2,

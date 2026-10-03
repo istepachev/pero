@@ -52,8 +52,6 @@ export async function readHistoryWindow(
     const hours = config.hours ?? FIRST_WINDOW_HOURS;
     window = {
       channels: resolved.history === 'all' ? 'all' : [...resolved.history],
-      messages: config.messages,
-      runWhenEmpty: config.runWhenEmpty,
       afterId,
       since:
         afterId === null

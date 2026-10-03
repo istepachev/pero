@@ -599,7 +599,7 @@ describe('NotificationDelivery', () => {
         'review',
         {
           history: true,
-          'history-messages': 'all',
+          'history-channels': 'all',
           'history-hours': 24,
         },
         'Review:\n{{history}}',

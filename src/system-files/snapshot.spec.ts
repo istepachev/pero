@@ -522,6 +522,10 @@ Go`,
         [...byKey.values()].filter(
           (found) => found.title.toLowerCase() === name,
         ),
+      primaryChannels: () =>
+        [refs.general!, refs['7']!].map(
+          (found) => (found as { channel: ResolvedChannel }).channel,
+        ),
     };
     const files = {
       'Channels/Health.md': `---\nchannel-id: ${HEALTH_ID}\n---`,
@@ -535,7 +539,8 @@ Go`,
           ...files,
           'Workflows/Report.md':
             '---\nchannel: [Health, 7, General, health]\nhistory: true\nhistory-channels: [7, Health]\n---\nGo',
-          'Workflows/All.md': '---\nhistory: true\n---\nGo',
+          'Workflows/All.md':
+            '---\nhistory: true\nhistory-channels: all\n---\nGo',
         },
         { topics },
       );
@@ -547,6 +552,29 @@ Go`,
         targets: [],
         history: 'all',
       });
+    });
+
+    it("reads its own Channels' history, or Default.md's", () => {
+      const historyOf = (properties: string) =>
+        snapshot(
+          { ...files, 'Workflows/Report.md': `---\n${properties}\n---\nGo` },
+          { topics },
+        ).workflows.get('report')!.resolved!.history;
+      expect(historyOf('channel: [Sleep, Health]\nhistory: true')).toEqual([
+        3, 8,
+      ]);
+      // Without a channel, its runs use Default.md, whose Channels these are.
+      expect(historyOf('history: true')).toEqual([1, 7]);
+      expect(
+        historyOf(
+          'channel: Health\nhistory: true\nhistory-channels: [default, Current]',
+        ),
+      ).toEqual([1, 3, 7]);
+      expect(
+        historyOf(
+          'channel: Health\nhistory: true\nhistory-channels: [8, DEFAULT]',
+        ),
+      ).toEqual([1, 7, 8]);
     });
 
     it('takes the note of a Channel named by ID', () => {

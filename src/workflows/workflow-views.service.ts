@@ -116,9 +116,7 @@ export class WorkflowViews {
           : {
               channels:
                 resolved.history === 'all' ? 'all' : named(resolved.history),
-              messages: history.messages,
               hours: history.hours,
-              runWhenEmpty: history.runWhenEmpty,
             },
     };
   }

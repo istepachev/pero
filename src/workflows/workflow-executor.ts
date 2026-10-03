@@ -52,9 +52,6 @@ export const INTERRUPTED = 'Pero stopped before the run finished';
 /** Why a run the owner cancelled did not finish. */
 export const CANCELLED = 'Cancelled with pero runs cancel';
 
-/** Why a run completed without a turn. */
-export const SKIPPED = 'no messages in its history window';
-
 /**
  * The bounded in-process executor for Workflow Runs. SQLite holds the work:
  * the executor claims the oldest `pending` run while fewer than the
@@ -257,8 +254,7 @@ export class WorkflowExecutor
    * window. Retries go first, so a run queued before one reads after its
    * window. A run whose Workflow is gone, or whose Channel note was
    * disabled, since it was queued fails instead, as does one its schedule
-   * queued once the Workflow is disabled; one whose window has no messages
-   * completes without a turn unless the Workflow asks to run anyway.
+   * queued once the Workflow is disabled.
    */
   private async claimWithin(
     manager: EntityManager,
@@ -316,24 +312,6 @@ export class WorkflowExecutor
         history?.input ?? workflow.input,
         history?.read,
       );
-      if (
-        history !== null &&
-        history.read.count === 0 &&
-        !history.read.runWhenEmpty
-      ) {
-        // Completed all the same, so the next run reads after its window.
-        await finishRun(manager, run.id, workflow, {
-          status: 'completed',
-          startedAt: now,
-          finishedAt: now,
-          executionConfig: snapshot,
-          result: { skipped: true },
-        });
-        this.logger.log(
-          `Run ${run.id} of Workflow ${workflow.name} skipped: ${SKIPPED}`,
-        );
-        continue;
-      }
       await runs.update(run.id, {
         status: 'running',
         startedAt: now,

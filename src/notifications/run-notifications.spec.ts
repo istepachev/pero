@@ -68,12 +68,9 @@ describe('notificationText', () => {
     expect(notificationText(interrupted, english, true)).toBeNull();
   });
 
-  it('posts nothing for a cancelled or skipped run', () => {
+  it('posts nothing for a cancelled run', () => {
     expect(
       notificationText(run({ status: 'cancelled' }), english, false),
-    ).toBeNull();
-    expect(
-      notificationText(run({ result: { skipped: true } }), english, false),
     ).toBeNull();
   });
 });
