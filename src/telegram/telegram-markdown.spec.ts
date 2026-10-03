@@ -94,9 +94,44 @@ describe('markdownToTelegramHtml', () => {
     expect(html('#hashtag')).toBe('#hashtag');
   });
 
-  it('leaves a table as it is written', () => {
-    expect(html('| a | b |\n|---|---|\n| 1 | 2 |')).toBe(
-      '| a | b |\n|---|---|\n| 1 | 2 |',
+  it('shows a table as an aligned monospace block', () => {
+    expect(
+      html(
+        'Today:\n\n| Metric | Today |\n|---|---:|\n| **Calories** | 2,020 |\n| Steps & sleep | <8h> |\n\nDone.',
+      ),
+    ).toBe(
+      'Today:\n\n<pre>' +
+        'Metric        │ Today\n' +
+        '──────────────┼──────\n' +
+        'Calories      │ 2,020\n' +
+        'Steps &amp; sleep │  &lt;8h&gt;' +
+        '</pre>\n\nDone.',
+    );
+  });
+
+  it('shows a table too wide for a phone row by row', () => {
+    expect(
+      html(
+        '| Day | Calories | Steps | Sleep | Mood |\n' +
+          '|---|---|---|---|---|\n' +
+          '| Monday | 2,020 kcal | 12,000 | 7h 30m | good |\n' +
+          '| Tuesday | 1,850 kcal | | 8h | *tired* |',
+      ),
+    ).toBe(
+      '<b>Day:</b> Monday\n<b>Calories:</b> 2,020 kcal\n<b>Steps:</b> 12,000\n' +
+        '<b>Sleep:</b> 7h 30m\n<b>Mood:</b> good\n\n' +
+        '<b>Day:</b> Tuesday\n<b>Calories:</b> 1,850 kcal\n' +
+        '<b>Sleep:</b> 8h\n<b>Mood:</b> tired',
+    );
+  });
+
+  it('renders lists, quotes, and code blocks around a table as before', () => {
+    const around =
+      '- one\n  - nested\n> quoted\n```\n| a | b |\n|---|---|\n```';
+    expect(html(`${around}\n\n| a | b |\n|---|---|\n| 1 | 2 |`)).toBe(
+      '• one\n  • nested\n<blockquote>quoted</blockquote>\n' +
+        '<pre>| a | b |\n|---|---|</pre>\n\n' +
+        '<pre>a │ b\n──┼──\n1 │ 2</pre>',
     );
   });
 });
@@ -127,6 +162,20 @@ describe('splitMarkdown', () => {
     ]);
     expect(splitMarkdown('```\nline1\nline2\n```', 18)).toEqual([
       '```\nline1\nline2\n```',
+    ]);
+  });
+
+  it('never cuts a table that fits in one part', () => {
+    const table =
+      '| Metric | Today |\n|---|---|\n| Calories | 2,020 |\n| Steps | 12,000 |';
+    const parts = splitMarkdown(
+      `${'word '.repeat(10)}\n\n${table}\n\nafter`,
+      80,
+    );
+    expect(parts).toEqual([
+      `${'word '.repeat(10)}\n\n`,
+      '```\nMetric   │ Today\n─────────┼───────\nCalories │ 2,020\nSteps    │ 12,000\n```\n\n',
+      'after',
     ]);
   });
 

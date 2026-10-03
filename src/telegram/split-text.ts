@@ -4,15 +4,30 @@ export const TELEGRAM_TEXT_LIMIT = 4096;
 /**
  * `text` in parts of at most `limit` code units, each cut after the last
  * blank line, else line break, else space that fits, and never inside a
- * surrogate pair. The separators stay at the end of their part.
+ * surrogate pair. The separators stay at the end of their part. A cut that
+ * would fall inside one of `keep`, a part of `text` that fits in a part of
+ * its own, falls before it instead.
  */
-export function splitText(text: string, limit = TELEGRAM_TEXT_LIMIT): string[] {
+export function splitText(
+  text: string,
+  limit = TELEGRAM_TEXT_LIMIT,
+  keep: readonly { start: number; end: number }[] = [],
+): string[] {
   const parts: string[] = [];
   let rest = text;
+  let offset = 0;
   while (rest.length > limit) {
-    const cut = cutAt(rest, limit);
+    let cut = cutAt(rest, limit);
+    const inside = keep.find(
+      ({ start, end }) =>
+        start > offset && start < offset + cut && offset + cut < end,
+    );
+    if (inside && inside.end - inside.start <= limit) {
+      cut = inside.start - offset;
+    }
     parts.push(rest.slice(0, cut));
     rest = rest.slice(cut);
+    offset += cut;
   }
   if (rest.length > 0 || parts.length === 0) parts.push(rest);
   return parts;

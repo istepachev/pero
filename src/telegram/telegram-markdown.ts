@@ -5,14 +5,15 @@
  * Shown as formatting: **bold** and __bold__, *italic* and _italic_,
  * ~~strikethrough~~, ||spoiler||, `code`, fenced code blocks, [links](url),
  * and > quotes. Telegram has no headings, so a heading is a bold line, and
- * a `-`, `*`, or `+` list item starts with a bullet. Anything else, a table
- * included, is shown as it is written. Emphasis never spans lines, so every
- * tag closes on the line it opens on, and the HTML is always well formed.
+ * a `-`, `*`, or `+` list item starts with a bullet. It has no tables
+ * either, so a table is rendered as `renderTables` says. Anything else is
+ * shown as it is written. Emphasis never spans lines, so every tag closes
+ * on the line it opens on, and the HTML is always well formed.
  */
 
+import { closesFence, FENCE, renderTables } from './markdown-tables.js';
 import { splitText, TELEGRAM_TEXT_LIMIT } from './split-text.js';
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const HEADING = /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/;
 const BULLET = /^(\s*)[-*+]\s+(.*)$/;
@@ -34,7 +35,7 @@ const EMPHASIS: readonly { marker: string; tag: string; inWord: boolean }[] = [
 
 /** `markdown` as Telegram HTML. */
 export function markdownToTelegramHtml(markdown: string): string {
-  const lines = markdown.split('\n');
+  const lines = renderTables(markdown).markdown.split('\n');
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -77,9 +78,10 @@ export function markdownToTelegramHtml(markdown: string): string {
 }
 
 /**
- * `markdown` in parts of at most `limit` code units, as `splitText` cuts
- * them, with a code block cut in two closed at the end of one part and
- * opened again at the start of the next. Telegram's limit counts the text
+ * `markdown`, its tables rendered, in parts of at most `limit` code units,
+ * as `splitText` cuts them: never inside a table that fits in one part, and
+ * with a code block cut in two closed at the end of one part and opened
+ * again at the start of the next. Telegram's limit counts the text
  * it shows, which is never longer than the Markdown, so the fences added
  * don't count.
  */
@@ -87,9 +89,10 @@ export function splitMarkdown(
   markdown: string,
   limit = TELEGRAM_TEXT_LIMIT,
 ): string[] {
+  const tables = renderTables(markdown);
   const parts: string[] = [];
   let open: { marker: string; line: string } | null = null;
-  for (let part of splitText(markdown, limit)) {
+  for (let part of splitText(tables.markdown, limit, tables.blocks)) {
     if (open !== null) {
       const newline = part.indexOf('\n');
       if (
@@ -126,15 +129,6 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function closesFence(line: string, marker: string): boolean {
-  const trimmed = line.trim();
-  return (
-    trimmed.length >= marker.length &&
-    /^ {0,3}\S/.test(line) &&
-    trimmed === marker[0]!.repeat(trimmed.length)
-  );
 }
 
 function codeBlock(code: string, language: string): string {
