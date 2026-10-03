@@ -108,12 +108,30 @@ Pero can answer by voice too. Ask for it ("answer by voice", or in a Workflow's 
 Set speech up with `pero speech`. It says whether Pero can transcribe and record voice messages, and when it can't yet, offers to set them up there and then. The first `pero run` offers it too. Setup asks how to handle each direction:
 
 - **Local**, the default: free and private, on your server. Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and recording [Piper](https://github.com/OHF-Voice/piper1-gpl), with [ffmpeg](https://ffmpeg.org) converting between formats. Setup checks that the three programs are installed and says how to install any that aren't; install them in another terminal and choose *check again*. It then downloads a whisper.cpp model and an English Piper voice to `.pero/models/` (about 210 MB).
-- **ElevenLabs**: [ElevenLabs](https://elevenlabs.io)' speech-to-text and voices, billed by ElevenLabs. Setup asks for your API key, hidden as you type, checks it with ElevenLabs, and stores it in `.env`; then it lists your account's voices for Pero to speak with.
+- **ElevenLabs**: [ElevenLabs](https://elevenlabs.io)' speech-to-text and voices, billed by ElevenLabs. Setup asks for your API key, hidden as you type, checks it with ElevenLabs, and stores it in `.env`; then it lists your account's voices for Pero to speak with. The key needs the permissions below.
 - **Off**: voice messages get a reply saying so, and Pero never records one.
+
+#### ElevenLabs API key permissions
+
+ElevenLabs lets you limit what an API key may do. Create the key at [ElevenLabs' API keys page](https://elevenlabs.io/app/settings/api-keys) with these permissions, or edit an existing key there to add them:
+
+| Permission | What Pero uses it for | Needed when |
+| --- | --- | --- |
+| **Text to Speech** | recording the voice messages Pero sends | Pero speaks with ElevenLabs |
+| **Voices**: Read | listing your voices, in `pero speech configure` and `pero speech voice` | Pero speaks with ElevenLabs |
+| **Speech to Text** | transcribing the voice messages you send | Pero transcribes with ElevenLabs |
+| **User** | checking the key when setup stores it | optional: without it, setup stores the key unchecked |
+
+When a permission is missing, Pero names it, both in the terminal and in the note it sends in place of a voice message, such as `the ElevenLabs API key lacks the "Voices: Read" permission; edit the key at https://elevenlabs.io/app/settings/api-keys`. Changing an existing key's permissions needs nothing from Pero. If you make a new key instead, `pero speech configure` stores it. Then run `pero speech voice` to pick a voice.
+
+#### Changing the voice
+
+`pero speech voice` lists your ElevenLabs account's voices, the premade ones and any you have added or cloned, and lets you pick the one Pero speaks with. Give a voice's name or ID to set it without asking, such as `pero speech voice George`. `--list` only lists them, with `*` at the current one. A key without the **Voices** permission can't list voices; `pero speech voice <voice-id>` still sets one by its ID, as shown in your ElevenLabs voices. If no voice was ever picked, Pero speaks with ElevenLabs' *George*. If ElevenLabs has no voice with the ID Pero uses, Pero's note says so and `pero speech voice` picks another. The local engine's voice is a Piper model file, set as `voice` in `config.yaml` (see [Configuration](./CONFIGURATION.md)).
 
 ```sh
 pero speech              # can Pero transcribe and record voice messages? offers setup when it can't
 pero speech configure    # change how: local or ElevenLabs for each direction, the key, the voice
+pero speech voice        # list your ElevenLabs voices and pick one; or pero speech voice <name or ID>
 ```
 
 `pero speech configure` asks the same questions whenever you want to change something, such as moving from local to ElevenLabs. It writes `speech:` in `.pero/config.yaml` and the key in `.env` for you, and a running Pero uses the change from the next voice message. Without a terminal, give the answers as options: `pero speech configure --transcribe local --speak elevenlabs --yes`, with the key piped in.

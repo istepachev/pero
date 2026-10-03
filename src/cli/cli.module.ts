@@ -34,6 +34,7 @@ import {
   SpeechCommand,
   SpeechConfigureCommand,
   SpeechStatusCommand,
+  SpeechVoiceCommand,
 } from './commands/speech.command.js';
 import { StatusCommand } from './commands/status.command.js';
 import { StopCommand } from './commands/stop.command.js';
@@ -97,6 +98,7 @@ import { StrictArguments } from './strict-arguments.js';
     SpeechCommand,
     SpeechStatusCommand,
     SpeechConfigureCommand,
+    SpeechVoiceCommand,
     BackupCommand,
     RestoreCommand,
     UpgradeCommand,

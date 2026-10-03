@@ -18,6 +18,21 @@ export const ELEVENLABS_KEY_ENV = 'ELEVENLABS_API_KEY';
 export const ELEVENLABS_NO_KEY =
   'no ElevenLabs API key is set; run pero speech';
 
+/** Where the owner makes ElevenLabs API keys and changes what they may do. */
+export const ELEVENLABS_KEYS_URL =
+  'https://elevenlabs.io/app/settings/api-keys';
+
+/**
+ * The permissions an ElevenLabs API key needs for each thing Pero does, as
+ * ElevenLabs' key settings name them. `user` only lets setup check a key.
+ */
+export const ELEVENLABS_PERMISSIONS = {
+  speak: 'Text to Speech',
+  transcribe: 'Speech to Text',
+  voices: 'Voices: Read',
+  user: 'User',
+} as const;
+
 /** How long one request may take. */
 const REQUEST_TIMEOUT_MS = 120_000;
 
@@ -46,13 +61,13 @@ export interface ElevenLabsVoice {
 
 /**
  * Whether ElevenLabs takes `key`: `invalid` only when it says the key is
- * not one, `unknown` when it can't tell, such as offline or for a key
- * not allowed to read the account.
+ * not one, `restricted` for a key without the `User` permission to read
+ * the account, and `unknown` when it can't tell, such as offline.
  */
 export async function checkElevenLabsKey(
   key: string,
   client: ElevenLabsClient = {},
-): Promise<'valid' | 'invalid' | 'unknown'> {
+): Promise<'valid' | 'invalid' | 'restricted' | 'unknown'> {
   try {
     const response = await (client.fetch ?? fetch)(
       `${client.apiRoot ?? ELEVENLABS_API_ROOT}/v1/user`,
@@ -66,7 +81,14 @@ export async function checkElevenLabsKey(
     const body = (await response.json().catch(() => null)) as {
       detail?: { status?: unknown };
     } | null;
-    return body?.detail?.status === 'invalid_api_key' ? 'invalid' : 'unknown';
+    switch (body?.detail?.status) {
+      case 'invalid_api_key':
+        return 'invalid';
+      case 'missing_permissions':
+        return 'restricted';
+      default:
+        return 'unknown';
+    }
   } catch {
     return 'unknown';
   }
@@ -80,10 +102,12 @@ export async function listElevenLabsVoices(
   key: string,
   client: ElevenLabsClient = {},
 ): Promise<ElevenLabsVoice[]> {
-  const response = await request({ ...client, key: () => key }, '/v1/voices', {
-    method: 'GET',
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-  });
+  const response = await request(
+    { ...client, key: () => key },
+    '/v1/voices',
+    { method: 'GET', signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) },
+    { permission: ELEVENLABS_PERMISSIONS.voices },
+  );
   const body = (await response.json()) as {
     voices?: {
       voice_id?: unknown;
@@ -133,11 +157,12 @@ export class ElevenLabsTranscriber implements Transcriber {
       new Blob([await readFile(file.path)], { type: file.type }),
       basename(file.path),
     );
-    const response = await request(this.options, '/v1/speech-to-text', {
-      method: 'POST',
-      body: form,
-      signal,
-    });
+    const response = await request(
+      this.options,
+      '/v1/speech-to-text',
+      { method: 'POST', body: form, signal },
+      { permission: ELEVENLABS_PERMISSIONS.transcribe },
+    );
     const body = (await response.json()) as { text?: unknown };
     if (typeof body.text !== 'string') {
       throw new SpeechError('ElevenLabs answered without a transcript');
@@ -153,15 +178,19 @@ export class ElevenLabsSynthesizer implements Synthesizer {
   ) {}
 
   async synthesize(text: string, signal: AbortSignal): Promise<SpeechAudio> {
-    const voice = encodeURIComponent(this.options.voice);
+    const { voice } = this.options;
     const response = await request(
       this.options,
-      `/v1/text-to-speech/${voice}?output_format=mp3_44100_128`,
+      `/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text, model_id: this.options.model }),
         signal,
+      },
+      {
+        permission: ELEVENLABS_PERMISSIONS.speak,
+        notFound: `ElevenLabs has no voice ${voice} on this account; pero speech voice picks one`,
       },
     );
     return {
@@ -170,6 +199,14 @@ export class ElevenLabsSynthesizer implements Synthesizer {
       durationS: null,
     };
   }
+}
+
+/** What a request needs of the key, and what its 404 means. */
+interface RequestNeeds {
+  /** The key's permission it needs, named when ElevenLabs refuses for it. */
+  permission: string;
+  /** Said for a 404, such as a missing voice. */
+  notFound?: string;
 }
 
 /**
@@ -181,6 +218,7 @@ async function request(
   options: ElevenLabsClient & { key: () => string | null },
   path: string,
   init: RequestInit & { signal: AbortSignal },
+  needs: RequestNeeds,
 ): Promise<Response> {
   const key = options.key();
   if (key === null) {
@@ -209,26 +247,45 @@ async function request(
         : 'is unreachable';
     throw new SpeechError(`ElevenLabs ${reason}`);
   }
-  if (!response.ok) {
-    throw new SpeechError(
-      `ElevenLabs answered ${response.status}${await problemOf(response)}`,
-    );
+  if (response.ok) return response;
+  const problem = await problemOf(response);
+  if (problem.status === 'missing_permissions') {
+    throw new SpeechError(missingPermission(needs.permission));
   }
-  return response;
+  if (response.status === 404 && needs.notFound !== undefined) {
+    throw new SpeechError(needs.notFound);
+  }
+  throw new SpeechError(
+    `ElevenLabs answered ${response.status}` +
+      (problem.message === null ? '' : `: ${problem.message}`),
+  );
 }
 
-/** `: <message>` from an ElevenLabs error, or nothing when it has none. */
-async function problemOf(response: Response): Promise<string> {
+/** Says the key lacks `permission`, and where to give it. */
+function missingPermission(permission: string): string {
+  return `the ElevenLabs API key lacks the "${permission}" permission; edit the key at ${ELEVENLABS_KEYS_URL}`;
+}
+
+/** An ElevenLabs error's status and message, each null when it has none. */
+async function problemOf(
+  response: Response,
+): Promise<{ status: string | null; message: string | null }> {
   try {
     const body = (await response.json()) as {
-      detail?: { message?: unknown } | string;
+      detail?: { status?: unknown; message?: unknown } | string;
     };
+    const detail: { status?: unknown; message?: unknown } =
+      typeof body.detail === 'string' ? {} : (body.detail ?? {});
     const message =
-      typeof body.detail === 'string' ? body.detail : body.detail?.message;
-    return typeof message === 'string' && message !== ''
-      ? `: ${message.replace(/\.$/, '')}`
-      : '';
+      typeof body.detail === 'string' ? body.detail : detail.message;
+    return {
+      status: typeof detail.status === 'string' ? detail.status : null,
+      message:
+        typeof message === 'string' && message !== ''
+          ? message.replace(/\.$/, '')
+          : null,
+    };
   } catch {
-    return '';
+    return { status: null, message: null };
   }
 }

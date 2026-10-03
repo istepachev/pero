@@ -12,6 +12,7 @@ import {
 } from '../prompts.js';
 import { BlockOutput } from '../setup/block-output.js';
 import {
+  chooseVoice,
   configureSpeech,
   formatSpeechStatus,
   readSpeech,
@@ -129,11 +130,55 @@ export class SpeechConfigureCommand extends PeroCommand {
   }
 }
 
+@SubCommand({
+  name: 'voice',
+  arguments: '[voice]',
+  description:
+    'List the voices Pero can speak with and pick one, or set one by ID or name (ElevenLabs)',
+  argsDescription: {
+    voice: "a voice's ID or name; without it, pick one on a terminal",
+  },
+})
+export class SpeechVoiceCommand extends PeroCommand {
+  async run(
+    [voice]: string[],
+    options: { list?: boolean } = {},
+  ): Promise<void> {
+    const layout = this.layout();
+    const output = new BlockOutput((text) => console.log(text));
+    const prompts =
+      isInteractive() && voice === undefined && options.list !== true
+        ? output.prompts(await terminalPrompts())
+        : null;
+    await cancellable(() =>
+      chooseVoice(
+        { layout, prompts, print: output.print, block: output.block },
+        {
+          ...(voice === undefined ? {} : { voice }),
+          ...(options.list === true ? { list: true } : {}),
+        },
+      ),
+    );
+  }
+
+  @Option({
+    flags: '-l, --list',
+    description: 'only list the voices, marking the one Pero speaks with',
+  })
+  parseList(): boolean {
+    return true;
+  }
+}
+
 @Command({
   name: 'speech',
   description:
     'Show, set up, and change how Pero transcribes voice messages and records its own',
-  subCommands: [SpeechStatusCommand, SpeechConfigureCommand],
+  subCommands: [
+    SpeechStatusCommand,
+    SpeechConfigureCommand,
+    SpeechVoiceCommand,
+  ],
 })
 export class SpeechCommand extends CommandRunner {
   // `status` is the default subcommand, so this only runs if that changes.

@@ -20,6 +20,7 @@ import { PIPER_VOICE, WHISPER_MODEL } from '../../speech/speech-models.js';
 import { CliError } from '../errors.js';
 import type { Prompts } from '../prompts.js';
 import {
+  chooseVoice,
   configureSpeech,
   offerSpeechSetup,
   type SpeechSetupContext,
@@ -64,6 +65,14 @@ const fetchStub = vi.fn<typeof fetch>((input, init) => {
   const key = (init?.headers as Record<string, string> | undefined)?.[
     'xi-api-key'
   ];
+  if (key === 'restricted-key') {
+    return Promise.resolve(
+      Response.json(
+        { detail: { status: 'missing_permissions' } },
+        { status: 401 },
+      ),
+    );
+  }
   if (url.endsWith('/v1/user')) {
     return Promise.resolve(
       key === 'good-key'
@@ -155,6 +164,12 @@ describe('configureSpeech', () => {
       'ElevenLabs API key (Enter to skip) (hidden)',
       'Which voice should Pero speak with? [v-ada|21m00Tcm4TlvDq8EAWfZT]',
     ]);
+    expect(printed).toContain(
+      'ElevenLabs gives you an API key at https://elevenlabs.io/app/settings/api-keys. ' +
+        'Give it these permissions: Text to Speech, Voices: Read, Speech to Text, ' +
+        'and optionally User so Pero can check the key. ' +
+        'Pero stores it in .env, readable only by you.',
+    );
     expect(printed).toContain("ElevenLabs doesn't accept that key; try again.");
     expect(readFileSync(layout.envFile, 'utf8')).toBe(
       'ELEVENLABS_API_KEY=good-key\n',
@@ -170,6 +185,40 @@ describe('configureSpeech', () => {
         'Voice messages Pero sends: ElevenLabs, ready\n' +
         'Saved; a running Pero uses this from the next voice message.',
     );
+  });
+
+  it('stores a restricted key, saying which permissions it lacks', async () => {
+    const { prompts, asked } = scripted([
+      'off',
+      'elevenlabs',
+      'restricted-key',
+    ]);
+
+    await configureSpeech(context(prompts));
+
+    expect(asked).toHaveLength(3);
+    expect(printed).toContain(
+      'ElevenLabs gives you an API key at https://elevenlabs.io/app/settings/api-keys. ' +
+        'Give it these permissions: Text to Speech, Voices: Read, ' +
+        'and optionally User so Pero can check the key. ' +
+        'Pero stores it in .env, readable only by you.',
+    );
+    expect(printed).toContain(
+      'The key lacks the optional "User" permission, so Pero couldn\'t check it; storing it anyway.',
+    );
+    expect(printed).toContain(
+      'Couldn\'t list your ElevenLabs voices: the ElevenLabs API key lacks the "Voices: Read" permission; ' +
+        'edit the key at https://elevenlabs.io/app/settings/api-keys. ' +
+        'Pero keeps the voice it has; once they can be listed, ' +
+        'pero speech voice picks one, or sets one by ID: pero speech voice <voice-id>.',
+    );
+    expect(readFileSync(layout.envFile, 'utf8')).toBe(
+      'ELEVENLABS_API_KEY=restricted-key\n',
+    );
+    expect(readHostConfig(layout.configFile)!.speech.speak).toMatchObject({
+      engine: 'elevenlabs',
+      voice: null,
+    });
   });
 
   it('keeps a stored key unless asked to replace it, and saves a skipped key as missing', async () => {
@@ -278,5 +327,137 @@ describe('configureSpeech', () => {
       offerSpeechSetup({ ...context(null), prompts: unasked.prompts }),
     ).resolves.toBe(false);
     expect(unasked.asked).toEqual([]);
+  });
+});
+
+describe('chooseVoice', () => {
+  let root: string;
+  let layout: WorkspaceLayout;
+  let printed: string[];
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'pero-choose-voice-'));
+    layout = workspaceLayout(root);
+    mkdirSync(layout.stateDir);
+    printed = [];
+    fetchStub.mockClear();
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** Speaking with `engine`, with `key` stored when given. */
+  function speakWith(engine: string, key?: string, voice?: string): void {
+    writeFileSync(
+      layout.configFile,
+      `# Mine\nspeech:\n  speak:\n    engine: ${engine}\n` +
+        (voice === undefined ? '' : `    voice: ${voice}\n`),
+    );
+    if (key !== undefined) {
+      writeFileSync(layout.envFile, `ELEVENLABS_API_KEY=${key}\n`, {
+        mode: 0o600,
+      });
+    }
+  }
+
+  function context(prompts: Prompts | null): SpeechSetupContext {
+    return {
+      layout,
+      prompts,
+      print: (text) => printed.push(text),
+      env: {},
+      fetch: fetchStub,
+    };
+  }
+
+  const voiceSet = () => readHostConfig(layout.configFile)!.speech.speak.voice;
+
+  it('picks a voice on a terminal and saves it, keeping comments', async () => {
+    speakWith('elevenlabs', 'good-key');
+    const { prompts, asked } = scripted(['v-ada']);
+
+    await chooseVoice(context(prompts));
+
+    expect(asked).toEqual([
+      'Which voice should Pero speak with? [v-ada|21m00Tcm4TlvDq8EAWfZT]',
+    ]);
+    expect(voiceSet()).toBe('v-ada');
+    expect(readFileSync(layout.configFile, 'utf8')).toContain('# Mine');
+    expect(printed).toEqual([
+      'Pero now speaks with Ada; a running Pero uses it from the next voice message.',
+    ]);
+  });
+
+  it('sets a voice by ID or by name, ignoring case, and refuses one the account lacks', async () => {
+    speakWith('elevenlabs', 'good-key');
+
+    await chooseVoice(context(null), { voice: 'rachel' });
+    expect(voiceSet()).toBe('21m00Tcm4TlvDq8EAWfZT');
+    await chooseVoice(context(null), { voice: 'v-ada' });
+    expect(voiceSet()).toBe('v-ada');
+    await expect(
+      chooseVoice(context(null), { voice: 'Nobody' }),
+    ).rejects.toThrow(
+      new CliError(
+        'None of your ElevenLabs voices is Nobody; pero speech voice --list lists them',
+      ),
+    );
+    expect(voiceSet()).toBe('v-ada');
+  });
+
+  it('lists the voices without a terminal, marking the one Pero speaks with', async () => {
+    speakWith('elevenlabs', 'good-key', 'v-ada');
+    const before = readFileSync(layout.configFile, 'utf8');
+
+    await chooseVoice(context(null));
+    await chooseVoice(context(scripted([]).prompts), { list: true });
+
+    const listing = [
+      '* v-ada                  Ada: (cloned)',
+      '  21m00Tcm4TlvDq8EAWfZT  Rachel',
+      '',
+      '* the voice Pero speaks with. pero speech voice <id or name> changes it.',
+    ].join('\n');
+    expect(printed).toEqual([listing, listing]);
+    expect(readFileSync(layout.configFile, 'utf8')).toBe(before);
+  });
+
+  it('takes a voice ID as given when the key may not list voices', async () => {
+    speakWith('elevenlabs', 'restricted-key');
+
+    await chooseVoice(context(null), { voice: 'JBFqnCBsd6RMkjVDRZzb' });
+
+    expect(voiceSet()).toBe('JBFqnCBsd6RMkjVDRZzb');
+    expect(printed[0]).toBe(
+      'Couldn\'t list your ElevenLabs voices to check it: the ElevenLabs API key lacks the "Voices: Read" permission; ' +
+        'edit the key at https://elevenlabs.io/app/settings/api-keys. Setting voice ID JBFqnCBsd6RMkjVDRZzb as given.',
+    );
+    await expect(chooseVoice(context(null))).rejects.toThrow(
+      new CliError(
+        'Couldn\'t list your ElevenLabs voices: the ElevenLabs API key lacks the "Voices: Read" permission; ' +
+          'edit the key at https://elevenlabs.io/app/settings/api-keys. pero speech voice <voice-id> sets one by its ID',
+      ),
+    );
+  });
+
+  it('works only while Pero speaks with ElevenLabs, with a key', async () => {
+    speakWith('local');
+    await expect(chooseVoice(context(null))).rejects.toThrow(
+      /^Pero speaks with the local engine, whose voice is a Piper model file/,
+    );
+    speakWith('off');
+    await expect(chooseVoice(context(null))).rejects.toThrow(
+      new CliError(
+        'Voice messages Pero sends are turned off; pero speech configure turns them on',
+      ),
+    );
+    speakWith('elevenlabs');
+    await expect(chooseVoice(context(null))).rejects.toThrow(
+      new CliError(
+        'No ElevenLabs API key is set; pero speech configure stores one',
+      ),
+    );
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 });
