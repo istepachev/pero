@@ -860,8 +860,7 @@ describe('TelegramAdapter', () => {
 
     it('says why a voice message was not transcribed, and runs no turn', async () => {
       await start();
-      speech.transcribeFails =
-        "whisper-cli isn't installed; run pero speech setup";
+      speech.transcribeFails = "whisper-cli isn't installed; run pero speech";
       api.files.set('voice', new Uint8Array([1]));
 
       api.push(
@@ -874,7 +873,7 @@ describe('TelegramAdapter', () => {
       const [, notice] = await sentCount(2);
       expect(notice?.text).toBe(
         "Pero couldn't transcribe the voice message you sent (whisper-cli " +
-          "isn't installed; run pero speech setup). Send it again, or write " +
+          "isn't installed; run pero speech). Send it again, or write " +
           'it as text.',
       );
       expect(runtime.requests).toEqual([]);

@@ -32,7 +32,7 @@ import {
 import { SettingsCommand } from './commands/settings.command.js';
 import {
   SpeechCommand,
-  SpeechSetupCommand,
+  SpeechConfigureCommand,
   SpeechStatusCommand,
 } from './commands/speech.command.js';
 import { StatusCommand } from './commands/status.command.js';
@@ -95,7 +95,7 @@ import { StrictArguments } from './strict-arguments.js';
     TelegramTokenCommand,
     SpeechCommand,
     SpeechStatusCommand,
-    SpeechSetupCommand,
+    SpeechConfigureCommand,
     BackupCommand,
     RestoreCommand,
   ],

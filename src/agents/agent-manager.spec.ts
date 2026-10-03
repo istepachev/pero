@@ -90,7 +90,8 @@ describe('AgentManager', () => {
     await ws.channel('Default');
     speech = new FakeSpeech();
     // Instructions stay as other tests expect them unless one speaks.
-    speech.speakFails = 'voice messages are off in config.yaml';
+    speech.speakFails =
+      'voice messages are turned off; pero speech configure turns them on';
     claude = new FakeAgentRuntime('claude');
     codex = new FakeAgentRuntime('codex');
     await boot();
@@ -180,14 +181,15 @@ describe('AgentManager', () => {
     expect(sentTexts().slice(-2)).toEqual([
       'echo:',
       "Hello.\n\n(Pero couldn't send this as a voice message: voice " +
-        'messages are off in config.yaml.)',
+        'messages are turned off; pero speech configure turns them on.)',
     ]);
   });
 
   it('tells the turn how to send a voice message only when Pero can record one', async () => {
     speech.speakFails = null;
     await say(OWNER, 'one');
-    speech.speakFails = 'voice messages are off in config.yaml';
+    speech.speakFails =
+      'voice messages are turned off; pero speech configure turns them on';
     await say(OWNER, 'two');
 
     const [canSpeak, cannot] = claude.requests.map(

@@ -56,7 +56,7 @@ describe('SpeechService', () => {
     const speaking = service();
 
     expect(speaking.transcribeProblem()).toBe(
-      `${speech.programs.ffmpeg} isn't installed; run pero speech setup`,
+      `${speech.programs.ffmpeg} isn't installed; run pero speech`,
     );
     expect(speaking.canSpeak()).toBe(false);
     expect(health.get('speech')).toMatchObject({
@@ -96,7 +96,7 @@ describe('SpeechService', () => {
 
     expect(health.get('speech')).toMatchObject({
       state: 'degraded',
-      detail: `${speech.programs.piper} isn't installed; run pero speech setup`,
+      detail: `${speech.programs.piper} isn't installed; run pero speech`,
     });
   });
 
@@ -105,7 +105,7 @@ describe('SpeechService', () => {
     speech.speak.engine = 'elevenlabs';
 
     expect(service().speakProblem()).toBe(
-      'ELEVENLABS_API_KEY is not set in .env',
+      'no ElevenLabs API key is set; run pero speech',
     );
     expect(service({ ELEVENLABS_API_KEY: 'key' }).canSpeak()).toBe(true);
     writeFileSync(join(workspace, '.env'), 'ELEVENLABS_API_KEY=key\n', {
@@ -129,9 +129,15 @@ describe('SpeechService', () => {
     });
     await expect(
       speaking.transcribe({ path: 'voice.ogg', type: 'audio/ogg' }),
-    ).rejects.toThrow(new SpeechError('transcription is off in config.yaml'));
+    ).rejects.toThrow(
+      new SpeechError(
+        'transcription is turned off; pero speech configure turns it on',
+      ),
+    );
     await expect(speaking.speak('Hi.')).rejects.toThrow(
-      new SpeechError('voice messages are off in config.yaml'),
+      new SpeechError(
+        'voice messages are turned off; pero speech configure turns them on',
+      ),
     );
 
     speech.speak.engine = 'elevenlabs';

@@ -20,6 +20,7 @@ import {
   parseHostConfig,
   readHostConfig,
   resolveDataFolder,
+  setSpeech,
   resolveSystemFolder,
 } from './host-config.js';
 
@@ -299,6 +300,80 @@ describe('config.yaml on disk', () => {
       editHostConfig(file, (document) => allowChat(document, '5', null)),
     ).toThrow('line 1: dta: unknown key');
     expect(readFileSync(file, 'utf8')).toBe('dta: data\n');
+  });
+});
+
+describe('setSpeech', () => {
+  let folder: string;
+  let file: string;
+
+  beforeEach(() => {
+    folder = mkdtempSync(join(tmpdir(), 'pero-speech-config-'));
+    file = join(folder, 'config.yaml');
+  });
+
+  afterEach(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+
+  it("changes the template's engines in place, keeping its comments", () => {
+    writeFileSync(file, defaultHostConfig());
+
+    const config = editHostConfig(file, (document) => {
+      expect(setSpeech(document, 'transcribe', 'elevenlabs')).toBe(true);
+      expect(setSpeech(document, 'speak', 'local')).toBe(false);
+    });
+
+    expect(config.speech.transcribe.engine).toBe('elevenlabs');
+    const text = readFileSync(file, 'utf8');
+    expect(text).toContain('pero speech configure sets them');
+    expect(text).toContain(
+      'speech:\n  transcribe:\n    engine: elevenlabs\n  speak:\n    engine: local\n',
+    );
+  });
+
+  it("drops the other engine's model and voice when the engine changes", () => {
+    writeFileSync(
+      file,
+      [
+        'speech:',
+        '  speak:',
+        '    engine: local',
+        '    voice: voices/de.onnx',
+        '    model: x',
+        '',
+      ].join('\n'),
+    );
+
+    editHostConfig(file, (document) => {
+      setSpeech(document, 'speak', 'elevenlabs', 'voice-1');
+    });
+    expect(readHostConfig(file)!.speech.speak).toEqual({
+      engine: 'elevenlabs',
+      voice: 'voice-1',
+      model: null,
+    });
+
+    editHostConfig(file, (document) => {
+      setSpeech(document, 'speak', 'local');
+    });
+    expect(readHostConfig(file)!.speech.speak).toEqual({
+      engine: 'local',
+      voice: null,
+      model: null,
+    });
+  });
+
+  it('adds speech to a file without it, apart from what is above', () => {
+    writeFileSync(file, 'data: data\nspeech:\n');
+
+    editHostConfig(file, (document) => {
+      setSpeech(document, 'transcribe', 'off');
+    });
+
+    expect(readFileSync(file, 'utf8')).toBe(
+      'data: data\n\nspeech:\n  transcribe:\n    engine: off\n',
+    );
   });
 });
 

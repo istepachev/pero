@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { readEnvFile } from '../config/env-file.js';
 import type { SpeechConfig } from '../config/host-config.js';
-import { ELEVENLABS_KEY_ENV } from './elevenlabs-engine.js';
+import { ELEVENLABS_KEY_ENV, ELEVENLABS_NO_KEY } from './elevenlabs-engine.js';
 import { localProblem } from './local-engine.js';
 import { piperVoicePath, whisperModelPath } from './speech-models.js';
 
@@ -35,7 +35,7 @@ export function transcribeProblem(
 ): string | null {
   switch (speech.transcribe.engine) {
     case 'off':
-      return 'transcription is off in config.yaml';
+      return 'transcription is turned off; pero speech configure turns it on';
     case 'elevenlabs':
       return keyProblem(key);
     case 'local':
@@ -54,7 +54,7 @@ export function speakProblem(
 ): string | null {
   switch (speech.speak.engine) {
     case 'off':
-      return 'voice messages are off in config.yaml';
+      return 'voice messages are turned off; pero speech configure turns them on';
     case 'elevenlabs':
       return keyProblem(key);
     case 'local': {
@@ -68,5 +68,5 @@ export function speakProblem(
 }
 
 function keyProblem(key: string | null): string | null {
-  return key === null ? `${ELEVENLABS_KEY_ENV} is not set in .env` : null;
+  return key === null ? ELEVENLABS_NO_KEY : null;
 }

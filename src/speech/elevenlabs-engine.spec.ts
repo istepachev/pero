@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  checkElevenLabsKey,
   ElevenLabsSynthesizer,
   ElevenLabsTranscriber,
+  listElevenLabsVoices,
 } from './elevenlabs-engine.js';
 import { SpeechError } from './speech-engine.js';
 
@@ -126,7 +128,78 @@ describe('the ElevenLabs engine', () => {
         model: 'm',
         fetch,
       }).synthesize('Hi.', signal),
-    ).rejects.toThrow(new SpeechError('ELEVENLABS_API_KEY is not set in .env'));
+    ).rejects.toThrow(
+      new SpeechError('no ElevenLabs API key is set; run pero speech'),
+    );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('checks a key, saying invalid only when ElevenLabs does', async () => {
+    const answering = (response: Response | Error) => ({
+      fetch: vi.fn<typeof globalThis.fetch>(() =>
+        response instanceof Error
+          ? Promise.reject(response)
+          : Promise.resolve(response),
+      ),
+    });
+    const valid = answering(Response.json({ subscription: {} }));
+
+    await expect(checkElevenLabsKey(KEY, valid)).resolves.toBe('valid');
+    expect(valid.fetch.mock.calls[0]![0]).toBe(
+      'https://api.elevenlabs.io/v1/user',
+    );
+    expect(valid.fetch.mock.calls[0]![1]?.headers).toEqual({
+      'xi-api-key': KEY,
+    });
+    await expect(
+      checkElevenLabsKey(
+        KEY,
+        answering(
+          Response.json(
+            { detail: { status: 'invalid_api_key' } },
+            { status: 401 },
+          ),
+        ),
+      ),
+    ).resolves.toBe('invalid');
+    await expect(
+      checkElevenLabsKey(
+        KEY,
+        answering(
+          Response.json(
+            { detail: { status: 'missing_permissions' } },
+            { status: 401 },
+          ),
+        ),
+      ),
+    ).resolves.toBe('unknown');
+    await expect(
+      checkElevenLabsKey(KEY, answering(new TypeError('offline'))),
+    ).resolves.toBe('unknown');
+  });
+
+  it("lists the account's voices by name, described by their labels", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(() =>
+      Promise.resolve(
+        Response.json({
+          voices: [
+            {
+              voice_id: 'v2',
+              name: 'Rachel',
+              category: 'premade',
+              labels: { accent: 'american', gender: 'female' },
+            },
+            { voice_id: 'v1', name: 'My clone', category: 'cloned' },
+            { name: 'No ID' },
+          ],
+        }),
+      ),
+    );
+
+    await expect(listElevenLabsVoices(KEY, { fetch })).resolves.toEqual([
+      { id: 'v1', name: 'My clone', description: '(cloned)' },
+      { id: 'v2', name: 'Rachel', description: 'american, female (premade)' },
+    ]);
+    expect(fetch.mock.calls[0]![0]).toBe('https://api.elevenlabs.io/v1/voices');
   });
 });

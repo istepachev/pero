@@ -13,7 +13,7 @@ import { DEFAULT_SPEECH, type SpeechConfig } from '../config/host-config.js';
 import { PIPER_VOICE, WHISPER_MODEL } from './speech-models.js';
 import { downloadModel, speechSetupPlan } from './speech-setup.js';
 
-describe('pero speech setup', () => {
+describe('speechSetupPlan and downloadModel', () => {
   let workspace: string;
   let speech: SpeechConfig;
 

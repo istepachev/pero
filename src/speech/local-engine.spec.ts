@@ -189,10 +189,10 @@ describe('the local engine', () => {
     const model = join(folder, 'model.bin');
 
     expect(localProblem([tool], [model])).toBe(
-      `${model} is missing; run pero speech setup`,
+      `${model} is missing; run pero speech`,
     );
     expect(localProblem(['pero-no-such-program'], [])).toBe(
-      "pero-no-such-program isn't installed; run pero speech setup",
+      "pero-no-such-program isn't installed; run pero speech",
     );
     writeFileSync(model, '');
     expect(localProblem([tool], [model])).toBeNull();

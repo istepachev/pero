@@ -6,7 +6,7 @@ import { workspaceLayout } from '../config/workspace-layout.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
 
-/** A file the `local` engine needs, and where `pero speech setup` gets it. */
+/** A file the `local` engine needs, and where `pero speech configure` gets it. */
 export interface ModelFile {
   /** Its name in `.pero/models/`. */
   name: string;

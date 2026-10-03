@@ -14,15 +14,102 @@ export const ELEVENLABS_API_ROOT = 'https://api.elevenlabs.io';
 /** Where the API key is read: the environment, or the workspace's `.env`. */
 export const ELEVENLABS_KEY_ENV = 'ELEVENLABS_API_KEY';
 
+/** Said when an ElevenLabs engine has no key. */
+export const ELEVENLABS_NO_KEY =
+  'no ElevenLabs API key is set; run pero speech';
+
 /** How long one request may take. */
 const REQUEST_TIMEOUT_MS = 120_000;
 
-interface ElevenLabsOptions {
+/** How long checking a key or listing voices may take. */
+const LOOKUP_TIMEOUT_MS = 15_000;
+
+/** Where ElevenLabs is, and how to reach it; tests replace both. */
+export interface ElevenLabsClient {
+  apiRoot?: string;
+  fetch?: typeof fetch;
+}
+
+interface ElevenLabsOptions extends ElevenLabsClient {
   /** The API key, looked up for each request so a new one applies at once. */
   key: () => string | null;
   model: string;
-  apiRoot?: string;
-  fetch?: typeof fetch;
+}
+
+/** A voice on the owner's ElevenLabs account. */
+export interface ElevenLabsVoice {
+  id: string;
+  name: string;
+  /** Such as `american, female (premade)`; empty when ElevenLabs says nothing. */
+  description: string;
+}
+
+/**
+ * Whether ElevenLabs takes `key`: `invalid` only when it says the key is
+ * not one, `unknown` when it can't tell, such as offline or for a key
+ * not allowed to read the account.
+ */
+export async function checkElevenLabsKey(
+  key: string,
+  client: ElevenLabsClient = {},
+): Promise<'valid' | 'invalid' | 'unknown'> {
+  try {
+    const response = await (client.fetch ?? fetch)(
+      `${client.apiRoot ?? ELEVENLABS_API_ROOT}/v1/user`,
+      {
+        headers: { 'xi-api-key': key },
+        signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+      },
+    );
+    if (response.ok) return 'valid';
+    if (response.status !== 401) return 'unknown';
+    const body = (await response.json().catch(() => null)) as {
+      detail?: { status?: unknown };
+    } | null;
+    return body?.detail?.status === 'invalid_api_key' ? 'invalid' : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * The voices `key`'s account can use, premade and its own, by name.
+ * Throws a `SpeechError` when ElevenLabs doesn't list them.
+ */
+export async function listElevenLabsVoices(
+  key: string,
+  client: ElevenLabsClient = {},
+): Promise<ElevenLabsVoice[]> {
+  const response = await request({ ...client, key: () => key }, '/v1/voices', {
+    method: 'GET',
+    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+  });
+  const body = (await response.json()) as {
+    voices?: {
+      voice_id?: unknown;
+      name?: unknown;
+      category?: unknown;
+      labels?: Record<string, unknown> | null;
+    }[];
+  };
+  return (body.voices ?? [])
+    .filter(
+      (voice) =>
+        typeof voice.voice_id === 'string' && typeof voice.name === 'string',
+    )
+    .map((voice) => {
+      const labels = [voice.labels?.accent, voice.labels?.gender].filter(
+        (label): label is string => typeof label === 'string' && label !== '',
+      );
+      const category =
+        typeof voice.category === 'string' ? ` (${voice.category})` : '';
+      return {
+        id: voice.voice_id as string,
+        name: voice.name as string,
+        description: `${labels.join(', ')}${category}`.trim(),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Transcribes with ElevenLabs' speech-to-text, which reads OGG directly. */
@@ -91,13 +178,13 @@ export class ElevenLabsSynthesizer implements Synthesizer {
  * never with the key.
  */
 async function request(
-  options: ElevenLabsOptions,
+  options: ElevenLabsClient & { key: () => string | null },
   path: string,
   init: RequestInit & { signal: AbortSignal },
 ): Promise<Response> {
   const key = options.key();
   if (key === null) {
-    throw new SpeechError(`${ELEVENLABS_KEY_ENV} is not set in .env`);
+    throw new SpeechError(ELEVENLABS_NO_KEY);
   }
   let response: Response;
   try {
