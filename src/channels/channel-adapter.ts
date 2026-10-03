@@ -163,6 +163,11 @@ export type ButtonRows = readonly (readonly OutboundButton[])[];
 
 export interface OutboundMessage {
   text: string;
+  /**
+   * Whether `text` is Markdown, an agent's answer, which the adapter shows
+   * as the integration's formatting; plain text, shown as it is, by default.
+   */
+  markdown?: boolean;
   /** Shown under the message, row by row; none by default. */
   buttons?: ButtonRows;
 }

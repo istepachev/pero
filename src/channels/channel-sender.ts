@@ -66,10 +66,11 @@ export class ChannelSender {
   }
 
   /**
-   * Sends an agent's `answer`, part by part in order: the text as it is,
-   * and each `<voice>` block recorded and sent as a voice message. A block
-   * that can't be recorded goes out as text, saying why. An answer without
-   * blocks is sent as one text. Throws when a send fails; the parts before
+   * Sends an agent's `answer`, part by part in order: the text as
+   * Markdown, shown as the integration's formatting, and each `<voice>`
+   * block recorded and sent as a voice message. A block that can't be
+   * recorded goes out as text, saying why. An answer without blocks is
+   * sent as one text. Throws when a send fails; the parts before
    * it are out by then.
    */
   async sendAnswer(
@@ -80,7 +81,7 @@ export class ChannelSender {
     const parts = answerParts(answer);
     if (!parts.some((part) => part.kind === 'voice')) {
       return {
-        sent: await this.send(kind, address, { text: answer }),
+        sent: await this.send(kind, address, { text: answer, markdown: true }),
         text: answer,
       };
     }
@@ -89,7 +90,10 @@ export class ChannelSender {
     for (const part of parts) {
       let sent: SentMessage;
       if (part.kind === 'text') {
-        sent = await this.send(kind, address, { text: part.text });
+        sent = await this.send(kind, address, {
+          text: part.text,
+          markdown: true,
+        });
         kept.push(part.text);
       } else {
         let voice: OutboundVoice | null = null;

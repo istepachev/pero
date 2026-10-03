@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelNote } from '../system-files/snapshot.js';
 import {
   agentContext,
+  FORMAT_NOTE,
   VOICE_NOTE,
   agentRequest,
   composeInstructions,
@@ -32,7 +33,7 @@ describe('composeInstructions', () => {
       ),
     ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
-      `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}`,
+      `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}\n\n${FORMAT_NOTE}`,
     );
   });
 
@@ -65,6 +66,13 @@ describe('composeInstructions', () => {
 });
 
 describe('agentContext', () => {
+  it('says which Markdown Telegram shows, and to use it where it helps', () => {
+    expect(CONTEXT).toContain(FORMAT_NOTE);
+    expect(FORMAT_NOTE).toContain('**bold**');
+    expect(FORMAT_NOTE).toContain('when it helps');
+    expect(FORMAT_NOTE).toContain('no tables');
+  });
+
   it('says how to send a voice message only when Pero can record one', () => {
     expect(CONTEXT).not.toContain('<voice>');
     expect(agentContext(HEALTH, { ...FOLDERS, voice: true })).toBe(
@@ -80,7 +88,8 @@ describe('systemFolderNote', () => {
       { title: 'Weekly Health', file: 'Channels/Coaches/Weekly Health.md' },
       FOLDERS,
     );
-    expect(note).toContain('You are Pero');
+    expect(note).toContain('You run in Pero, which connects you to the owner');
+    expect(note).not.toContain('assistant');
     expect(note).toContain('the Channel Weekly Health.');
     expect(note).toContain(
       'the note /ws/data/System/Channels/Coaches/Weekly Health.md.',
