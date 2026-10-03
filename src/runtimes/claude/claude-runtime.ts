@@ -160,6 +160,8 @@ export class ClaudeRuntime implements AgentRuntime {
       ...(request.providerSessionId === undefined
         ? {}
         : { resume: request.providerSessionId }),
+      // Not under ~/.claude/projects, where nothing would read it again.
+      ...(request.ephemeral === true ? { persistSession: false } : {}),
       systemPrompt:
         request.instructions === ''
           ? { type: 'preset', preset: 'claude_code' }

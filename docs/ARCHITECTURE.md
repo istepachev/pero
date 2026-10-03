@@ -138,6 +138,7 @@ interface RuntimeRequest {
   workingDirectory: string; // effective folder, already resolved
   skipGitRepoCheck?: boolean; // Codex only: allow a folder outside Git
   providerSessionId?: string; // absent for a new conversation
+  ephemeral?: boolean; // Claude only: don't save the conversation, as for a Workflow run
   toolPolicy: ToolPolicy; // permissions: 'ask' | 'bypass'
   attachmentsFolder?: string; // Claude only: where saved files are, read without asking
   approve?: ToolApprover; // asks the owner about a tool; absent means deny

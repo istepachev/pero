@@ -551,6 +551,12 @@ describe('AgentManager', () => {
       [attachments, attachments, attachments],
     );
     expect(claude.requests[2]).not.toHaveProperty('approve');
+    // Only the run's turn is kept off disk; Channel turns are resumed.
+    expect(claude.requests.map((request) => request.ephemeral)).toEqual([
+      undefined,
+      undefined,
+      true,
+    ]);
   });
 
   it("tells the Channel when the Agent's provider has no runtime yet", async () => {

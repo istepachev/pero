@@ -320,7 +320,7 @@ describe('ClaudeRuntime', () => {
       env: ENV,
     });
     expect(options.systemPrompt).not.toHaveProperty('append');
-    for (const option of ['model', 'effort', 'resume']) {
+    for (const option of ['model', 'effort', 'resume', 'persistSession']) {
       expect(options).not.toHaveProperty(option);
     }
     expect(options.abortController).toBeInstanceOf(AbortController);
@@ -349,6 +349,16 @@ describe('ClaudeRuntime', () => {
         append: 'Be kind.\n\nBe brief.',
       },
     });
+  });
+
+  it('keeps an ephemeral turn off disk', async () => {
+    const { query, calls } = fakeQuery();
+
+    await collect(
+      new ClaudeRuntime(query, ENV).execute(request({ ephemeral: true })),
+    );
+
+    expect(calls[0]!.options).toMatchObject({ persistSession: false });
   });
 
   it('refuses an effort level Claude does not have', async () => {

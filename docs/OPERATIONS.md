@@ -122,7 +122,7 @@ The images, recordings, and other files people send in chats are kept in `.pero/
 
 Outside `.pero/`:
 - **Working folders:** the data folder and each folder a Channel note names in `working-directory`. They are yours, such as a notes vault or a project. `pero backup --include-data` adds the data folder; the others are never in Pero's backups.
-- **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
+- **Provider conversations:** Claude Code keeps each session's transcript in `~/.claude/projects/<folder>/`, named after the folder it ran in, except a Workflow run's, which it doesn't save; Codex keeps its threads in `~/.codex/sessions/` and state databases next to it in `~/.codex`. A Session resumes only while its provider still has that conversation.
 - **Provider sign-ins:** listed under [Credentials](#credentials).
 
 ## Voice messages
