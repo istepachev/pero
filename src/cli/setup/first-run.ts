@@ -22,6 +22,10 @@ import {
   resolveSystemFolder,
 } from '../../config/host-config.js';
 import { type Provider, PROVIDERS } from '../../config/provider-options.js';
+import {
+  PERMISSION_MODES,
+  type PermissionMode,
+} from '../../config/tool-policy.js';
 import { workspaceLayout } from '../../config/workspace-layout.js';
 import { initWorkspace, peroNote } from '../../config/workspace-skeleton.js';
 import {
@@ -56,6 +60,8 @@ export interface FirstRunContext {
   checkProviders?: boolean;
   /** How provider CLIs are run; for tests. */
   exec?: Exec;
+  /** Whether Pero runs as root, where Claude Code refuses `bypass`; for tests. */
+  root?: boolean;
 }
 
 export interface FirstRun {
@@ -78,10 +84,11 @@ export interface FirstRun {
  * the provider Pero uses: the one `Pero.md` sets, or else the owner's
  * pick among the provider CLIs installed, written to `Pero.md`. It refuses
  * to go on, before anything is made or started, while that provider's CLI
- * is missing or signed out. A later start whose `Pero.md` is missing, as
- * after the system folder was deleted, settles the provider the same way
- * and writes a whole `Pero.md` with it, so it doesn't fall back to claude
- * unasked.
+ * is missing or signed out. It then settles the default permission mode
+ * the same way: the one `Pero.md` sets, or else the owner's pick of `ask`
+ * or `bypass`. A later start whose `Pero.md` is missing, as after the
+ * system folder was deleted, settles both the same way and writes a whole
+ * `Pero.md` with them, so it doesn't fall back to claude and ask unasked.
  */
 export async function configOrNewWorkspace(
   context: FirstRunContext,
@@ -117,15 +124,18 @@ export async function configOrNewWorkspace(
     const missing = missingPeroNote(workspace, context.home);
     if (missing !== null && context.checkProviders !== false) {
       context.block?.();
-      let provider: Provider;
+      let settings: Settings;
       try {
-        provider = await settleProvider(context, null);
+        const provider = await settleProvider(context, null);
+        context.block?.();
+        const permissions = await settlePermissions(context, provider, null);
+        settings = { provider, permissions };
       } catch (error) {
         if (!isPromptExit(error)) throw error;
         throw new CliError('Setup interrupted; Pero was not started.', 130);
       }
       context.block?.();
-      writeProvider(missing, provider, context.print);
+      writeSettings(missing, settings, context.print);
     }
     return { config: config!, firstRun: false };
   }
@@ -133,13 +143,21 @@ export async function configOrNewWorkspace(
   const block = context.block ?? (() => undefined);
   let data: string | undefined;
   let note: string;
-  let provider: Provider | null = null;
+  let settings: Settings | null = null;
   try {
     if (config === null) data = await pickDataFolder(context, workspace);
     note = peroNotePath(workspace, context.home, data);
     if (context.checkProviders !== false) {
       block();
-      provider = await settleProvider(context, providerIn(note));
+      const set = settingsIn(note);
+      const provider = await settleProvider(context, set.provider);
+      block();
+      const permissions = await settlePermissions(
+        context,
+        provider,
+        set.permissions,
+      );
+      settings = { provider, permissions };
     }
   } catch (error) {
     if (!isPromptExit(error)) throw error;
@@ -156,7 +174,7 @@ export async function configOrNewWorkspace(
       ...(context.home === undefined ? {} : { homeDir: context.home }),
     });
   }
-  if (provider !== null) writeProvider(note, provider, context.print);
+  if (settings !== null) writeSettings(note, settings, context.print);
   return { config, firstRun: true };
 }
 
@@ -279,14 +297,26 @@ function missingPeroNote(workspace: string, home?: string): string | null {
   return existsSync(note) ? null : note;
 }
 
-/** The provider the note at `path` sets; null when it sets none. */
-function providerIn(path: string): Provider | null {
+/** What first-run setup settles in `Pero.md`. */
+interface Settings {
+  provider: Provider;
+  permissions: PermissionMode;
+}
+
+/** The settings the note at `path` sets; null for each it sets none of. */
+function settingsIn(path: string): {
+  [K in keyof Settings]: Settings[K] | null;
+} {
+  const none = { provider: null, permissions: null };
   const text = readText(path);
-  if (text === null) return null;
+  if (text === null) return none;
   const parsed = parseNote(path, text);
-  if (!parsed.ok) return null;
-  const value = parsed.note.properties.provider;
-  return PROVIDERS.find((provider) => provider === value) ?? null;
+  if (!parsed.ok) return none;
+  const { provider, permissions } = parsed.note.properties;
+  return {
+    provider: PROVIDERS.find((p) => p === provider) ?? null,
+    permissions: PERMISSION_MODES.find((m) => m === permissions) ?? null,
+  };
 }
 
 /**
@@ -375,27 +405,84 @@ async function settleProvider(
 }
 
 /**
- * Sets `provider` in the note at `path` unless it sets one already, filling
- * in the empty one `pero init` writes; a missing note starts as `pero init`
- * writes it.
+ * The permission mode tools run under by default: `fixed`, or else the
+ * owner's pick, `ask` selected first.
  */
-function writeProvider(
-  path: string,
+async function settlePermissions(
+  context: FirstRunContext,
   provider: Provider,
+  fixed: PermissionMode | null,
+): Promise<PermissionMode> {
+  if (fixed !== null) {
+    context.print(`Permissions: ${fixed}, as Pero.md sets it`);
+    return fixed;
+  }
+  const permissions = await (
+    await context.prompts()
+  ).select<PermissionMode>({
+    message: 'How should Pero approve its tools by default?',
+    choices: [
+      {
+        value: 'ask',
+        name:
+          provider === 'claude'
+            ? 'ask — edits in its folder run freely; anything else asks you in Telegram (recommended)'
+            : 'ask — Codex sandbox: writes and runs commands only in its folder, without network (recommended)',
+      },
+      {
+        value: 'bypass',
+        name:
+          provider === 'claude'
+            ? 'bypass — every tool runs without asking, like claude --dangerously-skip-permissions'
+            : 'bypass — no sandbox, like codex --dangerously-bypass-approvals-and-sandbox',
+      },
+    ],
+    initial: 'ask',
+  });
+  const root = context.root ?? process.getuid?.() === 0;
+  if (
+    permissions === 'bypass' &&
+    provider === 'claude' &&
+    root &&
+    process.env.IS_SANDBOX !== '1'
+  ) {
+    context.print(
+      'Claude Code refuses bypass when it runs as root unless IS_SANDBOX=1 is set; run Pero as an ordinary account.',
+    );
+  }
+  return permissions;
+}
+
+/**
+ * Sets each of `settings` in the note at `path` unless it sets that one
+ * already, filling in the empty ones `pero init` writes; a missing note
+ * starts as `pero init` writes it.
+ */
+function writeSettings(
+  path: string,
+  settings: Settings,
   print: (text: string) => void,
 ): void {
-  const text =
+  let text =
     readText(path) ??
     peroNote(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const parsed = parseNote(path, text);
   if (!parsed.ok) return;
-  const current = parsed.note.properties.provider;
-  if (current !== undefined && current !== null) return;
-  const updated = replaceNoteProperty(text, 'provider', provider);
-  if (updated === null) return;
+  const written: string[] = [];
+  for (const [key, value] of Object.entries(settings)) {
+    const current = parsed.note.properties[key];
+    if (current !== undefined && current !== null) continue;
+    const updated = replaceNoteProperty(text, key, value);
+    if (updated === null) return;
+    text = updated;
+    written.push(`${key}: ${value}`);
+  }
+  if (written.length === 0) return;
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, updated);
-  print(`Pero uses ${provider}; change it with provider: in ${path}`);
+  writeFileSync(path, text);
+  print(
+    `Pero.md now sets ${written.join(', ')}; change ${written.length === 1 ? 'it' : 'them'} in ${path}`,
+  );
 }
 
 function readText(path: string): string | null {

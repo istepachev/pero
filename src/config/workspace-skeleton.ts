@@ -36,21 +36,22 @@ export class WorkspaceInitError extends Error {
  * `Pero.md` as `pero init` writes it: every setting as a property, so
  * Obsidian shows each one to change, with Pero's defaults or else empty.
  * `timezone` is the host's, so the owner sees the zone schedules use;
- * `provider` is left for the first `pero run` to fill in.
+ * `provider` and `permissions` are left for the first `pero run` to fill
+ * in.
  */
 export function peroNote(timeZone: string): string {
   const timezone = `timezone: ${timeZone}`;
   return `---
 # Installation defaults: each applies to every Channel and Workflow that
 # doesn't set its own. An empty property takes the default: claude for
-# provider, and the provider's own model and effort.
+# provider, ask for permissions, and the provider's own model and effort.
 # Instructions go in Persona.md, Instructions.md, and the Channels' notes.
 provider:                     # claude or codex
 claude-model:                 # such as opus or sonnet
 claude-effort:                # low, medium, high, xhigh, or max
 codex-model:                  # such as gpt-5.5
 codex-effort:                 # minimal, low, medium, high, xhigh, max, ultra, or persistent
-permissions: ask              # ask or bypass
+permissions:                  # ask or bypass
 ${timezone.padEnd(29)} # this server's; set yours, such as Europe/Berlin
 history-carryover: 50
 history-retention-days:       # keep everything when empty
