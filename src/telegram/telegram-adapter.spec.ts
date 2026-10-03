@@ -16,6 +16,7 @@ import { PersistenceModule } from '../persistence/persistence.module.js';
 import { AGENT_RUNTIMES } from '../runtimes/agent-runtimes.js';
 import { FakeAgentRuntime } from '../runtimes/testing/fake-agent-runtime.js';
 import { TestWorkspace } from '../system/testing/test-workspace.js';
+import { MEDIA_GROUP_WAIT_MS } from './media-groups.js';
 import { TelegramAdapter } from './telegram-adapter.js';
 import { TelegramCredentials } from './telegram-credentials.service.js';
 import { TelegramStatus } from './telegram-status.js';
@@ -711,6 +712,106 @@ describe('TelegramAdapter', () => {
           text: 'This request has expired',
         }),
       );
+    });
+  });
+
+  describe('images', () => {
+    const photo = (fileId: string) => [
+      {
+        file_id: `${fileId}-small`,
+        file_unique_id: 's',
+        width: 90,
+        height: 60,
+      },
+      { file_id: fileId, file_unique_id: 'l', width: 1280, height: 853 },
+    ];
+
+    it('saves a photo and shows it to the turn with its caption', async () => {
+      await start();
+      api.files.set('receipt', new Uint8Array([0xff, 0xd8, 0xff]));
+
+      api.push(
+        message(DIRECT, {
+          text: undefined,
+          photo: photo('receipt'),
+          caption: 'How much was it?',
+        }),
+      );
+
+      await sentCount(2);
+      const [request] = runtime.requests;
+      const [path] = request!.images!;
+      expect(path).toMatch(
+        new RegExp(`^${join(ws.stateFolder, 'attachments')}/\\d+/.+\\.jpg$`),
+      );
+      expect([...readFileSync(path!)]).toEqual([0xff, 0xd8, 0xff]);
+      expect(request!.input).toBe(
+        `[Image attached, saved at ${path}]\nHow much was it?`,
+      );
+      expect(api.callsOf('download')[0]!.token).toBe(TOKEN);
+    });
+
+    it('answers an album once, with all its photos', async () => {
+      await start();
+      api.files.set('left', new Uint8Array([1]));
+      api.files.set('right', new Uint8Array([2]));
+
+      for (const [fileId, caption] of [
+        ['left', 'Which is better?'],
+        ['right', undefined],
+      ] as const) {
+        api.push(
+          message(DIRECT, {
+            text: undefined,
+            photo: photo(fileId),
+            media_group_id: 'album-1',
+            ...(caption === undefined ? {} : { caption }),
+          }),
+        );
+      }
+
+      // The album waits for more parts first.
+      await vi.waitFor(() => expect(api.sent()).toHaveLength(2), {
+        timeout: MEDIA_GROUP_WAIT_MS + 2_000,
+      });
+      expect(runtime.requests).toHaveLength(1);
+      const { images, input } = runtime.requests[0]!;
+      expect(images!.map((path) => [...readFileSync(path)])).toEqual([
+        [1],
+        [2],
+      ]);
+      expect(input).toBe(
+        `[Image attached, saved at ${images![0]}]\n` +
+          `[Image attached, saved at ${images![1]}]\n` +
+          'Which is better?',
+      );
+    });
+
+    it('says when Telegram has no file for a photo, and runs no turn', async () => {
+      await start();
+
+      api.push(message(DIRECT, { text: undefined, photo: photo('gone') }));
+
+      const [, notice] = await sentCount(2);
+      expect(notice?.text).toBe(
+        "Pero couldn't get the image you sent (Bad Request: invalid " +
+          'file_id). Send it again.',
+      );
+      expect(runtime.requests).toEqual([]);
+    });
+
+    it('fails a download without naming the token', async () => {
+      await start();
+      await connected();
+      api.files.set('photo', new Uint8Array([1]));
+      api.rejectToken(TOKEN);
+
+      const failure = await get(TelegramAdapter)
+        .download('photo')
+        .catch((error: unknown) => error as Error);
+
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).not.toContain(TOKEN);
     });
   });
 

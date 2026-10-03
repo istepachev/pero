@@ -23,6 +23,7 @@ Pero is configured by files in its workspace. Its personality, its instructions,
 │   ├── .gitignore                   # written by Pero: ignores everything else in .pero/
 │   ├── pero.sqlite                  # state: Sessions, history, runs, Notifications
 │   ├── guide.md                     # written by Pero on each start: how Pero changes these settings
+│   ├── attachments/                 # images sent in chats, a folder per Channel
 │   ├── logs/
 │   └── run/
 ├── data/                            # the data folder, such as an Obsidian vault
@@ -48,6 +49,7 @@ Pero is configured by files in its workspace. Its personality, its instructions,
 | `.env` | The Telegram bot token | Never | Never |
 | `.pero/config.yaml` | Where the data folder is, which chats are allowed | Yes | Yes |
 | `.pero/pero.sqlite` | Sessions, message history, runs, Notifications, schedule state | No | Yes |
+| `.pero/attachments/` | Images people sent in chats | No | No |
 | `data/System/` | Defaults, personality, instructions, Channel notes, Workflows | Yes | With `--include-data` |
 | `data/` (the rest) | Your notes and Pero's work | Your choice | With `--include-data` |
 
@@ -146,7 +148,7 @@ max-concurrent-runs: 2
 | `permissions` | `ask`, `bypass` | `ask` | How tools are approved ([user guide](./USER_GUIDE.md#with-claude)) |
 | `timezone` | IANA zone | the host's | Time zone for schedules and transcripts |
 | `history-carryover` | 0 or more | 50 | Messages a fresh Session starts with, none from before a `/new`; 0 turns it off |
-| `history-retention-days` | whole days, or empty | empty: keep everything | Delete message history older than this |
+| `history-retention-days` | whole days, or empty | empty: keep everything | Delete message history, and the images sent in chats, older than this |
 | `max-concurrent-runs` | 1–10 | 2 | Workflow runs at once |
 
 A missing `Pero.md` means all defaults, as does a broken one that hasn't loaded since Pero started (see [Broken notes](#broken-notes)).

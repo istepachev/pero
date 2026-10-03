@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -240,6 +240,7 @@ describe('ChannelRouter', () => {
         }),
         message,
         expect.any(Number),
+        [],
       );
       expect(turns.handle).toHaveBeenNthCalledWith(
         2,
@@ -249,6 +250,7 @@ describe('ChannelRouter', () => {
         }),
         expect.anything(),
         expect.any(Number),
+        [],
       );
       expect(onboarding.onUnknownChannel).not.toHaveBeenCalled();
       expect(adapter.sent).toEqual([]);
@@ -280,6 +282,7 @@ describe('ChannelRouter', () => {
         }),
         message,
         expect.any(Number),
+        [],
       );
     });
 
@@ -383,7 +386,94 @@ describe('ChannelRouter', () => {
         expect.anything(),
         message,
         recorded[0]!.id,
+        [],
       );
+    });
+
+    it('saves the images a message came with and names them in its text', async () => {
+      const topic = await channel(`${GROUP.key}:7`, 'groceries');
+      adapter.files.set('photo-1', new Uint8Array([1, 2, 3]));
+      adapter.files.set('photo-2', new Uint8Array([4, 5]));
+      const message = inboundMessage(GROUP, {
+        topic: '7',
+        text: 'Which is cheaper?',
+        images: [
+          { ref: 'photo-1', type: 'image/jpeg', size: 3 },
+          { ref: 'photo-2', type: 'image/png', size: null },
+        ],
+      });
+
+      await adapter.deliver(message);
+
+      const folder = join(ws.stateFolder, 'attachments', String(topic.id));
+      const [, , , images] = turns.handle.mock.calls[0] as unknown as [
+        unknown,
+        unknown,
+        unknown,
+        string[],
+      ];
+      expect(images).toEqual([
+        expect.stringMatching(
+          new RegExp(`^${folder}/\\d{8}-\\d{6}-${message.messageId}-1\\.jpg$`),
+        ),
+        expect.stringMatching(new RegExp(`-${message.messageId}-2\\.png$`)),
+      ]);
+      expect([...readFileSync(images[0]!)]).toEqual([1, 2, 3]);
+      expect([...readFileSync(images[1]!)]).toEqual([4, 5]);
+      expect(statSync(images[0]!).mode & 0o777).toBe(0o600);
+      const text =
+        `[Image attached, saved at ${images[0]}]\n` +
+        `[Image attached, saved at ${images[1]}]\n` +
+        'Which is cheaper?';
+      const recorded = await ds.getRepository(Message).find();
+      expect(recorded).toEqual([expect.objectContaining({ text })]);
+      expect(turns.handle).toHaveBeenCalledWith(
+        expect.anything(),
+        { ...message, content: { ...message.content, text } },
+        recorded[0]!.id,
+        images,
+      );
+    });
+
+    it('records an image sent without text by where it is saved', async () => {
+      await channel(GROUP.key, 'default');
+      adapter.files.set('photo', new Uint8Array([1]));
+
+      await adapter.deliver(
+        inboundMessage(GROUP, {
+          text: '',
+          images: [{ ref: 'photo', type: 'image/jpeg', size: 1 }],
+        }),
+      );
+
+      const [recorded] = await ds.getRepository(Message).find();
+      expect(recorded!.text).toMatch(/^\[Image attached, saved at \S+\.jpg\]$/);
+    });
+
+    it('says when an image could not be fetched, and runs no turn', async () => {
+      await channel(GROUP.key, 'default');
+      const message = inboundMessage(GROUP, {
+        text: 'What is this?',
+        images: [{ ref: 'gone', type: 'image/jpeg', size: 1 }],
+      });
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await adapter.deliver(message);
+      await adapter.deliver(message);
+
+      expect(turns.handle).not.toHaveBeenCalled();
+      expect(adapter.sent.map((sent) => sent.message.text)).toEqual([
+        "Pero couldn't get the image you sent (No file gone). Send it again.",
+      ]);
+      const recorded = await ds.getRepository(Message).find();
+      expect(recorded).toEqual([
+        expect.objectContaining({ origin: 'pero', direction: 'out' }),
+      ]);
+      expect(
+        await ds.getRepository(InboundUpdate).findOneByOrFail({
+          externalUpdateId: message.updateId,
+        }),
+      ).toMatchObject({ status: 'processed' });
     });
 
     it('forwards its events to onboarding, each once', async () => {

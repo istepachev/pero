@@ -14,12 +14,14 @@ import {
   type ChannelAddress,
   type ChannelEvent,
   type ChannelHandlers,
+  type InboundMessage,
   MAX_BUTTON_ID_BYTES,
   type OutboundMessage,
   type SentMessage,
 } from '../channels/channel-adapter.js';
 import { ChannelRouter } from '../channels/channel-router.js';
 import { COMMANDS } from '../channels/commands/command-list.js';
+import { MediaGroups } from './media-groups.js';
 import { splitText } from './split-text.js';
 import {
   TELEGRAM_OPTIONS,
@@ -73,6 +75,9 @@ const LOOKUP_TIMEOUT_MS = 3_000;
 /** How long stopping may wait for Telegram to confirm the last update. */
 const STOP_TIMEOUT_MS = 5_000;
 
+/** How long downloading an image a message came with may take. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 interface Connection {
   bot: Bot;
   /** Ends the connection's attempts to start and its waits between them. */
@@ -96,6 +101,8 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
   private unsubscribe: (() => void) | null = null;
   /** Connects and disconnects one at a time, in order. */
   private switching: Promise<void> = Promise.resolve();
+  /** Albums waiting for the rest of their parts. */
+  private readonly albums = new MediaGroups((message) => this.handOn(message));
 
   constructor(
     @Inject(TELEGRAM_OPTIONS) options: TelegramOptions,
@@ -123,6 +130,8 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
   }
 
   async stop(): Promise<void> {
+    // An album that arrived in full is answered like any message before.
+    await this.albums.flushAll();
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.handlers = null;
@@ -172,6 +181,31 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
 
   chatKey(address: ChannelAddress): string {
     return parseAddress(address).chatId;
+  }
+
+  /** Downloads a file a message came with; `ref` is its Telegram file ID. */
+  async download(ref: string): Promise<Uint8Array> {
+    const bot = this.connection?.bot;
+    if (!bot) throw new Error('Telegram bot token is not set');
+    try {
+      const file = await bot.api.getFile(ref);
+      if (file.file_path === undefined) {
+        throw new Error('Telegram has no file to download');
+      }
+      const response = await fetch(
+        `${this.apiRoot}/file/bot${bot.token}/${file.file_path}`,
+        { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) },
+      );
+      if (!response.ok) {
+        throw new Error(`Telegram answered ${response.status}`);
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      // Never with the bot token, which the file's URL holds.
+      throw new Error(
+        error instanceof GrammyError ? error.description : this.describe(error),
+      );
+    }
   }
 
   async edit(
@@ -426,11 +460,25 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       return;
     }
     if (!('type' in inbound)) {
-      await handlers.onMessage(inbound);
+      const album = update.message?.media_group_id;
+      if (album === undefined) await handlers.onMessage(inbound);
+      else this.albums.add(album, inbound);
       return;
     }
     await handlers.onEvent(inbound);
     await this.follow(bot, inbound, me);
+  }
+
+  /** Hands a joined album to the router, if intake hasn't ended. */
+  private async handOn(message: InboundMessage): Promise<void> {
+    try {
+      await this.handlers?.onMessage(message);
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle Telegram update ${message.updateId}: ` +
+          this.describe(error),
+      );
+    }
   }
 
   /**

@@ -1,3 +1,6 @@
+import type { Dirent } from 'node:fs';
+import { readdir, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   type BeforeApplicationShutdown,
   Injectable,
@@ -9,7 +12,9 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { Message } from '../persistence/entities/message.entity.js';
 import { inTransaction } from '../persistence/transaction.js';
+import { workspaceLayout } from '../config/workspace-layout.js';
 import { Definitions } from '../system/definitions.js';
+import { SystemNotes } from '../system/system-notes.service.js';
 
 /** How often older messages are looked for. */
 export const RETENTION_TICK_MS = 60 * 60_000;
@@ -21,9 +26,10 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * Deletes the messages the `history-retention-days` setting no longer
- * keeps: once at startup and every hour, so a changed setting applies
- * within the hour. Unset, it keeps all of them. Only message history is
- * deleted; runs and Notifications keep their text.
+ * keeps, and the images people sent with them: once at startup and every
+ * hour, so a changed setting applies within the hour. Unset, it keeps all
+ * of them. Only message history is deleted; runs and Notifications keep
+ * their text.
  */
 @Injectable()
 export class HistoryRetention
@@ -37,6 +43,7 @@ export class HistoryRetention
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly definitions: Definitions,
+    private readonly notes: SystemNotes,
   ) {}
 
   /** Not awaited, so a long first pass does not hold up readiness. */
@@ -85,6 +92,40 @@ export class HistoryRetention
       this.logger.log(
         `Deleted ${deleted} ${deleted === 1 ? 'message' : 'messages'} older than ${days} ${days === 1 ? 'day' : 'days'}`,
       );
+    }
+    const images = this.stopping ? 0 : await this.pruneImages(cutoff);
+    if (images > 0) {
+      this.logger.log(
+        `Deleted ${images} saved ${images === 1 ? 'image' : 'images'} older than ${days} ${days === 1 ? 'day' : 'days'}`,
+      );
+    }
+    return deleted;
+  }
+
+  /**
+   * Deletes the images people sent, saved under `.pero/attachments/`,
+   * that were saved before `cutoff`, and resolves to how many.
+   */
+  private async pruneImages(cutoff: Date): Promise<number> {
+    const root = workspaceLayout(this.notes.folders().workspace).attachments;
+    let folders: Dirent[];
+    try {
+      folders = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+      throw error;
+    }
+    let deleted = 0;
+    for (const folder of folders) {
+      if (!folder.isDirectory()) continue;
+      const dir = join(root, folder.name);
+      for (const name of await readdir(dir)) {
+        const path = join(dir, name);
+        if ((await stat(path)).mtime < cutoff) {
+          await rm(path, { force: true });
+          deleted++;
+        }
+      }
     }
     return deleted;
   }

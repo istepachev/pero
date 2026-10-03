@@ -1,3 +1,4 @@
+import { readFile, stat } from 'node:fs/promises';
 import { Logger } from '@nestjs/common';
 import {
   type CanUseTool,
@@ -6,7 +7,9 @@ import {
   type PermissionResult,
   query as sdkQuery,
   type SDKMessage,
+  type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { imageTypeOf } from '../../common/images.js';
 import { CLAUDE_EFFORTS } from '../../config/provider-options.js';
 import {
   type AgentRuntime,
@@ -23,7 +26,7 @@ import { editDecision } from './edit-policy.js';
 
 /** Starts a Claude Code turn; the SDK's `query`, or a fake in tests. */
 export type ClaudeQuery = (params: {
-  prompt: string;
+  prompt: string | AsyncIterable<SDKUserMessage>;
   options: Options;
 }) => AsyncIterable<SDKMessage>;
 
@@ -35,6 +38,13 @@ const API_BILLING_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
 /** How much of Claude Code's own output a failure may quote. */
 const STDERR_LINES = 20;
+
+/**
+ * The largest image Claude is shown with the input. Sent as base64, it
+ * grows by a third, which keeps it within the API's 5 MB; a larger one is
+ * left for Claude to read from where the input says it is saved.
+ */
+export const MAX_INLINE_IMAGE_BYTES = 3_750_000;
 
 /** How much of a tool's input an approval request shows. */
 const MAX_SUMMARY_INPUT = 200;
@@ -92,7 +102,7 @@ export class ClaudeRuntime implements AgentRuntime {
     const state = newTurnState();
     try {
       const messages = this.query({
-        prompt: request.input,
+        prompt: await claudePrompt(request),
         options: this.options(request, abort, (data) => {
           stderr.push(...data.split('\n'));
           stderr.splice(0, Math.max(0, stderr.length - STDERR_LINES));
@@ -157,6 +167,38 @@ export class ClaudeRuntime implements AgentRuntime {
       stderr,
     };
   }
+}
+
+/**
+ * The turn's prompt: its input, after the images sent with it when there
+ * are any Claude can be shown.
+ */
+async function claudePrompt(
+  request: RuntimeRequest,
+): Promise<string | AsyncIterable<SDKUserMessage>> {
+  const blocks: Exclude<SDKUserMessage['message']['content'], string> = [];
+  for (const path of request.images ?? []) {
+    const type = imageTypeOf(path);
+    if (type === null) continue;
+    if ((await stat(path)).size > MAX_INLINE_IMAGE_BYTES) continue;
+    const data = (await readFile(path)).toString('base64');
+    blocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: type, data },
+    });
+  }
+  if (blocks.length === 0) return request.input;
+  const message: SDKUserMessage = {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [...blocks, { type: 'text', text: request.input }],
+    },
+    parent_tool_use_id: null,
+  };
+  return (async function* () {
+    yield message;
+  })();
 }
 
 /** `effort`, which the Agent service has checked against Claude's levels. */

@@ -60,6 +60,8 @@ export class FakeBotApi {
   readonly migrated = new Map<string, number>();
   /** What `getChat` answers, by chat ID; any other chat is not found. */
   readonly chats = new Map<string, Chat>();
+  /** Files the bot can download, by file ID; any other ID is invalid. */
+  readonly files = new Map<string, Uint8Array>();
 
   private server: Server | null = null;
   private readonly updates: Update[] = [];
@@ -140,6 +142,8 @@ export class FakeBotApi {
       req.socket.destroy();
       return;
     }
+    const download = /^\/file\/bot([^/]+)\/files\/([^/]+)$/.exec(req.url ?? '');
+    if (download) return this.download(res, download[1]!, download[2]!);
     const match = /^\/bot([^/]+)\/(\w+)$/.exec(req.url ?? '');
     if (!match) return this.reply(res, 404, { ok: false, error_code: 404 });
     const [, token, method] = match as unknown as [string, string, string];
@@ -167,6 +171,8 @@ export class FakeBotApi {
         });
       case 'getChat':
         return this.getChat(res, payload);
+      case 'getFile':
+        return this.getFile(res, payload);
       case 'sendMessage':
         return this.sendMessage(res, payload);
       case 'editMessageText':
@@ -204,6 +210,40 @@ export class FakeBotApi {
       accent_color_id: 0,
       max_reaction_count: 11,
     });
+  }
+
+  private getFile(res: ServerResponse, payload: Record<string, unknown>) {
+    const fileId = String(payload.file_id);
+    const file = this.files.get(fileId);
+    if (file === undefined) {
+      return this.fail(res, {
+        error_code: 400,
+        description: 'Bad Request: invalid file_id',
+      });
+    }
+    return this.ok(res, {
+      file_id: fileId,
+      file_unique_id: `unique-${fileId}`,
+      file_size: file.length,
+      file_path: `files/${fileId}`,
+    });
+  }
+
+  /** Serves a file `getFile` named, to the token that asked for it. */
+  private download(res: ServerResponse, token: string, fileId: string) {
+    const file = this.files.get(fileId);
+    this.calls.push({
+      token,
+      method: 'download',
+      payload: { file_id: fileId },
+    });
+    if (file === undefined || this.rejected.has(token)) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/octet-stream' });
+    res.end(file);
   }
 
   private sendMessage(res: ServerResponse, payload: Record<string, unknown>) {

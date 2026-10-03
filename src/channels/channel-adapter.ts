@@ -1,3 +1,4 @@
+import type { ImageType } from '../common/images.js';
 import type { ChatKind, IntegrationKind } from '../persistence/entities/sql.js';
 
 /*
@@ -47,6 +48,15 @@ export interface InboundCommand {
   args: string;
 }
 
+/** An image sent with a message, which its adapter fetches on request. */
+export interface InboundImage {
+  /** What the adapter's `download` takes; opaque to the rest of Pero. */
+  ref: string;
+  type: ImageType;
+  /** Its size in bytes; null when the integration doesn't say. */
+  size: number | null;
+}
+
 /** A message normalized by its adapter. */
 export interface InboundMessage {
   integrationKind: IntegrationKind;
@@ -57,10 +67,15 @@ export interface InboundMessage {
   messageId: string;
   senderId: string;
   /**
-   * The text, and the command it starts with, if any. A command Pero does
-   * not know is answered as text.
+   * The text, the command it starts with, if any, and the images sent with
+   * it, in order. A command Pero does not know is answered as text. A
+   * message with images may have no text.
    */
-  content: { text: string; command?: InboundCommand };
+  content: {
+    text: string;
+    command?: InboundCommand;
+    images?: readonly InboundImage[];
+  };
 }
 
 interface ChannelEventBase {
@@ -155,6 +170,8 @@ export interface ChannelAdapter {
    * it, so the allowlist can be checked before sending unprompted.
    */
   chatKey(address: ChannelAddress): string;
+  /** The contents of an image a message came with, by its `ref`. */
+  download(ref: string): Promise<Uint8Array>;
   /**
    * Replaces a sent message's text and buttons; a message without buttons
    * removes them. The text must fit in one message.

@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { Logger } from '@nestjs/common';
@@ -7,6 +13,7 @@ import {
   type CanUseTool,
   type Options,
   type SDKMessage,
+  type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -17,6 +24,7 @@ import {
 import {
   ClaudeRuntime,
   type ClaudeQuery,
+  MAX_INLINE_IMAGE_BYTES,
   NO_APPROVER,
   NO_SYSTEM_APPROVER,
   summarize,
@@ -50,7 +58,7 @@ function fakeQuery(
     yield success('Hi');
   },
 ) {
-  const calls: { prompt: string; options: Options }[] = [];
+  const calls: Parameters<ClaudeQuery>[0][] = [];
   const query: ClaudeQuery = (params) => {
     calls.push(params);
     return script(params.options);
@@ -107,6 +115,98 @@ describe('ClaudeRuntime', () => {
       { type: 'result', text: 'Hi' },
     ]);
     expect(calls[0]!.prompt).toBe('Hello');
+  });
+
+  describe('images sent with the input', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'pero-claude-images-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    async function prompt(images: string[]): Promise<SDKUserMessage[]> {
+      const { query, calls } = fakeQuery();
+      await collect(
+        new ClaudeRuntime(query, ENV).execute(
+          request({ input: '[Image attached]\nWhat is it?', images }),
+        ),
+      );
+      const sent = calls[0]!.prompt;
+      if (typeof sent === 'string') throw new Error(`prompt is ${sent}`);
+      const messages: SDKUserMessage[] = [];
+      for await (const message of sent) messages.push(message);
+      return messages;
+    }
+
+    it('shows Claude each image before the input', async () => {
+      const photo = join(dir, 'photo.jpg');
+      const chart = join(dir, 'chart.png');
+      writeFileSync(photo, 'jpeg bytes');
+      writeFileSync(chart, 'png bytes');
+
+      expect(await prompt([photo, chart])).toEqual([
+        {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: Buffer.from('jpeg bytes').toString('base64'),
+                },
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/png',
+                  data: Buffer.from('png bytes').toString('base64'),
+                },
+              },
+              { type: 'text', text: '[Image attached]\nWhat is it?' },
+            ],
+          },
+          parent_tool_use_id: null,
+        },
+      ]);
+    });
+
+    it('leaves an image too large to show for Claude to read', async () => {
+      const small = join(dir, 'small.webp');
+      const large = join(dir, 'large.jpg');
+      writeFileSync(small, 'webp bytes');
+      writeFileSync(large, Buffer.alloc(MAX_INLINE_IMAGE_BYTES + 1));
+
+      const [message] = await prompt([large, small]);
+
+      expect(message!.message.content).toEqual([
+        expect.objectContaining({
+          source: expect.objectContaining({ media_type: 'image/webp' }),
+        }),
+        { type: 'text', text: '[Image attached]\nWhat is it?' },
+      ]);
+    });
+
+    it('sends the input alone when no image can be shown', async () => {
+      const large = join(dir, 'large.gif');
+      writeFileSync(large, Buffer.alloc(MAX_INLINE_IMAGE_BYTES + 1));
+      const { query, calls } = fakeQuery();
+
+      await collect(
+        new ClaudeRuntime(query, ENV).execute(
+          request({ input: 'Look', images: [large] }),
+        ),
+      );
+
+      expect(calls[0]!.prompt).toBe('Look');
+    });
   });
 
   it('works in the folder like Claude Code, leaving out unset options', async () => {
