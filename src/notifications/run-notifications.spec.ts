@@ -29,6 +29,26 @@ describe('notificationText', () => {
     ).toBe('Run 7 of Workflow english completed without an answer');
   });
 
+  it('posts nothing for a run that answered just NO_REPLY', () => {
+    expect(
+      notificationText(run({ result: { text: 'NO_REPLY' } }), english, false),
+    ).toBeNull();
+    expect(
+      notificationText(
+        run({ result: { text: '\n NO_REPLY \n' } }),
+        english,
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      notificationText(
+        run({ result: { text: 'NO_REPLY: breakfast is logged' } }),
+        english,
+        false,
+      ),
+    ).toBe('Evening English\n\nNO_REPLY: breakfast is logged');
+  });
+
   it('posts why a run failed, or was interrupted and not retried', () => {
     expect(
       notificationText(

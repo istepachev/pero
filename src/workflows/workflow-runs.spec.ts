@@ -914,6 +914,21 @@ describe('Workflow Runs and the executor', () => {
       expect(await ds.getRepository(Notification).count()).toBe(0);
     });
 
+    it('posts nothing for a run that answered just NO_REPLY', async () => {
+      await manualWorkflow('breakfast');
+      await target('breakfast');
+      claude.answerNext('NO_REPLY');
+
+      const { id } = await runs.start('breakfast');
+      await executor.idle();
+
+      expect(await run(id)).toMatchObject({
+        status: 'completed',
+        result: 'NO_REPLY',
+      });
+      expect(await notificationsOf(id)).toEqual([]);
+    });
+
     it('reads the Channels to notify when the run finishes', async () => {
       await manualWorkflow('brief');
       const held = claude.hold();

@@ -230,7 +230,17 @@ Suggest better English for: {{history}}
 
 ### Notifications
 
-Each Channel a Workflow's `channel` names gets a Notification of each run that finishes, holding the run's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one. `channel` names a topic by its Channel note's name, such as `Health`, which keeps working when the topic is renamed; `General` for a group's General topic, `<chat title>/General` when several groups have one; or a Channel ID from `pero channels` for a direct chat. The Channel must be one Pero has seen in an allowed chat: until then the note has an error, which `pero status` and `pero check` report.
+Each Channel a Workflow's `channel` names gets a Notification of each run that finishes, holding the run's answer under the Workflow's title, or why the run failed; an interrupted run that is retried leaves none, and its retry does. Cancelled runs and runs skipped for an empty history window notify no one, and so does a run whose whole answer is `NO_REPLY`. That lets a check stay quiet when all is well:
+
+```markdown
+---
+hour: 11
+channel: Health
+---
+Read today's note in Journal/. If it has no breakfast entry, remind me to log breakfast. If breakfast is already logged, answer exactly NO_REPLY and nothing else.
+```
+
+The run still completes, with `NO_REPLY` as its answer in `pero runs`; a run that fails still notifies. `channel` names a topic by its Channel note's name, such as `Health`, which keeps working when the topic is renamed; `General` for a group's General topic, `<chat title>/General` when several groups have one; or a Channel ID from `pero channels` for a direct chat. The Channel must be one Pero has seen in an allowed chat: until then the note has an error, which `pero status` and `pero check` report.
 
 Notifications are recorded together with the run's final status and delivered to the Channel within seconds. While Telegram can't be reached, delivery retries with a growing wait for about a day before the Notification is marked failed. A Notification to a chat that is no longer allowed fails at once. A delivered Notification joins the Channel's history as a `workflow` message, and the next message you send there reaches Pero with it, so you can reply to it: ask about a suggestion right where it was posted.
 

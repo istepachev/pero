@@ -10,11 +10,18 @@ export const notificationPayloadSchema = z.object({ text: z.string().min(1) });
 export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;
 
 /**
+ * The whole answer of a run that has nothing to report, such as a check
+ * that found everything in order: it completes and notifies no one.
+ */
+export const SILENT_ANSWER = 'NO_REPLY';
+
+/**
  * What a finished run tells the Channels its Workflow notifies: the
  * answer, headed by the Workflow's title, or why the run
  * failed. Null for a run that tells them nothing: one the owner cancelled,
- * one skipped for an empty history window, and an interrupted one that is
- * retried, whose retry tells them instead.
+ * one skipped for an empty history window, one that answered just
+ * `NO_REPLY`, and an interrupted one that is retried, whose retry tells
+ * them instead.
  */
 export function notificationText(
   run: Pick<WorkflowRun, 'id' | 'status' | 'result' | 'errorText'>,
@@ -29,6 +36,7 @@ export function notificationText(
       if (typeof text !== 'string' || text.trim() === '') {
         return `${label} completed without an answer`;
       }
+      if (text.trim() === SILENT_ANSWER) return null;
       return `${workflow.title}\n\n${text}`;
     }
     case 'failed':

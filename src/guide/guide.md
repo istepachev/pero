@@ -56,7 +56,7 @@ Never edit `.env` or anything in `.pero/`, and never add allowed chats: only the
 Agree on these before writing `Workflows/<Title>.md`:
 
 - **Title:** the file name. Short, as it'll show in `pero workflows`, such as `Evening review`.
-- **What each run does:** the note's body, sent as the run's input. It can't be empty. Write it as a complete request to someone who sees nothing else: name the files to read and write, and the shape of the answer. The answer is what gets posted.
+- **What each run does:** the note's body, sent as the run's input. It can't be empty. Write it as a complete request to someone who sees nothing else: name the files to read and write, and the shape of the answer. The answer is what gets posted. A run that should sometimes post nothing, such as a check that finds all in order, must say when to answer exactly `NO_REPLY`: that answer notifies no one.
 - **When:** days, hours, and minute, or `cron`, and the time zone if it differs from `Pero.md`'s `timezone`. Without any, it runs only by hand.
 - **Where the answer goes:** `channel`, a Channel note's name or a list of them. Its first Channel also gives the run its settings and instructions. Without it, the run's answer is only kept in `pero runs`, and it runs with `Default.md`'s.
 - **Chat history,** only if it should review conversations: `history: true`, and `{{history}}` in the body where the transcript goes.
