@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   mkdtempSync,
   readdirSync,
@@ -185,6 +187,41 @@ describe('Telegram chats and pairing (e2e)', () => {
     ]);
     expect(await db().getRepository(Channel).count()).toBe(1);
     expect(channelNotes()).toEqual(['Default.md']);
+  });
+
+  it('creates topics through the control endpoint and the real CLI', async () => {
+    api.chats.set(String(FORUM.id), FORUM);
+    await start();
+    await client.call('telegram.allow', { chatId: String(FORUM.id) });
+    const topic = await client.call('telegram.topic', {
+      chatId: String(FORUM.id),
+      name: 'Projects',
+    });
+    expect(topic.title).toBe('Projects');
+    expect(channelNotes()).toContain('Projects.md');
+    const { stdout } = await promisify(execFile)(process.execPath, [
+      join(import.meta.dirname, '../bin/pero.js'),
+      'telegram',
+      'topic',
+      String(FORUM.id),
+      'Задачи и планы',
+      '--workspace',
+      workspace,
+    ]);
+    expect(stdout).toContain('Created topic: Задачи и планы');
+    expect(channelNotes()).toContain('Задачи и планы.md');
+    expect(api.callsOf('createForumTopic')).toHaveLength(2);
+    await expect(
+      client.call('telegram.topic', { chatId: String(FORUM.id), name: ' ' }),
+    ).rejects.toThrow('name');
+    await client.call('telegram.deny', { chatId: String(FORUM.id) });
+    await expect(
+      client.call('telegram.topic', {
+        chatId: String(FORUM.id),
+        name: 'Denied',
+      }),
+    ).rejects.toThrow(NotFoundError);
+    expect(api.callsOf('createForumTopic')).toHaveLength(2);
   });
 
   it('allows a chat that sends its first message during interactive setup', async () => {

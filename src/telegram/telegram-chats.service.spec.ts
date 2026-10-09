@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
-import { NotFoundError } from '../common/errors.js';
+import { InvalidInputError, NotFoundError } from '../common/errors.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
 import { Session } from '../persistence/entities/session.entity.js';
@@ -92,6 +92,102 @@ describe('TelegramChats', () => {
   function chats(): TelegramChats {
     return moduleRef!.get(TelegramChats);
   }
+
+  it('creates a Russian topic and onboards its Channel and note immediately', async () => {
+    api.chats.set(String(FORUM.id), FORUM);
+    await start();
+    await chats().allow(String(FORUM.id));
+    const topic = await chats().createTopic(
+      String(FORUM.id),
+      '  Задачи и планы  ',
+    );
+    expect(topic).toMatchObject({ title: 'Задачи и планы' });
+    expect(topic.url).toBe(`https://t.me/c/1234567890/${topic.topicId}`);
+    expect(api.callsOf('createForumTopic')).toHaveLength(1);
+    expect(api.callsOf('createForumTopic')[0]?.payload).toEqual({
+      chat_id: String(FORUM.id),
+      name: 'Задачи и планы',
+    });
+    expect(
+      await db()
+        .getRepository(Channel)
+        .findOneBy({ externalKey: `${FORUM.id}:${topic.topicId}` }),
+    ).toMatchObject({ title: 'Задачи и планы' });
+    expect(channelNotes()).toContain('Задачи и планы.md');
+    // Telegram may also deliver the service message: it must not duplicate the Channel.
+    api.push({
+      message: {
+        message_id: Number(topic.topicId),
+        date: 0,
+        chat: FORUM,
+        from: OWNER,
+        message_thread_id: Number(topic.topicId),
+        forum_topic_created: { name: topic.title, icon_color: 7322096 },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(api.callsOf('getUpdates').length).toBeGreaterThan(1),
+    );
+    expect(await db().getRepository(Channel).count()).toBe(1);
+  });
+
+  it('refuses disallowed chats, direct chats and groups without topics', async () => {
+    await start();
+    await expect(
+      chats().createTopic(String(FORUM.id), 'Tasks'),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await chats().allow(String(DIRECT.id));
+    await expect(
+      chats().createTopic(String(DIRECT.id), 'Tasks'),
+    ).rejects.toThrow('forum group');
+    api.chats.set(String(FORUM.id), {
+      id: FORUM.id,
+      type: 'supergroup',
+      title: FORUM.title,
+    });
+    await chats().allow(String(FORUM.id));
+    await expect(
+      chats().createTopic(String(FORUM.id), 'Tasks'),
+    ).rejects.toThrow('Turn on Topics');
+    expect(api.callsOf('createForumTopic')).toHaveLength(0);
+  });
+
+  it('requires the bot to have Manage Topics permission', async () => {
+    api.chats.set(String(FORUM.id), FORUM);
+    await start();
+    await chats().allow(String(FORUM.id));
+    api.manageTopics.set(String(FORUM.id), false);
+    await expect(
+      chats().createTopic(String(FORUM.id), 'Tasks'),
+    ).rejects.toThrow('Manage Topics');
+    api.manageTopics.set(String(FORUM.id), true);
+    api.memberStatus.set(String(FORUM.id), 'member');
+    await expect(
+      chats().createTopic(String(FORUM.id), 'Tasks'),
+    ).rejects.toThrow('Manage Topics');
+    expect(api.callsOf('createForumTopic')).toHaveLength(0);
+  });
+
+  it('validates names before calling Telegram and does not retry creation failures', async () => {
+    api.chats.set(String(FORUM.id), FORUM);
+    await start();
+    await chats().allow(String(FORUM.id));
+    for (const name of ['', ' ', 'a'.repeat(129), 'two\nlines']) {
+      await expect(
+        chats().createTopic(String(FORUM.id), name),
+      ).rejects.toBeInstanceOf(InvalidInputError);
+    }
+    expect(api.callsOf('createForumTopic')).toHaveLength(0);
+    api.failNext('createForumTopic', {
+      error_code: 429,
+      description: 'Too Many Requests',
+      parameters: { retry_after: 1 },
+    });
+    await expect(
+      chats().createTopic(String(FORUM.id), 'Tasks'),
+    ).rejects.toThrow("Check the group's topics before retrying");
+    expect(api.callsOf('createForumTopic')).toHaveLength(1);
+  });
 
   function db(): DataSource {
     return moduleRef!.get<DataSource>(getDataSourceToken());

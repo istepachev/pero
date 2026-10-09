@@ -72,6 +72,11 @@ export class TelegramChats implements OnModuleInit {
     this.pairing.watch('telegram');
   }
 
+  /** Creates a topic in an already allowed group, without exposing the token. */
+  createTopic(chatId: string, name: string) {
+    return this.adapter.createTopic({ chatId }, name);
+  }
+
   /**
    * Allows chat `chatKey`, adding it to `config.yaml`. Its kind and name
    * come from its pairing request, otherwise from Telegram, otherwise from

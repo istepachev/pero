@@ -21,6 +21,7 @@ export const COMMANDS: readonly CommandInfo[] = [
     description: 'Start this topic over, without the conversation so far',
   },
   { name: 'stop', description: "Stop Pero's answer in this topic" },
+  { name: 'topic', description: 'Create a topic in this Telegram group' },
   { name: 'model', description: "Show or change this topic's model" },
   {
     name: 'effort',

@@ -65,7 +65,17 @@ A run starts a fresh conversation, apart from the chat. It can't ask the owner a
 
 ### Changing a Channel
 
-- **Topics:** each Telegram topic has its own note in `Channels/`, which Pero writes from `Channels/_Template.md`, or its own template, the first time someone writes there. `Default.md` is for the General topic of every group, groups without topics, and direct chats. So the usual way to add a Channel is for the owner to create a topic, then edit its note.
+To create a topic when the owner asks, create the actual Telegram topic before editing its note. Writing a Markdown note alone does not create a topic.
+
+- The owner can send `/topic <name>` in the group, including inside another topic. Pero creates the topic in that same group and returns a link.
+- Prefer proposing a name on a standalone line as `<topic>Name</topic>` in your answer. Pero shows Create topic and Cancel buttons; creation happens only after confirmation. This also works with Codex's sandbox. Do not say the topic exists before it is confirmed. Proposals expire after 15 minutes or a restart; ask again when a button has expired.
+- You can run `pero telegram topic <chat-id> "<name>"` from the workspace. Find the group's ID from the current note's `channel-id` (`telegram:<chat-id>:<topic-id>`), or `pero channels ls`. If the destination is ambiguous, ask; never invent a chat ID or add allowed chats.
+- Pass the name as one safely quoted argument; do not interpolate user text as shell code. Use this only when the owner asks to create a topic. With `permissions: ask`, a command may need approval; respect a denial and do not bypass it.
+- The group must already be allowed, Topics must be enabled, and the bot must be an administrator with **Manage Topics** permission. The name must be 1–128 characters.
+- Pero immediately creates and binds the new topic's note using its normal Channel template. Read that note before editing its instructions or settings, and preserve its `channel-id`.
+- If creation cannot be confirmed, check the group's topics before retrying: Telegram may have created it even if the connection failed.
+
+- **Topics:** each Telegram topic has its own note in `Channels/`, which Pero writes from `Channels/_Template.md`, or its own template, on creation through Pero or the first time someone writes there. `Default.md` is for the General topic of every group, groups without topics, and direct chats.
 - **Settings the owner may ask about:** `model`, `effort`, `provider`, `permissions`, `working-directory`, `enabled`.
 
 ## Properties

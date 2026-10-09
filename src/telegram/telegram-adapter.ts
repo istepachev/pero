@@ -7,6 +7,12 @@ import {
 import { Bot, GrammyError, HttpError, InputFile } from 'grammy';
 import type { InlineKeyboardMarkup, Update, UserFromGetMe } from 'grammy/types';
 import type { ChatKind } from '../persistence/entities/sql.js';
+import {
+  InvalidInputError,
+  NotFoundError,
+  parseInput,
+} from '../common/errors.js';
+import { topicNameSchema } from './topic-input.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import {
   type ButtonRows,
@@ -14,6 +20,7 @@ import {
   type ChannelAddress,
   type ChannelEvent,
   type ChannelHandlers,
+  type CreatedTopic,
   type InboundMessage,
   MAX_BUTTON_ID_BYTES,
   type OutboundMessage,
@@ -390,6 +397,111 @@ export class TelegramAdapter implements ChannelAdapter, OnApplicationBootstrap {
       );
       return null;
     }
+  }
+
+  /** Creates a topic once; a transport failure is not safe to retry. */
+  async createTopic(
+    address: ChannelAddress,
+    input: string,
+  ): Promise<CreatedTopic> {
+    const name = parseInput(topicNameSchema, input);
+    const { chatId } = parseAddress(address);
+    const allowed = await this.allowedChats.find('telegram', chatId);
+    if (allowed === null)
+      throw new NotFoundError(`Telegram chat ${chatId} is not allowed`);
+    if (allowed.kind !== 'group') {
+      throw new InvalidInputError(
+        'Topics can only be created in a Telegram forum group',
+      );
+    }
+    const bot = this.connection?.bot;
+    if (!bot?.isInited() || this.handlers === null) {
+      throw new InvalidInputError(
+        'Telegram is not connected; try again when the bot is ready',
+      );
+    }
+    let chat;
+    let member;
+    try {
+      chat = await bot.api.getChat(
+        chatId,
+        AbortSignal.timeout(LOOKUP_TIMEOUT_MS) as Parameters<
+          Bot['api']['getChat']
+        >[1],
+      );
+      member = await bot.api.getChatMember(
+        chatId,
+        bot.botInfo.id,
+        AbortSignal.timeout(LOOKUP_TIMEOUT_MS) as Parameters<
+          Bot['api']['getChatMember']
+        >[2],
+      );
+    } catch (error) {
+      throw new InvalidInputError(
+        `Could not check the group: ${this.describe(error)}`,
+      );
+    }
+    if (chat.type !== 'supergroup' || chat.is_forum !== true) {
+      throw new InvalidInputError(
+        'Turn on Topics in this Telegram group first',
+      );
+    }
+    if (
+      member.status !== 'administrator' ||
+      member.can_manage_topics !== true
+    ) {
+      throw new InvalidInputError(
+        'Give the bot administrator access with Manage Topics permission',
+      );
+    }
+    // Recheck after network calls: the owner may have denied the chat meanwhile.
+    if (!(await this.allowedChats.find('telegram', chatId))) {
+      throw new NotFoundError(`Telegram chat ${chatId} is not allowed`);
+    }
+    if (this.connection?.bot !== bot) {
+      throw new InvalidInputError('Telegram connection changed; try again');
+    }
+    let topic;
+    try {
+      topic = await bot.api.createForumTopic(
+        chatId,
+        name,
+        {},
+        AbortSignal.timeout(30_000) as Parameters<
+          Bot['api']['createForumTopic']
+        >[3],
+      );
+    } catch (error) {
+      const detail = this.describe(error);
+      throw new InvalidInputError(
+        `Could not confirm topic creation: ${detail}. Check the group's topics before retrying.`,
+      );
+    }
+    const topicId = String(topic.message_thread_id);
+    await this.handlers?.onEvent({
+      type: 'topic-created',
+      integrationKind: 'telegram',
+      updateId: `${bot.botInfo.id}:created-topic:${chatId}:${topicId}`,
+      chat: {
+        key: chatId,
+        kind: 'group',
+        title: chat.title,
+        address: { chatId },
+      },
+      channel: {
+        key: `${chatId}:${topicId}`,
+        title: topic.name,
+        address: { chatId, messageThreadId: topicId },
+        topicId,
+      },
+    });
+    return {
+      topicId,
+      title: topic.name,
+      url: /^-100\d+$/.test(chatId)
+        ? `https://t.me/c/${chatId.slice(4)}/${topicId}`
+        : null,
+    };
   }
 
   /** Replaces the connection with one for `token`, or none when null. */

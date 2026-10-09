@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentsModule } from '../agents/agents.module.js';
 import { AllowedChatsService } from '../channels/allowed-chats.service.js';
 import { ChannelsModule } from '../channels/channels.module.js';
+import { ChannelSender } from '../channels/channel-sender.js';
 import { COMMANDS } from '../channels/commands/command-list.js';
 import { ComponentHealth } from '../health/component-health.js';
 import { Channel } from '../persistence/entities/channel.entity.js';
@@ -392,6 +393,129 @@ describe('TelegramAdapter', () => {
   });
 
   describe('commands', () => {
+    it('creates a proposed topic only after a valid confirmation, once', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+      await start({ allow: [FORUM] });
+      await connected();
+      api.push(message(FORUM, { text: '/status' }));
+      await sentCount(2);
+      const sender = get(ChannelSender);
+      const address = { chatId: String(FORUM.id) };
+      const sent = await sender.sendAnswer(
+        'telegram',
+        address,
+        '<topic>Задачи и планы</topic>',
+      );
+      const prompt = api.sent().at(-1)!;
+      const markup = prompt.reply_markup as {
+        inline_keyboard: { callback_data: string }[][];
+      };
+      const action = markup.inline_keyboard[0]![0]!.callback_data;
+      const id = action.split(' ')[1]!;
+      expect(Buffer.byteLength(action)).toBeLessThanOrEqual(64);
+      expect(api.callsOf('createForumTopic')).toHaveLength(0);
+      await expect(
+        sender.confirmTopic('telegram', address, 'wrong-message', id, true),
+      ).rejects.toThrow('expired');
+      await expect(
+        sender.confirmTopic(
+          'telegram',
+          { ...address, messageThreadId: '99' },
+          sent.sent.messageId,
+          id,
+          true,
+        ),
+      ).rejects.toThrow('expired');
+      api.push({
+        callback_query: {
+          id: 'topic-confirm',
+          from: OWNER,
+          chat_instance: 'instance',
+          data: action,
+          message: {
+            message_id: Number(sent.sent.messageId),
+            date: 1,
+            chat: FORUM,
+            text: prompt.text,
+          },
+        },
+      } as never);
+      await vi.waitFor(() =>
+        expect(api.callsOf('createForumTopic')).toHaveLength(1),
+      );
+      await expect(
+        sender.confirmTopic('telegram', address, sent.sent.messageId, id, true),
+      ).rejects.toThrow('expired');
+      expect(api.callsOf('createForumTopic')).toHaveLength(1);
+    });
+
+    it('cancels or expires proposals without creating topics', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+      await start({ allow: [FORUM] });
+      await connected();
+      const sender = get(ChannelSender);
+      const address = { chatId: String(FORUM.id) };
+      async function propose() {
+        const answer = await sender.sendAnswer(
+          'telegram',
+          address,
+          '<topic>Tasks</topic>',
+        );
+        const prompt = api.sent().at(-1)!;
+        const markup = prompt.reply_markup as {
+          inline_keyboard: { callback_data: string }[][];
+        };
+        return {
+          messageId: answer.sent.messageId,
+          id: markup.inline_keyboard[0]![0]!.callback_data.split(' ')[1]!,
+        };
+      }
+      const cancelled = await propose();
+      expect(
+        await sender.confirmTopic(
+          'telegram',
+          address,
+          cancelled.messageId,
+          cancelled.id,
+          false,
+        ),
+      ).toBeNull();
+      const expired = await propose();
+      const clock = vi
+        .spyOn(Date, 'now')
+        .mockReturnValue(Date.now() + 16 * 60_000);
+      await expect(
+        sender.confirmTopic(
+          'telegram',
+          address,
+          expired.messageId,
+          expired.id,
+          true,
+        ),
+      ).rejects.toThrow('expired');
+      clock.mockRestore();
+      expect(api.callsOf('createForumTopic')).toHaveLength(0);
+    });
+    it('creates a topic with /topic without using an agent turn', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+      await start({ allow: [FORUM] });
+      await connected();
+      api.push(
+        message(FORUM, {
+          text: '/topic Планы',
+          entities: [{ type: 'bot_command', offset: 0, length: 6 }],
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(
+          api
+            .sent()
+            .some((m) => String(m.text).startsWith('Created topic: Планы')),
+        ).toBe(true),
+      );
+      expect(api.callsOf('createForumTopic')).toHaveLength(1);
+      expect(runtime.requests).toHaveLength(0);
+    });
     it('answers a command itself, and one for another bot not at all, without a turn', async () => {
       await start({ allow: [FORUM] });
       await connected();

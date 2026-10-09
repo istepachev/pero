@@ -56,6 +56,8 @@ export class FakeBotApi {
   };
   /** The bot's status in each chat; `administrator` when not listed. */
   readonly memberStatus = new Map<string, string>();
+  /** Whether the bot has the topic management permission in each group. */
+  readonly manageTopics = new Map<string, boolean>();
   /** Chats that became supergroups: sending there names the new ID. */
   readonly migrated = new Map<string, number>();
   /** What `getChat` answers, by chat ID; any other chat is not found. */
@@ -168,6 +170,14 @@ export class FakeBotApi {
           status:
             this.memberStatus.get(String(payload.chat_id)) ?? 'administrator',
           user: this.me,
+          can_manage_topics:
+            this.manageTopics.get(String(payload.chat_id)) ?? true,
+        });
+      case 'createForumTopic':
+        return this.ok(res, {
+          message_thread_id: this.nextMessageId++,
+          name: payload.name,
+          icon_color: 7322096,
         });
       case 'getChat':
         return this.getChat(res, payload);
