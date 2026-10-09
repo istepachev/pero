@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { readEnvFile } from '../config/env-file.js';
 import type { SpeechConfig } from '../config/host-config.js';
 import { ELEVENLABS_KEY_ENV, ELEVENLABS_NO_KEY } from './elevenlabs-engine.js';
-import { localProblem } from './local-engine.js';
+import { localProblem, localPrograms } from './local-engine.js';
 import { piperVoicePath, whisperModelPath } from './speech-models.js';
 
 // Shared by the CLI and the daemon. Keep this free of Nest and TypeORM imports.
@@ -38,11 +38,13 @@ export function transcribeProblem(
       return 'transcription is turned off; pero speech configure turns it on';
     case 'elevenlabs':
       return keyProblem(key);
-    case 'local':
+    case 'local': {
+      const programs = localPrograms(speech.programs, workspace);
       return localProblem(
-        [speech.programs.ffmpeg, speech.programs.whisper],
+        [programs.ffmpeg, programs.whisper],
         [whisperModelPath(speech, workspace)],
       );
+    }
   }
 }
 
@@ -59,8 +61,9 @@ export function speakProblem(
       return keyProblem(key);
     case 'local': {
       const voice = piperVoicePath(speech, workspace);
+      const programs = localPrograms(speech.programs, workspace);
       return localProblem(
-        [speech.programs.piper, speech.programs.ffmpeg],
+        [programs.piper, programs.ffmpeg],
         [voice, `${voice}.json`],
       );
     }

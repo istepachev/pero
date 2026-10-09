@@ -6,7 +6,11 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream } from 'node:stream/web';
 import type { SpeechConfig } from '../config/host-config.js';
 import { workspaceLayout } from '../config/workspace-layout.js';
-import { INSTALL_HINTS, type LocalPrograms } from './local-engine.js';
+import {
+  INSTALL_HINTS,
+  type LocalPrograms,
+  localPrograms,
+} from './local-engine.js';
 import { findProgram } from './run-program.js';
 import {
   type ModelFile,
@@ -20,6 +24,8 @@ import {
 
 /** A program the `local` engine runs, and where it was found. */
 export interface ProgramCheck {
+  /** Its key in `speech.programs`. */
+  key: keyof LocalPrograms;
   /** As `config.yaml` names it. */
   program: string;
   /** Where it runs from; null when it isn't installed. */
@@ -51,9 +57,15 @@ export function speechSetupPlan(
     ...(transcribe ? (['ffmpeg', 'whisper'] as const) : []),
     ...(speak ? (['ffmpeg', 'piper'] as const) : []),
   ]);
+  const resolved = localPrograms(speech.programs, workspace);
   const programs = [...needed].map((key) => {
     const program = speech.programs[key];
-    return { program, path: findProgram(program), hint: INSTALL_HINTS[key] };
+    return {
+      key,
+      program,
+      path: findProgram(resolved[key]),
+      hint: INSTALL_HINTS[key],
+    };
   });
   const downloads: ModelFile[] = [];
   const missing: string[] = [];
