@@ -41,7 +41,7 @@ Pero keeps Claude Code or Codex running on your VPS or home machine and puts it 
 
 4. **Allow the group.** Write anything in it. While `pero run` waits for that message, the bot replies that you can confirm the chat in the terminal, and `pero run` offers to allow it. Otherwise the bot replies with the command that allows it: `pero telegram allow <chat-id>`. A group's chat ID is negative, such as `-1001234567890`; keep the minus sign. Once the chat is allowed, the bot posts your first steps there: where to give Pero its personality and instructions, how topics work, and where the defaults and Workflows live.
 
-5. **Create a topic and start chatting.** Each new topic gets a note of its own, named after the topic: Pero writes it in `data/System/Channels/`, and its text is that topic's own instructions. The General topic uses `Channels/Default.md`.
+5. **Create a topic and start chatting.** Send `/topic <name>` in the group, or ask Pero to create one for you; give the bot **Manage Topics** permission. Each new topic gets a note of its own, named after the topic: Pero writes it in `data/System/Channels/`, and its text is that topic's own instructions. The General topic uses `Channels/Default.md`.
 
 You can also message the bot directly and allow your user ID the same way. That chat uses `Default.md` too, in a conversation of its own, apart from the group's General topic. You can use both: `pero run` only offers to allow the first chat, so allow the other with `pero telegram allow <chat-id>`.
 

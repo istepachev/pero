@@ -44,6 +44,7 @@ import {
   TelegramCommand,
   TelegramDenyCommand,
   TelegramTokenCommand,
+  TelegramTopicCommand,
 } from './commands/telegram.command.js';
 import { UpgradeCommand } from './commands/upgrade.command.js';
 import {
@@ -95,6 +96,7 @@ import { StrictArguments } from './strict-arguments.js';
     TelegramAllowCommand,
     TelegramDenyCommand,
     TelegramTokenCommand,
+    TelegramTopicCommand,
     SpeechCommand,
     SpeechStatusCommand,
     SpeechConfigureCommand,

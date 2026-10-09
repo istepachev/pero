@@ -392,6 +392,26 @@ describe('TelegramAdapter', () => {
   });
 
   describe('commands', () => {
+    it('creates a topic with /topic without using an agent turn', async () => {
+      api.chats.set(String(FORUM.id), FORUM);
+      await start({ allow: [FORUM] });
+      await connected();
+      api.push(
+        message(FORUM, {
+          text: '/topic Планы',
+          entities: [{ type: 'bot_command', offset: 0, length: 6 }],
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(
+          api
+            .sent()
+            .some((m) => String(m.text).startsWith('Created topic: Планы')),
+        ).toBe(true),
+      );
+      expect(api.callsOf('createForumTopic')).toHaveLength(1);
+      expect(runtime.requests).toHaveLength(0);
+    });
     it('answers a command itself, and one for another bot not at all, without a turn', async () => {
       await start({ allow: [FORUM] });
       await connected();

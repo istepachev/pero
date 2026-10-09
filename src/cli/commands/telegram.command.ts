@@ -24,6 +24,26 @@ const CHAT_ID = {
 };
 
 @SubCommand({
+  name: 'topic',
+  arguments: '<chat-id> <name>',
+  description: 'Create a forum topic in an allowed Telegram group',
+  allowUnknownOptions: true,
+})
+export class TelegramTopicCommand extends PeroCommand {
+  async run([chatId, name]: string[]): Promise<void> {
+    // Topic onboarding can also deliver a welcome through Telegram.
+    const client = this.client({ timeoutMs: 240_000 });
+    await client.status();
+    const topic = await withChatId(() =>
+      client.call('telegram.topic', { chatId: chatId!, name: name! }),
+    );
+    console.log(
+      `Created topic: ${topic.title} (${topic.topicId})${topic.url === null ? '' : `\n${topic.url}`}`,
+    );
+  }
+}
+
+@SubCommand({
   name: 'chats',
   description: 'List allowed chats and chats that recently asked to pair',
   options: { isDefault: true },
@@ -134,6 +154,7 @@ export class TelegramTokenCommand extends PeroCommand {
     TelegramAllowCommand,
     TelegramDenyCommand,
     TelegramTokenCommand,
+    TelegramTopicCommand,
   ],
 })
 export class TelegramCommand extends CommandRunner {

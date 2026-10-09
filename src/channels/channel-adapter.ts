@@ -189,9 +189,18 @@ export interface SentMessage {
   messageId: string;
 }
 
+/** A newly created conversation topic within the addressed chat. */
+export interface CreatedTopic {
+  topicId: string;
+  title: string;
+  url: string | null;
+}
+
 /** One communication integration, such as Telegram. */
 export interface ChannelAdapter {
   readonly kind: IntegrationKind;
+  /** Creates and onboards a topic; absent on integrations without topics. */
+  createTopic?(address: ChannelAddress, name: string): Promise<CreatedTopic>;
   /** Begins intake; updates go to `handlers` from then on. */
   start(handlers: ChannelHandlers): Promise<void>;
   /** Ends intake. Sending may still work until the process exits. */

@@ -6,6 +6,7 @@ import {
 } from '../config/provider-options.js';
 import { telegramChatIdSchema } from '../config/host-config.js';
 import { telegramBotTokenSchema } from '../config/settings-input.js';
+import { topicNameSchema } from '../telegram/topic-input.js';
 import { PERMISSION_MODES } from '../config/tool-policy.js';
 import { VALUE_ORIGINS } from '../system-files/origins.js';
 import { workflowReferenceSchema } from '../config/workflow-input.js';
@@ -507,6 +508,17 @@ export const CONTROL_OPERATIONS = {
   'providers.check': { params: noParams, result: statusResultSchema },
   /** Allowed Telegram chats and the chats that recently asked to pair. */
   'telegram.chats': { params: noParams, result: telegramChatsSchema },
+  'telegram.topic': {
+    params: z.strictObject({
+      chatId: telegramChatIdSchema,
+      name: topicNameSchema,
+    }),
+    result: z.object({
+      topicId: z.string(),
+      title: z.string(),
+      url: z.string().nullable(),
+    }),
+  },
   /**
    * Says the owner waits in a terminal to allow the next chat that asks to
    * pair; for a few seconds after, such a chat is told to confirm there.

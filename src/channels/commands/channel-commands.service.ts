@@ -147,6 +147,27 @@ export class ChannelCommands {
           return await this.startOver(channel, route, command.args, by);
         case 'stop':
           return this.stop(channel, by);
+        case 'topic': {
+          if (command.args.trim() === '') {
+            return {
+              screen: {
+                text: 'Send /topic <name> to create a topic in this group.',
+              },
+              notice: null,
+            };
+          }
+          const topic = await this.sender.createTopic(
+            channel.integrationKind,
+            channel.address,
+            command.args,
+          );
+          return {
+            screen: {
+              text: `Created topic: ${topic.title}${topic.url === null ? '' : `\n${topic.url}`}`,
+            },
+            notice: null,
+          };
+        }
         case 'workflows':
           return await this.workflows.workflows(command.args.trim());
         case 'run':

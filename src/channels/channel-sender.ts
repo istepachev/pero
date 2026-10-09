@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InvalidInputError } from '../common/errors.js';
 import {
   type Author,
   MessageHistory,
@@ -10,6 +11,7 @@ import { answerParts } from '../speech/voice-reply.js';
 import type {
   ChannelAdapter,
   ChannelAddress,
+  CreatedTopic,
   OutboundMessage,
   OutboundVoice,
   SentMessage,
@@ -46,6 +48,18 @@ export class ChannelSender {
 
   all(): ChannelAdapter[] {
     return [...this.adapters.values()];
+  }
+
+  async createTopic(
+    kind: IntegrationKind,
+    address: ChannelAddress,
+    name: string,
+  ): Promise<CreatedTopic> {
+    const adapter = this.adapter(kind);
+    if (adapter.createTopic === undefined) {
+      throw new InvalidInputError('This integration cannot create topics');
+    }
+    return adapter.createTopic(address, name);
   }
 
   async send(
