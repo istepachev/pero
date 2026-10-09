@@ -56,6 +56,8 @@ export interface WorkspaceLayout {
   attachments: string;
   /** The `local` speech engine's models, as `pero speech configure` fetches them. */
   models: string;
+  /** The programs `pero speech configure` installs for the `local` speech engine. */
+  tools: string;
   /** `config.yaml`: the data folder and the chats Pero serves. */
   configFile: string;
   /** The workspace's `.env`, which holds the bot token. */
@@ -87,6 +89,7 @@ export function workspaceLayout(workspace: string): WorkspaceLayout {
     stateGitignore: join(stateDir, '.gitignore'),
     attachments: join(stateDir, 'attachments'),
     models: join(stateDir, 'models'),
+    tools: join(stateDir, 'tools'),
     configFile: join(stateDir, 'config.yaml'),
     envFile: join(workspace, '.env'),
     workspaceGitignore: join(workspace, '.gitignore'),

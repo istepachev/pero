@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -16,6 +17,10 @@ import {
   type WorkspaceLayout,
   workspaceLayout,
 } from '../../config/workspace-layout.js';
+import {
+  type InstallEnvironment,
+  WHISPER_CPP_VERSION,
+} from '../../speech/install-programs.js';
 import { PIPER_VOICE, WHISPER_MODEL } from '../../speech/speech-models.js';
 import { CliError } from '../errors.js';
 import type { Prompts } from '../prompts.js';
@@ -113,13 +118,26 @@ describe('configureSpeech', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function context(prompts: Prompts | null): SpeechSetupContext {
+  function context(
+    prompts: Prompts | null,
+    install: Partial<InstallEnvironment> = {},
+  ): SpeechSetupContext {
     return {
       layout,
       prompts,
       print: (text) => printed.push(text),
       env: {},
       fetch: fetchStub,
+      install: {
+        manager: null,
+        root: false,
+        sudo: true,
+        has: (program) => program === 'python3',
+        run: () => Promise.resolve(null),
+        jobs: 2,
+        fetch: fetchStub,
+        ...install,
+      },
     };
   }
 
@@ -277,6 +295,143 @@ describe('configureSpeech', () => {
       /^Voice messages you send: Local, ready\nVoice messages Pero sends: Local, ready\n/,
     );
     expect(speechNeedsSetup(layout, {})).toBe(false);
+  });
+
+  /** Programs by names no machine has, on a `PATH` that includes `bin/`. */
+  function useMissingPrograms(): void {
+    vi.stubEnv('PATH', `${join(root, 'bin')}:${process.env.PATH ?? ''}`);
+    writeFileSync(
+      layout.configFile,
+      [
+        'speech:',
+        '  programs:',
+        '    ffmpeg: pero-test-ffmpeg',
+        '    whisper: pero-test-whisper',
+        '    piper: pero-test-piper',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  /** Installs as apt, cmake, and pip would, recording each command. */
+  function installing(ran: string[]): InstallEnvironment['run'] {
+    return (command, args) => {
+      ran.push([command, ...args].join(' '));
+      if (args.includes('install') && args.includes('-y')) {
+        program('pero-test-ffmpeg');
+      }
+      if (command === 'cmake' && args[0] === '--build') {
+        stub(join(args[1]!, 'bin', 'whisper-cli'));
+      }
+      if (command.endsWith('/pip')) stub(join(command, '..', 'piper'));
+      return Promise.resolve(null);
+    };
+  }
+
+  function stub(path: string): void {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, '#!/bin/sh\n');
+    chmodSync(path, 0o755);
+  }
+
+  it('installs the missing programs when asked, then downloads the models', async () => {
+    useMissingPrograms();
+    const ran: string[] = [];
+    const { prompts, asked } = scripted(['local', 'local', 'install', true]);
+
+    try {
+      await configureSpeech(
+        context(prompts, { manager: 'apt-get', run: installing(ran) }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(asked[2]).toBe(
+      'Install the missing programs now? [install|check|continue]',
+    );
+    expect(printed).toContainEqual(
+      expect.stringMatching(
+        /^Pero can install them:\n {2}sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg cmake g\+\+ make python3-venv \(sudo may ask for your password\)\n {2}build whisper\.cpp /,
+      ),
+    );
+    expect(ran[0]).toBe('sudo apt-get update');
+    expect(ran).toContain(`python3 -m venv ${join(layout.tools, 'piper')}`);
+    expect(printed).toContain('Installed.');
+    expect(readlinkSync(join(layout.tools, 'bin', 'pero-test-whisper'))).toBe(
+      join(
+        layout.tools,
+        `whisper.cpp-${WHISPER_CPP_VERSION}`,
+        'build',
+        'bin',
+        'whisper-cli',
+      ),
+    );
+    // Nothing machine-specific goes into config.yaml, which may be in Git.
+    expect(readHostConfig(layout.configFile)!.speech.programs).toEqual({
+      ffmpeg: 'pero-test-ffmpeg',
+      whisper: 'pero-test-whisper',
+      piper: 'pero-test-piper',
+    });
+    expect(printed.at(-1)).toMatch(
+      /^Voice messages you send: Local, ready\nVoice messages Pero sends: Local, ready\n/,
+    );
+  });
+
+  it('says why an install failed, and asks again', async () => {
+    useMissingPrograms();
+    const { prompts, asked } = scripted([
+      'local',
+      'off',
+      'install',
+      'continue',
+      false,
+    ]);
+
+    try {
+      await configureSpeech(
+        context(prompts, {
+          manager: 'apt-get',
+          run: () => Promise.resolve('exited with 100'),
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(printed).toContain(
+      "Couldn't install them: sudo apt-get update failed: exited with 100",
+    );
+    expect(asked[3]).toBe(
+      'Install the missing programs now? [install|check|continue]',
+    );
+  });
+
+  it('installs without a terminal only with --yes, with sudo -n', async () => {
+    useMissingPrograms();
+    const ran: string[] = [];
+    try {
+      const install = { manager: 'apt-get' as const, run: installing(ran) };
+      await configureSpeech(context(null, install), {
+        transcribe: 'local',
+        speak: 'off',
+      });
+      expect(ran).toEqual([]);
+
+      await configureSpeech(context(null, install), {
+        transcribe: 'local',
+        speak: 'off',
+        yes: true,
+      });
+      expect(speechNeedsSetup(layout, {})).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(ran.slice(0, 2)).toEqual([
+      'sudo -n apt-get update',
+      'sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg cmake g++ make',
+    ]);
   });
 
   it('switches from ElevenLabs back to local, dropping the ElevenLabs voice', async () => {

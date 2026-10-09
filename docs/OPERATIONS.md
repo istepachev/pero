@@ -92,6 +92,7 @@ Everything Pero owns is in the workspace's `.pero/`:
 ├── run/                 # control socket, lock, and process metadata while Pero runs
 ├── attachments/         # files and recordings people send, a folder per Channel
 ├── models/              # the local speech engine's models, from pero speech configure
+├── tools/               # whisper.cpp and Piper, when pero speech configure installs them
 └── config.yaml          # the data folder and the chats Pero serves; commit it
 ```
 
@@ -127,7 +128,15 @@ Outside `.pero/`:
 
 ## Voice messages
 
-The `local` speech engine runs three programs on the host, as the account Pero runs as, so the service's `PATH` must find them (`pero service install` records the `PATH` of the shell it runs in):
+The `local` speech engine runs three programs on the host, as the account Pero runs as. When any is missing, `pero speech` (or `pero speech configure`) lists the commands that install them and offers to run them:
+
+- **ffmpeg, and what the rest need to build:** with Homebrew when it is installed, or else the system's package manager (`apt-get`, `dnf`, `pacman`, or `apk`) as root: as `sudo`, which may ask for your password, unless Pero runs as root. `apt-get` also gets `python3-venv`, and when whisper.cpp must be built, `cmake`, a C++ compiler, and `make` are added unless they're installed. Without `sudo`, Pero prints these commands for you to run as root.
+- **whisper-cli:** Homebrew's `whisper-cpp`; without Homebrew, Pero downloads whisper.cpp's source (a pinned release) and builds `whisper-cli` in `.pero/tools/`, which takes a few minutes on a small VPS.
+- **piper:** the `piper-tts` Python package (a pinned release), in a Python environment of its own in `.pero/tools/piper/`.
+
+What Pero builds itself it links into `.pero/tools/bin/`, where the local engine looks for a program named without a path before it looks on `PATH`, so it needs no change to `config.yaml` or the service's `PATH`. Like the models, `.pero/tools/` isn't in `pero backup`; on a new machine, `pero speech` installs them again. Without a terminal, `pero speech configure --transcribe local --speak local --yes` installs them too, with `sudo -n`, so sudo must not need a password there.
+
+To install them yourself instead, such as on a system Pero doesn't know, put them where the service's `PATH` finds them (`pero service install` records the `PATH` of the shell it runs in), or name them in `speech.programs`:
 
 | Program | For | Install |
 |---|---|---|
@@ -135,7 +144,7 @@ The `local` speech engine runs three programs on the host, as the account Pero r
 | `whisper-cli` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | transcribing | `brew install whisper-cpp`, or build it: `cmake -B build && cmake --build build --target whisper-cli`, then put `build/bin/whisper-cli` on `PATH` or name it in `speech.programs.whisper` |
 | `piper` from [Piper](https://github.com/OHF-Voice/piper1-gpl) | recording | `pipx install piper-tts` |
 
-Then `pero speech` (or `pero speech configure`) downloads `ggml-base.bin` (whisper.cpp's multilingual base model, 148 MB) and the `en_US-lessac-medium` Piper voice (63 MB) from Hugging Face into `.pero/models/`; `pero speech configure --transcribe local --speak local --yes` does it without asking, for scripts. A larger whisper.cpp model transcribes better and more slowly: download it and name it in `speech.transcribe.model`. Piper has [voices in many languages](https://huggingface.co/rhasspy/piper-voices); name the `.onnx` file in `speech.speak.voice`, with its `.onnx.json` beside it.
+Then `pero speech` (or `pero speech configure`) downloads `ggml-base.bin` (whisper.cpp's multilingual base model, 148 MB) and the `en_US-lessac-medium` Piper voice (63 MB) from Hugging Face into `.pero/models/`; `pero speech configure --transcribe local --speak local --yes` does it, and installs the programs, without asking, for scripts. A larger whisper.cpp model transcribes better and more slowly: download it and name it in `speech.transcribe.model`. Piper has [voices in many languages](https://huggingface.co/rhasspy/piper-voices); name the `.onnx` file in `speech.speak.voice`, with its `.onnx.json` beside it.
 
 Pero converts each recording to 16 kHz mono WAV for whisper.cpp, and Piper's WAV to OGG with Opus, which Telegram shows as a voice message. Recordings longer than `speech.transcribe.max-minutes` (10 by default) aren't transcribed. Each program run is limited in time, and temporary files are deleted after it.
 

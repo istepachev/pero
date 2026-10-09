@@ -124,7 +124,7 @@ speech:
     engine: local            # local, elevenlabs, or off. Default: local
     voice: .pero/models/en_US-lessac-medium.onnx   # local: a Piper voice; elevenlabs: a voice ID
     model: eleven_multilingual_v2                  # elevenlabs only
-  programs:                  # what the local engine runs, by name or path
+  programs:                  # what the local engine runs, by name or path; a name is looked for in .pero/tools/bin/, then on PATH
     ffmpeg: ffmpeg
     whisper: whisper-cli
     piper: piper

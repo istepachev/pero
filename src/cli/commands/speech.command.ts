@@ -88,7 +88,7 @@ export class SpeechConfigureCommand extends PeroCommand {
       options.yes !== true
     ) {
       throw new CliError(
-        'Without a terminal, say what to set: --transcribe and --speak (local, elevenlabs, or off), and --yes to download the local models',
+        'Without a terminal, say what to set: --transcribe and --speak (local, elevenlabs, or off), and --yes to install the local programs and download the models',
       );
     }
     await configureSpeech(
@@ -123,7 +123,8 @@ export class SpeechConfigureCommand extends PeroCommand {
 
   @Option({
     flags: '-y, --yes',
-    description: 'download the local models without asking',
+    description:
+      'install the programs and download the models the local engine needs, without asking',
   })
   parseYes(): boolean {
     return true;

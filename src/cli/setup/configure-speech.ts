@@ -22,6 +22,13 @@ import {
   speakProblem,
   transcribeProblem,
 } from '../../speech/speech-readiness.js';
+import {
+  type InstallEnvironment,
+  type InstallPlan,
+  installPlan,
+  localInstallEnvironment,
+  runInstall,
+} from '../../speech/install-programs.js';
 import { ELEVENLABS_DEFAULTS } from '../../speech/speech-models.js';
 import { downloadModel, speechSetupPlan } from '../../speech/speech-setup.js';
 import { CliError } from '../errors.js';
@@ -41,13 +48,15 @@ export interface SpeechSetupContext {
   readKey?: () => Promise<string>;
   /** ElevenLabs and model downloads go through this; tests replace it. */
   fetch?: typeof fetch;
+  /** How the local engine's programs get installed; tests replace it. */
+  install?: InstallEnvironment;
 }
 
 /** Answers given up front, as `pero speech configure`'s options. */
 export interface SpeechChoices {
   transcribe?: SpeechEngine;
   speak?: SpeechEngine;
-  /** Download the local models without asking. */
+  /** Install the local programs and download the models without asking. */
   yes?: boolean;
 }
 
@@ -488,8 +497,9 @@ function saveVoice(
 }
 
 /**
- * Checks the programs the local engine runs, again while the owner
- * installs them, and downloads its models.
+ * Checks the programs the local engine runs, offers to install those
+ * missing, or checks again while the owner installs them, and downloads
+ * its models. With `yes`, it installs and downloads without asking.
  */
 async function setUpLocal(
   context: SpeechSetupContext,
@@ -497,7 +507,9 @@ async function setUpLocal(
   yes: boolean,
 ): Promise<void> {
   const { layout, prompts, print } = context;
+  const environment = context.install ?? localInstallEnvironment(context.fetch);
   let plan = speechSetupPlan(speech, layout.workspace);
+  let installed = false;
   for (;;) {
     print(
       [
@@ -509,17 +521,56 @@ async function setUpLocal(
         ),
       ].join('\n'),
     );
-    const missing = plan.programs.some(({ path }) => path === null);
-    if (!missing || prompts === null) break;
-    const next = await prompts.select<'check' | 'continue'>({
-      message: 'Install the missing programs, in another terminal if you like.',
+    const missing = plan.programs.filter(({ path }) => path === null);
+    if (missing.length === 0) break;
+    const install = installPlan(
+      missing,
+      environment,
+      layout.tools,
+      prompts !== null,
+    );
+    if (install !== null && install.manual.length > 0) {
+      print(
+        [
+          'Run these as root, as Pero has no sudo:',
+          ...install.manual.map((command) => `  ${command}`),
+        ].join('\n'),
+      );
+    }
+    const canInstall = install !== null && install.tasks.length > 0;
+    if (canInstall) {
+      print(
+        [
+          'Pero can install them:',
+          ...install.tasks.map(({ summary }) => `  ${summary}`),
+        ].join('\n'),
+      );
+    }
+    if (prompts === null) {
+      // Without a terminal, install once, and only when told to.
+      if (!yes || !canInstall || installed) break;
+      installed = true;
+      await installPrograms(context, install, environment);
+      plan = speechSetupPlan(speech, layout.workspace);
+      continue;
+    }
+    const next = await prompts.select<'install' | 'check' | 'continue'>({
+      message: canInstall
+        ? 'Install the missing programs now?'
+        : 'Install the missing programs, in another terminal if you like.',
       choices: [
+        ...(canInstall
+          ? [{ value: 'install' as const, name: 'Install them now' }]
+          : []),
         { value: 'check', name: "I've installed them: check again" },
         { value: 'continue', name: 'Continue without them for now' },
       ],
-      initial: 'check',
+      initial: canInstall ? 'install' : 'check',
     });
     if (next === 'continue') break;
+    if (next === 'install') {
+      await installPrograms(context, install!, environment);
+    }
     plan = speechSetupPlan(speech, layout.workspace);
   }
   for (const file of plan.missing) {
@@ -549,6 +600,20 @@ async function setUpLocal(
       print(`Couldn't download ${file.name}: ${describe(error)}`);
     }
   }
+}
+
+/** Runs `plan`, starting a block for its output and saying how it went. */
+async function installPrograms(
+  context: SpeechSetupContext,
+  plan: InstallPlan,
+  environment: InstallEnvironment,
+): Promise<void> {
+  context.block?.();
+  const failure = await runInstall(plan, environment, context.print);
+  context.block?.();
+  context.print(
+    failure === null ? 'Installed.' : `Couldn't install them: ${failure}`,
+  );
 }
 
 function client(context: SpeechSetupContext) {

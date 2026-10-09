@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { workspaceLayout } from '../config/workspace-layout.js';
 import { findProgram, runProgram } from './run-program.js';
 import {
   type AudioFile,
@@ -32,6 +33,27 @@ export const INSTALL_HINTS: Record<keyof LocalPrograms, string> = {
   piper:
     'install Piper (https://github.com/OHF-Voice/piper1-gpl), such as pipx install piper-tts',
 };
+
+/**
+ * `programs` as the `local` engine runs them in `workspace`: one named
+ * without a path runs from `.pero/tools/bin/` when `pero speech configure`
+ * installed it there, else from `PATH`.
+ */
+export function localPrograms(
+  programs: LocalPrograms,
+  workspace: string,
+): LocalPrograms {
+  const bin = join(workspaceLayout(workspace).tools, 'bin');
+  const resolve = (program: string): string => {
+    if (program.includes('/')) return program;
+    return findProgram(program, bin) ?? program;
+  };
+  return {
+    ffmpeg: resolve(programs.ffmpeg),
+    whisper: resolve(programs.whisper),
+    piper: resolve(programs.piper),
+  };
+}
 
 /**
  * Why the `local` engine can't run `programs` with `files`, or null when

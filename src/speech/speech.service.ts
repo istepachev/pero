@@ -12,7 +12,11 @@ import {
   ElevenLabsSynthesizer,
   ElevenLabsTranscriber,
 } from './elevenlabs-engine.js';
-import { LocalSynthesizer, LocalTranscriber } from './local-engine.js';
+import {
+  LocalSynthesizer,
+  LocalTranscriber,
+  localPrograms,
+} from './local-engine.js';
 import {
   type AudioFile,
   type SpeechAudio,
@@ -139,7 +143,7 @@ export class SpeechService implements OnModuleInit {
       });
     }
     return new LocalTranscriber(
-      speech.programs,
+      localPrograms(speech.programs, this.workspace()),
       whisperModelPath(speech, this.workspace()),
       language,
     );
@@ -157,7 +161,7 @@ export class SpeechService implements OnModuleInit {
       });
     }
     return new LocalSynthesizer(
-      speech.programs,
+      localPrograms(speech.programs, this.workspace()),
       piperVoicePath(speech, this.workspace()),
     );
   }
