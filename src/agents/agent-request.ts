@@ -135,6 +135,7 @@ export const TOPIC_NOTE =
   'group they mean instead.';
 
 export const FILE_NOTE =
+  'File delivery is provided by the Pero host AFTER your final answer. You do not need network access, a Telegram API tool, a token or shell requests to Telegram. Even in a resumed session, do not repeat earlier claims that attachments cannot be sent. Verify the result exists locally, then hand it to the host using the file directive below. ' +
   'Deliver files you create to the owner in Telegram, not just a computer path. ' +
   'Put each result on a standalone line as <file>path/to/result</file>, outside code fences. ' +
   'Paths are relative to this Channel working directory, or absolute within it or the data folder. ' +

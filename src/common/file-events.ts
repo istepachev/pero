@@ -2,7 +2,7 @@ import { appendFile, mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export interface FileEvent {
-  operation: 'download' | 'transcribe' | 'upload' | 'preview';
+  operation: 'download' | 'transcribe' | 'upload' | 'preview' | 'extract';
   name: string;
   bytes: number;
   elapsedMs: number;
