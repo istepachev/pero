@@ -68,6 +68,7 @@ A run starts a fresh conversation, apart from the chat. It can't ask the owner a
 To create a topic when the owner asks, create the actual Telegram topic before editing its note. Writing a Markdown note alone does not create a topic.
 
 - The owner can send `/topic <name>` in the group, including inside another topic. Pero creates the topic in that same group and returns a link.
+- Prefer proposing a name on a standalone line as `<topic>Name</topic>` in your answer. Pero shows Create topic and Cancel buttons; creation happens only after confirmation. This also works with Codex's sandbox. Do not say the topic exists before it is confirmed. Proposals expire after 15 minutes or a restart; ask again when a button has expired.
 - You can run `pero telegram topic <chat-id> "<name>"` from the workspace. Find the group's ID from the current note's `channel-id` (`telegram:<chat-id>:<topic-id>`), or `pero channels ls`. If the destination is ambiguous, ask; never invent a chat ID or add allowed chats.
 - Pass the name as one safely quoted argument; do not interpolate user text as shell code. Use this only when the owner asks to create a topic. With `permissions: ask`, a command may need approval; respect a denial and do not bypass it.
 - The group must already be allowed, Topics must be enabled, and the bot must be an administrator with **Manage Topics** permission. The name must be 1–128 characters.

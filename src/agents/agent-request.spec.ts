@@ -4,6 +4,7 @@ import {
   agentContext,
   FORMAT_NOTE,
   VOICE_NOTE,
+  TOPIC_NOTE,
   agentRequest,
   composeInstructions,
   dataFolderNote,
@@ -33,7 +34,7 @@ describe('composeInstructions', () => {
       ),
     ).toBe(`${CONTEXT}\n\nBe calm.\n\nAnswer in English.\n\nTrack spending.`);
     expect(CONTEXT).toBe(
-      `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}\n\n${FORMAT_NOTE}`,
+      `${dataFolderNote('/ws/data')}\n\n${systemFolderNote(HEALTH, FOLDERS)}\n\n${FORMAT_NOTE}\n\n${TOPIC_NOTE}`,
     );
   });
 
@@ -79,6 +80,12 @@ describe('agentContext', () => {
       `${CONTEXT}\n\n${VOICE_NOTE}`,
     );
     expect(VOICE_NOTE).toContain('<voice>…</voice>');
+  });
+
+  it('explains topic proposals and requires confirmation before claiming success', () => {
+    expect(CONTEXT).toContain(TOPIC_NOTE);
+    expect(TOPIC_NOTE).toContain('<topic>Name</topic>');
+    expect(TOPIC_NOTE).toContain('only after that button is pressed');
   });
 });
 

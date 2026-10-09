@@ -114,7 +114,13 @@ export class ChannelCommands {
     const command = buttonCommand(action.actionId);
     if (command === null) return { notice: 'This button no longer works' };
     const by = action.senderName ?? `user ${action.senderId}`;
-    const { screen, notice } = await this.answer(channel, route, command, by);
+    const { screen, notice } = await this.answer(
+      channel,
+      route,
+      command,
+      by,
+      action.messageId,
+    );
     try {
       await this.sender.edit(
         channel.integrationKind,
@@ -136,9 +142,37 @@ export class ChannelCommands {
     route: Route,
     command: InboundCommand,
     by: string | null,
+    messageId: string | null = null,
   ): Promise<Answer> {
     try {
       switch (command.name) {
+        case 'topic_confirm': {
+          const [id, decision, extra] = command.args.split(' ');
+          if (
+            messageId === null ||
+            id === undefined ||
+            extra !== undefined ||
+            (decision !== 'yes' && decision !== 'no')
+          ) {
+            throw new InvalidInputError('This topic request is invalid');
+          }
+          const topic = await this.sender.confirmTopic(
+            channel.integrationKind,
+            channel.address,
+            messageId,
+            id,
+            decision === 'yes',
+          );
+          return {
+            screen: {
+              text:
+                topic === null
+                  ? 'Topic creation cancelled'
+                  : `Created topic: ${topic.title}${topic.url === null ? '' : `\n${topic.url}`}`,
+            },
+            notice: null,
+          };
+        }
         case 'help':
           return { screen: helpScreen(), notice: null };
         case 'status':

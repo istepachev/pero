@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InvalidInputError } from '../common/errors.js';
+import { randomBytes } from 'node:crypto';
+import { InvalidInputError, NotFoundError } from '../common/errors.js';
+import { topicReply } from './topic-reply.js';
 import {
   type Author,
   MessageHistory,
@@ -33,6 +35,16 @@ export const VOICE_LINE = '[Voice message]';
 export class ChannelSender {
   private readonly logger = new Logger('Channels');
   private readonly adapters = new Map<IntegrationKind, ChannelAdapter>();
+  private readonly topicRequests = new Map<
+    string,
+    {
+      kind: IntegrationKind;
+      address: string;
+      messageId: string;
+      name: string;
+      expires: number;
+    }
+  >();
 
   constructor(
     private readonly history: MessageHistory,
@@ -62,6 +74,28 @@ export class ChannelSender {
     return adapter.createTopic(address, name);
   }
 
+  /** Claims a proposal once, only from the message and topic it was sent in. */
+  async confirmTopic(
+    kind: IntegrationKind,
+    address: ChannelAddress,
+    messageId: string,
+    id: string,
+    allow: boolean,
+  ): Promise<CreatedTopic | null> {
+    const request = this.topicRequests.get(id);
+    if (
+      request === undefined ||
+      request.expires <= Date.now() ||
+      request.kind !== kind ||
+      request.address !== addressKey(address) ||
+      request.messageId !== messageId
+    ) {
+      throw new NotFoundError('This topic request has expired; ask Pero again');
+    }
+    this.topicRequests.delete(id);
+    return allow ? this.createTopic(kind, address, request.name) : null;
+  }
+
   async send(
     kind: IntegrationKind,
     address: ChannelAddress,
@@ -88,6 +122,55 @@ export class ChannelSender {
    * it are out by then.
    */
   async sendAnswer(
+    kind: IntegrationKind,
+    address: ChannelAddress,
+    answer: string,
+  ): Promise<SentAnswer> {
+    const reply = topicReply(answer);
+    if (reply.names.length > 0) {
+      let first: SentMessage | undefined;
+      const texts: string[] = [];
+      if (reply.text !== '') {
+        const body = await this.sendBody(kind, address, reply.text);
+        first = body.sent;
+        texts.push(body.text);
+      }
+      for (const name of reply.names) {
+        for (const [id, request] of this.topicRequests) {
+          if (request.expires <= Date.now()) this.topicRequests.delete(id);
+        }
+        if (this.topicRequests.size >= 1000) {
+          throw new InvalidInputError(
+            'Too many pending topic requests; try again later',
+          );
+        }
+        const id = randomBytes(12).toString('base64url');
+        const text = `Create topic: ${name}?`;
+        const sent = await this.send(kind, address, {
+          text,
+          buttons: [
+            [
+              { id: `/topic_confirm ${id} yes`, label: 'Create topic' },
+              { id: `/topic_confirm ${id} no`, label: 'Cancel' },
+            ],
+          ],
+        });
+        this.topicRequests.set(id, {
+          kind,
+          address: addressKey(address),
+          messageId: sent.messageId,
+          name,
+          expires: Date.now() + 15 * 60_000,
+        });
+        first ??= sent;
+        texts.push(text);
+      }
+      return { sent: first!, text: texts.join('\n\n') };
+    }
+    return this.sendBody(kind, address, answer);
+  }
+
+  private async sendBody(
     kind: IntegrationKind,
     address: ChannelAddress,
     answer: string,
@@ -243,4 +326,10 @@ export class ChannelSender {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function addressKey(address: ChannelAddress): string {
+  return JSON.stringify(
+    Object.entries(address).sort(([a], [b]) => a.localeCompare(b)),
+  );
 }
